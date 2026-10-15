@@ -1,0 +1,20 @@
+[package]
+name = "rules-wasm"
+description = "WebAssembly bindings for rules-core (browser and Node server). JSON wire contract: see src/dto.rs and packages/rules."
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+# cdylib for wasm-bindgen; rlib so the JSON layer is unit-tested natively.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+rules-core = { path = "../rules-core", features = ["serde"] }
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.154"
+wasm-bindgen = "=0.2.129"
+
+[lints]
+workspace = true

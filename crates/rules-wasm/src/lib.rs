@@ -1,0 +1,115 @@
+//! WebAssembly bindings for [`rules_core`], used by the browser and the Node
+//! server through `packages/rules` (`@game/rules`).
+//!
+//! The JS-facing surface is deliberately small: one class, [`WasmGame`],
+//! whose structured results are **JSON strings** in the wire format defined
+//! in [`dto`] (camelCase keys, snake_case enum values). `@game/rules` parses
+//! them into typed objects. Every error is thrown as a JS `Error` whose
+//! message is the engine's error message (e.g. `"illegal move c2c5"`).
+//!
+//! All logic lives in [`session::Session`], which is target-independent and
+//! unit-tested natively; this module only adapts it to wasm-bindgen.
+
+pub mod dto;
+pub mod session;
+
+use wasm_bindgen::prelude::*;
+
+use crate::session::Session;
+
+fn js_err(msg: String) -> JsError {
+    JsError::new(&msg)
+}
+
+/// Rules version implemented by this build.
+#[wasm_bindgen(js_name = rulesVersion)]
+pub fn rules_version() -> u32 {
+    rules_core::RULES_VERSION
+}
+
+/// A game in progress. Call `free()` when done (or rely on the finalizer).
+#[wasm_bindgen]
+pub struct WasmGame {
+    inner: Session,
+}
+
+#[wasm_bindgen]
+impl WasmGame {
+    /// New game from a JSON config: `{"mode": "ffa" | "teams", "civs"?: [...4],
+    /// "enPassant"?: bool, "moveLimitRounds"?: number, "rulesVersion"?: number}`.
+    #[wasm_bindgen(constructor)]
+    pub fn new(config_json: &str) -> Result<WasmGame, JsError> {
+        Session::from_config_json(config_json)
+            .map(|inner| WasmGame { inner })
+            .map_err(js_err)
+    }
+
+    /// Game from a position string.
+    #[wasm_bindgen(js_name = fromPosition)]
+    pub fn from_position(text: &str) -> Result<WasmGame, JsError> {
+        Session::from_position(text)
+            .map(|inner| WasmGame { inner })
+            .map_err(js_err)
+    }
+
+    /// An independent copy of this game.
+    #[wasm_bindgen(js_name = clone)]
+    pub fn clone_game(&self) -> WasmGame {
+        WasmGame {
+            inner: self.inner.clone(),
+        }
+    }
+
+    /// Legal moves of the seat to move as a JSON array of move objects.
+    #[wasm_bindgen(js_name = legalMoves)]
+    pub fn legal_moves(&mut self) -> String {
+        self.inner.legal_moves_json()
+    }
+
+    /// Legal moves of the seat to move as notation strings.
+    #[wasm_bindgen(js_name = legalMoveNotations)]
+    pub fn legal_move_notations(&mut self) -> Vec<String> {
+        self.inner.legal_move_notations()
+    }
+
+    /// Applies a move in notation (`"c2c4"`, `"c6c7q"`); returns events JSON.
+    #[wasm_bindgen(js_name = applyMove)]
+    pub fn apply_move(&mut self, notation: &str) -> Result<String, JsError> {
+        self.inner.apply_move(notation).map_err(js_err)
+    }
+
+    /// The seat to move ran out of time; returns events JSON.
+    #[wasm_bindgen(js_name = applyTimeout)]
+    pub fn apply_timeout(&mut self, seat: &str) -> Result<String, JsError> {
+        self.inner.apply_timeout(seat).map_err(js_err)
+    }
+
+    /// A seat that still takes turns abandoned; returns events JSON.
+    #[wasm_bindgen(js_name = applyAbandon)]
+    pub fn apply_abandon(&mut self, seat: &str) -> Result<String, JsError> {
+        self.inner.apply_abandon(seat).map_err(js_err)
+    }
+
+    /// Full view of the position as JSON.
+    pub fn snapshot(&self) -> String {
+        self.inner.snapshot_json()
+    }
+
+    /// Position string (round-trips through `fromPosition`).
+    #[wasm_bindgen(js_name = positionString)]
+    pub fn position_string(&self) -> String {
+        self.inner.position_string()
+    }
+
+    /// Whether an ACTIVE seat's leader is attacked (information only).
+    #[wasm_bindgen(js_name = leaderUnderAttack)]
+    pub fn leader_under_attack(&self, seat: &str) -> Result<bool, JsError> {
+        self.inner.leader_under_attack(seat).map_err(js_err)
+    }
+
+    /// Native (in-WASM) perft, depth at most 6.
+    pub fn perft(&self, depth: u32) -> Result<f64, JsError> {
+        // Counts up to depth 6 are far below 2^53, so f64 is exact.
+        self.inner.perft(depth).map(|n| n as f64).map_err(js_err)
+    }
+}
