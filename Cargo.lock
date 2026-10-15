@@ -140,6 +140,8 @@ dependencies = [
  "axum",
  "bot-engine",
  "http-body-util",
+ "hyper",
+ "hyper-util",
  "rules-core",
  "serde",
  "serde_json",

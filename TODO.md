@@ -96,6 +96,7 @@ Conventions (see [CLAUDE.md](CLAUDE.md)):
 - ~~`bot-service` (CPU-limited, deadline-aware, load-shedding)~~ (done 2026-10-15; `crates/bot-service`: axum service, EDF worker pool, 503 + Retry-After fallback contract in its README, Dockerfile + compose service)
 - ~~`bot-arena` tournaments, calibration, overnight tuning~~ (done 2026-10-15 except overnight tuning; `crates/bot-arena`: FFA/Teams matches with seat rotation, Bradley-Terry ladder, SPRT; calibrated level table and results in [docs/bots-calibration.md](docs/bots-calibration.md))
 - Overnight evaluation tuning (Texel / SPSA) on bot-arena self-play, gated by `bot-arena sprt`
+- ~~Review fixes (bots): BRS/BRS+ default moves save their own leader and take the root's; an interrupted first iteration never leaks move-ordering scores into the result; depth-1 node cap and exact-root window (no more multi-second "node-bound" moves); fail-soft quiescence delta pruning no longer poisons the TT; FFA move-limit tie valued on the evaluation's scale; bot-service gives every search a minimum time or answers 503 (no unsearched moves), honest `degraded`, header/body timeouts and a bounded shutdown drain, listen backlog 1024, abandoned jobs leave the queue, untimed 2400 reproducible, per-status metrics, JS-style numbers accepted and unknown fields rejected~~ (done 2026-10-15; levels re-checked with bot-arena, see [docs/bots-calibration.md](docs/bots-calibration.md))
 
 ### M7 — Deploy — §9
 - OVHcloud US VPS-2 (4 vCPU / 8 GB, US-East), Docker Compose, Caddy, Cloudflare-only firewall
