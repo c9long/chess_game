@@ -1,0 +1,24 @@
+{
+  "name": "@game/board",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "sandbox": "vite --config sandbox/vite.config.ts",
+    "sandbox:build": "vite build --config sandbox/vite.config.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@game/assets": "workspace:*",
+    "@game/rules": "workspace:*",
+    "pixi.js": "8.22.0"
+  },
+  "devDependencies": {
+    "@game/config": "workspace:*",
+    "vite": "8.3.4"
+  }
+}

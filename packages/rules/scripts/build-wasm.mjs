@@ -84,6 +84,11 @@ if (output('wasm-opt', ['--version'])) {
     rmSync(tmp, { force: true })
     console.warn('@game/rules: wasm-opt failed; keeping the unoptimized module')
   }
+} else {
+  console.warn(
+    '\n@game/rules: WARNING wasm-opt (binaryen) not found; the module is NOT size-optimized.\n' +
+      '  Install binaryen (e.g. `apt install binaryen` or `brew install binaryen`) before release builds.\n',
+  )
 }
 
 const size = statSync(wasmFile).size

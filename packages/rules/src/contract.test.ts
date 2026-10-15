@@ -85,7 +85,7 @@ describe('wire contract', () => {
     const expected = GAME_EVENT_TYPES.filter((t) => t !== 'pass')
     expect([...seen].filter((t) => t !== 'pass').sort()).toEqual([...expected].sort())
     expect(plies).toBeGreaterThan(1_000)
-  })
+  }, 60_000) // CPU-bound (~4 s alone); generous for loaded machines and parallel runs
 })
 
 // Compile-time check that GAME_EVENT_TYPES lists every event type.

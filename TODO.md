@@ -44,6 +44,9 @@ Conventions (see [CLAUDE.md](CLAUDE.md)):
 - Board: mount `@game/board` in the apps/web game screen (with M5 live games)
 - Board: screen-reader move announcements (aria-live) and a full keyboard pass
 - Board: confirm 60 fps at 1440p on a real mid-range GPU (only software-rendered so far)
+- Board art pass: illustrator pass on the knight (mane, muzzle) and wider bases/collars across the piece set (packages/assets/pieces)
+- Board art pass: simplified heavy-stroke emblem variants for Mali, China and Russia for medallions under ~72 device px
+- Board: install binaryen (wasm-opt) in CI/release builds so the rules wasm ships size-optimized (the build now warns when it is missing)
 
 ### M3 — Accounts + legal — §1, §5, §8
 - ~~Better Auth: email/password (argon2id via custom hash/verify), verification and reset via Resend~~ (done 2026-10-15)
