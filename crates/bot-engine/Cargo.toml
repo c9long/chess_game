@@ -1,0 +1,13 @@
+[package]
+name = "bot-engine"
+description = "Bot search engine (Teams alpha-beta, FFA BRS+/Paranoid), handcrafted evaluation and strength levels."
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+rules-core = { path = "../rules-core" }
+
+[lints]
+workspace = true
