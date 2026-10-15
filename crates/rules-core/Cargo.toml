@@ -1,0 +1,21 @@
+[package]
+name = "rules-core"
+description = "The single authoritative implementation of the game rules (shared by browser, server, bots and Unity)."
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+default = []
+# Serialize/Deserialize for config, state, moves and events (used by the WASM/JSON layer).
+serde = ["dep:serde"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"], optional = true }
+
+[dev-dependencies]
+serde_json = "1"
+
+[lints]
+workspace = true
