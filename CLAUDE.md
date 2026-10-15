@@ -23,7 +23,7 @@
 - Verify before claiming done: `cargo test`, `cargo clippy --all-targets -- -D warnings`, `pnpm check`.
 
 ## Commits
-- As you code, or as agents complete their work, split the changes into logical commit chunks (one concern per commit, e.g. a crate, a package, docs, config), then commit and push to the remote.
+- As you code, or as agents complete their work, split the changes into logical commit chunks (one concern per commit, e.g. a crate, a package, docs, config), then commit and push straight to `main` on the remote (no feature branches unless asked).
 - Never commit half-finished work that another agent is still editing. Parallel subagents don't commit themselves; the orchestrating session commits each piece once it is complete and verified.
 - Use clear messages: a short imperative subject plus a body explaining the why when it isn't obvious.
 - Never add AI attribution or watermarks anywhere: no "Generated with Claude Code" lines, no `Co-Authored-By: Claude` trailers, in commits, PRs, code or docs.
