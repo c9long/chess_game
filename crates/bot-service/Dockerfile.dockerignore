@@ -1,0 +1,8 @@
+# Used by BuildKit for `docker build -f crates/bot-service/Dockerfile .`
+*
+!Cargo.toml
+!Cargo.lock
+!crates/
+crates/*/target
+crates/**/node_modules
+crates/rules-wasm/pkg
