@@ -92,9 +92,10 @@ Conventions (see [CLAUDE.md](CLAUDE.md)):
 
 ### M6 — Bots — §6
 - ~~Teams team-signed alpha-beta, FFA BRS+ (Paranoid fallback)~~ (done 2026-10-15; `crates/bot-engine`, BRS+ beat Paranoid in arena tests and is the default)
-- ~~Handcrafted evaluation, strength levels 600–2400 + Max~~ (done 2026-10-15; level parameters are first guesses until `bot-arena` calibration)
-- `bot-service` (CPU-limited, deadline-aware, load-shedding)
-- `bot-arena` tournaments, calibration, overnight tuning
+- ~~Handcrafted evaluation, strength levels 600–2400 + Max~~ (done 2026-10-15; level parameters calibrated with `bot-arena` 2026-10-15, see [docs/bots-calibration.md](docs/bots-calibration.md))
+- ~~`bot-service` (CPU-limited, deadline-aware, load-shedding)~~ (done 2026-10-15; `crates/bot-service`: axum service, EDF worker pool, 503 + Retry-After fallback contract in its README, Dockerfile + compose service)
+- ~~`bot-arena` tournaments, calibration, overnight tuning~~ (done 2026-10-15 except overnight tuning; `crates/bot-arena`: FFA/Teams matches with seat rotation, Bradley-Terry ladder, SPRT; calibrated level table and results in [docs/bots-calibration.md](docs/bots-calibration.md))
+- Overnight evaluation tuning (Texel / SPSA) on bot-arena self-play, gated by `bot-arena sprt`
 
 ### M7 — Deploy — §9
 - OVHcloud US VPS-2 (4 vCPU / 8 GB, US-East), Docker Compose, Caddy, Cloudflare-only firewall
@@ -109,7 +110,7 @@ Conventions (see [CLAUDE.md](CLAUDE.md)):
 - Confirm that a stalemated or timed-out player's leader no longer keeps a Teams team alive
 - Teams resignation: player-only or whole team?
 - Attacked-leader glow: default on or off, and per-lobby toggle? (decide before M2)
-- Review corner-pawn opening balance (East exposed on both corners) with bot-arena data
+- Review corner-pawn opening balance (East exposed on both corners) with bot-arena data (first bot data 2026-10-15 in [docs/bots-calibration.md](docs/bots-calibration.md): FFA East wins 23.0 ± 1.8% vs fair 25%, no Teams bias)
 - FFA move-limit tie placements: survivors share 1st and defeated seats keep their reverse-defeat placements (e.g. 1st, 1st, 3rd, 4th) — confirm this is what lobby results and ratings should show
 - Confirm: a Teams seat that was already DEFEATED and then freezes does not reset the move-limit counter (only ACTIVE-seat defeats reset it)
 
