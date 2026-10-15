@@ -1,0 +1,22 @@
+{
+  "name": "@game/protocol",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./state": "./src/state.ts",
+    "./client": "./src/client.ts"
+  },
+  "scripts": {
+    "schema": "node scripts/export-json-schema.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@colyseus/schema": "5.0.40",
+    "@game/config": "workspace:*",
+    "@game/rules": "workspace:*",
+    "zod": "4.6.7"
+  }
+}

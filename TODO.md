@@ -63,23 +63,32 @@ Conventions (see [CLAUDE.md](CLAUDE.md)):
 - ~~Review fixes: OAuth signup requires the clickwrap (server hook + disabled buttons), never shows the provider's name, and asks for a username~~ (done 2026-10-15)
 - ~~Review fixes: production config fails closed (explicit NODE_ENV, https origins, rpID, separate IP_HASH_SECRET, Cloudflare trust, rate limits on, no siteverify override); signed gate cookies expire server-side; session token never exposed to page scripts; display names follow the name policy; per-account password throttle; hashed verification tokens; encrypted OAuth tokens~~ (done 2026-10-15)
 - ~~Review fixes: verification-email recovery (resend on sign-in, resend page), duplicate-signup notice email, 2FA challenge errors, return to the original page after sign-in, device-approval confirmation step, backup codes (unambiguous, case-insensitive, regenerate), passkey remove/rename, Turnstile failure state, legal tables on phones~~ (done 2026-10-15)
-- Mount `requireCurrentAcceptance` (server-side clickwrap check) on every lobby/game route in M4
+- ~~Mount `requireCurrentAcceptance` (server-side clickwrap check) on every lobby/game route in M4~~ (done 2026-10-15; matchmaking `onAuth` and the match-history/ratings routes check age, current acceptance and username)
 - Deleting a registered account with a stale session: also accept a passkey or TOTP step-up (password step-up exists)
 - Show how many backup codes remain (needs a server endpoint; regenerating works)
 - Email the account owner when password sign-in gets locked by the per-account throttle
 - Product/legal call: after an under-13 answer, should signing in to an existing, already age-confirmed account stay blocked for 24 h (current behavior) or be allowed?
 
 ### M4 — Lobbies — §3
-- Colyseus lobby list + lobby room; create (mode, time control, optional hashed password with attempt limits)
-- Seats/teams, host controls, ready/start, session-bound seats
-- Blind civ pick with emblems beside usernames
-- Bot seats with level picker and random-but-editable civ
+- ~~Colyseus lobby list + lobby room; create (mode, time control, optional hashed password with attempt limits)~~ (done 2026-10-15; `packages/protocol` (`@game/protocol`) holds the versioned wire contract + JSON Schema export)
+- ~~Seats/teams, host controls, ready/start, session-bound seats~~ (done 2026-10-15)
+- Blind civ pick with emblems beside usernames (server side done 2026-10-15: civ per seat, duplicates allowed; emblems in the web lobby UI)
+- ~~Bot seats with level picker and random-but-editable civ~~ (done 2026-10-15)
 
 ### M5 — Live games — §2, §5
-- Authoritative game room, server clocks (10+0, 3+2), reconnect grace + abandon
-- All defeat paths, end screen
-- Incremental event persistence, abort-on-restart, re-simulation check
-- OpenSkill ratings (public + hidden shadow ratings)
+- ~~Authoritative game room, server clocks (10+0, 3+2), reconnect grace + abandon~~ (done 2026-10-15)
+- All defeat paths, end screen (server side done 2026-10-15: leader capture, stalemate, timeout, abandon, `gameOver` message; end screen in the web UI)
+- ~~Incremental event persistence, abort-on-restart, re-simulation check~~ (done 2026-10-15)
+- ~~OpenSkill ratings (public + hidden shadow ratings)~~ (done 2026-10-15; display rating = round(900 + 30 × (mu − 3σ)), bot anchors in `bot_level_anchors`)
+- Web: lobby browser, create/join lobby, lobby room and live game screens on `@game/protocol` (web workflow)
+- Lobbies: spectator role (read-only) for spectating/replays
+- Game server scale-out: startup abort of `in_progress` matches assumes a single game-server process (revisit with Redis presence)
+- Ratings: recalibrate `bot_level_anchors` from bot-arena results and the shadow pool
+- ~~Review fixes (seat binding): reservations count as seat claims (one outstanding per user, re-checked on connect: kicks, one seat per user, lobby phase); pending reservations count toward free seats (no locking a lobby with raw matchmaking calls); the creator keeps the host role until their reservation lapses; civ changes can't land on another seat after a swap~~ (done 2026-10-15)
+- ~~Review fixes (limits): lobby-password attempts and the matchmaking rate limit count requests on arrival (no parallel bursts past the limit); WebSocket upgrades from a foreign Origin refused~~ (done 2026-10-15)
+- ~~Review fixes (live games): bot requests get a deadline from the bot's own clock (local fallback move before the flag); an off-turn action keeps the bot's in-flight request; bots finish with local moves once no human takes turns; clocks measured on a monotonic clock; running games unlisted from the lobby browser~~ (done 2026-10-15)
+- ~~Review fixes (persistence): finishing or aborting only touches matches still `in_progress` (a match aborted as `server_restart` is never rewritten as finished/rated); a failed final flush, re-simulation or result write marks the match aborted (`persist_failed`); a rated game with no public rating change is stored and reported unrated; server test runs take a Postgres advisory lock so concurrent runs queue instead of resetting each other's database~~ (done 2026-10-15)
+- Lobbies: product call on the per-room password limit (PLAN §1: 5/min per IP and per room). Anyone can keep a private lobby locked for everyone, the host's friends included, by guessing wrong 5 times a minute. Options: let a correct password through from an IP or user with no failures, show the host who is guessing, or let the host rotate the password
 
 ### M6 — Bots — §6
 - ~~Teams team-signed alpha-beta, FFA BRS+ (Paranoid fallback)~~ (done 2026-10-15; `crates/bot-engine`, BRS+ beat Paranoid in arena tests and is the default)
