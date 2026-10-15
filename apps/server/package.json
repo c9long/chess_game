@@ -1,0 +1,42 @@
+{
+  "name": "@game/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --env-file-if-exists=.env --watch src/main.ts",
+    "start": "node src/main.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@better-auth/passkey": "1.7.8",
+    "@colyseus/core": "0.18.18",
+    "@colyseus/schema": "5.0.40",
+    "@colyseus/ws-transport": "0.18.4",
+    "@game/config": "workspace:*",
+    "@game/db": "workspace:*",
+    "@game/protocol": "workspace:*",
+    "@game/rules": "workspace:*",
+    "@node-rs/argon2": "2.2.2",
+    "better-auth": "1.7.8",
+    "cookie-parser": "1.4.7",
+    "cors": "2.8.6",
+    "drizzle-orm": "0.45.4",
+    "express": "5.3.0",
+    "openskill": "5.0.1",
+    "pino": "10.4.0",
+    "resend": "6.33.0",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@colyseus/sdk": "0.18.5",
+    "@types/cookie-parser": "1.4.10",
+    "@types/cors": "2.8.19",
+    "@types/express": "5.0.6",
+    "@types/supertest": "7.2.1",
+    "otpauth": "9.5.2",
+    "postgres": "3.4.9",
+    "supertest": "7.3.1"
+  }
+}

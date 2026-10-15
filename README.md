@@ -36,7 +36,7 @@ cargo test        # Rust tests
 pnpm build:wasm   # only rebuild the rules engine for @game/rules (packages/rules/wasm, gitignored)
 ```
 
-## Running locally (accounts milestone)
+## Running locally
 
 ```sh
 infra/dev-db.sh                         # role + game_dev database
@@ -49,6 +49,22 @@ pnpm --filter @game/server dev          # API on http://localhost:3000
 pnpm --filter @game/web dev             # web on http://localhost:5173 (proxies /api to :3000)
 pnpm test:e2e                           # starts its own API (:3100) and web (:5174)
 ```
+
+### Lobbies, live games and bots
+
+Colyseus (lobbies and live games) runs on the same server under `/api/colyseus`; the wire
+contract is documented in [`packages/protocol`](packages/protocol/README.md). Bots get their
+moves from `bot-service`:
+
+```sh
+cargo run --release -p bot-service      # listens on 127.0.0.1:7700 (BOT_BIND to change)
+# in apps/server/.env:
+BOT_SERVICE_URL=http://127.0.0.1:7700
+```
+
+Without `BOT_SERVICE_URL` (or when bot-service is busy or down) bots play quick local moves.
+The real-bot integration test runs only when the variable is set:
+`BOT_SERVICE_URL=http://127.0.0.1:7700 pnpm --filter @game/server test`.
 
 In development, emails are not sent. They are kept in memory and readable at
 `GET /api/dev/mail?to=<address>` (development/test only, loopback only). Turnstile uses

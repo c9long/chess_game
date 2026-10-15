@@ -1,0 +1,121 @@
+import {
+  accounts,
+  civilizations,
+  type Database,
+  legalAcceptances,
+  matches,
+  matchPlayers,
+  passkeys,
+  ratings,
+  sessions,
+  users,
+} from '@game/db'
+import { asc, desc, eq } from 'drizzle-orm'
+
+/**
+ * Everything we hold about a user, as a JSON-serializable object (PLAN §8 export).
+ * Secrets (password hashes, OAuth tokens, TOTP secrets, session tokens) are never included.
+ */
+export async function buildAccountExport(db: Database, userId: string, now: Date = new Date()) {
+  const [user] = await db.select().from(users).where(eq(users.id, userId))
+  if (!user) return undefined
+
+  const [linked, keys, acceptances, userRatings, history, activeSessions] = await Promise.all([
+    db
+      .select({ provider: accounts.providerId, createdAt: accounts.createdAt })
+      .from(accounts)
+      .where(eq(accounts.userId, userId)),
+    db
+      .select({
+        name: passkeys.name,
+        deviceType: passkeys.deviceType,
+        createdAt: passkeys.createdAt,
+      })
+      .from(passkeys)
+      .where(eq(passkeys.userId, userId)),
+    db
+      .select({
+        document: legalAcceptances.document,
+        version: legalAcceptances.version,
+        kind: legalAcceptances.kind,
+        acceptedAt: legalAcceptances.acceptedAt,
+      })
+      .from(legalAcceptances)
+      .where(eq(legalAcceptances.userId, userId))
+      .orderBy(asc(legalAcceptances.acceptedAt)),
+    db
+      .select({
+        mode: ratings.mode,
+        timeControl: ratings.timeControl,
+        kind: ratings.kind,
+        mu: ratings.mu,
+        sigma: ratings.sigma,
+        gamesPlayed: ratings.gamesPlayed,
+        updatedAt: ratings.updatedAt,
+      })
+      .from(ratings)
+      .where(eq(ratings.userId, userId)),
+    db
+      .select({
+        matchId: matches.id,
+        status: matches.status,
+        mode: matches.mode,
+        timeControl: matches.timeControl,
+        rated: matches.rated,
+        rulesVersion: matches.rulesVersion,
+        startedAt: matches.startedAt,
+        endedAt: matches.endedAt,
+        endReason: matches.endReason,
+        seat: matchPlayers.seat,
+        team: matchPlayers.team,
+        civ: civilizations.slug,
+        civVersion: matchPlayers.civVersion,
+        finalStatus: matchPlayers.finalStatus,
+        placement: matchPlayers.placement,
+        defeatReason: matchPlayers.defeatReason,
+        ratingBefore: matchPlayers.ratingBefore,
+        ratingAfter: matchPlayers.ratingAfter,
+      })
+      .from(matchPlayers)
+      .innerJoin(matches, eq(matches.id, matchPlayers.matchId))
+      .innerJoin(civilizations, eq(civilizations.id, matchPlayers.civId))
+      .where(eq(matchPlayers.userId, userId))
+      .orderBy(desc(matches.startedAt)),
+    db
+      .select({
+        createdAt: sessions.createdAt,
+        expiresAt: sessions.expiresAt,
+        ipAddress: sessions.ipAddress,
+        userAgent: sessions.userAgent,
+      })
+      .from(sessions)
+      .where(eq(sessions.userId, userId)),
+  ])
+
+  return {
+    exportedAt: now.toISOString(),
+    format: 'game-account-export/1',
+    profile: {
+      id: user.id,
+      username: user.displayUsername ?? user.username,
+      displayName: user.name,
+      email: user.email,
+      emailVerified: user.emailVerified,
+      isGuest: user.isAnonymous,
+      createdAt: user.createdAt,
+      ageConfirmed: user.ageConfirmed,
+      ageBand: user.ageBand,
+      ageConfirmedAt: user.ageConfirmedAt,
+      twoFactorEnabled: user.twoFactorEnabled,
+      deletedAt: user.deletedAt,
+    },
+    linkedAccounts: linked,
+    passkeys: keys,
+    legalAcceptances: acceptances,
+    ratings: userRatings,
+    matchHistory: history,
+    sessions: activeSessions,
+  }
+}
+
+export type AccountExport = NonNullable<Awaited<ReturnType<typeof buildAccountExport>>>

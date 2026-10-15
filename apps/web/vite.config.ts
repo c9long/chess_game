@@ -12,13 +12,14 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     proxy: {
-      '/api': { target: API_TARGET, changeOrigin: false, xfwd: true },
+      // ws: Colyseus WebSockets live under /api/colyseus (@game/protocol COLYSEUS_PATH).
+      '/api': { target: API_TARGET, changeOrigin: false, xfwd: true, ws: true },
     },
   },
   preview: {
     port: 4173,
     proxy: {
-      '/api': { target: API_TARGET, changeOrigin: false, xfwd: true },
+      '/api': { target: API_TARGET, changeOrigin: false, xfwd: true, ws: true },
     },
   },
 })
