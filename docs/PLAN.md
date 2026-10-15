@@ -1,0 +1,548 @@
+# LinkedLists's Chess Game — Master Plan (v3)
+
+*Working title: "LinkedLists's Chess Game". The previous title was dropped because of trademark risk around "Civilization". The display name lives in one config constant (`APP_NAME`), and code/package names are deliberately neutral, so a future rename touches one line.*
+
+## Context
+
+We are starting from an empty repository (`/home/c9long/chess_game`). The goal is a **4-player chess variant on a 12×12 board**. It runs in the browser first, at high visual quality. Players pick one of 9 civilizations before each game. For now a civ is cosmetic only: an emblem beside the username, never a flag. Later, civs will get abilities that change the rules, including replacing the king with other "leader" pieces or having no single leader at all. The rules engine is designed around that from day one.
+
+Later the game will be ported to a **Unity PC client sold on Steam**. That client must share the *same* accounts, progression, ratings and match history, and must be able to play in the same lobbies as browser players (crossplay). Every decision below is made so that the Unity port is a **new front-end only**: the rules, server, database and bots stay as they are.
+
+### Decisions confirmed with you
+- **Modes:** Free-for-All (FFA) **and** 2v2 Teams, chosen per lobby. Teammates sit opposite each other.
+- **Goal:** be the **last civ standing**. Stalemate is a **loss**, never a draw. Ratings are based on placement (survivor first, then reverse order of defeat).
+- **Self-check is allowed:** players may leave their leader under attack. There is no checkmate; you lose when your leader is *captured*.
+- **Leaders:** "leader" is a piece role, not just the king. Only civs with a single leader can castle, and castling has no attack restrictions. Promotion is only ever to non-leader pieces.
+- **Promotion:** on the first line past the board's center.
+- **On defeat:** in FFA the army is removed. In Teams a defeated player's pieces stay in play while their partner is still in the game (see §2).
+- **Move limit:** 25 full rounds with no capture or pawn move ends the game.
+- **Civ picks:** "Blind pick" (duplicates allowed, as in League of Legends' blind mode) now. "Draft" (bans plus pick order, the "serious" mode) is designed now and built later. "Unique-civ matchmaking" comes when there is a player base.
+- **Board:** all 144 squares are playable, including the 2×2 corners that start empty.
+- **Disconnects:** the clock keeps running, with a 60-second reconnect grace window shown to others. Optional bot takeover in casual games is designed now and built after v1 (tracked in TODO).
+- **Rated play:** requires all 4 seats to be registered humans. Games with bots or guests are casual.
+- **Legal docs:** I draft the Terms, Privacy Policy, account deletion/export and the 13+ age gate (§8). An attorney reviews them before launch.
+- **Region:** US-East first.
+- **Single source of truth for work:** a repo-root **`TODO.md`** (§10). "Add to to-do" means add an item there. Finished items are ~~struck through~~ there.
+
+---
+
+## 1. The Recommended Stack (and why)
+
+| Layer | Choice | Why this one |
+|---|---|---|
+| **Rules engine** (the one true implementation of the rules) | **Rust** library, compiled to **WebAssembly** for browser and server, and to a **native Windows DLL** for Unity | We write the rules once and they run identically everywhere. This matters most when civ abilities change the rules: two separate copies of the rules (e.g. JS + C#) would drift apart and cause "desync" bugs. Rust is also fast enough to power the bots. |
+| **Bot engine** | **Rust** (same codebase as the rules) running as its own small service | No existing engine supports 4-player 12×12 with these rules (see §6). Sharing the rules crate means every new rule or civ ability is automatically understood by the bots. |
+| **Web front-end** | **TypeScript + React 19 + Vite**. The board is rendered with **PixiJS 8** (GPU-accelerated WebGL/WebGPU). Menus use **Tailwind CSS** with **Motion** animations. | PixiJS gives game-quality 2D: smooth 60 fps animation, particles, lighting/glow filters, and crisp art at any screen resolution. React handles menus, lobbies and forms. The board renderer sits behind an interface, so a 3D (Three.js) board could be swapped in later. |
+| **Game / API server** | **Node.js 24 LTS + TypeScript** with **Colyseus** for real-time rooms and **Express** for regular web requests | Colyseus is a mature open-source multiplayer framework. It handles lobbies, seat reservation, reconnection and live room lists, and it ships an **official Unity (C#) SDK**. That gives crossplay almost for free. |
+| **Authentication** | **Better Auth** (open-source TypeScript auth library) | One vetted library covers email+password, email verification, password reset, OAuth sign-in, **passkeys** (WebAuthn), **TOTP MFA plus backup codes**, **guest accounts**, and **bearer tokens / device-code login** for Unity. Better Auth hashes with scrypt by default; we plug in **argon2id** (`@node-rs/argon2`, m=19456 KiB, t=2, p=1) through its custom hash/verify option. Steam sign-in needs a small custom plugin (§7). |
+| **Database** | **PostgreSQL** accessed via the **Drizzle ORM** | The industry-standard reliable relational database. It is free, and it holds users, ratings, match history and progression for both web and Unity. |
+| **Hosting** | One small **Linux VPS in US-East** running everything in **Docker Compose**, with the web front-end on **Cloudflare Pages** (free CDN) behind **Cloudflare** DNS/DDoS protection (free) | Cheapest sensible setup. Docker makes the exact same setup portable to a home server or a bigger provider with no code changes. |
+| **Repo layout** | Monorepo: **pnpm workspaces** (TypeScript) plus a **Cargo workspace** (Rust) | One place for everything, with shared types. |
+
+### Web addresses, sessions and security wiring
+- The web app is served at **`play.<domain>`** (a Pages custom domain, never `*.pages.dev` in production). The API and WebSocket are at **`api.<domain>`**. Being on the same site keeps login cookies first-party, so browsers don't block them.
+- Better Auth configuration:
+  - `trustedOrigins = [https://play.<domain>]`;
+  - cookies are `Secure` and `SameSite=Lax`;
+  - CORS allows credentials only from `play.<domain>`;
+  - passkey `rpID = <domain>`.
+- Colyseus `onAuth` resolves the Better Auth session from the handshake cookie (web) or the bearer token (Unity). It binds the seat to `user.id` and `is_guest`, and rated rooms reject guests.
+- **Real client IPs behind Cloudflare:** Caddy trusts only Cloudflare's IP ranges and forwards `CF-Connecting-IP`, and Better Auth reads that header for rate limiting. The VPS firewall accepts web traffic only from Cloudflare.
+- **Rate limits:**
+  - auth endpoints: Better Auth's limiter plus Turnstile;
+  - guest creation: Turnstile plus a per-IP limit;
+  - lobby-password attempts: 5 per minute per IP and per room.
+
+### Planned repository layout (neutral names, independent of the game title)
+```
+chess_game/
+  TODO.md               Single source of truth for all work (§10)
+  CLAUDE.md             Standing instructions for AI assistants (TODO.md convention, rules pointers)
+  crates/
+    rules-core/         Rust: board, piece roster & leader roles, move generation, seat status/defeat, FFA+Teams, notation, rules_version, civ-modifier hooks
+    bot-engine/         Rust: bot search + evaluation + strength levels
+    rules-wasm/         Rust→WASM bindings (used by web client AND Node server)
+    rules-ffi/          Rust→C ABI bindings for Unity (later; built as a Windows x64 DLL)
+    bot-service/        Rust: small HTTP service wrapping bot-engine with a deadline-aware worker pool
+    bot-arena/          Rust CLI: engine-vs-engine tournaments for tuning & ELO calibration
+  apps/
+    web/                React + PixiJS client
+    server/             Node/Colyseus game server + Express REST API + Better Auth
+  packages/
+    config/             APP_NAME and other shared constants
+    protocol/           Shared message/command definitions (TS types → JSON Schema → C# codegen for Unity)
+    db/                 Drizzle schema + migrations
+    assets/             Original SVG emblems, piece sets, board textures, sounds
+  infra/
+    docker-compose.yml  Postgres, server, bot-service (CPU-limited), Caddy (HTTPS)
+    backups/            DB backup + restore scripts
+  docs/
+    PLAN.md             This document, copied into the repo
+    RULES.md            The player-facing rules (generated from §2)
+    legal/              terms-of-service.md, privacy-policy.md, incident-response.md (versioned; /terms, /privacy)
+```
+
+---
+
+## 2. Game Rules Specification ("rules_version 1")
+
+### Board & seats
+- 12×12 board. Files are **a–l** (left→right from South's view), ranks **1–12** (bottom→top). Square a1 is dark.
+- Four seats, with turn order **clockwise: South → West → North → East**. Seats that no longer take turns (removed or frozen) are skipped.
+- Seat colors are neutral game colors (e.g. Crimson, Azure, Gold, Jade), never national colors. The civ emblem carries identity.
+- **Teams:** South+North vs West+East. Turns alternate teams while all four seats are taking turns. A skipped (frozen) seat can give one team two turns in a row.
+
+### Starting setup ("centered", 2 empty squares at each end, empty 2×2 corners)
+| Seat | Back line (exact squares) | Pawns | Pawns advance toward |
+|---|---|---|---|
+| South | c1 R, d1 N, e1 B, **f1 Q** (light), g1 K, h1 B, i1 N, j1 R | c2–j2 | north (rank 12) |
+| North | c12 R, d12 N, e12 B, **f12 Q** (dark), g12 K, h12 B, i12 N, j12 R | c11–j11 | south (rank 1) |
+| West | a3 R, a4 N, a5 B, **a6 Q** (light), a7 K, a8 B, a9 N, a10 R | b3–b10 | east (file l) |
+| East | l3 R, l4 N, l5 B, **l6 Q** (dark), l7 K, l8 B, l9 N, l10 R | k3–k10 | west (file a) |
+
+**"Queen on her color":** opposing queens face each other on the same line, as in standard chess. South and West are "light" armies (queen on a light square); North and East are "dark" armies (queen on a dark square). Each Teams pairing has one light and one dark army.
+
+**Heads-up (from the review):** neighbouring armies' corner pawns attack each other from move 1: c2↔b3, j2↔k3, c11↔b10, j11↔k10. With clockwise order, East's two corner pawns can be attacked before East ever moves. This follows directly from your layout and isn't changed. It is a balance item to watch with bot-arena data (TODO).
+
+### Pieces, rosters and leaders (the foundation for civ abilities)
+- Each civ has a **piece roster** (data, not hard-coded logic). Each piece type has a movement definition and an optional **`leader`** role.
+- **v1:** every civ uses the standard roster. **King = the single leader**, plus Q, R, B, N and P.
+- Future civs may replace the king with another leader type, have several leaders, or have no single leader. Each civ declares a **defeat condition**. The default is "defeated when you hold no leader pieces".
+
+### Movement
+- All v1 pieces move as in standard chess. "Forward" for a pawn is toward the opposite edge.
+- **No check restriction:** any move is legal even if it leaves your own leader attacked.
+- An **"under attack" glow** on attacked leaders is optional, information only. Its default and a per-lobby toggle are decided before M2 (TODO).
+- **Pawn double-step** from its starting square.
+- **En passant** *(behind a rules-config flag until you confirm; see TODO)*:
+  - Each seat holds at most one en passant target (skipped square + pawn square), created by its pawn's double-step.
+  - The target is cleared when the turn order next reaches that seat (even if that seat is skipped), or when the seat stops taking turns.
+  - Any *opponent* pawn that could capture diagonally onto the skipped square may take en passant, provided the skipped square is empty and the double-stepped pawn is still on its square. The capturer lands on the skipped square and the double-stepped pawn is removed.
+  - Several seats' targets may be live at once.
+- **Castling:** only for civs with **exactly one leader**, and only while the seat is ACTIVE.
+  - Conditions: the leader and that rook have never moved, and the squares between them are empty. **No attack restrictions.**
+  - The leader moves two squares toward the rook, and the rook lands on the square the leader crossed. It works the same along each player's own back line (rank 1/12, file a/l).
+- **Promotion is mandatory on the first line past the center:** **South on rank 7, North on rank 6, West on file g, East on file f**, 5 steps from the pawn's start. The pawn becomes any **non-leader, non-pawn** piece in that civ's roster (v1: Q, R, B, N).
+- Teammates can't capture each other. Their pieces block like your own.
+
+### Seat status (one definition used everywhere)
+Each seat is always in exactly one status:
+- **ACTIVE**: in the game, holds a live leader.
+- **DEFEATED**: lost its last leader, or was stalemated. *Teams only:* still takes its own turns with its remaining pieces while its partner is ACTIVE.
+- **FROZEN** *(Teams only)*: ran out of time. Pieces stay on the board, block, and can be captured, but never move, and the seat's turns are skipped. This includes a DEFEATED teammate whose clock later runs out.
+- **REMOVED** *(FFA only)*: army taken off the board, turns skipped.
+
+Once a seat is not ACTIVE, any leader it still has becomes an ordinary piece. Capturing it has no further effect, and it cannot castle. *(This is my reading of "stalemate is a loss" together with "pieces remain while one teammate possesses a leader": a stalemated or timed-out player's leader stops counting.)*
+
+### Defeat & end of game
+An ACTIVE seat is **defeated** when:
+1. **Leader loss:** its last leader is captured (or the civ's custom defeat condition is met). Any opponent may capture a leader on their own turn, and the defeat is immediate.
+2. **Stalemate = loss:** at the start of its turn it has **no legal move**. This happens once. Afterwards, a DEFEATED Teams seat with no legal move **passes automatically**: no clock time, no increment, logged as a `pass` event with notation `--`.
+3. **Timeout:** its clock reaches zero. In FFA the seat becomes REMOVED; in Teams it becomes FROZEN.
+4. **Abandon** *(proposed)*: the 60-second reconnect grace expires. This is treated exactly like a timeout. In casual lobbies with bot takeover (built later), a bot takes the seat instead. If a seat leaves off-turn and that removes the seat-to-move's last legal move, that turn is re-checked: an ACTIVE seat is stalemated, a DEFEATED Teams seat passes.
+5. *(Later)* **Resignation.**
+
+| | FFA | Teams |
+|---|---|---|
+| After defeat by leader loss or stalemate | REMOVED (army off the board) | DEFEATED: keeps taking its own turns while its partner is ACTIVE |
+| After timeout / abandon | REMOVED | FROZEN |
+| Game ends when… | **one ACTIVE seat remains** (last civ standing) | **a team has no ACTIVE seat**. That team's pieces are removed and the other team wins. |
+| Placement | 1st = survivor, then reverse order of defeat | Winning team 1st, losing team 2nd |
+
+- **Move limit:** a no-progress counter counts every turn taken (automatic passes included) since the last capture, pawn move (including promotion) or defeat. When it reaches **25 × the number of seats still taking turns**, the game ends. FFA: the surviving players tie for the best remaining placement. Teams: a draw. This is the only way a game ends without a single winner.
+- *(Later)* Draw by agreement: all remaining players (FFA) or both teams accept. The result is a shared placement.
+
+### Clocks
+- **10+0** (10 minutes per player) or **3+2** (3 minutes plus 2 seconds after each move).
+- Only the seat-to-move's clock runs, and frozen or removed seats' clocks stop. The **server is the authority on time**; clients display a countdown. Each event records the server timestamp and remaining time.
+- A disconnected player's clock keeps running, with a 60-second reconnect grace window shown to the others. After that, see "Abandon" above.
+
+### Rules versioning and civ-ability hooks
+- Every match stores its `rules_version` plus each seat's **civ version** (§5). All rules-config values (setup, promotion lines, move limit, en passant flag) are fixed per `rules_version`. Replays re-simulate exactly, even after rules or civs change.
+- The rules core exposes **modifier hook points** per civ. They cover roster/leaders, defeat condition, extra or removed moves, capture effects, promotion options, turn-start effects and setup changes. In v1 they are all empty.
+
+---
+
+## 3. Features: Built in v1 vs Designed-for-Later
+
+### Built in v1
+1. **Landing page:** "Play as Guest", or "Sign in / Create account". The first visit shows a neutral date-of-birth screen, then a Terms/Privacy checkbox (§8).
+2. **Accounts:**
+   - email + username + password signup with email verification and password reset;
+   - OAuth sign-in;
+   - passkeys and TOTP MFA with backup codes (both optional);
+   - guests get a temporary account (e.g. "Guest-4821") that can be upgraded later **keeping its history** (§5);
+   - account deletion and data export in settings.
+3. **Lobby browser:** a live list of public lobbies showing name, mode, time control, seats filled, and a lock icon if password-protected.
+4. **Create lobby:** name, mode (**FFA / Teams**), time control (**10+0 / 3+2**), optional password (empty = public), pick mode (**Blind** now; Draft greyed out "coming soon").
+5. **Lobby room:**
+   - 4 seats, each showing username, **civ emblem beside the name**, and a ready state;
+   - the host can **fill any empty seat with a bot and pick its ELO**, kick players, and swap seats (choosing teams);
+   - **a new bot gets a random civ**, which the host can change from the seat menu;
+   - the game starts once all 4 seats are filled, all civs chosen and all humans ready.
+6. **Civ selection** (required before start, duplicates allowed) from Canada, USA, China, Japan, Germany, Russia, England, France, Mali.
+7. **Live game:**
+   - server-authoritative 4-player game with clocks;
+   - the board auto-rotates so you are always at the bottom;
+   - move hints, drag-or-click to move, last-move highlight, promotion picker;
+   - defeat animations (army dissolves in FFA; greyed or frozen armies in Teams);
+   - reconnection.
+8. **End screen** with placements. The **match is saved to history** with the full event log.
+9. **Ratings** for rated games (see §5).
+10. **Bots** at selectable strength that move near-instantly.
+
+### Designed now, built later (each is tracked in `TODO.md`)
+| Feature | How it's accounted for |
+|---|---|
+| **Move log** | Every action is stored as an ordered event (`match_events`) with notation and clock times. The live room already broadcasts each move as an event. The UI panel is the only missing piece. |
+| **Resign** | `game.resign` is reserved. The rules core already has "defeat seat". (Open: in Teams, does a resignation defeat just the player or the whole team?) |
+| **Offer / accept draw** | `game.offerDraw` and `game.respondDraw` are reserved. Results already support shared placements. |
+| **Takebacks, chat, emotes** | Reserved message namespaces (`game.takeback*`, `chat.*`). Moderation is designed (below) and built before release. |
+| **Spectating & replays** | Rooms support a read-only spectator role. Replays re-simulate `match_events` under the stored `rules_version` and civ versions. |
+| **Draft mode** (bans + pick order) | The lobby state machine already has phases `waiting → civ_select → [draft_ban → draft_pick] → countdown → in_game → finished`. `pickMode` and `draftConfig` live on the lobby, and DB tables are reserved. |
+| **Unique-civ matchmaking** | A matchmaking queue service slots in beside lobbies. The uniqueness constraint is a queue option. |
+| **Civ abilities** | Roster/leader data model, per-civ defeat condition and modifier hooks (§2), versioned civ definitions (§5). |
+| **Progression / XP / unlocks / civ mastery** | DB tables reserved, keyed by user id, so they are shared with Unity. |
+| **Moderation** (profanity filter, reserved names, reporting) | Username validation runs through a pluggable `NamePolicy` module (v1: length/charset only). A `reports` table is reserved. Built before public release. |
+| **Rematch, AFK → bot takeover (casual), premoves** | Lobby can be re-opened after a match. A bot-service seat can replace an abandoning human. Premoves are a client-side queue validated by the server. |
+| **Unity client + Steam** | See §7. |
+
+---
+
+## 4. Civilization Emblems (no flags)
+
+All art will be **original** work. We don't copy Civilization VI's assets; we follow its *approach* of one clean, culturally iconic glyph per civ. Where the Civ VI reference uses a state emblem with modern political weight (e.g. heraldic eagles), I propose a culturally iconic alternative. Heraldic eagles aren't flags, so they remain an option if you prefer them. Each row is confirmed with you against Civ VI reference art before final art (TODO).
+
+| Civ | Proposed emblem | Explicitly avoided | Alternate |
+|---|---|---|---|
+| Canada | Maple leaf (approved by you) | Full flag layout/red bars | — |
+| United States | Bald eagle, wings spread | Stars & stripes, star field | Liberty torch |
+| China | Traditional Chinese dragon (specified by you) | Five-star motif, red flag | — |
+| Japan | Cherry blossom (sakura) | **Rising Sun** (contentious in Korea/China), red disc | Stylized chrysanthemum |
+| Germany | Oak branch with acorns (as on German euro coins) | Reichsadler, Iron Cross, tricolour bands | Brandenburg Gate silhouette; modern stylized eagle |
+| Russia | Firebird (Zhar-ptitsa, from folklore) | Double-headed eagle, hammer & sickle, tricolour | Onion-dome silhouette |
+| England | Tudor rose | St George's cross | Three lions |
+| France | Fleur-de-lis | Tricolour | Gallic rooster |
+| Mali | Chiwara (Ci Wara) antelope headdress | Green-gold-red bands | Great Mosque of Djenné silhouette |
+
+Emblems are SVG (vector) files, so they stay crisp at any size, from the lobby icon to a board-edge banner. They are drawn in one consistent style and tinted per seat color.
+
+---
+
+## 5. Data Model (shared by web and Unity)
+
+- **Identity** (managed by Better Auth):
+  - `users`: id, username unique, email, email_verified, is_guest, created_at, deleted_at.
+  - `accounts`: argon2id password hash *or* OAuth/Steam link.
+  - `sessions`, `passkeys` and `verifications`.
+  - `two_factor`: TOTP secret and backup codes, encrypted at rest (Better Auth default), with `allowPasswordless: true` so OAuth- and passkey-only users can enable TOTP.
+- **Guest upgrade (keeps history):** Better Auth creates a *new* user on upgrade and deletes the guest. In its `onLinkAccount({anonymousUser, newUser})` hook, one transaction re-points every user-keyed row (match_players, legal_acceptances, ratings, future progression) to the new id first. Game tables reference users with `ON DELETE RESTRICT`, never cascade. A nightly job purges guests inactive for 30 days: those with matches are de-identified as in account deletion below, those without are deleted. The same re-pointing is used when merging a Steam-only account into a web account.
+- **Legal:** `legal_acceptances` (user_id, document [terms, privacy, guardian], version, kind [accepted, acknowledged], accepted_at, ip_hash). The Terms are `accepted`; the Privacy Policy is `acknowledged`. `ip_hash` is HMAC-SHA-256 with a secret pepper kept outside the database (an environment secret, rotated, on the incident-response rotation list), never an unkeyed hash. Age confirmation stores only an age band (13–15 / 16–17 / 18+) and the confirmation date, never the birth date. `dmca_records` (account id, keyed hash of the account email, notices, counter-notices, strike history) is kept [3] years after the last notice, including after account deletion. `deletion_log` (user_id, deleted_at) is re-applied after any backup restore.
+- **Game catalog:** `civilizations` (id, slug, name, emblem_asset, enabled) plus an immutable `civilization_versions` table (civ_id, version, roster JSON, abilities JSON). v1 has version 1 with the standard roster and no abilities.
+- **Matches:**
+  - `matches`: id, status [in_progress, finished, aborted], mode, time_control, rated, rules_version, started_at, ended_at, end_reason.
+  - `match_players`: match_id, seat, team, user_id *or* bot_level, civ_id, civ_version, final_status, placement, defeat_reason, defeat_seq, rating_before/after.
+  - `match_events`: match_id, seq, seat, type [move, promotion, pass, defeat, timeout, abandon, disconnect, reconnect, game_end, *resign, draw_offer, draw_response*], payload JSON, clock_remaining_ms, server_ts.
+- **Live-game durability:** the `matches` row is inserted with status `in_progress` when a game starts, and events are appended as they happen (batched). If the server crashes, on restart it marks orphaned games `aborted` / `server_restart` / unrated. Before marking a match finished, the server re-simulates it from DB rows alone and checks the final position.
+- **Ratings:**
+  - `ratings`: user_id, mode, time_control, mu, sigma, games_played.
+  - Uses **OpenSkill** (patent-free, designed for multiplayer free-for-all and teams) over the placement order, shown as an Elo-like number. Each mode × time control is tracked separately.
+  - A hidden **shadow rating** also updates in casual games with bots. It is used only to calibrate bot labels and never touches public ratings.
+- **Reserved for later:** `progression`, `unlocks`, `civ_stats`, `draft_sessions`, `draft_actions`, `reports`.
+- **Lobbies** (pre-game) live only in server memory (Colyseus).
+- **Account deletion** de-identifies rather than erases shared history. Email and username are scrubbed to "Deleted player #…", credentials, sessions and passkeys are deleted, and the `ip_hash` on acceptances is cleared. Opponents' histories stay intact. In the same transaction, the deleted user's `match_players`, `ratings` and `legal_acceptances` rows are re-keyed to a fresh random per-deletion ID that `deletion_log` does not keep (the data is still pseudonymous, not anonymous, and the Privacy Policy says so). For accounts deleted because the user is under 13, each seat is replaced with a per-match "Removed player" value not linked to any ID.
+
+Security: passwords use **argon2id**. Lobby passwords are hashed too. Plain-text secrets are never stored or logged.
+
+---
+
+## 6. Bots: Do We Have to Build It Ourselves? (Yes, mostly.)
+
+### Why existing engines don't fit
+- **Stockfish / Fairy-Stockfish** (the strongest open engines, and Fairy-Stockfish supports custom variants via a config file): **2-player only**, the largest board is **12×10**, and there is no way to express self-check-legal play, leader capture or multi-army turns.
+- **4pchess** (github.com/obryanlouis/4pchess, MIT license, C++): open-source 4-player engine for chess.com's 14×14 cut-corner board and Teams rules. Useful as a **reference** for proven techniques, not a drop-in.
+- chess.com's 4-player bots are proprietary.
+
+So we build our own engine in Rust on top of `rules-core`. It uses well-established algorithms, not research. Estimated effort: about 3–6 weeks for a solid engine with strength levels.
+
+Allowing self-check **helps us**. Move generation doesn't have to check that a move leaves the leader safe. That is simpler and faster for both the server and the bots, and leader capture becomes a simple "game-ending" score in search.
+
+### The most efficient path (cheapest first)
+1. **Search:** each ply is one seat's turn, and the next seat always comes from `rules-core` (which skips frozen or removed seats). The position key covers:
+   - the seat to move;
+   - every seat's status;
+   - castling rights;
+   - all live en passant targets;
+   - the move-limit counter.
+   - **Teams:** alpha-beta where the score's sign follows the mover's *team*, flipping only when the team changes, since a frozen seat can give one team two turns in a row. A DEFEATED seat with no legal move plays an explicit PASS ply. Null-move pruning is off when the next mover is on the same team. Standard enhancements apply: iterative deepening, transposition table, move ordering, quiescence, late-move reductions.
+   - **FFA:** **Best-Reply Search (BRS+)**, a published multiplayer search that performs strongly in multiplayer board games, with **Paranoid** as the fallback. Both reuse the same code.
+2. **Evaluation (no training needed):** handcrafted scoring covering:
+   - material (4-player values);
+   - 12×12 piece-square tables rotated per seat;
+   - mobility;
+   - pawn advancement toward the promotion line;
+   - **leader safety (heavily weighted, since leaders can be captured outright)**.
+
+   This alone yields a strong-club-level bot.
+3. **Tuning (CPU only, about $0):** Texel tuning / SPSA of evaluation weights on hundreds of thousands of self-play games from `bot-arena`. Runs overnight on any decent PC.
+4. **Neural network ("NNUE"), optional and later:** a small network trained on self-play positions, the approach modern Stockfish uses. One to a few days on one GPU: **~$50–300 rented**, or free on a home PC with a gaming GPU.
+5. **Not recommended:** AlphaZero-style learning from scratch. It needs thousands of GPU-hours for no benefit at the levels players need.
+
+When civ abilities arrive, move generation updates automatically through `rules-core`. We add evaluation terms per ability and re-run the overnight tuning.
+
+### Bot strength levels ("ELO")
+- Selectable: **600, 900, 1200, 1500, 1800, 2100, 2400, Max**.
+- Each level maps to a search-node budget, depth cap, evaluation noise and a controlled blunder rate. Blunders that hang the leader are capped by level, so low-level bots are weak without being absurd.
+- **Calibration:** `bot-arena` places levels on our scale. The hidden shadow ratings from casual games (§5) then re-anchor the labels against real humans.
+- **Caveat:** 4-player ratings aren't comparable to standard chess Elo. "1500" means 1500 *on our ladder*.
+- **Speed:** weak levels answer in under 50 ms. Strong levels use 100–500 ms, never more than a safe fraction of their clock. An optional short "think" delay is off by default (TODO).
+- **CPU cost (honest numbers):**
+  - Weak levels (≤1200) use well under 1% of a CPU core per bot. Strong levels and Max use roughly **3–8% of a core per bot** during a game.
+  - On the recommended 4-vCPU server, bot-service runs in a CPU-limited container (2 cores) so it can never starve the game referee. That's enough for roughly **50–100 simultaneous games full of strong bots, or several hundred with weak bots**.
+  - Under load it shrinks search budgets rather than miss clocks, and refuses new bot seats when saturated.
+  - Bots are the main thing that would push us to a bigger server (§9).
+
+---
+
+## 7. Unity + Steam Crossplay (future, designed now)
+
+- **Same server, same protocol:** Unity uses the **Colyseus Unity SDK** for lobbies/games and HTTPS/JSON (documented with OpenAPI) for profile/history. Web and Unity players share lobbies.
+- **Same rules:** Unity loads the `rules-ffi` DLL (the Rust rules core compiled for Windows 64-bit) for move hints and replays. C# bindings are auto-generated (csbindgen). The server stays the referee.
+- **Same accounts, via a custom Better Auth "steam" plugin** (Better Auth has no built-in Steam support):
+  - **In Unity:**
+    1. The client gets a ticket from `GetAuthTicketForWebApi(identity)`.
+    2. The server verifies it with Valve's `ISteamUserAuth/AuthenticateUserTicket`, using the publisher Web API key, which stays server-side only.
+    3. The server checks game ownership and publisher bans.
+    4. It finds or creates `accounts(provider='steam', steamid64)` and returns a bearer session. **No account is created until the age screen and the unchecked Terms checkbox have been completed in the client and a `legal_acceptances` row is written** (§8).
+  - **On the website:** "Sign in / link with Steam" uses Steam's OpenID 2.0 with server-side verification.
+  - **Signing an existing web account into Unity:** the device-code flow (enter a short code shown in Unity on the website). After that, Steam can be linked from Unity. Website Steam sign-in and the device-code flow show the same checkbox if the account has no current acceptance.
+  - **Steam account that already has its own history:** an explicit merge using the same row re-pointing as guest upgrade (§5).
+- **"Windows x86":** we ship **64-bit (x86-64)** builds. Steam ended support for 32-bit Windows on Jan 1, 2026.
+
+---
+
+## 8. Legal Documents (drafted by me, US-first)
+
+I will draft these from established practice and the case law on online agreements. **They get a short review by a licensed attorney before public launch** (TODO). The drafts are written to be as enforceable and protective as practical. Where there's a real trade-off, I write both options for the attorney to choose between.
+
+- **Clickwrap acceptance, not "browsewrap":** courts enforce agreements where the user takes an affirmative action next to a conspicuous notice (*Specht v. Netscape*, 2d Cir. 2002; *Meyer v. Uber*, 2d Cir. 2017; *Berman v. Freedom Financial*, 9th Cir. 2022).
+  - **Signup (every method: email, OAuth, passkey, Steam), first guest game, and first sign-in from any downloadable client:** an unchecked checkbox, "I agree to the [Terms of Service] and acknowledge that I have read the [Privacy Policy]", with links right beside it and no age claim in it. Nothing proceeds until it is checked; OAuth/passkey/Steam buttons stay disabled until then. Under dispute Option A, a line beneath it reads: "These Terms include an arbitration agreement and class-action waiver (Section 18), which you can opt out of within 30 days."
+  - Each acceptance records **document version + timestamp**. Material changes trigger re-acceptance.
+- **Neutral age screen (COPPA), its own step before the checkbox:**
+  - The user enters their full **date of birth** with nothing pre-selected. The screen never mentions an age cutoff (FTC guidance).
+  - Under-13s get a neutral "Sorry, we can't create an account right now" and nothing is stored. A persistent cookie blocks an immediate retry.
+  - Only the age band (13–15 / 16–17 / 18+) plus the date is kept. Under-18 bands get high-privacy defaults (profile and match history not public by default).
+  - If we later learn a user is under 13, the account and data are deleted promptly (TODO moderation item).
+- **Terms of Service** cover:
+  - **eligibility:** 13+. Users under 18 (or the local age of majority) need a parent or guardian's permission. The guardian is not bound unless a guardian-confirmation step is added (attorney decision);
+  - **accounts, security and guest accounts;**
+  - **acceptable use:** cheating and engine assistance, harassment, offensive usernames;
+  - **rated play** and our right to reset ratings;
+  - **moderation and termination;**
+  - **intellectual property** and the license to user content (usernames, future chat);
+  - **DMCA** takedown/counter-notice procedure, the designated agent, and a repeat-infringer policy;
+  - **disclaimers and limitation of liability;**
+  - **disputes, two options for the attorney:**
+    - **(A)** informal resolution, then individual arbitration under AAA/JAMS consumer rules with a small-claims carve-out, a 30-day opt-out, a class-action waiver, and a batching clause for mass arbitration;
+    - **(B)** no arbitration: small-claims carve-out, exclusive venue in the operator's county, and a liability cap.
+
+    The trade-off: under consumer arbitration rules the operator pays most fees, and California waives arbitration if fees are paid late. Minors can generally void contracts, which weakens (A) for under-18 users.
+  - **governing law, changes to the terms, contact.**
+
+  Placeholders hold the operator's legal name, address and contact email.
+- **Privacy Policy** covers:
+  - data collected: email, username, password hash, OAuth/Steam IDs, IP for security and rate limiting, game data, basic device/browser info for errors;
+  - purposes;
+  - **GDPR legal bases:** contract for accounts and gameplay, legitimate interests for security and anti-abuse. Consent is *not* relied on, so the EU's varying child-consent ages don't apply;
+  - processors: OVHcloud, Cloudflare, Resend, Sentry and OAuth providers. We accept their standard data processing agreements;
+  - **no selling or sharing of personal data** (CCPA language included voluntarily; the law likely doesn't apply at our size);
+  - **CalOPPA disclosures** (California law that does apply): we don't track across sites, so Do-Not-Track and GPC signals don't change our behavior; no third-party cross-site tracking; how policy changes are announced; effective date;
+  - retention, including that **backups roll off after 30 days**;
+  - security measures and **breach notification as required by law**;
+  - user rights (access, export, correction, deletion);
+  - children's privacy, international transfers, contact.
+- **Cookies:** only **strictly-necessary** cookies (login session, CSRF, preferences). With no analytics or advertising cookies, no consent banner is needed (US and EU). Adding analytics later means adding consent (TODO).
+- **Account deletion & export** in settings:
+  - export is a JSON download of profile, ratings and match history; guest sessions also get "Download my data" and "Delete guest account" in Settings, plus a reference code for email requests;
+  - deletion de-identifies as in §5, immediately;
+  - backups holding the old data roll off within 30 days;
+  - `deletion_log` is re-applied after any restore, so deleted accounts never come back.
+- **Incident response:** a one-page runbook (`docs/legal/incident-response.md`):
+  1. detect, contain, rotate secrets, and force password and session resets;
+  2. work out which data and users are affected, and in which states or countries;
+  3. notify users by email, plus state attorneys general or EU/UK regulators where thresholds require it, within the shortest applicable deadline (GDPR: 72 hours).
+
+  Security logs are kept for 90 days.
+- **Emails:** transactional only (verification, password reset, security alerts), so CAN-SPAM marketing rules don't apply. Future marketing needs opt-in and an unsubscribe link (TODO).
+
+---
+
+## 9. Infrastructure & Costs — Explained for Someone New to This
+
+### What each piece is, in plain language
+
+| Thing | What it is (analogy) | What it does for the game |
+|---|---|---|
+| **Domain name** (e.g. yourgame.com) | Your street address on the internet. | Lets people type a name instead of a number to reach the game. |
+| **DNS** | The internet's phone book. | Translates the domain into the address of our server. Cloudflare provides it free. |
+| **Server / VPS** ("Virtual Private Server") | A computer that is always on, rented by the month and kept in a professional data center with backup power and fast internet. Ours is in Virginia (US-East). | Runs the game referee (checks every move, runs clocks), the lobby system, the bots, the account system and the database. |
+| **Front-end / static hosting / CDN** | The game's "storefront" files (graphics, code that runs in the browser), copied to warehouses around the world so they're always close to the player. | Makes the game load fast everywhere. Cloudflare Pages does this free. |
+| **WebSocket** | An open phone line between the browser and the server, instead of sending letters back and forth. | Moves, clocks and lobby updates arrive instantly in both directions. |
+| **Game server (Node.js + Colyseus)** | The referee and the maître d'. | Seats players in lobbies, enforces the rules (it never trusts a player's computer), runs the official clocks and records results. |
+| **Rules engine (Rust → WebAssembly / DLL)** | A single precision-made engine part that fits both the "web car" and the future "Unity car". | Guarantees the browser, server, bots and future Unity game all agree on what's legal. |
+| **Bot service** | A separate worker who only thinks about chess moves, with a fixed share of the computer so it can't crowd out the referee. | Plays for empty seats at the chosen strength. |
+| **Database (PostgreSQL)** | A fireproof filing cabinet with an index. | Stores accounts, ratings, match history and progression permanently, saving each move as it happens. This is the data Unity will reuse. |
+| **Password hashing (argon2id)** | A one-way blender: you can turn a password into a smoothie, but never the smoothie back into the password. | Even if the database were stolen, passwords couldn't be read. At login we blend what was typed and compare smoothies. |
+| **OAuth ("Sign in with Google/Discord…")** | A valet key: Google vouches for who you are without giving us your Google password. | Faster signup. Free for the providers we picked. |
+| **Passkeys** | Your device's fingerprint/face unlock acting as your key; nothing to remember or leak. | Optional password-free login, very resistant to phishing. |
+| **MFA / TOTP** | A second lock: a 6-digit code from an authenticator app that changes every 30 seconds. | Optional extra account protection. |
+| **HTTPS / TLS certificate** | The padlock in the browser bar: an armored truck for data in transit. | Encrypts everything between player and server. Free (Caddy/Let's Encrypt and Cloudflare). |
+| **Docker / Docker Compose** | Shipping containers: each program is packed with everything it needs, and one list describes the whole fleet. | One command starts the whole system, identically on a rented server, a home server or a laptop. |
+| **Transactional email** | A mail carrier for automatic emails. | Sends "verify your email" and "reset your password" messages. |
+| **Backups** | Copies of the filing cabinet stored in another building, kept for 30 days. | If the server dies, we restore accounts and history. |
+| **Monitoring / error tracking** | Smoke alarms. | Alerts us when the site is down or errors happen, before players complain. |
+| **CI/CD (GitHub Actions)** | An automatic inspector and delivery truck. | Every code change is tested automatically, then deployed. Deploys wait for running games to finish first. |
+| **CAPTCHA (Cloudflare Turnstile)** | A bouncer that quietly checks "are you a human?" | Stops bots from mass-creating accounts or guessing passwords. Free. |
+
+### Cost breakdown (Oct 2026 prices; check at purchase time)
+
+**Stage 0: Development (now): $0/month.** Everything runs on your current computer (WSL Linux). PostgreSQL 16, Node 24 and pnpm are already installed. Rust and Docker get installed in M0.
+
+**Stage 1: Public launch / beta (up to a few hundred concurrent players)**
+| Item | Provider (recommended) | Cost |
+|---|---|---|
+| Server, US-East (4 vCPU, 8 GB RAM, 75 GB NVMe) | **OVHcloud US "VPS-2"**: pick the US-East (Virginia) location at checkout. ≈ $8.50/mo is the price with 12 months paid upfront; month-to-month costs somewhat more. OVH renames tiers often, so **check the specs, not the plan name**. (The cheaper VPS-1, 2 vCPU / 4 GB at ≈ $4.54, only suits a closed beta. Hetzner, previously the cheapest, raised prices sharply in 2026.) | **≈ $9–15/mo** |
+| Front-end hosting + CDN | Cloudflare Pages | $0 |
+| DNS, DDoS protection, HTTPS at edge, Turnstile CAPTCHA | Cloudflare Free | $0 |
+| Domain name (.com) | Cloudflare Registrar or similar | **≈ $10–15/year** |
+| Database | PostgreSQL on the same server | $0 extra |
+| Backups (nightly, encrypted, off-site, 30-day rolling) | Cloudflare R2 (10 GB free) or Backblaze B2 | $0–1/mo |
+| Transactional email | Resend free tier (3,000/mo, **but only 100/day**) | $0 now. **Upgrade to Pro ($20/mo) before any public announcement**, because a launch spike would exceed 100 verification emails/day. Until then, over-cap emails are retried the next day. |
+| Error tracking / uptime alerts | Sentry free Developer tier; Better Stack free tier or Sentry uptime monitors. (UptimeRobot's free plan is non-commercial only.) | $0 |
+| OAuth: Google, Discord, GitHub, Microsoft | — | $0 |
+| Code hosting & automated tests | GitHub (free tier) | $0 |
+| **Monthly total** | | **≈ $10–20/month now, ≈ $30–40/month from public launch (email Pro) + ≈ $12/year domain** |
+
+If many players fill seats with strong bots, the next step is a bigger OVH tier (≈ $12–20/mo) or a second small server just for bots.
+
+**One-time / later costs**
+| Item | Cost | When |
+|---|---|---|
+| Steam Direct fee | **$100 per game**: non-refundable, but Valve pays it back once the game earns $1,000 on Steam. Valve takes 30% of sales. | Unity version ready to list |
+| Unity engine | Free (Unity Personal) under its revenue threshold (currently $200k/yr; verify then) | Unity phase |
+| Sign in with Apple | $99/year (Apple Developer Program). Deferred because it isn't free. | Optional |
+| Original art: 9 emblems, piece set, board textures, sounds | ≈ $0 (self-made / AI-assisted then hand-cleaned) to ≈ $1,500–4,000 (commissioned artist) | Before public launch |
+| Attorney review of legal drafts + trademark search on the final name | ≈ $500–2,000 | Before public launch / Steam |
+| Business entity (LLC) + registered agent / business mailing address (so your home address isn't published in the Terms) | ≈ $50–500 to form; $0–800/yr state fees depending on state; ≈ $50–150/yr mail/agent service | Before public launch (ask the attorney) |
+| DMCA designated-agent registration (US Copyright Office) | $6 per 3 years | Before public launch |
+| EU/UK representative (if EU/UK users are accepted; otherwise geo-block) | ≈ $100–500/yr | Before public launch, if applicable |
+| Optional bot neural-network training (GPU rental) | ≈ $50–300 total | Only if stronger top bots are wanted |
+
+**Stage 2: Growth (thousands of concurrent players):** larger or second server (bots on their own machine), managed PostgreSQL, Redis (lets several game servers share lobby info), paid email tier: **≈ $50–150/month**. Chess messages are tiny, so bandwidth stays negligible.
+
+### Should you build a home Linux server?
+**For hosting the live game: not needed.** Costs are low (≈ $10–40/mo). An always-on home machine (50–100 W) costs about $6–12/month in electricity alone. On top of that come hardware ($300–1,000), slower home upload speeds, outages, ISP rules that often forbid hosting, and the security exposure of your home network.
+
+**Where a home machine is genuinely useful:** a strong CPU (and optionally a gaming GPU) is great for **bot tuning, bot-arena testing and optional neural-network training**, which saves the GPU rental. Because everything runs in Docker, hosting can still move home later via Cloudflare Tunnel, with no router ports opened.
+
+---
+
+## 10. `TODO.md` — Single Source of Truth (created in M0)
+
+**Conventions** (also written into `CLAUDE.md`, so every future assistant session follows them):
+- Every piece of work lives in `TODO.md`. "Add to to-do" means a new item here.
+- Completion is marked **only** by ~~strike-through~~ plus the date, in place. There are no checkboxes, and items are never silently deleted.
+- Milestone items link to the relevant `docs/PLAN.md` section.
+
+**Initial contents:**
+- **Now: v1 build.** M0–M7 (§11), one item per sub-deliverable.
+- **Open rules questions:**
+  - confirm the en passant rule (§2; it stays behind a flag until then);
+  - confirm "Abandon = timeout" after the 60-second grace;
+  - confirm that a stalemated or timed-out player's leader no longer keeps a Teams team alive;
+  - Teams resignation: player-only or whole team?
+  - attacked-leader glow: default on or off, and a per-lobby toggle? (decide before M2);
+  - review corner-pawn opening balance (East is exposed on both corners) with bot-arena data.
+- **Before public release:**
+  - moderation: profanity filter, reserved/impersonation names, report button + review queue, username change policy, and a process for deleting accounts found to belong to under-13s;
+  - legal: attorney review of Terms/Privacy (choose dispute option A or B, confirm minor/guardian language); fill in the legal placeholders;
+  - business: decide on and form a business entity and get a business mailing address; trademark search for the final name; register a DMCA agent ($6) and set a 3-year renewal reminder;
+  - operations: write and rehearse the incident-response runbook; restore-from-backup drill, including re-applying `deletion_log`; upgrade Resend to Pro;
+  - art: confirm each emblem against Civ VI reference art, then produce final original art for all 9.
+- **Before marketing in the EU/UK:** decide on Art. 27 EU and UK representatives; apply UK Children's Code high-privacy defaults for under-18s (attorney confirms).
+- **Anti-cheat (not now; ideas kept):**
+  - statistical engine-match analysis on rated games (compare moves with bot-engine top choices, weighted by position complexity);
+  - move-time consistency analysis;
+  - report-driven review queue;
+  - account trust levels (new accounts need N casual games before rated);
+  - rating rollback for confirmed cheaters;
+  - spectator delay on rated games once spectating exists.
+- **Monetization (undecided):** options are cosmetic piece sets/boards/emblem frames, a supporter subscription, a paid Steam version alongside a free web version, or battle-pass-style progression. Constraints: no pay-to-win, and the choice affects progression data design.
+- **Mobile:** responsive layout, touch drag/tap controls, portrait board scaling, PWA install.
+- **Designed-for-later features:**
+  - **in-game:** move log UI, resign, draw offers, takebacks, chat/emotes, spectating, replays, rematch, AFK bot takeover (casual), premoves, optional bot "think" delay;
+  - **game modes:** draft mode, unique-civ matchmaking, civ abilities, progression/XP/unlocks/civ mastery;
+  - **Unity / Steam:** Unity client, Steam auth plugin + publisher Web API key, Steam integration;
+  - **platform:** Sign in with Apple, NNUE bots, Redis scale-out, analytics (with cookie consent), marketing email (opt-in).
+
+---
+
+## 11. Build Milestones (in order)
+
+| # | Milestone | Outcome |
+|---|---|---|
+| M0 | **Foundation** | Monorepo, pnpm + Cargo workspaces, lint/format, GitHub Actions CI, Docker Compose dev stack (Postgres), `docs/PLAN.md`, **`TODO.md`**, **`CLAUDE.md`** (TODO convention), `packages/config` with `APP_NAME`. |
+| M1 | **Rules core (Rust)** | Board/setup; roster + leader roles; seat statuses; pseudo-legal move generation for 4 orientations (no self-check filtering); leader capture; stalemate-once then auto-pass; timeout/abandon hooks; FFA removal vs Teams defeated/frozen; single-leader castling without attack checks; en passant behind a flag; mid-board promotion to non-leaders; move-limit counter; notation; `rules_version`; empty civ hooks. WASM build. `docs/RULES.md`. |
+| M2 | **Board renderer (web)** | PixiJS board with original art; smooth animations (move, capture particles, FFA army dissolve, Teams grey/freeze); optional attacked-leader glow; move hints; drag/click; promotion picker; auto-rotation; sounds. **Hot-seat sandbox (all 4 sides on one screen) in dev/staging builds only, never in production.** Colorblind-safe palette, reduced motion. |
+| M3 | **Accounts + legal** | Better Auth: guest + history-preserving upgrade; email/password with argon2id via custom hash/verify, plus verification and reset (Resend); OAuth (Google, Discord, GitHub, Microsoft); passkeys; TOTP MFA + backup codes (`allowPasswordless`); Turnstile; rate limits; real-IP handling. Neutral DOB screen, versioned clickwrap, `docs/legal/` drafts at /terms and /privacy, account deletion + JSON export + `deletion_log`. |
+| M4 | **Lobbies** | Colyseus lobby list + lobby room: create (mode, time control, optional hashed password with attempt limits); join; seats/teams; blind civ pick with emblems beside names; host controls; bot seats with level picker and random-but-editable civ; ready/start; session-bound seats. |
+| M5 | **Live games** | Authoritative game room; server clocks (10+0, 3+2); 60 s reconnect grace + abandon; all defeat paths; end screen; **incremental event persistence + abort-on-restart**; re-simulation check; OpenSkill ratings (public + shadow). |
+| M6 | **Bots** | Engine (Teams team-signed alpha-beta, FFA BRS+); handcrafted eval; strength levels; bot-service (CPU-limited, deadline-aware, load-shedding); `bot-arena` calibration; overnight tuning. |
+| M7 | **Deploy** | OVHcloud US VPS-2 (4 vCPU/8 GB) + Docker Compose + Caddy (Cloudflare-only firewall, trusted proxies); Cloudflare Pages at `play.<domain>`, API at `api.<domain>`; **draining deploys**; nightly 30-day off-site backups with a tested restore; monitoring; staging. |
+
+---
+
+## 12. Verification (how we prove each part works)
+
+- **Rules core:**
+  - Unit tests for every rule in §2:
+    - setup squares and colors, and the corner-pawn captures available on move 1;
+    - leader capture by a non-adjacent seat;
+    - stalemate-once, then auto-pass;
+    - Teams cases: stalemated A plus B losing its leader → team out; frozen A plus B losing its leader → team out; leaderless teammate timing out → frozen;
+    - castling with no attack checks, and only while ACTIVE;
+    - promotion on rank 7/6 and file g/f;
+    - en passant expiry when the double-stepper is skipped;
+    - the move-limit counter resets on defeat and with a frozen seat.
+  - "Perft" move-count tests on hand-verified positions, including frozen or passing seats.
+  - Randomized fuzzing of millions of self-play games asserting invariants: no pieces for REMOVED seats, FROZEN seats never move, every game terminates.
+  - WASM and native builds produce identical results.
+- **Server:** integration tests with the real server and 4 simulated WebSocket clients, covering:
+  - lobby join/password (including the attempt limit) and civ pick, including bot civ assignment;
+  - clocks (increment, timeout, and that passes cost no time);
+  - reconnect grace and abandon;
+  - every defeat path in FFA and Teams;
+  - a server kill mid-game → match marked aborted on restart;
+  - saved events re-simulating to the same final position.
+- **End-to-end (Playwright browser automation):**
+  - guest → DOB screen → accept terms → create lobby → fill 3 bots → play to game end → match in history;
+  - guest → upgrade to an email account → old match still in history;
+  - signup → verify email → enable TOTP → MFA login;
+  - passkey registration/login with Chrome's virtual authenticator;
+  - account export and deletion (history de-identified and re-keyed; deleted account stays deleted after a test restore).
+- **Security checks:** stored hashes use the argon2id format; no plaintext secrets in DB or logs; rate limits work with real client IPs behind Cloudflare; Turnstile on auth and guest creation; lobby passwords hashed; acceptance records written; cookies/CORS/passkey rpID correct on `play.`/`api.` subdomains.
+- **Bots:** `bot-arena` tournaments confirm each level beats the one below and moves stay within time budgets.
+- **Load test (k6 + bot-arena):** measure simultaneous games per vCPU at each bot level mix (e.g. 70% weak / 30% strong) on a VPS-2-equivalent machine. Targets: bot moves within budget, referee latency under 100 ms, p99 move latency under 1 s.
+- **Visual quality:** screenshot review at 1080p/1440p/4K, 60 fps check in browser performance tools, colorblind simulation.
+
+---
+
+### Sources consulted (Oct 2026)
+- Hetzner 2026 price increases: [findstack](https://findstack.com/resources/hetzner-price-increase-2026), [wz-it](https://wz-it.com/en/blog/hetzner-price-increase-june-2026-cpx-ccx-alternatives/)
+- OVHcloud US VPS range: [us.ovhcloud.com/vps](https://us.ovhcloud.com/vps/)
+- Resend free tier: [costbench](https://costbench.com/software/email-api/resend/free-plan/)
+- Steam ends 32-bit Windows support: [guru3d](https://www.guru3d.com/story/steam-client-drops-32bit-support-on-windows-10-and-11/)
+- Fairy-Stockfish board-size limit (12×10): [TalkChess](https://talkchess.com/viewtopic.php?p=837333)
+- 4pchess engine (MIT, Teams): [GitHub](https://github.com/obryanlouis/4pchess)
+- Colyseus Unity SDK: [docs](https://docs.colyseus.io/getting-started/unity)
+- Better Auth plugins: [docs](https://better-auth.com/docs/plugins)
