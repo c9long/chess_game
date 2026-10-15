@@ -1,0 +1,149 @@
+import { type FormEvent, useState } from 'react'
+import { Link, useSearchParams } from 'react-router'
+import { Turnstile } from '../components/Turnstile.tsx'
+import { Alert, Button, Card, CenteredPage, Field, PageTitle } from '../components/ui.tsx'
+import { authErrorMessage } from '../lib/api.ts'
+import { useAppState } from '../lib/app-state.tsx'
+import { authClient, captchaHeaders } from '../lib/auth-client.ts'
+
+export function ForgotPassword() {
+  const { config } = useAppState()
+  const [email, setEmail] = useState('')
+  const [token, setToken] = useState<string | null>(null)
+  const [widgetKey, setWidgetKey] = useState(0)
+  const [busy, setBusy] = useState(false)
+  const [sent, setSent] = useState(false)
+  const [error, setError] = useState<string>()
+
+  async function submit(e: FormEvent) {
+    e.preventDefault()
+    if (!token) return
+    setBusy(true)
+    setError(undefined)
+    const { error: err } = await authClient.requestPasswordReset({
+      email,
+      redirectTo: `${window.location.origin}/reset-password`,
+      fetchOptions: captchaHeaders(token),
+    })
+    setBusy(false)
+    setToken(null)
+    setWidgetKey((k) => k + 1)
+    if (err) setError(authErrorMessage(err))
+    else setSent(true)
+  }
+
+  return (
+    <CenteredPage>
+      <Card>
+        <PageTitle
+          title="Reset your password"
+          subtitle="We’ll email you a link to choose a new one."
+        />
+        {sent ? (
+          <Alert tone="success">If an account uses that address, a reset link is on its way.</Alert>
+        ) : (
+          <form onSubmit={submit} className="flex flex-col gap-4">
+            <Field
+              label="Email"
+              type="email"
+              autoComplete="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+            {config ? (
+              <Turnstile key={widgetKey} siteKey={config.turnstileSiteKey} onToken={setToken} />
+            ) : null}
+            {error ? <Alert>{error}</Alert> : null}
+            <Button type="submit" busy={busy} disabled={!token || !email}>
+              Send reset link
+            </Button>
+          </form>
+        )}
+        <Link to="/sign-in" className="mt-6 block text-center text-sm text-gold hover:underline">
+          Back to sign in
+        </Link>
+      </Card>
+    </CenteredPage>
+  )
+}
+
+export function ResetPassword() {
+  const { config } = useAppState()
+  const [params] = useSearchParams()
+  const token = params.get('token')
+  const [password, setPassword] = useState('')
+  const [confirm, setConfirm] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [done, setDone] = useState(false)
+  const [error, setError] = useState<string>()
+  const minPw = config?.passwordMinLength ?? 10
+
+  async function submit(e: FormEvent) {
+    e.preventDefault()
+    if (!token) return
+    if (password !== confirm) {
+      setError('The passwords don’t match.')
+      return
+    }
+    setBusy(true)
+    setError(undefined)
+    const { error: err } = await authClient.resetPassword({ newPassword: password, token })
+    setBusy(false)
+    if (err)
+      setError(
+        err.code === 'INVALID_TOKEN'
+          ? 'This reset link is invalid or has expired.'
+          : authErrorMessage(err),
+      )
+    else setDone(true)
+  }
+
+  return (
+    <CenteredPage>
+      <Card>
+        <PageTitle title="Choose a new password" />
+        {!token || params.get('error') ? (
+          <Alert>This reset link is invalid or has expired.</Alert>
+        ) : done ? (
+          <>
+            <Alert tone="success">
+              Your password has been changed. You’ve been signed out everywhere.
+            </Alert>
+            <Link
+              to="/sign-in"
+              className="mt-4 block text-center text-sm font-semibold text-gold hover:underline"
+            >
+              Sign in
+            </Link>
+          </>
+        ) : (
+          <form onSubmit={submit} className="flex flex-col gap-4">
+            <Field
+              label="New password"
+              type="password"
+              autoComplete="new-password"
+              minLength={minPw}
+              required
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              hint={`At least ${minPw} characters.`}
+            />
+            <Field
+              label="Confirm new password"
+              type="password"
+              autoComplete="new-password"
+              required
+              value={confirm}
+              onChange={(e) => setConfirm(e.target.value)}
+            />
+            {error ? <Alert>{error}</Alert> : null}
+            <Button type="submit" busy={busy} disabled={password.length < minPw || !confirm}>
+              Save password
+            </Button>
+          </form>
+        )}
+      </Card>
+    </CenteredPage>
+  )
+}

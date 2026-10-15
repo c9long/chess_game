@@ -1,0 +1,17 @@
+{
+  "name": "@game/e2e",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:e2e": "playwright test",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@game/config": "workspace:*",
+    "@game/db": "workspace:*",
+    "@playwright/test": "1.64.1",
+    "otpauth": "9.5.2",
+    "postgres": "3.4.9"
+  }
+}

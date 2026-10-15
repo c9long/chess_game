@@ -1,0 +1,146 @@
+@import "tailwindcss";
+
+@theme {
+  --color-parchment: #f4efe6;
+  --color-ink: #1d1b19;
+  --color-panel: #26231f;
+  --color-gold: #d4a017;
+  --color-gold-bright: #e6b42a;
+  --color-seat-south: #c0392b;
+  --color-seat-south-light: #ec8a7e;
+  --color-seat-west: #2e6fd8;
+  --color-seat-north: #d4a017;
+  --color-seat-east: #1f9e6e;
+  --font-display:
+    "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, ui-serif, serif;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background-color: var(--color-ink);
+  background-image:
+    radial-gradient(ellipse 80% 60% at 50% -10%, rgb(212 160 23 / 0.12), transparent 70%),
+    linear-gradient(
+      45deg,
+      rgb(244 239 230 / 0.025) 25%,
+      transparent 25%,
+      transparent 75%,
+      rgb(244 239 230 / 0.025) 75%
+    ),
+    linear-gradient(
+      45deg,
+      rgb(244 239 230 / 0.025) 25%,
+      transparent 25%,
+      transparent 75%,
+      rgb(244 239 230 / 0.025) 75%
+    );
+  background-size:
+    100% 100%,
+    48px 48px,
+    48px 48px;
+  background-position:
+    0 0,
+    0 0,
+    24px 24px;
+  background-attachment: fixed;
+  color: var(--color-parchment);
+  -webkit-font-smoothing: antialiased;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    /* biome-ignore lint/complexity/noImportantStyles: reduced motion must override component styles */
+    animation-duration: 0.01ms !important;
+    /* biome-ignore lint/complexity/noImportantStyles: reduced motion must override component styles */
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Rendered legal documents (docs/legal/*.md). */
+.legal-doc {
+  overflow-wrap: anywhere;
+  line-height: 1.7;
+  color: rgb(244 239 230 / 0.88);
+}
+.legal-doc h1 {
+  font-family: var(--font-display);
+  font-size: 2rem;
+  font-weight: 600;
+  margin: 0 0 1rem;
+  color: var(--color-parchment);
+}
+.legal-doc h2 {
+  font-family: var(--font-display);
+  font-size: 1.35rem;
+  font-weight: 600;
+  margin: 2rem 0 0.75rem;
+  color: var(--color-parchment);
+}
+.legal-doc h3 {
+  font-size: 1.05rem;
+  font-weight: 600;
+  margin: 1.5rem 0 0.5rem;
+}
+.legal-doc p,
+.legal-doc ul,
+.legal-doc ol,
+.legal-doc blockquote {
+  margin: 0 0 1rem;
+}
+.legal-doc ul {
+  list-style: disc;
+  padding-left: 1.5rem;
+}
+.legal-doc ol {
+  list-style: decimal;
+  padding-left: 1.5rem;
+}
+.legal-doc li {
+  margin: 0.25rem 0;
+}
+.legal-doc a {
+  color: var(--color-gold);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.legal-doc strong {
+  color: var(--color-parchment);
+}
+.legal-doc blockquote {
+  border-left: 3px solid rgb(212 160 23 / 0.6);
+  padding-left: 1rem;
+  color: rgb(244 239 230 / 0.7);
+}
+.legal-doc code {
+  font-size: 0.9em;
+  background: rgb(244 239 230 / 0.08);
+  border-radius: 4px;
+  padding: 0.1em 0.35em;
+}
+.legal-doc .legal-table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+  margin: 0 0 1rem;
+}
+.legal-doc table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+.legal-doc th,
+.legal-doc td {
+  border: 1px solid rgb(244 239 230 / 0.15);
+  padding: 0.4rem 0.6rem;
+  text-align: left;
+}
+.legal-doc hr {
+  border-color: rgb(244 239 230 / 0.15);
+  margin: 2rem 0;
+}
