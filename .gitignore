@@ -21,3 +21,6 @@ pkg/
 test-results/
 playwright-report/
 blob-report/
+
+# Claude Code local session state
+.claude/scheduled_tasks.lock
