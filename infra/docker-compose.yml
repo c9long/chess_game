@@ -1,0 +1,41 @@
+# Full stack for staging/production (and dev machines with Docker).
+# Services are added as milestones land: server (M4/M5), bot-service (M6), caddy (M7).
+name: game
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-game_dev}
+      POSTGRES_USER: ${DB_USER:-game}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Bot moves for the game server (M6). CPU-limited so searches can never
+  # starve the referee (PLAN §6); BOT_WORKERS follows the CPU limit.
+  # Reachable only on the compose network (http://bot-service:7700).
+  bot-service:
+    build:
+      context: ..
+      dockerfile: crates/bot-service/Dockerfile
+    restart: unless-stopped
+    cpus: 2
+    mem_limit: 512m
+    stop_grace_period: 5s
+    environment:
+      BOT_BIND: 0.0.0.0:7700
+      BOT_LOG_FORMAT: json
+    expose:
+      - "7700"
+
+volumes:
+  pgdata:
