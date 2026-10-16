@@ -7,6 +7,7 @@ import type { MatchFeed } from '../../pages/Match.tsx'
 import { CivEmblem, civName } from '../CivEmblem.tsx'
 import { CivPicker } from '../CivPicker.tsx'
 import { Button } from '../ui.tsx'
+import { RankedBadge } from './RankedBadge.tsx'
 import { MODE_LABEL, SEAT_LABEL, seatColorName, seatHex, seatName, teamLabel } from './seats.ts'
 
 const LEVEL_LABELS = BOT_LEVELS.map(String)
@@ -40,6 +41,7 @@ function SeatCard({
   viewerIsHost,
   hostSeat,
   mode,
+  ranked,
   send,
 }: {
   index: number
@@ -48,6 +50,8 @@ function SeatCard({
   viewerIsHost: boolean
   hostSeat: number
   mode: string
+  /** Ranked lobby: no bots, so the host gets no bot controls for open seats. */
+  ranked: boolean
   send: ReturnType<typeof matchApi>['send']
 }) {
   const [level, setLevel] = useState('1200')
@@ -106,7 +110,11 @@ function SeatCard({
       ) : (
         <div className="flex flex-1 flex-col justify-center gap-2">
           <p className="text-sm text-parchment/50">Open seat</p>
-          {viewerIsHost ? (
+          {ranked ? (
+            <p className="text-xs text-parchment/45" data-testid="ranked-seat-hint">
+              Ranked: waiting for a player with an account. Bots can’t take ranked seats.
+            </p>
+          ) : viewerIsHost ? (
             <div className="flex items-center gap-2">
               <label className="sr-only" htmlFor={`bot-level-${index}`}>
                 Bot strength
@@ -120,7 +128,7 @@ function SeatCard({
               >
                 {LEVEL_LABELS.map((l) => (
                   <option key={l} value={l}>
-                    {l === 'max' ? 'Max strength' : `ELO ${l}`}
+                    {l === 'max' ? 'Max strength' : `Elo ${l}`}
                   </option>
                 ))}
               </select>
@@ -260,6 +268,7 @@ export function LobbyRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) 
         viewerIsHost={viewerIsHost}
         hostSeat={state.hostSeat}
         mode={state.mode}
+        ranked={state.ranked}
         send={send}
       />
     )
@@ -269,14 +278,16 @@ export function LobbyRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) 
     <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:py-10">
       <header className="mb-8 flex flex-wrap items-end justify-between gap-4">
         <div className="min-w-0">
-          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-gold/80">
+          <p className="flex items-center gap-3 text-xs font-semibold uppercase tracking-[0.3em] text-gold/80">
             {state.hasPassword ? 'Private lobby' : 'Public lobby'}
+            {state.ranked ? <RankedBadge /> : null}
           </p>
           <h1 className="mt-1 truncate font-display text-3xl font-semibold tracking-tight">
             {state.name}
           </h1>
           <p className="mt-1 text-sm text-parchment/60">
             {MODE_LABEL[state.mode]} · {state.timeControl} · Blind pick ·{' '}
+            {state.ranked ? 'Elo-rated · ' : 'Casual · '}
             {state.seats.filter((s) => s.occupied).length}/4 seated
           </p>
         </div>
@@ -331,8 +342,9 @@ export function LobbyRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) 
             <section className="rounded-2xl border border-gold/30 bg-gold/5 p-5">
               <h2 className="mb-1 font-display text-lg font-semibold">Host</h2>
               <p className="mb-4 text-xs text-parchment/60">
-                Fill empty seats with bots, choose teams by swapping seats, then start when everyone
-                is ready.
+                {state.ranked
+                  ? 'Ranked: share the invite link with players who have accounts, choose teams by swapping seats, then start when everyone is ready.'
+                  : 'Fill empty seats with bots, choose teams by swapping seats, then start when everyone is ready.'}
               </p>
               <Button
                 className="w-full"
@@ -345,7 +357,9 @@ export function LobbyRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) 
               {!canStart ? (
                 <p className="mt-2 text-xs text-parchment/50">
                   {state.seats.some((s) => !s.occupied)
-                    ? 'Waiting for 4 players (or add bots).'
+                    ? state.ranked
+                      ? 'Waiting for 4 players.'
+                      : 'Waiting for 4 players (or add bots).'
                     : 'Waiting for every player to choose a civilization and be ready.'}
                 </p>
               ) : null}

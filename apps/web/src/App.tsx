@@ -21,6 +21,9 @@ import { VerifyEmail } from './pages/VerifyEmail.tsx'
 const Match = lazy(() => import('./pages/Match.tsx').then((m) => ({ default: m.Match })))
 const Play = lazy(() => import('./pages/Play.tsx').then((m) => ({ default: m.Play })))
 const History = lazy(() => import('./pages/History.tsx').then((m) => ({ default: m.History })))
+const Leaderboard = lazy(() =>
+  import('./pages/Leaderboard.tsx').then((m) => ({ default: m.Leaderboard })),
+)
 // Development builds only (the dev mailbox); removed from production builds.
 const DevMail = import.meta.env.DEV
   ? lazy(() => import('./pages/DevMail.tsx').then((m) => ({ default: m.DevMail })))
@@ -112,6 +115,8 @@ export function App() {
                     </RequireAuth>
                   }
                 />
+                {/* Public: anyone past the age screen can browse the leaderboard. */}
+                <Route path="leaderboard" element={<Leaderboard />} />
                 <Route
                   path="device"
                   element={

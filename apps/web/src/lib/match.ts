@@ -168,6 +168,9 @@ const ERROR_MESSAGES: Record<string, string> = {
   kicked: 'The host removed you from that lobby.',
   maintenance: 'The server is restarting for maintenance. Try again in a few minutes.',
   not_implemented: 'That option is not available yet.',
+  account_required:
+    'Ranked games are for registered players. Create a free account (your guest games come with you) to play ranked.',
+  ranked_no_bots: 'Bots can’t play in ranked games. Wait for players with an account to join.',
   not_your_turn: 'It is not your turn.',
   illegal_move: 'That move is not legal.',
   not_host: 'Only the host can do that.',
@@ -180,6 +183,11 @@ const ERROR_MESSAGES: Record<string, string> = {
   civ_unavailable: 'That civilization is not available.',
   not_ready: 'Every player must be seated, have a civilization and be ready.',
   not_seated: 'You don’t have a seat in this game.',
+  not_playing: 'You are no longer taking turns in this game.',
+  draw_offer_pending: 'A draw offer is already waiting for answers.',
+  draw_offer_cooldown: 'Make a few more moves before offering another draw.',
+  no_draw_offer: 'There is no draw offer to answer any more.',
+  already_responded: 'You have already answered this draw offer.',
   invalid_message: 'That request was not valid.',
   internal: 'The server hit a problem. Please try again.',
 }
@@ -190,6 +198,10 @@ export function matchErrorMessage(err: unknown): string {
   return 'Could not reach the game server. Check your connection and try again.'
 }
 
+/** Codes whose server message carries live detail (e.g. moves left), so it beats a fixed text. */
+const SERVER_DETAIL_CODES = new Set(['draw_offer_cooldown'])
+
 export function errorCodeMessage(code: string, fallback?: string): string {
+  if (fallback && SERVER_DETAIL_CODES.has(code)) return fallback
   return ERROR_MESSAGES[code] ?? fallback ?? 'That action was refused.'
 }

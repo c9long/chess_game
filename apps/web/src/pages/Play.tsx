@@ -10,10 +10,11 @@ import {
   UNTIMED,
 } from '@game/protocol'
 import { type FormEvent, useEffect, useId, useState } from 'react'
-import { useNavigate } from 'react-router'
+import { Link, useNavigate, useSearchParams } from 'react-router'
 import { CivPicker } from '../components/CivPicker.tsx'
+import { RankedBadge } from '../components/match/RankedBadge.tsx'
 import { Alert, Button, Card, Field, Spinner } from '../components/ui.tsx'
-import { displayName, useAppState } from '../lib/app-state.tsx'
+import { displayName, isGuest, useAppState } from '../lib/app-state.tsx'
 import {
   createMatch,
   gameClient,
@@ -31,6 +32,13 @@ interface Listing {
 }
 
 const MODE_LABEL = { ffa: 'Free-for-all', teams: 'Teams 2v2' } as const
+
+type LobbyFilter = 'all' | 'ranked' | 'casual'
+const FILTER_LABEL: Record<LobbyFilter, string> = {
+  all: 'All',
+  ranked: 'Ranked',
+  casual: 'Casual',
+}
 
 /** A two-way choice button (mode, time control). */
 const choice = (active: boolean) =>
@@ -75,7 +83,7 @@ function ModeChoice({
 }
 
 function botLevelText(level: string): string {
-  return level === 'max' ? 'Max strength' : `ELO ${level}`
+  return level === 'max' ? 'Max strength' : `Elo ${level}`
 }
 
 /** Singleplayer: the player at South against three bots, untimed. */
@@ -237,6 +245,8 @@ function CreateLobby() {
   const [mode, setMode] = useState<'ffa' | 'teams'>('ffa')
   const [timeControl, setTimeControl] = useState<keyof typeof TIME_CONTROLS>('10+0')
   const [password, setPassword] = useState('')
+  const guest = isGuest(session?.user)
+  const [ranked, setRanked] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string>()
 
@@ -256,6 +266,7 @@ function CreateLobby() {
         mode,
         timeControl,
         pickMode: 'blind',
+        ranked: ranked && !guest,
         ...(password ? { password } : {}),
       })
       navigate(`/match/${room.roomId}`)
@@ -320,6 +331,7 @@ function CreateLobby() {
             </button>
           </div>
         </fieldset>
+        <RankedToggle ranked={ranked && !guest} guest={guest} onChange={setRanked} />
         <Field
           label="Password (optional)"
           type="password"
@@ -340,6 +352,62 @@ function CreateLobby() {
         </Button>
       </form>
     </Card>
+  )
+}
+
+/** Ranked or casual (registered accounts only for ranked; guests see why it's disabled). */
+function RankedToggle({
+  ranked,
+  guest,
+  onChange,
+}: {
+  ranked: boolean
+  guest: boolean
+  onChange: (ranked: boolean) => void
+}) {
+  const hintId = useId()
+  return (
+    <div className="flex flex-col gap-2">
+      <label
+        className={`flex items-center justify-between gap-4 rounded-lg border px-3 py-2.5 transition ${
+          ranked ? 'border-gold/60 bg-gold/10' : 'border-parchment/20'
+        } ${guest ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:border-parchment/40'}`}
+      >
+        <span className="flex flex-col">
+          <span className="text-sm font-semibold text-parchment">Ranked</span>
+          <span className="text-xs text-parchment/55">Elo-rated · players with accounts only</span>
+        </span>
+        <span className="relative inline-flex shrink-0">
+          <input
+            type="checkbox"
+            role="switch"
+            aria-checked={ranked}
+            className="peer sr-only"
+            checked={ranked}
+            disabled={guest}
+            aria-describedby={hintId}
+            onChange={(e) => onChange(e.target.checked)}
+            data-testid="ranked-toggle"
+          />
+          <span className="h-6 w-11 rounded-full bg-parchment/20 transition peer-checked:bg-gold peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-gold" />
+          <span className="pointer-events-none absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-parchment shadow transition peer-checked:translate-x-5" />
+        </span>
+      </label>
+      <p id={hintId} className="text-xs text-parchment/55" data-testid="ranked-hint">
+        {guest ? (
+          <>
+            <Link to="/sign-up" className="font-semibold text-gold hover:underline">
+              Create an account
+            </Link>{' '}
+            to play ranked.
+          </>
+        ) : ranked ? (
+          'Counts toward your Elo. Bots can’t join; empty seats wait for players with accounts.'
+        ) : (
+          'Casual: no rating changes. You can fill empty seats with bots.'
+        )}
+      </p>
+    </div>
   )
 }
 
@@ -434,6 +502,22 @@ export function Play() {
   const [joining, setJoining] = useState<string>()
   const [passwordFor, setPasswordFor] = useState<Listing>()
   const [error, setError] = useState<string>()
+  // The lobby filter lives in the URL (?lobbies=ranked), so links can open it pre-filtered.
+  const [params, setParams] = useSearchParams()
+  const fromUrl = params.get('lobbies')
+  const filter: LobbyFilter = fromUrl === 'ranked' || fromUrl === 'casual' ? fromUrl : 'all'
+  const setFilter = (f: LobbyFilter) =>
+    setParams(
+      (prev) => {
+        const next = new URLSearchParams(prev)
+        if (f === 'all') next.delete('lobbies')
+        else next.set('lobbies', f)
+        return next
+      },
+      { replace: true },
+    )
+  const { session } = useAppState()
+  const guest = isGuest(session?.user)
 
   async function join(listing: Listing) {
     if (listing.metadata.locked) {
@@ -452,9 +536,18 @@ export function Play() {
     }
   }
 
-  const sorted = [...rooms].sort(
-    (a, b) => b.metadata.seatsFilled - a.metadata.seatsFilled || a.roomId.localeCompare(b.roomId),
-  )
+  const sorted = [...rooms]
+    .filter((r) =>
+      filter === 'all' ? true : filter === 'ranked' ? r.metadata.ranked : !r.metadata.ranked,
+    )
+    .sort(
+      (a, b) => b.metadata.seatsFilled - a.metadata.seatsFilled || a.roomId.localeCompare(b.roomId),
+    )
+  const counts = {
+    all: rooms.length,
+    ranked: rooms.filter((r) => r.metadata.ranked).length,
+    casual: rooms.filter((r) => !r.metadata.ranked).length,
+  }
 
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:py-12">
@@ -498,6 +591,35 @@ export function Play() {
               )}
             </span>
           </div>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <fieldset className="inline-flex rounded-lg border border-parchment/15 bg-ink/40 p-1">
+              <legend className="sr-only">Show lobbies</legend>
+              {(['all', 'ranked', 'casual'] as const).map((f) => (
+                <button
+                  key={f}
+                  type="button"
+                  aria-pressed={filter === f}
+                  onClick={() => setFilter(f)}
+                  className={`h-8 rounded-md px-3 text-xs font-semibold transition focus-visible:outline-2 focus-visible:outline-gold ${
+                    filter === f
+                      ? 'bg-parchment/10 text-parchment'
+                      : 'text-parchment/60 hover:text-parchment'
+                  }`}
+                  data-testid={`lobby-filter-${f}`}
+                >
+                  {FILTER_LABEL[f]}
+                  <span className="ml-1.5 tabular-nums text-parchment/45">{counts[f]}</span>
+                </button>
+              ))}
+            </fieldset>
+            <Link
+              to="/leaderboard"
+              className="text-xs font-semibold text-gold underline-offset-2 hover:underline"
+              data-testid="play-leaderboard-link"
+            >
+              Leaderboard →
+            </Link>
+          </div>
           {error ? (
             <div className="mb-4">
               <Alert>{error}</Alert>
@@ -510,7 +632,11 @@ export function Play() {
             </Alert>
           ) : sorted.length === 0 && status === 'live' ? (
             <div className="rounded-2xl border border-dashed border-parchment/15 px-6 py-14 text-center text-parchment/60">
-              No open lobbies right now. Create one, and add bots if nobody else joins.
+              {filter === 'ranked'
+                ? 'No ranked lobbies right now. Create one and invite players with accounts.'
+                : filter === 'casual' && rooms.length > 0
+                  ? 'No casual lobbies right now. Create one, and add bots if nobody else joins.'
+                  : 'No open lobbies right now. Create one, and add bots if nobody else joins.'}
             </div>
           ) : (
             <ul className="flex flex-col gap-3" data-testid="lobby-list">
@@ -527,23 +653,40 @@ export function Play() {
                         </span>
                       ) : null}
                       <span className="truncate">{r.metadata.name}</span>
+                      {r.metadata.ranked ? <RankedBadge /> : null}
                     </p>
                     <p className="mt-1 text-xs text-parchment/55">
                       {MODE_LABEL[r.metadata.mode as 'ffa' | 'teams'] ?? r.metadata.mode} ·{' '}
                       {r.metadata.timeControl} · Blind pick
+                      {r.metadata.ranked ? '' : ' · Casual'}
                     </p>
                   </div>
                   <SeatPips filled={r.metadata.seatsFilled} />
-                  <Button
-                    variant="secondary"
-                    className="h-10"
-                    busy={joining === r.roomId}
-                    disabled={r.metadata.seatsFilled >= 4 || Boolean(current)}
-                    onClick={() => join(r)}
-                    data-testid="join-lobby"
-                  >
-                    {r.metadata.seatsFilled >= 4 ? 'Full' : 'Join'}
-                  </Button>
+                  {r.metadata.ranked && guest && r.metadata.seatsFilled < 4 ? (
+                    <Link
+                      to="/sign-up"
+                      className="inline-flex h-10 items-center rounded-lg border border-gold/50 px-4 text-sm font-semibold text-gold hover:border-gold hover:bg-gold/10"
+                      title="Ranked games are for players with an account"
+                      data-testid="join-lobby"
+                    >
+                      Create account to join
+                    </Link>
+                  ) : (
+                    <Button
+                      variant="secondary"
+                      className="h-10"
+                      busy={joining === r.roomId}
+                      disabled={
+                        r.metadata.seatsFilled >= 4 ||
+                        Boolean(current) ||
+                        (r.metadata.ranked && guest)
+                      }
+                      onClick={() => join(r)}
+                      data-testid="join-lobby"
+                    >
+                      {r.metadata.seatsFilled >= 4 ? 'Full' : 'Join'}
+                    </Button>
+                  )}
                 </li>
               ))}
             </ul>

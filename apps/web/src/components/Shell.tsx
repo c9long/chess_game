@@ -61,6 +61,13 @@ export function Shell() {
                   History
                 </Link>
                 <Link
+                  to="/leaderboard"
+                  className="hidden rounded-lg px-3 py-2 text-parchment/85 hover:bg-parchment/5 hover:text-parchment md:inline-block"
+                  data-testid="nav-leaderboard"
+                >
+                  Leaderboard
+                </Link>
+                <Link
                   to="/account"
                   className="rounded-lg px-3 py-2 text-parchment/85 hover:bg-parchment/5 hover:text-parchment"
                   data-testid="nav-account"
@@ -82,6 +89,13 @@ export function Shell() {
             ) : pathname === '/' || !legal?.ageConfirmed ? null : (
               // Signed out: a way in from any page (the landing page has its own buttons).
               <>
+                <Link
+                  to="/leaderboard"
+                  className="hidden rounded-lg px-3 py-2 text-parchment/85 hover:bg-parchment/5 hover:text-parchment md:inline-block"
+                  data-testid="nav-leaderboard"
+                >
+                  Leaderboard
+                </Link>
                 <Link
                   to="/sign-in"
                   className="rounded-lg px-3 py-2 text-parchment/85 hover:bg-parchment/5 hover:text-parchment"

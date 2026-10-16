@@ -10,8 +10,18 @@ import { useRulesReady } from '../../lib/rules.ts'
 import type { MatchFeed } from '../../pages/Match.tsx'
 import { CivEmblem, civName } from '../CivEmblem.tsx'
 import { Alert, Button, Spinner } from '../ui.tsx'
+import { DrawOfferCard, GameActions, seatPlayerName } from './GameActions.tsx'
 import { GameOver } from './GameOver.tsx'
-import { MODE_LABEL, SEAT_LABEL, STATUS_LABEL, seatHex, seatName, teamLabel } from './seats.ts'
+import { RankedBadge } from './RankedBadge.tsx'
+import {
+  DEFEAT_REASON_LABEL,
+  MODE_LABEL,
+  SEAT_LABEL,
+  STATUS_LABEL,
+  seatHex,
+  seatName,
+  teamLabel,
+} from './seats.ts'
 
 interface Position {
   snapshot: Snapshot
@@ -26,6 +36,28 @@ function readPosition(positionString: string, legalFor: number): Position | null
     const toMove = ['south', 'west', 'north', 'east'].indexOf(snapshot.seatToMove)
     const legal = !snapshot.isOver && toMove === legalFor ? game.legalMoves() : []
     return { snapshot, legal }
+  } finally {
+    game.free()
+  }
+}
+
+/** What the side panel needs from the engine: draw voters and how each seat was knocked out. */
+interface SeatInfo {
+  voters: readonly boolean[]
+  defeatReasons: (string | null)[]
+}
+
+function readSeatInfo(positionString: string): SeatInfo | null {
+  if (!positionString) return null
+  const game = Game.fromPosition(positionString)
+  try {
+    const defeats = game.snapshot().defeats
+    return {
+      voters: game.drawVoters(),
+      defeatReasons: (['south', 'west', 'north', 'east'] as const).map(
+        (seat) => defeats.find((d) => d.seat === seat)?.reason ?? null,
+      ),
+    }
   } finally {
     game.free()
   }
@@ -150,11 +182,14 @@ function PlayerRow({
   index,
   feed,
   remainingMs,
+  defeatReason,
 }: {
   index: number
   feed: MatchFeed
   /** Null in untimed games (no clock shown). */
   remainingMs: number | null
+  /** How the seat was knocked out (rules defeat reason), if it was. */
+  defeatReason: string | null
 }) {
   const { state, mySeat } = feed
   const seat = state.seats[index]
@@ -163,6 +198,16 @@ function PlayerRow({
   const toMove = state.phase === 'in_game' && state.seatToMove === index
   const out = seat.status === 'removed' || seat.status === 'frozen'
   const low = remainingMs !== null && remainingMs < 20_000 && !out
+  // A resignation replaces the generic status (it says more, and the line stays short).
+  let statusText = ''
+  if (defeatReason === 'resign') {
+    const resigned = DEFEAT_REASON_LABEL.resign ?? 'Resigned'
+    statusText = seat.status === 'frozen' ? `${resigned} (frozen)` : resigned
+  } else if (seat.status && seat.status !== 'active') {
+    statusText = STATUS_LABEL[seat.status] ?? seat.status
+  } else if (!seat.isBot && !seat.connected) {
+    statusText = 'reconnecting'
+  }
   return (
     <li
       className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 transition ${
@@ -179,17 +224,21 @@ function PlayerRow({
       </span>
       <div className="min-w-0 flex-1">
         <p className="flex items-center gap-1.5 truncate text-sm font-semibold">
-          <span className="truncate">
-            {seat.isBot
-              ? `Bot · ${seat.botLevel === 'max' ? 'Max' : seat.botLevel}`
-              : seat.displayName}
-          </span>
+          <span className="truncate">{seatPlayerName(seat)}</span>
           {index === mySeat ? <span className="text-xs font-normal text-gold">(you)</span> : null}
         </p>
-        <p className="truncate text-xs text-parchment/50">
-          {civName(seat.civ)} · {SEAT_LABEL[seatName(index)]}
-          {seat.status && seat.status !== 'active' ? ` · ${STATUS_LABEL[seat.status]}` : ''}
-          {!seat.isBot && !seat.connected && !out ? ' · reconnecting' : ''}
+        <p className="flex min-w-0 items-baseline gap-1 text-xs text-parchment/50">
+          <span className="truncate">
+            {civName(seat.civ)} · {SEAT_LABEL[seatName(index)]}
+          </span>
+          {statusText ? (
+            <span
+              className={`shrink-0 ${defeatReason === 'resign' ? 'text-seat-south-light/90' : ''}`}
+              data-testid={`status-${seatName(index)}`}
+            >
+              · {statusText}
+            </span>
+          ) : null}
         </p>
       </div>
       {remainingMs === null ? null : (
@@ -238,6 +287,11 @@ export function GameRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) {
   const finished = state.phase === 'finished'
   const untimed = isUntimed(state.timeControl)
   const myTurn = state.phase === 'in_game' && mySeat >= 0 && state.seatToMove === mySeat
+  const seatInfo = useMemo(
+    () => (ready ? readSeatInfo(state.positionString) : null),
+    [ready, state.positionString],
+  )
+  const stillPlaying = mySeat >= 0 && seatInfo?.voters[mySeat] === true
 
   // The lobby's Start button sits below the fold: open the game at the top of the page.
   useEffect(() => {
@@ -245,7 +299,7 @@ export function GameRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) {
   }, [])
 
   async function leave() {
-    if (!finished && mySeat >= 0) {
+    if (!finished && stillPlaying) {
       const sure = window.confirm(
         untimed
           ? 'Leave this game? Your army will be eliminated and the bots will finish without you.'
@@ -284,6 +338,12 @@ export function GameRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) {
               {MODE_LABEL[state.mode]} · {untimed ? 'Untimed' : state.timeControl}
             </span>
           </div>
+          {state.ranked ? (
+            <p className="-mt-1.5 mb-3 flex items-center gap-2 text-xs text-parchment/55">
+              <RankedBadge />
+              Elo-rated game
+            </p>
+          ) : null}
           <p
             className={`mb-3 rounded-lg px-3 py-2 text-center text-sm font-semibold ${
               myTurn ? 'bg-gold text-ink' : 'bg-ink/50 text-parchment/70'
@@ -309,31 +369,27 @@ export function GameRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) {
                 index={i}
                 feed={feed}
                 remainingMs={untimed ? null : (clocks[i] ?? 0)}
+                defeatReason={seatInfo?.defeatReasons[i] ?? null}
               />
             ))}
           </ol>
         </section>
 
         <section className="rounded-2xl border border-parchment/10 bg-panel/85 p-4">
-          <div className="grid grid-cols-2 gap-2">
-            <Button
-              variant="secondary"
-              className="h-10"
-              disabled
-              title="Resigning is coming in a later update"
-            >
-              Resign · soon
-            </Button>
-            <Button
-              variant="secondary"
-              className="h-10"
-              disabled
-              title="Draw offers are coming in a later update"
-            >
-              Offer draw · soon
-            </Button>
-          </div>
-          <p className="mt-3 text-xs text-parchment/45">
+          {finished ? null : (
+            <>
+              <DrawOfferCard room={room} feed={feed} />
+              <GameActions
+                room={room}
+                feed={feed}
+                voters={seatInfo?.voters ?? null}
+                myDefeatReason={
+                  feed.mySeat >= 0 ? (seatInfo?.defeatReasons[feed.mySeat] ?? null) : null
+                }
+              />
+            </>
+          )}
+          <p className={`${finished ? '' : 'mt-3 '}text-xs text-parchment/45`}>
             Move log, chat and replays are planned for a later update.
           </p>
           <Button variant="ghost" className="mt-2 h-10 w-full" onClick={leave}>
@@ -367,7 +423,12 @@ export function GameRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) {
       </aside>
 
       {finished && showResult ? (
-        <GameOver feed={feed} onClose={() => setShowResult(false)} onLeave={leave} />
+        <GameOver
+          feed={feed}
+          defeatReasons={seatInfo?.defeatReasons ?? null}
+          onClose={() => setShowResult(false)}
+          onLeave={leave}
+        />
       ) : null}
     </div>
   )

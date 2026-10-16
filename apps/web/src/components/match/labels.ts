@@ -1,4 +1,4 @@
-import { SEAT_NAMES, type SeatName } from '@game/protocol'
+import { GAME_MODES, SEAT_NAMES, type SeatName, TIME_CONTROL_IDS } from '@game/protocol'
 
 /** Text labels for seats, modes and results (no renderer dependency, safe for any page). */
 export const SEAT_LABEL: Record<SeatName, string> = {
@@ -25,6 +25,14 @@ export function ordinal(n: number): string {
 
 export const MODE_LABEL: Record<string, string> = { ffa: 'Free-for-all', teams: 'Teams 2v2' }
 
+/** Everyone's starting Elo (shown greyed out before a first ranked game). */
+export const ELO_START = 1200
+
+/** Every Elo rating bucket (mode x time control), in display order. */
+export const RATING_BUCKETS = GAME_MODES.flatMap((mode) =>
+  TIME_CONTROL_IDS.map((timeControl) => ({ mode, timeControl })),
+)
+
 export const STATUS_LABEL: Record<string, string> = {
   active: 'In play',
   defeated: 'Defeated',
@@ -36,9 +44,19 @@ export const END_REASON_LABEL: Record<string, string> = {
   last_standing: 'Last civilization standing',
   team_eliminated: 'A team was eliminated',
   move_limit: 'Move limit reached (25 rounds without a capture or pawn move)',
+  agreed_draw: 'Every player still in the game agreed to a draw',
   server_shutdown: 'Game cancelled: the server restarted',
   server_restart: 'Game cancelled: the server restarted',
   persist_failed: 'Game cancelled: the result could not be saved',
   resimulation_mismatch: 'Game cancelled: the result could not be verified',
   room_disposed: 'Game cancelled',
+}
+
+/** How a seat was knocked out (rules defeat reasons). */
+export const DEFEAT_REASON_LABEL: Record<string, string> = {
+  leader_captured: 'Leader captured',
+  stalemate: 'Stalemated',
+  timeout: 'Out of time',
+  abandon: 'Left the game',
+  resign: 'Resigned',
 }

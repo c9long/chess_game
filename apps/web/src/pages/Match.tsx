@@ -22,7 +22,7 @@ import {
 type Connection =
   | { kind: 'connecting' }
   | { kind: 'password'; error?: string }
-  | { kind: 'error'; message: string }
+  | { kind: 'error'; message: string; code?: string | undefined }
   | { kind: 'other-room'; otherId: string }
   | { kind: 'closed'; reason: CloseReason }
   | { kind: 'ready' }
@@ -57,7 +57,7 @@ function useRoomFor(roomId: string): [Connection, (password: string) => Promise<
       } catch (err) {
         if (cancelled) return
         if (matchErrorCode(err) === 'invalid_password') setConn({ kind: 'password' })
-        else setConn({ kind: 'error', message: matchErrorMessage(err) })
+        else setConn({ kind: 'error', message: matchErrorMessage(err), code: matchErrorCode(err) })
       }
     })()
     return () => {
@@ -76,6 +76,14 @@ function useRoomFor(roomId: string): [Connection, (password: string) => Promise<
   return [conn, withPassword]
 }
 
+export type NoticeTone = 'error' | 'info' | 'success'
+
+export interface Notice {
+  id: number
+  text: string
+  tone: NoticeTone
+}
+
 export interface MatchFeed {
   state: MatchStateJson
   mySeat: number
@@ -83,8 +91,11 @@ export interface MatchFeed {
   lastEvents: ServerMessages['events'] | null
   clock: ClockSync | null
   gameOver: ServerMessages['gameOver'] | null
-  /** Refusals and problems from the server, newest last. */
-  notices: { id: number; text: string }[]
+  /** Latest `drawEvent` message, with a local id so repeats are told apart. */
+  lastDraw: (ServerMessages['drawEvent'] & { id: number }) | null
+  /** Refusals, problems and game notes (toasts), newest last. */
+  notices: Notice[]
+  notify: (text: string, tone?: NoticeTone) => void
   dismiss: (id: number) => void
   reconnecting: boolean
 }
@@ -97,8 +108,14 @@ function useMatchFeed(room: MatchRoom, onClosed: (reason: string) => void): Matc
   const [lastEvents, setLastEvents] = useState<ServerMessages['events'] | null>(null)
   const [clock, setClock] = useState<ClockSync | null>(null)
   const [gameOver, setGameOver] = useState<ServerMessages['gameOver'] | null>(null)
-  const [notices, setNotices] = useState<{ id: number; text: string }[]>([])
+  const [lastDraw, setLastDraw] = useState<MatchFeed['lastDraw']>(null)
+  const [notices, setNotices] = useState<Notice[]>([])
   const [reconnecting, setReconnecting] = useState(false)
+  const [notify] = useState(() => (text: string, tone: NoticeTone = 'error') => {
+    const id = ++noticeSeq
+    setNotices((n) => [...n.slice(-2), { id, text, tone }])
+    window.setTimeout(() => setNotices((n) => n.filter((x) => x.id !== id)), 6000)
+  })
 
   useEffect(() => {
     const onState = () => setState(stateJson(room))
@@ -112,9 +129,10 @@ function useMatchFeed(room: MatchRoom, onClosed: (reason: string) => void): Matc
       room.onMessage('clock', (c: ClockSync) => setClock(c)),
       room.onMessage('gameOver', (g: ServerMessages['gameOver']) => setGameOver(g)),
       room.onMessage('error', (e: ServerMessages['error']) => {
-        const id = ++noticeSeq
-        setNotices((n) => [...n.slice(-2), { id, text: errorCodeMessage(e.code, e.message) }])
-        window.setTimeout(() => setNotices((n) => n.filter((x) => x.id !== id)), 6000)
+        notify(errorCodeMessage(e.code, e.message))
+      }),
+      room.onMessage('drawEvent', (e: ServerMessages['drawEvent']) => {
+        setLastDraw({ ...e, id: ++noticeSeq })
       }),
       room.onMessage('kicked', () => onClosed('kicked')),
       room.onMessage('welcome', () => {}),
@@ -135,7 +153,7 @@ function useMatchFeed(room: MatchRoom, onClosed: (reason: string) => void): Matc
       room.onLeave.remove(onLeave)
       for (const off of offs) off()
     }
-  }, [room, onClosed])
+  }, [room, onClosed, notify])
 
   if (!state) return null
   const mySeat = state.seats.findIndex((s) => s.sessionId && s.sessionId === room.sessionId)
@@ -145,7 +163,9 @@ function useMatchFeed(room: MatchRoom, onClosed: (reason: string) => void): Matc
     lastEvents,
     clock: clock ?? (state.clock.serverTimestamp > 0 ? toSync(state.clock) : null),
     gameOver,
+    lastDraw,
     notices,
+    notify,
     dismiss: (id) => setNotices((n) => n.filter((x) => x.id !== id)),
     reconnecting,
   }
@@ -212,10 +232,20 @@ function MatchView({ room }: { room: MatchRoom }) {
           Connection lost. Reconnecting…
         </div>
       ) : null}
-      <div className="pointer-events-none fixed right-4 bottom-4 z-50 flex w-80 flex-col gap-2">
+      {/* In a game, toasts sit bottom-left over the board's corner on wide screens, clear of the
+          side panel's buttons, and let clicks through so they never block a move. */}
+      <div
+        className={`pointer-events-none fixed right-4 bottom-4 z-50 flex w-80 max-w-[calc(100vw-2rem)] flex-col gap-2 ${
+          inGame ? 'lg:right-auto lg:left-4' : ''
+        }`}
+      >
         {feed.notices.map((n) => (
-          <div key={n.id} className="pointer-events-auto">
-            <Alert>{n.text}</Alert>
+          <div
+            key={n.id}
+            className={`rounded-lg bg-panel shadow-lg shadow-black/40 ${inGame ? '' : 'pointer-events-auto'}`}
+            data-testid="toast"
+          >
+            <Alert tone={n.tone}>{n.text}</Alert>
           </div>
         ))}
       </div>
@@ -318,9 +348,24 @@ export function Match() {
         <Card>
           <h1 className="mb-3 font-display text-2xl font-semibold">Can’t join this game</h1>
           <p className="mb-6 text-parchment/70">{conn.message}</p>
-          <Link className="font-semibold text-gold hover:underline" to="/play">
-            Back to lobbies
-          </Link>
+          {conn.code === 'account_required' ? (
+            <div className="flex flex-wrap items-center gap-4">
+              <Link
+                to="/sign-up"
+                className="inline-flex h-10 items-center rounded-lg bg-gold px-4 text-sm font-semibold text-ink hover:bg-gold-bright"
+                data-testid="create-account"
+              >
+                Create account
+              </Link>
+              <Link className="font-semibold text-gold hover:underline" to="/play">
+                Back to lobbies
+              </Link>
+            </div>
+          ) : (
+            <Link className="font-semibold text-gold hover:underline" to="/play">
+              Back to lobbies
+            </Link>
+          )}
         </Card>
       </CenteredPage>
     )

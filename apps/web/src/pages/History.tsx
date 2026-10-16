@@ -5,8 +5,16 @@ import {
   type RatingsResponse,
 } from '@game/protocol'
 import { useCallback, useEffect, useState } from 'react'
+import { Link } from 'react-router'
 import { CivEmblem, civName } from '../components/CivEmblem.tsx'
-import { END_REASON_LABEL, MODE_LABEL, ordinal } from '../components/match/labels.ts'
+import {
+  ELO_START,
+  END_REASON_LABEL,
+  MODE_LABEL,
+  ordinal,
+  RATING_BUCKETS,
+} from '../components/match/labels.ts'
+import { EloDelta, RankedBadge } from '../components/match/RankedBadge.tsx'
 import { Alert, Button, Spinner } from '../components/ui.tsx'
 import { api } from '../lib/api.ts'
 import { isGuest, useAppState } from '../lib/app-state.tsx'
@@ -29,11 +37,14 @@ function MatchRow({ m }: { m: MatchListItem }) {
         <CivEmblem civ={m.civ} className="h-8 w-8" />
       </span>
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-semibold">
-          {MODE_LABEL[m.mode]} ·{' '}
-          {isUntimed(m.timeControl)
-            ? 'Untimed · vs bots'
-            : `${m.timeControl} · ${m.rated ? 'Rated' : 'Casual'}`}
+        <p className="flex flex-wrap items-center gap-2 text-sm font-semibold">
+          <span>
+            {MODE_LABEL[m.mode]} ·{' '}
+            {isUntimed(m.timeControl)
+              ? 'Untimed · vs bots'
+              : `${m.timeControl}${m.ranked ? (m.rated ? '' : ' · Not rated') : ' · Casual'}`}
+          </span>
+          {m.ranked ? <RankedBadge /> : null}
         </p>
         <p className="mt-0.5 text-xs text-parchment/55">
           {when(m.startedAt)} · as {civName(m.civ)}
@@ -53,13 +64,14 @@ function MatchRow({ m }: { m: MatchListItem }) {
         </p>
       </div>
       {m.ratingAfter !== null ? (
-        <span className="text-right text-sm tabular-nums">
-          <span className="block font-semibold">{m.ratingAfter}</span>
-          <span
-            className={`block text-xs ${delta && delta > 0 ? 'text-[#7fd8b7]' : delta && delta < 0 ? 'text-seat-south-light' : 'text-parchment/50'}`}
-          >
-            {delta && delta > 0 ? `+${delta}` : (delta ?? '')}
+        <span className="text-right text-sm tabular-nums" data-testid="history-elo">
+          <span className="block font-semibold">
+            {m.ratingAfter}
+            <span className="ml-1 text-[11px] font-medium text-parchment/45">Elo</span>
           </span>
+          {delta !== null ? (
+            <EloDelta delta={delta} className="block text-xs font-semibold" />
+          ) : null}
         </span>
       ) : null}
     </li>
@@ -100,28 +112,55 @@ export function History() {
       <h1 className="font-display text-3xl font-semibold tracking-tight">Match history</h1>
       {isGuest(session?.user) ? (
         <p className="mt-2 text-sm text-parchment/60">
-          Guest games are casual. Create an account to keep this history and earn ratings.
+          Guest games are casual. Create an account to keep this history and play ranked games.
         </p>
       ) : null}
 
-      {ratings.length > 0 ? (
-        <section className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4" aria-label="Ratings">
-          {ratings.map((r) => (
-            <div
-              key={`${r.mode}-${r.timeControl}`}
-              className="rounded-2xl border border-parchment/10 bg-panel/80 px-4 py-3"
+      {isGuest(session?.user) ? null : (
+        <section className="mt-6" aria-labelledby="ratings-title">
+          <div className="mb-3 flex items-baseline justify-between gap-3">
+            <h2 id="ratings-title" className="font-display text-lg font-semibold">
+              Elo ratings
+            </h2>
+            <Link
+              to="/leaderboard"
+              className="text-xs font-semibold text-gold underline-offset-2 hover:underline"
             >
-              <p className="text-xs text-parchment/55">
-                {MODE_LABEL[r.mode]} · {r.timeControl}
-              </p>
-              <p className="mt-1 font-display text-2xl font-semibold">{r.rating}</p>
-              <p className="text-xs text-parchment/45">
-                {r.gamesPlayed} game{r.gamesPlayed === 1 ? '' : 's'}
-              </p>
-            </div>
-          ))}
+              Leaderboard →
+            </Link>
+          </div>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4" data-testid="rating-cards">
+            {RATING_BUCKETS.map(({ mode, timeControl }) => {
+              const r = ratings.find((x) => x.mode === mode && x.timeControl === timeControl)
+              return (
+                <div
+                  key={`${mode}-${timeControl}`}
+                  className={`rounded-2xl border px-4 py-3 ${
+                    r
+                      ? 'border-gold/25 bg-panel/80'
+                      : 'border-dashed border-parchment/12 bg-panel/40'
+                  }`}
+                  data-testid={`rating-${mode}-${timeControl}`}
+                >
+                  <p className="text-xs text-parchment/55">
+                    {MODE_LABEL[mode]} · {timeControl}
+                  </p>
+                  <p
+                    className={`mt-1 font-display text-2xl font-semibold tabular-nums ${r ? '' : 'text-parchment/35'}`}
+                  >
+                    {r ? r.rating : ELO_START}
+                  </p>
+                  <p className="text-xs text-parchment/45 tabular-nums">
+                    {r
+                      ? `${r.gamesPlayed} game${r.gamesPlayed === 1 ? '' : 's'} · peak ${r.peak}`
+                      : 'No ranked games yet'}
+                  </p>
+                </div>
+              )
+            })}
+          </div>
         </section>
-      ) : null}
+      )}
 
       <div className="mt-8">
         {error ? (
