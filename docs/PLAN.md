@@ -47,7 +47,7 @@ Later the game will be ported to a **Unity PC client sold on Steam**. That clien
   - CORS allows credentials only from `play.<domain>`;
   - passkey `rpID = <domain>`.
 - Colyseus `onAuth` resolves the Better Auth session from the handshake cookie (web) or the bearer token (Unity). It binds the seat to `user.id` and `is_guest`, and rated rooms reject guests.
-- **Real client IPs behind Cloudflare:** Caddy trusts only Cloudflare's IP ranges and forwards `CF-Connecting-IP`, and Better Auth reads that header for rate limiting. The VPS firewall accepts web traffic only from Cloudflare.
+- **Real client IPs behind Cloudflare:** the API is reachable only through a Cloudflare Tunnel (an outbound connection from the VPS), so every request comes from Cloudflare and the `CF-Connecting-IP` header Better Auth reads for rate limiting can be trusted. The VPS firewall opens no web ports at all, only SSH. *(Changed from the original Caddy + Cloudflare-only firewall design during M7: on Linux, Docker's published ports bypass `ufw`, so that firewall rule would not have applied. The tunnel also removes TLS certificate management.)*
 - **Rate limits:**
   - auth endpoints: Better Auth's limiter plus Turnstile;
   - guest creation: Turnstile plus a per-IP limit;
@@ -74,7 +74,7 @@ chess_game/
     db/                 Drizzle schema + migrations
     assets/             Original SVG emblems, piece sets, board textures, sounds
   infra/
-    docker-compose.yml  Postgres, server, bot-service (CPU-limited), Caddy (HTTPS)
+    docker-compose.yml  Postgres, migrations, server, bot-service (CPU-limited), Cloudflare Tunnel
     backups/            DB backup + restore scripts
   docs/
     PLAN.md             This document, copied into the repo
@@ -396,7 +396,7 @@ I will draft these from established practice and the case law on online agreemen
 | **OAuth ("Sign in with Google/Discord…")** | A valet key: Google vouches for who you are without giving us your Google password. | Faster signup. Free for the providers we picked. |
 | **Passkeys** | Your device's fingerprint/face unlock acting as your key; nothing to remember or leak. | Optional password-free login, very resistant to phishing. |
 | **MFA / TOTP** | A second lock: a 6-digit code from an authenticator app that changes every 30 seconds. | Optional extra account protection. |
-| **HTTPS / TLS certificate** | The padlock in the browser bar: an armored truck for data in transit. | Encrypts everything between player and server. Free (Caddy/Let's Encrypt and Cloudflare). |
+| **HTTPS / TLS certificate** | The padlock in the browser bar: an armored truck for data in transit. | Encrypts everything between player and server. Free (Cloudflare handles it; the tunnel encrypts the hop to the VPS). |
 | **Docker / Docker Compose** | Shipping containers: each program is packed with everything it needs, and one list describes the whole fleet. | One command starts the whole system, identically on a rented server, a home server or a laptop. |
 | **Transactional email** | A mail carrier for automatic emails. | Sends "verify your email" and "reset your password" messages. |
 | **Backups** | Copies of the filing cabinet stored in another building, kept for 30 days. | If the server dies, we restore accounts and history. |
@@ -498,7 +498,7 @@ If many players fill seats with strong bots, the next step is a bigger OVH tier 
 | M4 | **Lobbies** | Colyseus lobby list + lobby room: create (mode, time control, optional hashed password with attempt limits); join; seats/teams; blind civ pick with emblems beside names; host controls; bot seats with level picker and random-but-editable civ; ready/start; session-bound seats. |
 | M5 | **Live games** | Authoritative game room; server clocks (10+0, 3+2); 60 s reconnect grace + abandon; all defeat paths; end screen; **incremental event persistence + abort-on-restart**; re-simulation check; OpenSkill ratings (public + shadow). |
 | M6 | **Bots** | Engine (Teams team-signed alpha-beta, FFA BRS+); handcrafted eval; strength levels; bot-service (CPU-limited, deadline-aware, load-shedding); `bot-arena` calibration; overnight tuning. |
-| M7 | **Deploy** | OVHcloud US VPS-2 (4 vCPU/8 GB) + Docker Compose + Caddy (Cloudflare-only firewall, trusted proxies); Cloudflare Pages at `play.<domain>`, API at `api.<domain>`; **draining deploys**; nightly 30-day off-site backups with a tested restore; monitoring; staging. |
+| M7 | **Deploy** | OVHcloud US VPS-2 (4 vCPU/8 GB) + Docker Compose + Cloudflare Tunnel (no open web ports); Cloudflare Pages at `play.<domain>`, API at `api.<domain>`; **draining deploys**; nightly 30-day off-site backups with a tested restore; monitoring; staging. Walkthrough: [DEPLOY.md](DEPLOY.md). |
 
 ---
 

@@ -16,7 +16,7 @@ Conventions (see [CLAUDE.md](CLAUDE.md)):
 - ~~`docs/PLAN.md`, `TODO.md`, `CLAUDE.md`~~ (done 2026-10-14)
 - ~~GitHub Actions CI (Rust fmt/clippy/test + TS lint/typecheck/test)~~ (done 2026-10-14)
 - ~~Dev database setup script for local PostgreSQL (`infra/dev-db.sh`)~~ (done 2026-10-14)
-- Docker Compose file for the dev/prod stack — `infra/docker-compose.yml` written (Postgres) but untested: Docker isn't installed on the dev machine (needs sudo). Verify once Docker is available.
+- Docker Compose file for the dev/prod stack — `infra/docker-compose.yml` now holds the full production stack (see M7) but is untested: Docker isn't installed on the dev machine (needs sudo). Verify with `docker compose config` and a local `up` once Docker is available.
 
 ### M1 — Rules core (Rust) — §2
 - ~~Board geometry, coordinates, square colors, seats, turn order~~ (done 2026-10-15)
@@ -100,9 +100,14 @@ Conventions (see [CLAUDE.md](CLAUDE.md)):
 - ~~Review fixes (bots): BRS/BRS+ default moves save their own leader and take the root's; an interrupted first iteration never leaks move-ordering scores into the result; depth-1 node cap and exact-root window (no more multi-second "node-bound" moves); fail-soft quiescence delta pruning no longer poisons the TT; FFA move-limit tie valued on the evaluation's scale; bot-service gives every search a minimum time or answers 503 (no unsearched moves), honest `degraded`, header/body timeouts and a bounded shutdown drain, listen backlog 1024, abandoned jobs leave the queue, untimed 2400 reproducible, per-status metrics, JS-style numbers accepted and unknown fields rejected~~ (done 2026-10-15; levels re-checked with bot-arena, see [docs/bots-calibration.md](docs/bots-calibration.md))
 
 ### M7 — Deploy — §9
-- OVHcloud US VPS-2 (4 vCPU / 8 GB, US-East), Docker Compose, Caddy, Cloudflare-only firewall
-- Cloudflare Pages at `play.<domain>`, API at `api.<domain>`
-- Draining deploys, nightly 30-day off-site backups with tested restore, monitoring, staging
+- ~~Production container images and stack: server Dockerfile, `infra/docker-compose.yml` (Postgres, migrations, server, bot-service, Cloudflare Tunnel), SSH-only firewall script~~ (done 2026-10-15; untested locally: Docker isn't installed on the dev machine. Caddy + Cloudflare-only firewall replaced by a Cloudflare Tunnel because Docker's published ports bypass `ufw`)
+- ~~Web deploy to Cloudflare Pages via GitHub Actions (`.github/workflows/deploy-web.yml`, inactive until repo secrets are set)~~ (done 2026-10-15)
+- ~~Draining deploys (45 min stop grace), nightly encrypted 30-day off-site backups (`infra/backup.sh`), restore + `reapply-deletions` steps~~ (done 2026-10-15)
+- ~~Step-by-step deployment guide for non-technical readers (`docs/DEPLOY.md`)~~ (done 2026-10-15)
+- Provision the real infrastructure: domain, Cloudflare (DNS, Pages, Tunnel, Turnstile), OVHcloud VPS-2, Resend, backup storage; follow docs/DEPLOY.md (needs the owner's accounts)
+- First production smoke test, plus a restore-from-backup drill on the live server
+- Monitoring: Sentry error tracking (server + web) and an uptime check on `api.<domain>/api/health`
+- Staging environment (second compose project on the same VPS, `staging-api.` / `staging.` hostnames)
 
 ---
 

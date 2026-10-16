@@ -1,0 +1,74 @@
+name: Deploy web
+
+# Builds the web app (including the WebAssembly rules engine, which Cloudflare Pages' own
+# build image can't compile) and uploads it to Cloudflare Pages. Inactive until the
+# repository has these settings (docs/DEPLOY.md, step 6):
+#   secrets.CLOUDFLARE_API_TOKEN   (Cloudflare API token with "Cloudflare Pages: Edit")
+#   secrets.CLOUDFLARE_ACCOUNT_ID
+#   vars.VITE_API_URL              (https://api.<domain>)
+#   vars.PAGES_PROJECT             (the Cloudflare Pages project name)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-web
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check deployment settings
+        id: settings
+        env:
+          TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          API_URL: ${{ vars.VITE_API_URL }}
+          PROJECT: ${{ vars.PAGES_PROJECT }}
+        run: |
+          if [ -z "$TOKEN" ] || [ -z "$API_URL" ] || [ -z "$PROJECT" ]; then
+            echo "Deployment settings not configured yet; skipping (see docs/DEPLOY.md)."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.settings.outputs.ready == 'true'
+        uses: actions/checkout@v4
+      - if: steps.settings.outputs.ready == 'true'
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - if: steps.settings.outputs.ready == 'true'
+        uses: Swatinem/rust-cache@v2
+      # Must match the wasm-bindgen crate version in Cargo.lock.
+      - if: steps.settings.outputs.ready == 'true'
+        uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-bindgen@0.2.129
+      - if: steps.settings.outputs.ready == 'true'
+        uses: pnpm/action-setup@v4
+      - if: steps.settings.outputs.ready == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - if: steps.settings.outputs.ready == 'true'
+        run: pnpm install --frozen-lockfile
+      - if: steps.settings.outputs.ready == 'true'
+        run: pnpm build:wasm
+      - if: steps.settings.outputs.ready == 'true'
+        run: pnpm --filter @game/web build
+        env:
+          VITE_API_URL: ${{ vars.VITE_API_URL }}
+      # Single-page app: unknown paths serve index.html (client-side routes like /match/:id).
+      - if: steps.settings.outputs.ready == 'true'
+        run: printf '/*  /index.html  200\n' > apps/web/dist/_redirects
+      - if: steps.settings.outputs.ready == 'true'
+        name: Upload to Cloudflare Pages
+        run: npx --yes wrangler@4.145.0 pages deploy apps/web/dist --project-name "$PROJECT" --branch main
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          PROJECT: ${{ vars.PAGES_PROJECT }}

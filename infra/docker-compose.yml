@@ -1,5 +1,10 @@
-# Full stack for staging/production (and dev machines with Docker).
-# Services are added as milestones land: server (M4/M5), bot-service (M6), caddy (M7).
+# Production stack for one VPS (PLAN §9): Postgres, the game/API server, bot-service and a
+# Cloudflare Tunnel (public HTTPS for the API without opening any web ports). The web app is static and is served by Cloudflare Pages.
+#
+#   cp infra/.env.example infra/.env   # fill in every value
+#   docker compose -f infra/docker-compose.yml --env-file infra/.env up -d --build
+#
+# See docs/DEPLOY.md for the full walkthrough.
 name: game
 
 services:
@@ -7,22 +12,55 @@ services:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${DB_NAME:-game_dev}
+      POSTGRES_DB: ${DB_NAME:-game}
       POSTGRES_USER: ${DB_USER:-game}
       POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD}
     volumes:
       - pgdata:/var/lib/postgresql/data
-    ports:
-      - "127.0.0.1:5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       timeout: 3s
       retries: 10
 
-  # Bot moves for the game server (M6). CPU-limited so searches can never
-  # starve the referee (PLAN §6); BOT_WORKERS follows the CPU limit.
-  # Reachable only on the compose network (http://bot-service:7700).
+  # One-shot: apply database migrations and seed the civilization catalog, then exit.
+  migrate:
+    build:
+      context: ..
+      dockerfile: apps/server/Dockerfile
+    image: game-server
+    restart: "no"
+    command: ["sh", "-c", "node packages/db/src/migrate-cli.ts && node packages/db/src/seed-cli.ts"]
+    environment:
+      DATABASE_URL: postgres://${DB_USER:-game}:${DB_PASSWORD}@postgres:5432/${DB_NAME:-game}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  server:
+    image: game-server
+    restart: unless-stopped
+    # Running games finish before a restart (PLAN §5 draining deploys); cap matches the server.
+    stop_grace_period: 45m
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: "3000"
+      DATABASE_URL: postgres://${DB_USER:-game}:${DB_PASSWORD}@postgres:5432/${DB_NAME:-game}
+      BOT_SERVICE_URL: http://bot-service:7700
+      TRUST_CLOUDFLARE: "true"
+      RATE_LIMIT_ENABLED: "true"
+    expose:
+      - "3000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      bot-service:
+        condition: service_started
+
+  # Bot moves for the game server. CPU-limited so searches can never starve the referee
+  # (PLAN §6); BOT_WORKERS follows the CPU limit. Reachable only on the compose network.
   bot-service:
     build:
       context: ..
@@ -36,6 +74,19 @@ services:
       BOT_LOG_FORMAT: json
     expose:
       - "7700"
+
+  # Cloudflare Tunnel: connects outbound to Cloudflare, which serves https://api.<domain>
+  # and forwards to http://server:3000 (WebSockets included). The VPS opens no web ports,
+  # needs no TLS certificates, and only Cloudflare can reach the server, so the
+  # CF-Connecting-IP header the rate limits rely on can be trusted. Setup: docs/DEPLOY.md.
+  cloudflared:
+    image: cloudflare/cloudflared:2026.9.0
+    restart: unless-stopped
+    command: ["tunnel", "--no-autoupdate", "run"]
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:?set CLOUDFLARE_TUNNEL_TOKEN}
+    depends_on:
+      - server
 
 volumes:
   pgdata:
