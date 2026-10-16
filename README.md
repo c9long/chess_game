@@ -4,6 +4,21 @@ A four-player chess variant on a 12×12 board. Each player picks a civilization 
 
 > Working title. The display name lives in [`packages/config`](packages/config/src/index.ts) (`APP_NAME`).
 
+## What's in the game
+
+- **Four players, 12×12 board**, Free-for-All or 2v2 Teams, with the rules in
+  [docs/RULES.md](docs/RULES.md) (leaders can be captured, mid-board promotion, stalemate is a loss).
+- **Nine civilizations**, each shown by an original, flag-free emblem beside the player's name.
+- **Multiplayer lobbies**: public or password-protected, 10+0 or 3+2 clocks, empty seats filled
+  with bots at a chosen strength (ELO 600 to Max).
+- **Play vs bots**: an untimed singleplayer game against three bots.
+- **Ranked mode**: Elo adapted for four players, with a public leaderboard.
+- **In game**: animated moves and captures, resignation, unanimous draw offers, pieces-lost
+  tallies, results with placements and rating changes, match history.
+- **Accounts**: guest play, email and password (argon2id), passkeys, optional authenticator-app
+  MFA, OAuth sign-in (Google, Discord, GitHub, Microsoft when configured).
+- Works on desktop, tablet and phone screens.
+
 ## Documents
 
 | Document | Purpose |
