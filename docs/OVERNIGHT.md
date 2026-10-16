@@ -245,7 +245,7 @@ Run at 7:07 AM on the final code, everything green:
 | Board renderer | 57 passed |
 | Web app | 22 passed |
 | Server (real Postgres) | 258 passed, 2 skipped (need a running bot-service) |
-| Browser end-to-end (Playwright) | 53 passed (56 after the last items, rerun at 7:36) |
+| Browser end-to-end (Playwright) | 57 passed (final run on the finished code, 7:58 AM) |
 
 Everything is committed and pushed to `main` in small, described commits.
 
