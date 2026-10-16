@@ -215,6 +215,13 @@ all fixed):
 - Verified: the full browser suite again (56 tests including the new one), web and board
   unit tests, lint, typecheck.
 
+### 10. Not-found page and no-JavaScript message (7:38–7:40)
+
+- The "page not found" screen now matches the app (brand mark, short explanation, buttons back
+  to the start or to the lobbies, its own tab title) instead of a bare line of text.
+- Browsers with JavaScript turned off see a short explanation instead of a blank page.
+- Verified: lint, typecheck, build, landing and accessibility browser specs (7 passed).
+
 ## Final verification (on `main`)
 
 Run at 7:07 AM on the final code, everything green:
