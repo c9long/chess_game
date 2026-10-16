@@ -1,9 +1,8 @@
 import { APP_NAME } from '@game/config'
 import { MotionConfig, useAnimate, useReducedMotion } from 'motion/react'
 import { type ReactNode, Suspense, useEffect, useRef, useState } from 'react'
-import { Link, Outlet, useLocation, useNavigate } from 'react-router'
+import { Link, Outlet, useLocation } from 'react-router'
 import { displayName, isGuest, useAppState } from '../lib/app-state.tsx'
-import { authClient } from '../lib/auth-client.ts'
 import { usePrefs } from '../lib/prefs.ts'
 import { MenuIcon } from './game/icons.tsx'
 import { Spinner } from './ui.tsx'
@@ -115,17 +114,12 @@ function MobileMenu({ onSignOut }: { onSignOut: () => void }) {
 }
 
 export function Shell() {
-  const { session, legal } = useAppState()
-  const navigate = useNavigate()
+  const { session, legal, signOut } = useAppState()
   const { pathname } = useLocation()
   const user = session?.user
   const reducedPref = usePrefs((st) => st.reducedMotion)
   // The game screen fits the viewport: no footer under the board.
   const inMatch = pathname.startsWith('/match/')
-  async function signOut() {
-    await authClient.signOut()
-    navigate('/')
-  }
   return (
     <MotionConfig reducedMotion={reducedPref ? 'always' : 'user'}>
       <div className="flex min-h-full flex-col">

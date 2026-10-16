@@ -205,10 +205,13 @@ export function AcceptanceGate() {
 }
 
 export function RequireAuth({ children }: { children: React.ReactNode }) {
-  const { session, sessionPending } = useAppState()
+  const { session, sessionPending, signingOut, leaveState } = useAppState()
   const location = useLocation()
   if (sessionPending) return <Loading />
   if (!session) {
+    // Signing out goes to the landing page; don't race it with a redirect to sign-in. Navigate
+    // there (rather than wait) so a route opened mid-sign-out can't leave a spinner behind.
+    if (signingOut) return <Navigate to="/" replace state={leaveState} />
     return (
       <Navigate to="/sign-in" replace state={{ from: `${location.pathname}${location.search}` }} />
     )
