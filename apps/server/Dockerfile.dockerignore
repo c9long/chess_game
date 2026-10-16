@@ -1,0 +1,20 @@
+# Used by BuildKit for `docker build -f apps/server/Dockerfile .`
+*
+!package.json
+!pnpm-lock.yaml
+!pnpm-workspace.yaml
+!Cargo.toml
+!Cargo.lock
+!crates/
+!apps/server/
+!packages/config/
+!packages/db/
+!packages/protocol/
+!packages/rules/
+**/node_modules
+**/target
+**/.env
+**/*.test.ts
+apps/server/src/test
+packages/rules/wasm
+crates/rules-wasm/pkg
