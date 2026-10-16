@@ -2,10 +2,12 @@ import { z } from 'zod'
 import {
   CLOSE_CODES,
   ERROR_CODES,
+  MATCH_KINDS,
   MATCH_PHASES,
   PROTOCOL_VERSION,
   ROOM_NAMES,
   SEAT_NAMES,
+  UNTIMED,
 } from './constants.ts'
 import {
   clientMessageSchemas,
@@ -36,6 +38,8 @@ export function buildProtocolJsonSchema() {
     roomNames: ROOM_NAMES,
     seats: SEAT_NAMES,
     phases: MATCH_PHASES,
+    matchKinds: MATCH_KINDS,
+    untimed: UNTIMED,
     errorCodes: ERROR_CODES,
     closeCodes: CLOSE_CODES,
     reservedMessageTypes: RESERVED_MESSAGE_TYPES,

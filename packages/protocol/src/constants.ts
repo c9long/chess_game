@@ -39,6 +39,28 @@ export type GameModeId = (typeof GAME_MODES)[number]
 export const TIME_CONTROL_IDS = Object.keys(TIME_CONTROLS) as (keyof typeof TIME_CONTROLS)[]
 export type TimeControl = keyof typeof TIME_CONTROLS
 
+/**
+ * Time control id of singleplayer games (`kind: 'solo'`): no clocks run, nobody can flag,
+ * and the game is never rated. Not valid for lobbies.
+ */
+export const UNTIMED = 'untimed' as const
+export type Untimed = typeof UNTIMED
+
+/** Whether a room's (or a stored match's) time control is untimed. */
+export function isUntimed(timeControl: string): timeControl is Untimed {
+  return timeControl === UNTIMED
+}
+
+/**
+ * Room kinds: `lobby` (multiplayer, listed unless private, seats filled by people and bots)
+ * or `solo` (singleplayer: the creator at South against three bots, never listed, untimed).
+ */
+export const MATCH_KINDS = ['lobby', 'solo'] as const
+export type MatchKind = (typeof MATCH_KINDS)[number]
+
+/** Name the server gives a solo room when the creator sends none. */
+export const SOLO_DEFAULT_NAME = 'Practice vs bots'
+
 /** `draft` is designed but not built yet: the server rejects it with `not_implemented`. */
 export const PICK_MODES = ['blind', 'draft'] as const
 export type PickMode = (typeof PICK_MODES)[number]

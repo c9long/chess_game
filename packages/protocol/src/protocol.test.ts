@@ -7,10 +7,13 @@ import {
   checkLobbyNameFormat,
   clientMessageSchemas,
   createOptionsSchema,
+  createSoloOptionsSchema,
   isReservedMessageType,
+  isUntimed,
   joinOptionsSchema,
   PROTOCOL_VERSION,
   teamOfSeat,
+  UNTIMED,
 } from './index.ts'
 import { buildProtocolJsonSchema } from './json-schema.ts'
 import { createMatchState } from './state.ts'
@@ -25,6 +28,7 @@ describe('join options', () => {
     })
     expect(parsed).toEqual({
       protocolVersion: 1,
+      kind: 'lobby',
       name: 'Friday game',
       mode: 'teams',
       timeControl: '3+2',
@@ -40,6 +44,67 @@ describe('join options', () => {
     expect(createOptionsSchema.safeParse({ ...base, protocolVersion: 2 }).success).toBe(false)
     expect(createOptionsSchema.safeParse({ ...base, name: 'ab' }).success).toBe(false)
     expect(joinOptionsSchema.safeParse({ protocolVersion: 1, password: 'x' }).success).toBe(true)
+  })
+
+  it('refuses the untimed time control for multiplayer lobbies', () => {
+    const base = { protocolVersion: 1, name: 'Lobby', mode: 'ffa' }
+    expect(createOptionsSchema.safeParse({ ...base, timeControl: UNTIMED }).success).toBe(false)
+    expect(
+      createOptionsSchema.safeParse({ ...base, kind: 'lobby', timeControl: UNTIMED }).success,
+    ).toBe(false)
+    expect(
+      createOptionsSchema.safeParse({ ...base, kind: 'lobby', timeControl: '3+2' }).success,
+    ).toBe(true)
+  })
+})
+
+describe('solo create options', () => {
+  const solo = {
+    protocolVersion: PROTOCOL_VERSION,
+    kind: 'solo',
+    mode: 'ffa',
+    timeControl: UNTIMED,
+    civ: 'mali',
+    botLevel: '1200',
+  } as const
+
+  it('accepts a solo game with a civ and a bot level, the name being optional', () => {
+    expect(createOptionsSchema.parse(solo)).toEqual(solo)
+    expect(createSoloOptionsSchema.safeParse(solo).success).toBe(true)
+    const named = createOptionsSchema.parse({ ...solo, mode: 'teams', name: ' Practice ' })
+    expect(named).toMatchObject({ kind: 'solo', mode: 'teams', name: 'Practice' })
+    expect(createOptionsSchema.safeParse({ ...solo, botLevel: 'max' }).success).toBe(true)
+  })
+
+  it('rejects solo games without a civ or bot level, with a clock, or with lobby-only options', () => {
+    const { civ: _civ, ...noCiv } = solo
+    const { botLevel: _level, ...noLevel } = solo
+    expect(createOptionsSchema.safeParse(noCiv).success).toBe(false)
+    expect(createOptionsSchema.safeParse(noLevel).success).toBe(false)
+    expect(createOptionsSchema.safeParse({ ...solo, civ: 'atlantis' }).success).toBe(false)
+    expect(createOptionsSchema.safeParse({ ...solo, botLevel: '1000' }).success).toBe(false)
+    expect(createOptionsSchema.safeParse({ ...solo, timeControl: '10+0' }).success).toBe(false)
+    const { timeControl: _tc, ...noTc } = solo
+    expect(createOptionsSchema.safeParse(noTc).success).toBe(false)
+    expect(createOptionsSchema.safeParse({ ...solo, password: 'x' }).success).toBe(false)
+    expect(createOptionsSchema.safeParse({ ...solo, pickMode: 'blind' }).success).toBe(false)
+    expect(createOptionsSchema.safeParse({ ...solo, name: 'ab' }).success).toBe(false)
+    expect(createOptionsSchema.safeParse({ ...solo, kind: 'duel' }).success).toBe(false)
+    // A lobby request carrying solo-only fields is refused too.
+    expect(
+      createOptionsSchema.safeParse({
+        protocolVersion: 1,
+        name: 'Lobby',
+        mode: 'ffa',
+        timeControl: '10+0',
+        civ: 'mali',
+      }).success,
+    ).toBe(false)
+  })
+
+  it('knows the untimed id', () => {
+    expect(isUntimed(UNTIMED)).toBe(true)
+    expect(isUntimed('10+0')).toBe(false)
   })
 })
 

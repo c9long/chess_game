@@ -11,6 +11,7 @@ import {
   PICK_MODES,
   PROTOCOL_VERSION,
   TIME_CONTROL_IDS,
+  UNTIMED,
 } from './constants.ts'
 
 // ---------------------------------------------------------------------------
@@ -26,18 +27,46 @@ export const errorCodeSchema = z.enum(ERROR_CODES)
 // Join options (sent with matchmaking requests)
 // ---------------------------------------------------------------------------
 
-/** `client.create('match', options)` */
-export const createOptionsSchema = z.strictObject({
+const lobbyNameSchema = z.string().trim().min(LOBBY_NAME_MIN).max(LOBBY_NAME_MAX)
+
+/** `client.create('match', options)` for a multiplayer lobby (`kind` absent or 'lobby'). */
+export const createLobbyOptionsSchema = z.strictObject({
   protocolVersion: z.literal(PROTOCOL_VERSION),
-  name: z.string().trim().min(LOBBY_NAME_MIN).max(LOBBY_NAME_MAX),
+  kind: z.literal('lobby').default('lobby'),
+  name: lobbyNameSchema,
   mode: z.enum(GAME_MODES),
+  /** '10+0' or '3+2' ('untimed' is for solo games only). */
   timeControl: z.enum(TIME_CONTROL_IDS as [string, ...string[]]),
   /** Empty or absent = public lobby. Hashed (argon2id) in server memory, never stored. */
   password: z.string().max(LOBBY_PASSWORD_MAX).optional(),
   /** Only 'blind' is playable; 'draft' is answered with `not_implemented`. */
   pickMode: z.enum(PICK_MODES).default('blind'),
 })
+export type CreateLobbyOptions = z.input<typeof createLobbyOptionsSchema>
+
+/**
+ * `client.create('match', options)` for a singleplayer game: the creator plays South with
+ * `civ`; three bots at `botLevel` take West, North and East with random civs. Untimed,
+ * never listed, never rated; the game starts by itself.
+ */
+export const createSoloOptionsSchema = z.strictObject({
+  protocolVersion: z.literal(PROTOCOL_VERSION),
+  kind: z.literal('solo'),
+  /** Optional; the server names the room `SOLO_DEFAULT_NAME` when absent. */
+  name: lobbyNameSchema.optional(),
+  mode: z.enum(GAME_MODES),
+  timeControl: z.literal(UNTIMED),
+  /** The player's civ (must be enabled). */
+  civ: civSchema,
+  /** Strength of all three bots. */
+  botLevel: botLevelSchema,
+})
+export type CreateSoloOptions = z.input<typeof createSoloOptionsSchema>
+
+/** `client.create('match', options)`: a lobby or a solo game. */
+export const createOptionsSchema = z.union([createLobbyOptionsSchema, createSoloOptionsSchema])
 export type CreateOptions = z.input<typeof createOptionsSchema>
+export type ParsedCreateOptions = z.output<typeof createOptionsSchema>
 
 /** `client.joinById(roomId, options)` */
 export const joinOptionsSchema = z.strictObject({

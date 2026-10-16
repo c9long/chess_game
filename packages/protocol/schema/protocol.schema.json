@@ -15,6 +15,8 @@
     "in_game",
     "finished"
   ],
+  "matchKinds": ["lobby", "solo"],
+  "untimed": "untimed",
   "errorCodes": [
     "unauthorized",
     "age_confirmation_required",
@@ -65,37 +67,92 @@
   "joinOptions": {
     "create": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "type": "object",
-      "properties": {
-        "protocolVersion": {
-          "type": "number",
-          "const": 1
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "protocolVersion": {
+              "type": "number",
+              "const": 1
+            },
+            "kind": {
+              "default": "lobby",
+              "type": "string",
+              "const": "lobby"
+            },
+            "name": {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 40
+            },
+            "mode": {
+              "type": "string",
+              "enum": ["ffa", "teams"]
+            },
+            "timeControl": {
+              "type": "string",
+              "enum": ["10+0", "3+2"]
+            },
+            "password": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "pickMode": {
+              "default": "blind",
+              "type": "string",
+              "enum": ["blind", "draft"]
+            }
+          },
+          "required": ["protocolVersion", "name", "mode", "timeControl"],
+          "additionalProperties": false
         },
-        "name": {
-          "type": "string",
-          "minLength": 3,
-          "maxLength": 40
-        },
-        "mode": {
-          "type": "string",
-          "enum": ["ffa", "teams"]
-        },
-        "timeControl": {
-          "type": "string",
-          "enum": ["10+0", "3+2"]
-        },
-        "password": {
-          "type": "string",
-          "maxLength": 64
-        },
-        "pickMode": {
-          "default": "blind",
-          "type": "string",
-          "enum": ["blind", "draft"]
+        {
+          "type": "object",
+          "properties": {
+            "protocolVersion": {
+              "type": "number",
+              "const": 1
+            },
+            "kind": {
+              "type": "string",
+              "const": "solo"
+            },
+            "name": {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 40
+            },
+            "mode": {
+              "type": "string",
+              "enum": ["ffa", "teams"]
+            },
+            "timeControl": {
+              "type": "string",
+              "const": "untimed"
+            },
+            "civ": {
+              "type": "string",
+              "enum": [
+                "canada",
+                "usa",
+                "china",
+                "japan",
+                "germany",
+                "russia",
+                "england",
+                "france",
+                "mali"
+              ]
+            },
+            "botLevel": {
+              "type": "string",
+              "enum": ["600", "900", "1200", "1500", "1800", "2100", "2400", "max"]
+            }
+          },
+          "required": ["protocolVersion", "kind", "mode", "timeControl", "civ", "botLevel"],
+          "additionalProperties": false
         }
-      },
-      "required": ["protocolVersion", "name", "mode", "timeControl"],
-      "additionalProperties": false
+      ]
     },
     "join": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",

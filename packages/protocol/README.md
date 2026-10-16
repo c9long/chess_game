@@ -24,13 +24,24 @@ accepted the current Terms/Privacy versions and (registered accounts) chosen a u
 | Room | Call | Options |
 |---|---|---|
 | `lobby` | `joinOrCreate('lobby')` | none. Colyseus LobbyRoom: `rooms` (full list), `+` `[roomId, listing]`, `-` roomId |
-| `match` | `create('match', CreateOptions)` | `{ protocolVersion: 1, name, mode: 'ffa'\|'teams', timeControl: '10+0'\|'3+2', password?, pickMode?: 'blind' }` |
+| `match` | `create('match', CreateOptions)` | lobby: `{ protocolVersion: 1, kind?: 'lobby', name, mode: 'ffa'\|'teams', timeControl: '10+0'\|'3+2', password?, pickMode?: 'blind' }` |
+| `match` | `create('match', CreateOptions)` | solo: `{ protocolVersion: 1, kind: 'solo', name?, mode, timeControl: 'untimed', civ, botLevel }` |
 | `match` | `joinById(roomId, JoinOptions)` | `{ protocolVersion: 1, password? }` |
 | any | `reconnect(room.reconnectionToken)` | within the reconnect grace (60 s) |
 
 Listing metadata (`listing.metadata`): `{ name, mode, timeControl, seatsFilled, locked, phase,
 pickMode }` (`locked` = password-protected). Only lobbies are listed: a room leaves the list
 (`-` roomId) when its game starts, and seated players rejoin it by id.
+
+Solo games (`kind: 'solo'`, singleplayer): the creator plays South with `civ`; three bots at
+`botLevel` sit at West, North and East with random civs (distinct from each other and from the
+player's, from the enabled civs). The room is never listed, refuses everyone but its creator
+(`room_not_joinable`; the creator reconnects and rejoins as usual), refuses lobby edits
+(`setCiv`, `setReady`, bot, kick and swap messages: `wrong_phase`) and starts by itself (the usual countdown). `timeControl` is `UNTIMED`
+(`'untimed'`), which lobbies can't use: no clock ever runs (`clock.runningSeat` stays -1, no
+timeouts), and the game is unrated with no public or shadow rating. `name` defaults to
+`SOLO_DEFAULT_NAME` ("Practice vs bots"). In v1 only solo rooms are untimed, so clients can
+treat `state.timeControl === 'untimed'` as "solo".
 
 Seat reservations: a matchmaking answer reserves a seat for 10 s; connect at once (the SDK
 does). A user has one outstanding reservation at a time: a newer one for another room replaces
@@ -111,16 +122,28 @@ lastEvents[], result, reconnectGraceMs`
 - Disconnects: the seat shows `connected: false` and `graceDeadline`; after the grace an
   in-game seat is abandoned (= timeout, PLAN §2), a lobby seat is freed. A consented leave
   during a game abandons immediately.
-- Bots move as soon as bot-service answers; when it is saturated, slow or down, or misses a
-  deadline taken from the bot's own clock, the room plays a quick local move (a leader
-  capture, else a capture, else a random legal move), so a bot never flags waiting for it.
+- Bot pacing: a bot's move (bot-service or local fallback) is applied no earlier than
+  `BOT_MIN_MOVE_MS` (server config, default 700) after the previous action, 2.2× that after an
+  action that defeated, froze or removed an army, so clients play each animation; the think
+  time overlaps the wait. In timed games the wait runs on the bot's clock, is skipped when the
+  bot has under 10 s and never exceeds a quarter of its remaining time. Untimed games ask
+  bot-service with a virtual 10-minute clock (no increment). While a seated human still takes
+  turns or is connected (e.g. eliminated and watching), bots keep their level and pacing; once
+  no human takes turns and none is connected, they finish with quick unpaced local moves.
+- Untimed (solo) rooms: a server drain aborts a running untimed game at once instead of
+  waiting for it.
+- Bots move once bot-service answers (and the pacing allows); when it is saturated, slow or
+  down, or misses a deadline taken from the bot's own clock, the room plays a quick local move
+  (a leader capture, else a capture, else a random legal move), so a bot never flags waiting
+  for it.
   Once no human takes turns any more, the bots finish the game with local moves only.
 - Clock durations are measured on the server's monotonic clock; `serverTimestamp` and
   `turnStartedAt` are wall-clock ms for display.
 
 ## REST
 
-- `GET /api/matches?limit=20&before=<cursor>`: your finished/aborted matches (`MatchListResponse`)
+- `GET /api/matches?limit=20&before=<cursor>`: your finished/aborted matches (`MatchListResponse`;
+  solo games have `timeControl: 'untimed'`, `rated: false`)
 - `GET /api/matches/:id`: players and the full event log, participants only (`MatchDetailResponse`)
 - `GET /api/ratings/me`: your public ratings (`RatingsResponse`)
 
