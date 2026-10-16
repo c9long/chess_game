@@ -4,6 +4,19 @@ What was completed while you slept, in order. Each item lists what changed, how 
 verified, and any decision taken on your behalf. Rule questions are listed in
 [TODO.md](../TODO.md) under "Open rules questions" for you to confirm or change.
 
+## Try it this morning
+
+```sh
+git pull
+pnpm install
+pnpm dev          # applies the new database migrations, then open http://localhost:5173
+```
+
+Things to try: the new landing page; **Play vs bots** (pick a civ, watch the bots' animated
+moves, try **Resign** or **Offer draw**); create a **Ranked** lobby with a registered account;
+the **Leaderboard**; the game and lobby on your phone (or a narrow browser window). A clean
+`pnpm dev` start was checked at 7:37 (all three services up in 19 s, clean Ctrl-C shutdown).
+
 ## Decisions taken on your behalf
 
 - **Singleplayer setup:** you pick your civ, the bots' strength (one ELO level for all three,
