@@ -1,8 +1,9 @@
 import { type FormEvent, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
+import { AuthCard } from '../components/AuthCard.tsx'
 import { DevMailHint } from '../components/DevMailHint.tsx'
 import { Turnstile } from '../components/Turnstile.tsx'
-import { Alert, Button, Card, CenteredPage, Field, PageTitle } from '../components/ui.tsx'
+import { Alert, Button, Field } from '../components/ui.tsx'
 import { authErrorMessage } from '../lib/api.ts'
 import { useAppState } from '../lib/app-state.tsx'
 import { authClient, captchaHeaders } from '../lib/auth-client.ts'
@@ -34,43 +35,33 @@ export function ForgotPassword() {
   }
 
   return (
-    <CenteredPage>
-      <Card>
-        <PageTitle
-          title="Reset your password"
-          subtitle="We’ll email you a link to choose a new one."
-        />
-        {sent ? (
-          <div className="flex flex-col gap-4">
-            <Alert tone="success">
-              If an account uses that address, a reset link is on its way.
-            </Alert>
-            <DevMailHint email={email} />
-          </div>
-        ) : (
-          <form onSubmit={submit} className="flex flex-col gap-4">
-            <Field
-              label="Email"
-              type="email"
-              autoComplete="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-            />
-            {config ? (
-              <Turnstile key={widgetKey} siteKey={config.turnstileSiteKey} onToken={setToken} />
-            ) : null}
-            {error ? <Alert>{error}</Alert> : null}
-            <Button type="submit" busy={busy} disabled={!token || !email}>
-              Send reset link
-            </Button>
-          </form>
-        )}
-        <Link to="/sign-in" className="mt-6 block text-center text-sm text-gold hover:underline">
-          Back to sign in
-        </Link>
-      </Card>
-    </CenteredPage>
+    <AuthCard title="Reset your password" subtitle="We’ll email you a link to choose a new one.">
+      {sent ? (
+        <div className="flex flex-col gap-4">
+          <Alert tone="success">If an account uses that address, a reset link is on its way.</Alert>
+          <DevMailHint email={email} />
+        </div>
+      ) : (
+        <form onSubmit={submit} className="flex flex-col gap-4">
+          <Field
+            label="Email"
+            type="email"
+            autoComplete="email"
+            required
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
+          <Turnstile key={widgetKey} siteKey={config?.turnstileSiteKey} onToken={setToken} />
+          {error ? <Alert>{error}</Alert> : null}
+          <Button type="submit" busy={busy} disabled={!token || !email}>
+            Send reset link
+          </Button>
+        </form>
+      )}
+      <Link to="/sign-in" className="mt-6 block text-center text-sm text-gold hover:underline">
+        Back to sign in
+      </Link>
+    </AuthCard>
   )
 }
 
@@ -106,50 +97,47 @@ export function ResetPassword() {
   }
 
   return (
-    <CenteredPage>
-      <Card>
-        <PageTitle title="Choose a new password" />
-        {!token || params.get('error') ? (
-          <Alert>This reset link is invalid or has expired.</Alert>
-        ) : done ? (
-          <>
-            <Alert tone="success">
-              Your password has been changed. You’ve been signed out everywhere.
-            </Alert>
-            <Link
-              to="/sign-in"
-              className="mt-4 block text-center text-sm font-semibold text-gold hover:underline"
-            >
-              Sign in
-            </Link>
-          </>
-        ) : (
-          <form onSubmit={submit} className="flex flex-col gap-4">
-            <Field
-              label="New password"
-              type="password"
-              autoComplete="new-password"
-              minLength={minPw}
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              hint={`At least ${minPw} characters.`}
-            />
-            <Field
-              label="Confirm new password"
-              type="password"
-              autoComplete="new-password"
-              required
-              value={confirm}
-              onChange={(e) => setConfirm(e.target.value)}
-            />
-            {error ? <Alert>{error}</Alert> : null}
-            <Button type="submit" busy={busy} disabled={password.length < minPw || !confirm}>
-              Save password
-            </Button>
-          </form>
-        )}
-      </Card>
-    </CenteredPage>
+    <AuthCard title="Choose a new password">
+      {!token || params.get('error') ? (
+        <Alert>This reset link is invalid or has expired.</Alert>
+      ) : done ? (
+        <>
+          <Alert tone="success">
+            Your password has been changed. You’ve been signed out everywhere.
+          </Alert>
+          <Link
+            to="/sign-in"
+            className="mt-4 block text-center text-sm font-semibold text-gold hover:underline"
+          >
+            Sign in
+          </Link>
+        </>
+      ) : (
+        <form onSubmit={submit} className="flex flex-col gap-4">
+          <Field
+            label="New password"
+            type="password"
+            autoComplete="new-password"
+            minLength={minPw}
+            required
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            hint={`At least ${minPw} characters.`}
+          />
+          <Field
+            label="Confirm new password"
+            type="password"
+            autoComplete="new-password"
+            required
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value)}
+          />
+          {error ? <Alert>{error}</Alert> : null}
+          <Button type="submit" busy={busy} disabled={password.length < minPw || !confirm}>
+            Save password
+          </Button>
+        </form>
+      )}
+    </AuthCard>
   )
 }

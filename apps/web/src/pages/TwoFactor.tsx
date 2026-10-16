@@ -1,6 +1,7 @@
 import { type FormEvent, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router'
-import { Alert, Button, Card, CenteredPage, Field, PageTitle } from '../components/ui.tsx'
+import { AuthCard } from '../components/AuthCard.tsx'
+import { Alert, Button, Field, linkButtonClass } from '../components/ui.tsx'
 import { authErrorMessage, tooManyAttempts } from '../lib/api.ts'
 import { useAppState } from '../lib/app-state.tsx'
 import { authClient, retryAfterSeconds } from '../lib/auth-client.ts'
@@ -65,67 +66,64 @@ export function TwoFactor() {
   }
 
   return (
-    <CenteredPage>
-      <Card>
-        <PageTitle
-          title="Two-step verification"
-          subtitle={
-            mode === 'totp'
-              ? 'Enter the 6-digit code from your authenticator app.'
-              : 'Enter one of your backup codes. Each code works once.'
-          }
-        />
-        {expired ? (
-          <div className="flex flex-col gap-4">
-            {error ? <Alert>{error}</Alert> : null}
-            <Link
-              to="/sign-in"
-              state={{ from: returnTo }}
-              className="inline-flex h-11 items-center justify-center rounded-lg bg-gold font-semibold text-ink hover:bg-gold-bright"
-              data-testid="two-factor-restart"
-            >
-              Sign in again
-            </Link>
-          </div>
-        ) : (
-          <form onSubmit={submit} className="flex flex-col gap-4">
-            <Field
-              label={mode === 'totp' ? 'Authentication code' : 'Backup code'}
-              autoComplete="one-time-code"
-              inputMode={mode === 'totp' ? 'numeric' : 'text'}
-              autoFocus
-              required
-              value={code}
-              onChange={(e) => setCode(e.target.value)}
-              data-testid="two-factor-code"
+    <AuthCard
+      title="Two-step verification"
+      subtitle={
+        mode === 'totp'
+          ? 'Enter the 6-digit code from your authenticator app.'
+          : 'Enter one of your backup codes. Each code works once.'
+      }
+    >
+      {expired ? (
+        <div className="flex flex-col gap-4">
+          {error ? <Alert>{error}</Alert> : null}
+          <Link
+            to="/sign-in"
+            state={{ from: returnTo }}
+            className={linkButtonClass('primary')}
+            data-testid="two-factor-restart"
+          >
+            Sign in again
+          </Link>
+        </div>
+      ) : (
+        <form onSubmit={submit} className="flex flex-col gap-4">
+          <Field
+            label={mode === 'totp' ? 'Authentication code' : 'Backup code'}
+            autoComplete="one-time-code"
+            inputMode={mode === 'totp' ? 'numeric' : 'text'}
+            autoFocus
+            required
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            data-testid="two-factor-code"
+          />
+          <label className="flex cursor-pointer items-center gap-3 text-sm text-parchment/75">
+            <input
+              type="checkbox"
+              checked={trustDevice}
+              onChange={(e) => setTrustDevice(e.target.checked)}
+              className="checkbox"
             />
-            <label className="flex items-center gap-2 text-sm text-parchment/75">
-              <input
-                type="checkbox"
-                checked={trustDevice}
-                onChange={(e) => setTrustDevice(e.target.checked)}
-                className="h-4 w-4 accent-gold"
-              />
-              Trust this device for 30 days
-            </label>
-            {error ? <Alert>{error}</Alert> : null}
-            <Button type="submit" busy={busy} disabled={!code}>
-              Verify
-            </Button>
-            <button
-              type="button"
-              className="text-sm text-parchment/60 hover:text-gold"
-              onClick={() => {
-                setMode(mode === 'totp' ? 'backup' : 'totp')
-                setCode('')
-                setError(undefined)
-              }}
-            >
-              {mode === 'totp' ? 'Use a backup code instead' : 'Use your authenticator app instead'}
-            </button>
-          </form>
-        )}
-      </Card>
-    </CenteredPage>
+            Trust this device for 30 days
+          </label>
+          {error ? <Alert>{error}</Alert> : null}
+          <Button type="submit" busy={busy} disabled={!code}>
+            Verify
+          </Button>
+          <button
+            type="button"
+            className="text-sm text-parchment/60 hover:text-gold"
+            onClick={() => {
+              setMode(mode === 'totp' ? 'backup' : 'totp')
+              setCode('')
+              setError(undefined)
+            }}
+          >
+            {mode === 'totp' ? 'Use a backup code instead' : 'Use your authenticator app instead'}
+          </button>
+        </form>
+      )}
+    </AuthCard>
   )
 }

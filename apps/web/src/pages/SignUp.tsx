@@ -1,13 +1,16 @@
 import { type FormEvent, useState } from 'react'
 import { Link, useNavigate } from 'react-router'
+import { AuthCard } from '../components/AuthCard.tsx'
 import { Clickwrap } from '../components/Clickwrap.tsx'
 import { Turnstile } from '../components/Turnstile.tsx'
-import { Alert, Button, Card, CenteredPage, Field, PageTitle } from '../components/ui.tsx'
+import { Alert, Button, Field } from '../components/ui.tsx'
 import { acceptCurrentLegal, authErrorMessage } from '../lib/api.ts'
 import { isGuest, useAppState } from '../lib/app-state.tsx'
 import { authClient, captchaHeaders } from '../lib/auth-client.ts'
 
 const USERNAME_CHARS = /^[A-Za-z0-9_]+$/
+/** Only for the inline hint; the browser and the server do the real validation. */
+const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 export function SignUp() {
   const { config, session } = useAppState()
@@ -21,7 +24,11 @@ export function SignUp() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string>()
   // Field errors appear once a field is left (or on submit), not on the first keystroke.
-  const [touched, setTouched] = useState<{ username?: boolean; password?: boolean }>({})
+  const [touched, setTouched] = useState<{
+    email?: boolean
+    username?: boolean
+    password?: boolean
+  }>({})
 
   const minPw = config?.passwordMinLength ?? 10
   const nameRule = config?.username
@@ -35,12 +42,14 @@ export function SignUp() {
       : undefined
   const passwordError =
     password && password.length < minPw ? `At least ${minPw} characters.` : undefined
+  const emailError =
+    email && !EMAIL_SHAPE.test(email) ? 'Enter an address like name@example.com.' : undefined
   const ready =
     checked && token && email && username && password && !usernameError && !passwordError
 
   async function submit(e: FormEvent) {
     e.preventDefault()
-    setTouched({ username: true, password: true })
+    setTouched({ email: true, username: true, password: true })
     if (!ready || !config || !token) return
     setBusy(true)
     setError(undefined)
@@ -69,62 +78,64 @@ export function SignUp() {
   }
 
   return (
-    <CenteredPage>
-      <Card>
-        <PageTitle
-          title="Create account"
-          subtitle={
-            isGuest(session?.user)
-              ? 'Your guest games will move to your new account once you verify your email.'
-              : 'Keep your rating, history and civs across devices.'
-          }
-        />
-        <form onSubmit={submit} className="flex flex-col gap-4">
-          <Field
-            label="Email"
-            type="email"
-            autoComplete="email"
-            required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-          />
-          <Field
-            label="Username"
-            autoComplete="username"
-            required
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            onBlur={() => setTouched((t) => ({ ...t, username: true }))}
-            hint={nameRule?.description}
-            error={touched.username ? usernameError : undefined}
-          />
-          <Field
-            label="Password"
-            type="password"
-            autoComplete="new-password"
-            required
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            onBlur={() => setTouched((t) => ({ ...t, password: true }))}
-            hint={`At least ${minPw} characters.`}
-            error={touched.password ? passwordError : undefined}
-          />
-          <Clickwrap checked={checked} onChange={setChecked} />
-          {config ? (
-            <Turnstile key={widgetKey} siteKey={config.turnstileSiteKey} onToken={setToken} />
-          ) : null}
-          {error ? <Alert>{error}</Alert> : null}
-          <Button type="submit" disabled={!ready} busy={busy}>
-            Create account
-          </Button>
-        </form>
-        <p className="mt-6 text-center text-sm text-parchment/60">
+    <AuthCard
+      title="Create account"
+      subtitle={
+        isGuest(session?.user)
+          ? 'Your guest games will move to your new account once you verify your email.'
+          : 'Keep your rating, history and civs across devices.'
+      }
+      below={
+        <>
           Already have an account?{' '}
           <Link to="/sign-in" className="font-semibold text-gold hover:underline">
             Sign in
           </Link>
-        </p>
-      </Card>
-    </CenteredPage>
+        </>
+      }
+    >
+      <form onSubmit={submit} className="flex flex-col gap-4">
+        <Field
+          label="Email"
+          type="email"
+          autoComplete="email"
+          required
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          onBlur={() => setTouched((t) => ({ ...t, email: true }))}
+          error={touched.email ? emailError : undefined}
+          valid={Boolean(touched.email && email && !emailError)}
+        />
+        <Field
+          label="Username"
+          autoComplete="username"
+          required
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          onBlur={() => setTouched((t) => ({ ...t, username: true }))}
+          hint={nameRule?.description}
+          error={touched.username ? usernameError : undefined}
+          valid={Boolean(touched.username && username && nameRule && !usernameError)}
+        />
+        <Field
+          label="Password"
+          type="password"
+          autoComplete="new-password"
+          required
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          onBlur={() => setTouched((t) => ({ ...t, password: true }))}
+          hint={`At least ${minPw} characters.`}
+          error={touched.password ? passwordError : undefined}
+          valid={Boolean(touched.password && password && !passwordError)}
+        />
+        <Clickwrap checked={checked} onChange={setChecked} />
+        <Turnstile key={widgetKey} siteKey={config?.turnstileSiteKey} onToken={setToken} />
+        {error ? <Alert>{error}</Alert> : null}
+        <Button type="submit" disabled={!ready} busy={busy}>
+          Create account
+        </Button>
+      </form>
+    </AuthCard>
   )
 }

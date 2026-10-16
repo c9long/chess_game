@@ -17,12 +17,12 @@ export function Clickwrap({
 }) {
   return (
     <div className="flex flex-col gap-2">
-      <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-parchment/15 bg-ink/40 p-4 text-sm leading-relaxed">
+      <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-parchment/15 bg-ink/40 p-4 text-sm leading-relaxed transition-colors duration-150 hover:border-parchment/30 has-checked:border-gold/40 has-checked:bg-gold/5">
         <input
           type="checkbox"
           checked={checked}
           onChange={(e) => onChange(e.target.checked)}
-          className="mt-0.5 h-5 w-5 shrink-0 cursor-pointer accent-gold"
+          className="checkbox mt-0.5"
           data-testid="clickwrap-checkbox"
         />
         <span>

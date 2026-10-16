@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
+import { AuthCard } from '../components/AuthCard.tsx'
 import { Loading } from '../components/Gates.tsx'
-import { Alert, Card, CenteredPage, PageTitle } from '../components/ui.tsx'
+import { Alert, linkButtonClass } from '../components/ui.tsx'
 import { useAppState } from '../lib/app-state.tsx'
 import { authClient } from '../lib/auth-client.ts'
 
-const primaryLink =
-  'inline-flex h-11 w-full items-center justify-center rounded-lg bg-gold font-semibold text-ink hover:bg-gold-bright'
+const primaryLink = linkButtonClass('primary', 'w-full')
 
 /**
  * Confirms an email address. Opening the link only verifies the address: the server signs
@@ -41,42 +41,34 @@ export function VerifyEmail() {
   }, [token, refreshSession])
 
   if (state === 'working') return <Loading />
+  const title = state === 'error' ? 'Link expired' : 'Email verified'
+  const subtitle =
+    state === 'signed-in'
+      ? 'Your account is ready.'
+      : state === 'verified'
+        ? 'Your account is ready. Sign in to start playing.'
+        : undefined
   return (
-    <CenteredPage>
-      <Card>
-        {state === 'signed-in' ? (
-          <>
-            <PageTitle title="Email verified" subtitle="Your account is ready." />
-            <Link to="/" className={primaryLink} data-testid="verified-continue">
-              Continue
-            </Link>
-          </>
-        ) : state === 'verified' ? (
-          <>
-            <PageTitle
-              title="Email verified"
-              subtitle="Your account is ready. Sign in to start playing."
-            />
-            <Link to="/sign-in" className={primaryLink} data-testid="verified-sign-in">
-              Sign in
-            </Link>
-          </>
-        ) : (
-          <>
-            <PageTitle title="Link expired" />
-            <Alert>This verification link is invalid or has expired.</Alert>
-            <Link to="/resend-verification" className={`${primaryLink} mt-4`}>
-              Get a new link
-            </Link>
-            <Link
-              to="/sign-in"
-              className="mt-4 block text-center text-sm text-gold hover:underline"
-            >
-              Go to sign in
-            </Link>
-          </>
-        )}
-      </Card>
-    </CenteredPage>
+    <AuthCard title={title} subtitle={subtitle}>
+      {state === 'signed-in' ? (
+        <Link to="/" className={primaryLink} data-testid="verified-continue">
+          Continue
+        </Link>
+      ) : state === 'verified' ? (
+        <Link to="/sign-in" className={primaryLink} data-testid="verified-sign-in">
+          Sign in
+        </Link>
+      ) : (
+        <>
+          <Alert>This verification link is invalid or has expired.</Alert>
+          <Link to="/resend-verification" className={`${primaryLink} mt-4`}>
+            Get a new link
+          </Link>
+          <Link to="/sign-in" className="mt-4 block text-center text-sm text-gold hover:underline">
+            Go to sign in
+          </Link>
+        </>
+      )}
+    </AuthCard>
   )
 }
