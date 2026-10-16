@@ -146,3 +146,13 @@ test('pages have their own browser-tab titles and the app has an icon', async ({
   const icon = await page.request.get('/favicon.svg')
   expect(icon.ok()).toBe(true)
 })
+
+test('unknown pages show a friendly not-found screen', async ({ page }) => {
+  await page.goto('/terms')
+  await page.goto('/this-page-does-not-exist')
+  await expect(page.getByTestId('not-found')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Page not found' })).toBeVisible()
+  await expect(page).toHaveTitle(/^Page not found · /)
+  await page.getByRole('link', { name: 'Back to the start' }).click()
+  await expect(page).toHaveURL(/\/$/)
+})
