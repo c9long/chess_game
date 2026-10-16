@@ -19,7 +19,7 @@ Later the game will be ported to a **Unity PC client sold on Steam**. That clien
 - **Civ picks:** "Blind pick" (duplicates allowed, as in League of Legends' blind mode) now. "Draft" (bans plus pick order, the "serious" mode) is designed now and built later. "Unique-civ matchmaking" comes when there is a player base.
 - **Board:** all 144 squares are playable, including the 2×2 corners that start empty.
 - **Disconnects:** the clock keeps running, with a 60-second reconnect grace window shown to others. Optional bot takeover in casual games is designed now and built after v1 (tracked in TODO).
-- **Rated play:** requires all 4 seats to be registered humans. Games with bots or guests are casual.
+- **Rated play:** only in **ranked lobbies**, chosen when the lobby is created. Ranked lobbies take registered accounts only (no guests, no bots) and are timed; casual lobbies are never rated, even with four registered players (changed from "rated iff all 4 seats are registered humans", 2026-10-16). Ratings are 4-player **Elo** (§5).
 - **Legal docs:** I draft the Terms, Privacy Policy, account deletion/export and the 13+ age gate (§8). An attorney reviews them before launch.
 - **Region:** US-East first.
 - **Single source of truth for work:** a repo-root **`TODO.md`** (§10). "Add to to-do" means add an item there. Finished items are ~~struck through~~ there.
@@ -46,7 +46,7 @@ Later the game will be ported to a **Unity PC client sold on Steam**. That clien
   - cookies are `Secure` and `SameSite=Lax`;
   - CORS allows credentials only from `play.<domain>`;
   - passkey `rpID = <domain>`.
-- Colyseus `onAuth` resolves the Better Auth session from the handshake cookie (web) or the bearer token (Unity). It binds the seat to `user.id` and `is_guest`, and rated rooms reject guests.
+- Colyseus `onAuth` resolves the Better Auth session from the handshake cookie (web) or the bearer token (Unity). It binds the seat to `user.id` and `is_guest`, and ranked rooms reject guests (`account_required`) and bots (`ranked_no_bots`).
 - **Real client IPs behind Cloudflare:** the API is reachable only through a Cloudflare Tunnel (an outbound connection from the VPS), so every request comes from Cloudflare and the `CF-Connecting-IP` header Better Auth reads for rate limiting can be trusted. The VPS firewall opens no web ports at all, only SSH. *(Changed from the original Caddy + Cloudflare-only firewall design during M7: on Linux, Docker's published ports bypass `ufw`, so that firewall rule would not have applied. The tunnel also removes TLS certificate management.)*
 - **Rate limits:**
   - auth endpoints: Better Auth's limiter plus Turnstile;
@@ -189,7 +189,7 @@ An ACTIVE seat is **defeated** when:
    - defeat animations (army dissolves in FFA; greyed or frozen armies in Teams);
    - reconnection.
 8. **End screen** with placements. The **match is saved to history** with the full event log.
-9. **Ratings** for rated games (see §5).
+9. **Ranked play and ratings:** a "Ranked" option when creating a lobby (registered accounts only, no bots); Elo per mode × time control, shown on the end screen, in history, and on a public leaderboard (see §5).
 10. **Bots** at selectable strength. They think quickly, but each bot move is paced (at least ~0.7 s after the previous move, longer after a defeat) so every move's animation plays smoothly and several bots in a row read naturally (changed from "as quickly as possible", 2026-10-16).
 11. **Singleplayer ("Play vs bots"):** pick a civ, a bot strength and FFA/Teams; you play South against three bots at West, North and East with random civs. Untimed (no clocks), unlisted and unrated (no public or shadow rating); saved to history.
 
@@ -238,21 +238,26 @@ Emblems are SVG (vector) files, so they stay crisp at any size, from the lobby i
   - `accounts`: argon2id password hash *or* OAuth/Steam link.
   - `sessions`, `passkeys` and `verifications`.
   - `two_factor`: TOTP secret and backup codes, encrypted at rest (Better Auth default), with `allowPasswordless: true` so OAuth- and passkey-only users can enable TOTP.
-- **Guest upgrade (keeps history):** Better Auth creates a *new* user on upgrade and deletes the guest. In its `onLinkAccount({anonymousUser, newUser})` hook, one transaction re-points every user-keyed row (match_players, legal_acceptances, ratings, future progression) to the new id first. Game tables reference users with `ON DELETE RESTRICT`, never cascade. A nightly job purges guests inactive for 30 days: those with matches are de-identified as in account deletion below, those without are deleted. The same re-pointing is used when merging a Steam-only account into a web account.
+- **Guest upgrade (keeps history):** Better Auth creates a *new* user on upgrade and deletes the guest. In its `onLinkAccount({anonymousUser, newUser})` hook, one transaction re-points every user-keyed row (match_players, legal_acceptances, ratings, elo_ratings, future progression) to the new id first. Game tables reference users with `ON DELETE RESTRICT`, never cascade. A nightly job purges guests inactive for 30 days: those with matches are de-identified as in account deletion below, those without are deleted. The same re-pointing is used when merging a Steam-only account into a web account.
 - **Legal:** `legal_acceptances` (user_id, document [terms, privacy, guardian], version, kind [accepted, acknowledged], accepted_at, ip_hash). The Terms are `accepted`; the Privacy Policy is `acknowledged`. `ip_hash` is HMAC-SHA-256 with a secret pepper kept outside the database (an environment secret, rotated, on the incident-response rotation list), never an unkeyed hash. Age confirmation stores only an age band (13–15 / 16–17 / 18+) and the confirmation date, never the birth date. `dmca_records` (account id, keyed hash of the account email, notices, counter-notices, strike history) is kept [3] years after the last notice, including after account deletion. `deletion_log` (user_id, deleted_at) is re-applied after any backup restore.
 - **Game catalog:** `civilizations` (id, slug, name, emblem_asset, enabled) plus an immutable `civilization_versions` table (civ_id, version, roster JSON, abilities JSON). v1 has version 1 with the standard roster and no abilities.
 - **Matches:**
-  - `matches`: id, status [in_progress, finished, aborted], mode, time_control, rated, rules_version, started_at, ended_at, end_reason.
-  - `match_players`: match_id, seat, team, user_id *or* bot_level, civ_id, civ_version, final_status, placement, defeat_reason, defeat_seq, rating_before/after.
+  - `matches`: id, status [in_progress, finished, aborted], mode, time_control, rated (Elo applied), ranked (played in a ranked lobby; stays true if the game is aborted or ends unrated), rules_version, started_at, ended_at, end_reason.
+  - `match_players`: match_id, seat, team, user_id *or* bot_level, civ_id, civ_version, final_status, placement, defeat_reason, defeat_seq, rating_before/after (Elo, ranked games only).
   - `match_events`: match_id, seq, seat, type [move, promotion, pass, defeat, timeout, abandon, disconnect, reconnect, game_end, *resign, draw_offer, draw_response*], payload JSON, clock_remaining_ms, server_ts.
 - **Live-game durability:** the `matches` row is inserted with status `in_progress` when a game starts, and events are appended as they happen (batched). If the server crashes, on restart it marks orphaned games `aborted` / `server_restart` / unrated. Before marking a match finished, the server re-simulates it from DB rows alone and checks the final position.
-- **Ratings:**
-  - `ratings`: user_id, mode, time_control, mu, sigma, games_played.
-  - Uses **OpenSkill** (patent-free, designed for multiplayer free-for-all and teams) over the placement order, shown as an Elo-like number. Each mode × time control is tracked separately.
-  - A hidden **shadow rating** also updates in casual games with bots. It is used only to calibrate bot labels and never touches public ratings.
+- **Ratings** (changed from public OpenSkill ratings for every all-registered game, 2026-10-16):
+  - **Only ranked games are rated.** A lobby is ranked or casual from creation. Ranked lobbies take registered accounts only, refuse bots, and are timed (never solo/untimed). Aborted games are never rated, and neither is a ranked game whose result can't be applied to all four players (e.g. an account deleted mid-game).
+  - `elo_ratings`: user_id, mode, time_control, rating (integer), games, peak, updated_at; one row per user × mode × time control (FFA/Teams × 10+0/3+2 are separate ratings). References users `ON DELETE RESTRICT` like the other game tables.
+  - **Elo:** everyone starts at 1200. K factor per player (FIDE): 40 for the first 30 ranked games in that rating, then 20, and 10 once the player's rating has reached 2400 (tracked by `peak`). Placements decide the result; agreed draws and move-limit ties share a placement and count as ties.
+    - FFA (N = 4): every pair (i, j) is a mini-game, S_ij = 1 if i placed better, 0.5 tie, 0 worse; E_ij = 1 / (1 + 10^((R_j − R_i)/400)); Δ_i = round(K_i / (N − 1) × Σ_j (S_ij − E_ij)).
+    - Teams: a team's rating is the mean of its two players; standard Elo team vs team (S = 1 / 0.5 / 0), and each player moves by round(K_i × (S − E)).
+    - Each player's change is rounded on its own (as specified), so a game isn't always exactly zero-sum: ties and mixed K factors can leave the four changes summing to ±1–2 points. That drift is accepted; it is far below the K-factor noise.
+  - Public `GET /api/leaderboard?mode=&tc=&limit=`: the top registered players with at least 5 ranked games in that rating; usernames only; deleted accounts and guests never appear.
+  - `ratings` (OpenSkill): the hidden **shadow rating** still updates in casual games with bots, rated against fixed bot anchors (`bot_level_anchors`). It is used only to calibrate bot labels, never shown and never touches Elo. The former public OpenSkill pool is no longer written.
 - **Reserved for later:** `progression`, `unlocks`, `civ_stats`, `draft_sessions`, `draft_actions`, `reports`.
 - **Lobbies** (pre-game) live only in server memory (Colyseus).
-- **Account deletion** de-identifies rather than erases shared history. Email and username are scrubbed to "Deleted player #…", credentials, sessions and passkeys are deleted, and the `ip_hash` on acceptances is cleared. Opponents' histories stay intact. In the same transaction, the deleted user's `match_players`, `ratings` and `legal_acceptances` rows are re-keyed to a fresh random per-deletion ID that `deletion_log` does not keep (the data is still pseudonymous, not anonymous, and the Privacy Policy says so). For accounts deleted because the user is under 13, each seat is replaced with a per-match "Removed player" value not linked to any ID.
+- **Account deletion** de-identifies rather than erases shared history. Email and username are scrubbed to "Deleted player #…", credentials, sessions and passkeys are deleted, and the `ip_hash` on acceptances is cleared. Opponents' histories stay intact. In the same transaction, the deleted user's `match_players`, `ratings`, `elo_ratings` and `legal_acceptances` rows are re-keyed to a fresh random per-deletion ID that `deletion_log` does not keep (the data is still pseudonymous, not anonymous, and the Privacy Policy says so). For accounts deleted because the user is under 13, each seat is replaced with a per-match "Removed player" value not linked to any ID.
 
 Security: passwords use **argon2id**. Lobby passwords are hashed too. Plain-text secrets are never stored or logged.
 
@@ -498,7 +503,7 @@ If many players fill seats with strong bots, the next step is a bigger OVH tier 
 | M2 | **Board renderer (web)** | PixiJS board with original art; smooth animations (move, capture particles, FFA army dissolve, Teams grey/freeze); optional attacked-leader glow; move hints; drag/click; promotion picker; auto-rotation; sounds. **Hot-seat sandbox (all 4 sides on one screen) in dev/staging builds only, never in production.** Colorblind-safe palette, reduced motion. |
 | M3 | **Accounts + legal** | Better Auth: guest + history-preserving upgrade; email/password with argon2id via custom hash/verify, plus verification and reset (Resend); OAuth (Google, Discord, GitHub, Microsoft); passkeys; TOTP MFA + backup codes (`allowPasswordless`); Turnstile; rate limits; real-IP handling. Neutral DOB screen, versioned clickwrap, `docs/legal/` drafts at /terms and /privacy, account deletion + JSON export + `deletion_log`. |
 | M4 | **Lobbies** | Colyseus lobby list + lobby room: create (mode, time control, optional hashed password with attempt limits); join; seats/teams; blind civ pick with emblems beside names; host controls; bot seats with level picker and random-but-editable civ; ready/start; session-bound seats. |
-| M5 | **Live games** | Authoritative game room; server clocks (10+0, 3+2); 60 s reconnect grace + abandon; all defeat paths; end screen; **incremental event persistence + abort-on-restart**; re-simulation check; OpenSkill ratings (public + shadow). |
+| M5 | **Live games** | Authoritative game room; server clocks (10+0, 3+2); 60 s reconnect grace + abandon; all defeat paths; end screen; **incremental event persistence + abort-on-restart**; re-simulation check; ratings (ranked lobbies with 4-player Elo + hidden OpenSkill shadow pool; changed from public OpenSkill, 2026-10-16). |
 | M6 | **Bots** | Engine (Teams team-signed alpha-beta, FFA BRS+); handcrafted eval; strength levels; bot-service (CPU-limited, deadline-aware, load-shedding); `bot-arena` calibration; overnight tuning. |
 | M7 | **Deploy** | OVHcloud US VPS-2 (4 vCPU/8 GB) + Docker Compose + Cloudflare Tunnel (no open web ports); Cloudflare Pages at `play.<domain>`, API at `api.<domain>`; **draining deploys**; nightly 30-day off-site backups with a tested restore; monitoring; staging. Walkthrough: [DEPLOY.md](DEPLOY.md). |
 

@@ -89,7 +89,7 @@ You can play in two ways:
 
 Guest accounts are temporary and are tied to your browser or device.
 
-- **Guests can play casual games only.** Rated games require four registered players (Section 7).
+- **Guests can play casual games only.** Ranked (rated) games are for registered players (Section 7).
 - **Guest accounts expire.** If a guest account is inactive for 30 days, we purge it. Guest accounts without matches are deleted. For guest accounts with matches, we delete the guest's identifying details and keep the games under a placeholder name so the other players' match history stays intact (see the Privacy Policy, Section 8).
 - **If you clear your browser data, lose your device, or switch browsers, you may lose access to your guest account permanently.** We cannot recover it.
 - **You can upgrade a guest account** to a registered account at any time before it expires. Your match history and other progress carry over.
@@ -186,9 +186,10 @@ If you believe you have found a security vulnerability, please report it to [SEC
 
 ### 7.1 How rated play works
 
-- A game is **rated** only if all four seats are filled by **registered human players**. Any game with a bot or a guest is **casual**.
+- A game is **rated** only if it is played in a **ranked lobby**, which the lobby's creator chooses when creating it. Ranked lobbies are open to **registered players only**; guests and bots cannot take part. Every other game is **casual** and does not change your rating.
 - Ratings are calculated from your finishing place in each game. We track separate ratings for each mode and time control (for example, Free-for-All 10+0 and Teams 3+2).
-- We use a statistical rating system (currently OpenSkill) and display the result as an Elo-like number. **Bot strength labels are approximate** and are not a rating guarantee.
+- We currently use an Elo rating system adapted for four players. **Bot strength labels are approximate** and are not a rating guarantee.
+- Your username, ratings and number of ranked games may be shown publicly on leaderboards once you have played enough ranked games.
 - We may use a hidden internal rating, updated in casual games against bots, solely to calibrate bot strength. It does not affect your public rating.
 - **Games that end because of a server problem** (for example, a server restart) are recorded as aborted and are unrated.
 

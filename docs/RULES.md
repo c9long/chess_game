@@ -126,6 +126,9 @@ What happens next depends on the mode:
 
 - Any player still taking turns can offer a draw. The game ends in a draw only if **every player still taking turns accepts**: active players and, in Teams, defeated players who are still playing their pieces. Removed and frozen players don't vote.
 - The result is the same as at the move limit: in Free-for-All the remaining active players share the best remaining place and knocked-out players keep their places; in Teams everyone is 1st.
+- Only one offer can be open at a time, and your own vote counts as accepted. The offer ends without a draw as soon as anyone declines, when a player is knocked out or frozen, or after one full round (everyone else has had a turn and it is your turn again; if your turn is skipped because you have no legal move, the skipped turn counts as your turn coming round).
+- If your offer is declined or runs out, make two more moves before offering again.
+- Bots accept only when they are clearly behind on material; otherwise they decline.
 - The move limit and a draw by agreement are the only ways a game can end without a single winner.
 
 ### Placements

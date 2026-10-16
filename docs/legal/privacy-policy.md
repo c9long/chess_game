@@ -56,7 +56,7 @@ Contact: [PRIVACY CONTACT EMAIL]. See Section 16.
 | **Lobbies** | Lobby name, mode, time control, who is seated where, ready state. A lobby password, if set, is stored only as a hash. Lobbies exist only in server memory and disappear when the lobby closes. |
 | **Match records** | For each game: mode, time control, whether it was rated, rules version, start and end times, how it ended; for each seat: the player (or bot level), team, chosen civilization, finishing place, how and when the player was defeated, and rating before and after. |
 | **Moves and events** | Every move and game event (promotions, passes, defeats, time-outs, abandonments, disconnects and reconnects, game end), with clock times and server timestamps. |
-| **Ratings** | Your rating and number of games for each mode and time control, and a hidden internal rating used only to calibrate bot strength. |
+| **Ratings** | Your rating, number of ranked games and highest rating for each mode and time control, and a hidden internal rating used only to calibrate bot strength. |
 | **Sessions** | A session record for each signed-in browser or device, including when it was created and when it expires. |
 
 ### 2.3 Information collected automatically
@@ -133,7 +133,7 @@ Where we rely on legitimate interests, we have balanced our interests against yo
 
 ### 5.1 Other players
 
-Your **username**, **civilization emblem**, seat, ready status, moves and results are visible to other players in your lobbies and games. [Your ratings and match history are visible to other players on your profile and on game results.] Treat your username as public.
+Your **username**, **civilization emblem**, seat, ready status, moves and results are visible to other players in your lobbies and games. [Your ratings and match history are visible to other players on your profile and on game results.] Once you have played enough ranked games, your username, ratings and number of ranked games appear on public leaderboards that anyone can view. Treat your username as public.
 
 > [CONFIRM AT IMPLEMENTATION: whether profiles, ratings and match history are public, visible to signed-in users only, or private. Update the bracketed sentence.]
 

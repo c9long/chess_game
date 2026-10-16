@@ -85,6 +85,7 @@ Conventions (see [CLAUDE.md](CLAUDE.md)):
 - ~~Local dev mailbox page (`/dev/mail`) linked from the check-email screens, kept across server restarts; `pnpm dev` stops every process it started and checks its ports first~~ (done 2026-10-15)
 - ~~Singleplayer (vs bots, untimed)~~ (done 2026-10-16; "Play vs bots" on the Play page and the landing page: choose a civ, bot strength and FFA/Teams; South vs three bots at West/North/East with random distinct civs; `kind: 'solo'` create option, `timeControl: 'untimed'`; unlisted, joinable only by its creator, starts by itself, no clocks, unrated with no public or shadow rating, shown in history as "Untimed · vs bots")
 - ~~Bot move pacing~~ (done 2026-10-16; `BOT_MIN_MOVE_MS`, default 700: a bot's move is applied no earlier than that after the previous action (2.2× after a defeat) so each move's animation plays; think time overlaps the wait; in timed games it runs on the bot's clock and is skipped under 10 s; a move already waiting is paced again after an off-turn army removal; bots keep their level and pacing while a human still plays or watches, and finish unpaced only once nobody is connected)
+- ~~Ranked mode with 4-player Elo~~ (done 2026-10-16; `ranked` create option, default off: registered accounts only (`account_required`), no bots (`ranked_no_bots`), never solo/untimed; casual lobbies are never rated, replacing the old "rated iff four registered humans" rule. Elo from 1200, FIDE K 40 / 20 / 10 (first 30 games / regular / peak ≥ 2400); FFA pairwise with K/(N−1), Teams team-mean vs team-mean; ties from agreed draws and the move limit; pure module `apps/server/src/game/elo.ts` with golden tests. `elo_ratings` table (migration 0004) per user × mode × time control with games and peak; Elo before/after on `match_players`; public OpenSkill no longer written (hidden shadow pool unchanged). `GET /api/ratings/me` returns Elo; public `GET /api/leaderboard` (5+ ranked games, usernames only, no deleted accounts or guests). Web: Ranked toggle (disabled for guests), Ranked badge and filter in the lobby browser, badge in the lobby and game header, Elo changes on the end screen and in history, Elo cards with games and peak, `/leaderboard` page. Export lists `eloRatings`; deletion re-keys them)
 - Lobbies: spectator role (read-only) for spectating/replays
 - Game server scale-out: startup abort of `in_progress` matches assumes a single game-server process (revisit with Redis presence)
 - Ratings: recalibrate `bot_level_anchors` from bot-arena results and the shadow pool
@@ -171,8 +172,8 @@ Conventions (see [CLAUDE.md](CLAUDE.md)):
 
 ## Designed-for-later features
 - Move log UI
-- Resign
-- Draw offers
+- ~~Resign~~ (done 2026-10-16; `resign` message, any time while still taking turns: FFA removes the army, Teams freezes the seat; a resign on your turn ends it with no increment; the player stays in the room as a spectator; confirm dialog in the game panel; "Resigned" in the player list and the result)
+- ~~Draw offers~~ (done 2026-10-16; `offerDraw` / `respondDraw`, `drawEvent`, state `drawOfferSeat` / `drawVotes` / `drawOfferActionSeq` / `drawCooldowns`: every voter must accept, lapses on a decline, a voter change or after one full round, 2-move cooldown after a lapse or decline; bots accept only at ≤ 80% of the strongest rival's material; draw-offer card, toasts and "Draw agreed" result)
 - Takebacks
 - Chat / emotes
 - Spectating
