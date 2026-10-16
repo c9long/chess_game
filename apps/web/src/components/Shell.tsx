@@ -123,6 +123,13 @@ export function Shell() {
   return (
     <MotionConfig reducedMotion={reducedPref ? 'always' : 'user'}>
       <div className="flex min-h-full flex-col">
+        {/* Keyboard users can jump past the header; visible only when focused. */}
+        <a
+          href="#main-content"
+          className="sr-only rounded-lg bg-gold px-4 py-2 text-sm font-semibold text-ink focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-[60]"
+        >
+          Skip to content
+        </a>
         <header className="border-b border-parchment/10 bg-ink/70 backdrop-blur">
           <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-4">
             <Link to="/" className="flex min-w-0 items-center gap-3">
@@ -202,7 +209,7 @@ export function Shell() {
             </nav>
           </div>
         </header>
-        <main className="flex-1">
+        <main id="main-content" tabIndex={-1} className="flex-1 outline-none">
           <PageTransition>
             <Suspense
               fallback={
