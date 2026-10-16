@@ -3,9 +3,11 @@ import { beforeAll, describe, expect, it } from 'vitest'
 import {
   CIV_IDS,
   GAME_EVENT_TYPES,
+  GAME_RESULT_TYPES,
   Game,
   type GameEventType,
   type GameMode,
+  type GameResultType,
   initRulesSync,
   SEATS,
   type Seat,
@@ -41,6 +43,7 @@ describe('wire contract', () => {
 
   it('every engine output in random games matches the TypeScript types exactly', () => {
     const seen = new Set<GameEventType>()
+    const results = new Set<GameResultType>()
     let plies = 0
     for (let seed = 1; seed <= 120; seed++) {
       const r = rng(seed)
@@ -55,13 +58,19 @@ describe('wire contract', () => {
         for (const m of moves) validateMove(m)
         let events: unknown
         const roll = r()
+        const inPlay = SEATS.filter((_, k) =>
+          ['active', 'defeated'].includes(before.statuses[k] ?? ''),
+        )
+        const voters = game.drawVoters()
+        expect(SEATS.filter((_, k) => voters[k])).toEqual(inPlay)
         if (roll < 0.004) {
           events = game.applyTimeout(before.seatToMove)
         } else if (roll < 0.008) {
-          const inPlay = SEATS.filter((_, k) =>
-            ['active', 'defeated'].includes(before.statuses[k] ?? ''),
-          )
           events = game.applyAbandon(pick<Seat>(inPlay, r))
+        } else if (roll < 0.011) {
+          events = game.applyResign(pick<Seat>(inPlay, r))
+        } else if (roll < 0.012 && seed % 3 === 0) {
+          events = game.applyAgreedDraw()
         } else {
           // Prefer captures so games end in a reasonable number of plies.
           const captures = moves.filter((m) => m.capture)
@@ -70,7 +79,10 @@ describe('wire contract', () => {
           plies++
         }
         validateEvents(events)
-        for (const e of events) seen.add(e.type)
+        for (const e of events) {
+          seen.add(e.type)
+          if (e.type === 'game_ended') results.add(e.outcome.result.type)
+        }
         // Position strings restore the exact state.
         if (i % 25 === 0) {
           const copy = Game.fromPosition(game.positionString())
@@ -85,10 +97,20 @@ describe('wire contract', () => {
     const expected = GAME_EVENT_TYPES.filter((t) => t !== 'pass')
     expect([...seen].filter((t) => t !== 'pass').sort()).toEqual([...expected].sort())
     expect(plies).toBeGreaterThan(1_000)
+    // Move-limit draws need long quiet stretches; random captures rarely allow them.
+    const expectedResults = GAME_RESULT_TYPES.filter(
+      (t) => t !== 'ffa_move_limit_tie' && t !== 'teams_draw',
+    )
+    expect([...results].filter((t) => expectedResults.includes(t as never)).sort()).toEqual(
+      [...expectedResults].sort(),
+    )
   }, 60_000) // CPU-bound (~4 s alone); generous for loaded machines and parallel runs
 })
 
-// Compile-time check that GAME_EVENT_TYPES lists every event type.
+// Compile-time checks that GAME_EVENT_TYPES / GAME_RESULT_TYPES list every type.
 type Missing = Exclude<GameEventType, (typeof GAME_EVENT_TYPES)[number]>
 const _complete: Missing extends never ? true : false = true
 void _complete
+type MissingResult = Exclude<GameResultType, (typeof GAME_RESULT_TYPES)[number]>
+const _completeResults: MissingResult extends never ? true : false = true
+void _completeResults

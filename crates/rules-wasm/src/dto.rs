@@ -204,6 +204,13 @@ pub enum ResultView {
     },
     /// Teams: move limit.
     TeamsDraw,
+    /// FFA: draw by agreement; survivors (per seat) tie.
+    FfaAgreedDraw {
+        /// Per seat: whether it survived (was ACTIVE).
+        survivors: [bool; 4],
+    },
+    /// Teams: draw by agreement (everyone 1st).
+    TeamsAgreedDraw,
 }
 
 /// Final result and placements (1 = best; ties share a value).
@@ -223,6 +230,8 @@ impl From<&Outcome> for OutcomeView {
             GameResult::FfaMoveLimitTie { survivors } => ResultView::FfaMoveLimitTie { survivors },
             GameResult::TeamsWinner { team } => ResultView::TeamsWinner { team },
             GameResult::TeamsDraw => ResultView::TeamsDraw,
+            GameResult::FfaAgreedDraw { survivors } => ResultView::FfaAgreedDraw { survivors },
+            GameResult::TeamsAgreedDraw => ResultView::TeamsAgreedDraw,
         };
         OutcomeView {
             result,

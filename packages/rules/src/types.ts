@@ -130,11 +130,29 @@ export interface DefeatRecord {
   readonly reason: DefeatReason
 }
 
+/**
+ * How the game ended. Draws: 'ffa_move_limit_tie' / 'teams_draw' (move limit) and
+ * 'ffa_agreed_draw' / 'teams_agreed_draw' (every seat still taking turns agreed). In
+ * FFA draws the surviving (active) seats share the best remaining placement.
+ */
 export type GameResult =
   | { readonly type: 'ffa_winner'; readonly seat: Seat }
   | { readonly type: 'ffa_move_limit_tie'; readonly survivors: SeatTuple<boolean> }
   | { readonly type: 'teams_winner'; readonly team: Team }
   | { readonly type: 'teams_draw' }
+  | { readonly type: 'ffa_agreed_draw'; readonly survivors: SeatTuple<boolean> }
+  | { readonly type: 'teams_agreed_draw' }
+
+export type GameResultType = GameResult['type']
+
+export const GAME_RESULT_TYPES = [
+  'ffa_winner',
+  'ffa_move_limit_tie',
+  'teams_winner',
+  'teams_draw',
+  'ffa_agreed_draw',
+  'teams_agreed_draw',
+] as const satisfies readonly GameResultType[]
 
 export interface Outcome {
   readonly result: GameResult

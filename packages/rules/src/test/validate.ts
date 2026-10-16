@@ -84,6 +84,7 @@ export function validateOutcome(v: unknown, path = 'outcome'): void {
       oneOf(r.seat, SEATS, `${rp}.seat`)
       break
     case 'ffa_move_limit_tie':
+    case 'ffa_agreed_draw':
       obj(r, ['type', 'survivors'], rp)
       tuple4(r.survivors, `${rp}.survivors`, bool)
       break
@@ -92,6 +93,7 @@ export function validateOutcome(v: unknown, path = 'outcome'): void {
       oneOf(r.team, TEAMS, `${rp}.team`)
       break
     case 'teams_draw':
+    case 'teams_agreed_draw':
       obj(r, ['type'], rp)
       break
     default:

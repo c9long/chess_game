@@ -90,6 +90,25 @@ impl WasmGame {
         self.inner.apply_abandon(seat).map_err(js_err)
     }
 
+    /// A seat that still takes turns resigned (any time); returns events JSON.
+    #[wasm_bindgen(js_name = applyResign)]
+    pub fn apply_resign(&mut self, seat: &str) -> Result<String, JsError> {
+        self.inner.apply_resign(seat).map_err(js_err)
+    }
+
+    /// Ends the game in a draw by agreement; returns events JSON. The caller
+    /// collects the votes (see `drawVoters`).
+    #[wasm_bindgen(js_name = applyAgreedDraw)]
+    pub fn apply_agreed_draw(&mut self) -> Result<String, JsError> {
+        self.inner.apply_agreed_draw().map_err(js_err)
+    }
+
+    /// JSON array of four booleans: the seats whose agreement a draw needs.
+    #[wasm_bindgen(js_name = drawVoters)]
+    pub fn draw_voters(&self) -> String {
+        self.inner.draw_voters_json()
+    }
+
     /// Full view of the position as JSON.
     pub fn snapshot(&self) -> String {
         self.inner.snapshot_json()

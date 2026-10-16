@@ -188,6 +188,87 @@ describe('Game', () => {
     game.free()
   })
 
+  it('handles resignation in Teams (player only, any time)', () => {
+    const game = Game.create({ mode: 'teams' })
+    expect(game.drawVoters()).toEqual([true, true, true, true])
+    // North resigns while South is on move: frozen, South keeps the turn.
+    expect(game.applyResign('north')).toEqual([
+      { type: 'defeat', seat: 'north', reason: 'resign' },
+      { type: 'frozen', seat: 'north' },
+    ])
+    let s = snap(game)
+    expect(s.seatToMove).toBe('south')
+    expect(s.statuses).toEqual(['active', 'active', 'frozen', 'active'])
+    expect(s.board.filter((p) => p?.owner === 'north')).toHaveLength(16)
+    expect(game.drawVoters()).toEqual([true, true, false, true])
+    expect(() => game.applyResign('north')).toThrow('north no longer takes turns')
+    expect(() => game.applyResign('up' as never)).toThrow('invalid seat "up"')
+    // South resigns on its own turn: its team has no active player left.
+    const events = game.applyResign('south')
+    validateEvents(events)
+    expect(events.at(-1)).toEqual({
+      type: 'game_ended',
+      outcome: { result: { type: 'teams_winner', team: 'west_east' }, placements: [2, 1, 2, 1] },
+    })
+    s = snap(game)
+    expect(s.defeats).toEqual([
+      { seat: 'north', reason: 'resign' },
+      { seat: 'south', reason: 'resign' },
+    ])
+    expect(game.drawVoters()).toEqual([false, false, false, false])
+    expect(() => game.applyResign('west')).toThrow('the game is over')
+    game.free()
+  })
+
+  it('handles resignation in FFA (army removed)', () => {
+    const game = Game.create({ mode: 'ffa' })
+    expect(game.applyResign('south')).toEqual([
+      { type: 'defeat', seat: 'south', reason: 'resign' },
+      { type: 'army_removed', seat: 'south' },
+    ])
+    expect(snap(game).seatToMove).toBe('west')
+    expect(game.positionString()).toContain('def=Sr')
+    game.free()
+  })
+
+  it('ends the game in an agreed draw', () => {
+    // FFA: survivors share 1st, defeated seats keep reverse-defeat placements.
+    const ffa = Game.create({ mode: 'ffa' })
+    ffa.applyTimeout('south')
+    ffa.applyResign('north')
+    expect(ffa.drawVoters()).toEqual([false, true, false, true])
+    const events = ffa.applyAgreedDraw()
+    validateEvents(events)
+    expect(events).toEqual([
+      {
+        type: 'game_ended',
+        outcome: {
+          result: { type: 'ffa_agreed_draw', survivors: [false, true, false, true] },
+          placements: [4, 1, 3, 1],
+        },
+      },
+    ])
+    expect(snap(ffa).isOver).toBe(true)
+    expect(() => ffa.applyAgreedDraw()).toThrow('the game is over')
+    // The draw survives a position-string round trip.
+    const text = ffa.positionString()
+    expect(text.endsWith(' end=draw')).toBe(true)
+    const copy = Game.fromPosition(text)
+    expect(copy.snapshot()).toEqual(ffa.snapshot())
+    for (const g of [ffa, copy]) g.free()
+
+    // Teams: everyone 1st.
+    const teams = Game.create({ mode: 'teams' })
+    expect(teams.applyAgreedDraw()).toEqual([
+      {
+        type: 'game_ended',
+        outcome: { result: { type: 'teams_agreed_draw' }, placements: [1, 1, 1, 1] },
+      },
+    ])
+    expect(snap(teams).outcome?.result).toEqual({ type: 'teams_agreed_draw' })
+    teams.free()
+  })
+
   it('reports automatic passes', () => {
     // Teams: North DEFEATED and boxed in, East FROZEN.
     const game = Game.fromPosition(

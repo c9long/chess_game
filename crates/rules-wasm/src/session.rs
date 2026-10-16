@@ -2,8 +2,9 @@
 //! as plain strings so it is unit-tested natively (`cargo test`).
 
 use rules_core::{
-    GameEvent, GameState, Move, apply_abandon, apply_move_into, apply_timeout,
-    generate_legal_moves, leader_under_attack, parse_move, parse_position, perft,
+    GameEvent, GameState, Move, apply_abandon, apply_agreed_draw, apply_move_into, apply_resign,
+    apply_timeout, draw_voters, generate_legal_moves, leader_under_attack, parse_move,
+    parse_position, perft,
 };
 
 use crate::dto::{ConfigInput, EventView, MoveView, SnapshotView, parse_seat};
@@ -93,6 +94,32 @@ impl Session {
         let seat = parse_seat(seat)?;
         self.events = apply_abandon(&mut self.state, seat).map_err(|e| e.to_string())?;
         Ok(self.events_json())
+    }
+
+    /// A seat that still takes turns resigned (any time); returns the events
+    /// as JSON.
+    pub fn apply_resign(&mut self, seat: &str) -> Result<String, String> {
+        let seat = parse_seat(seat)?;
+        self.events = apply_resign(&mut self.state, seat).map_err(|e| e.to_string())?;
+        Ok(self.events_json())
+    }
+
+    /// Ends the game in a draw by agreement (the caller collected the votes
+    /// of every seat in [`Session::draw_voters`]); returns the events as JSON.
+    pub fn apply_agreed_draw(&mut self) -> Result<String, String> {
+        self.events = apply_agreed_draw(&mut self.state).map_err(|e| e.to_string())?;
+        Ok(self.events_json())
+    }
+
+    /// Per seat: whether its agreement is needed for a draw (seats still
+    /// taking turns; all `false` once the game is over).
+    pub fn draw_voters(&self) -> [bool; 4] {
+        draw_voters(&self.state)
+    }
+
+    /// [`Session::draw_voters`] as a JSON array of four booleans.
+    pub fn draw_voters_json(&self) -> String {
+        to_json(&self.draw_voters())
     }
 
     /// Full view of the position as JSON.
@@ -394,6 +421,73 @@ mod tests {
             json!({"type": "ffa_winner", "seat": "west"})
         );
         assert_eq!(last["outcome"]["placements"], json!([4, 1, 3, 2]));
+    }
+
+    #[test]
+    fn resign_and_agreed_draw() {
+        // Teams: North resigns off turn and freezes; South keeps the turn.
+        let mut s = Session::from_config_json(r#"{"mode":"teams"}"#).unwrap();
+        assert_eq!(
+            parse(&s.draw_voters_json()),
+            json!([true, true, true, true])
+        );
+        let ev = parse(&s.apply_resign("north").unwrap());
+        assert_eq!(
+            ev,
+            json!([
+                {"type": "defeat", "seat": "north", "reason": "resign"},
+                {"type": "frozen", "seat": "north"}
+            ])
+        );
+        let snap = parse(&s.snapshot_json());
+        assert_eq!(snap["seatToMove"], "south");
+        assert_eq!(
+            snap["defeats"],
+            json!([{"seat": "north", "reason": "resign"}])
+        );
+        assert_eq!(
+            parse(&s.draw_voters_json()),
+            json!([true, true, false, true])
+        );
+        assert!(
+            s.apply_resign("north")
+                .unwrap_err()
+                .contains("no longer takes turns")
+        );
+        assert_eq!(s.apply_resign("up").unwrap_err(), "invalid seat \"up\"");
+        let ev = parse(&s.apply_agreed_draw().unwrap());
+        assert_eq!(
+            ev,
+            json!([{"type": "game_ended", "outcome": {
+                "result": {"type": "teams_agreed_draw"},
+                "placements": [1, 1, 1, 1]
+            }}])
+        );
+        assert_eq!(
+            parse(&s.draw_voters_json()),
+            json!([false, false, false, false])
+        );
+        assert_eq!(s.apply_agreed_draw().unwrap_err(), "the game is over");
+        assert_eq!(s.apply_resign("south").unwrap_err(), "the game is over");
+        let text = s.position_string();
+        assert!(text.ends_with(" end=draw"), "{text}");
+        let back = Session::from_position(&text).unwrap();
+        assert_eq!(back.state(), s.state());
+        assert_eq!(back.snapshot_json(), s.snapshot_json());
+
+        // FFA: survivors share 1st, the resigned seat is last.
+        let mut s = Session::from_config_json(r#"{"mode":"ffa"}"#).unwrap();
+        let ev = parse(&s.apply_resign("south").unwrap());
+        assert_eq!(ev[1], json!({"type": "army_removed", "seat": "south"}));
+        assert_eq!(parse(&s.snapshot_json())["seatToMove"], "west");
+        let ev = parse(&s.apply_agreed_draw().unwrap());
+        assert_eq!(
+            ev[0]["outcome"],
+            json!({
+                "result": {"type": "ffa_agreed_draw", "survivors": [false, true, true, true]},
+                "placements": [4, 1, 1, 1]
+            })
+        );
     }
 
     #[test]

@@ -1,6 +1,6 @@
 import { WasmGame } from '../wasm/rules_wasm.js'
 import { assertRulesReady } from './init.ts'
-import type { GameConfigInput, GameEvent, MoveView, Seat, Snapshot } from './types.ts'
+import type { GameConfigInput, GameEvent, MoveView, Seat, SeatTuple, Snapshot } from './types.ts'
 
 /**
  * A game, backed by the Rust rules engine. Every rule decision is made by the
@@ -59,6 +59,32 @@ export class Game {
   /** A seat that still takes turns abandoned the game (treated like a timeout). */
   applyAbandon(seat: Seat): GameEvent[] {
     return JSON.parse(this.#inner.applyAbandon(seat)) as GameEvent[]
+  }
+
+  /**
+   * A seat that still takes turns resigns. Allowed at any time, not only on its turn.
+   * Same effect as a timeout (FFA: removed; Teams: frozen, the partner plays on), with
+   * defeat reason 'resign'. Throws once the game is over or for a removed/frozen seat.
+   */
+  applyResign(seat: Seat): GameEvent[] {
+    return JSON.parse(this.#inner.applyResign(seat)) as GameEvent[]
+  }
+
+  /**
+   * Ends the game in a draw by agreement ('ffa_agreed_draw' / 'teams_agreed_draw').
+   * The caller must first collect the agreement of every seat in `drawVoters()`.
+   * Throws once the game is over.
+   */
+  applyAgreedDraw(): GameEvent[] {
+    return JSON.parse(this.#inner.applyAgreedDraw()) as GameEvent[]
+  }
+
+  /**
+   * Per seat: whether its agreement is needed for a draw. These are the seats still taking
+   * turns (removed and frozen seats don't vote); all false once the game is over.
+   */
+  drawVoters(): SeatTuple<boolean> {
+    return JSON.parse(this.#inner.drawVoters()) as SeatTuple<boolean>
   }
 
   /** Full view of the position. */
