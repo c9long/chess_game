@@ -12,7 +12,12 @@
   },
   "dependencies": {
     "@better-auth/passkey": "1.7.8",
+    "@colyseus/sdk": "0.18.5",
+    "@game/assets": "workspace:*",
+    "@game/board": "workspace:*",
     "@game/config": "workspace:*",
+    "@game/protocol": "workspace:*",
+    "@game/rules": "workspace:*",
     "better-auth": "1.7.8",
     "motion": "14.2.0",
     "pixi.js": "8.22.0",

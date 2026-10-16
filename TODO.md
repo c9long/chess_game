@@ -72,15 +72,16 @@ Conventions (see [CLAUDE.md](CLAUDE.md)):
 ### M4 — Lobbies — §3
 - ~~Colyseus lobby list + lobby room; create (mode, time control, optional hashed password with attempt limits)~~ (done 2026-10-15; `packages/protocol` (`@game/protocol`) holds the versioned wire contract + JSON Schema export)
 - ~~Seats/teams, host controls, ready/start, session-bound seats~~ (done 2026-10-15)
-- Blind civ pick with emblems beside usernames (server side done 2026-10-15: civ per seat, duplicates allowed; emblems in the web lobby UI)
+- ~~Blind civ pick with emblems beside usernames~~ (done 2026-10-15; server: civ per seat, duplicates allowed; web: civ picker and emblem beside every name in the lobby, game panel, results and history)
 - ~~Bot seats with level picker and random-but-editable civ~~ (done 2026-10-15)
 
 ### M5 — Live games — §2, §5
 - ~~Authoritative game room, server clocks (10+0, 3+2), reconnect grace + abandon~~ (done 2026-10-15)
-- All defeat paths, end screen (server side done 2026-10-15: leader capture, stalemate, timeout, abandon, `gameOver` message; end screen in the web UI)
+- ~~All defeat paths, end screen~~ (done 2026-10-15; server: leader capture, stalemate, timeout, abandon, `gameOver`; web: result screen with placements and rating changes)
 - ~~Incremental event persistence, abort-on-restart, re-simulation check~~ (done 2026-10-15)
 - ~~OpenSkill ratings (public + hidden shadow ratings)~~ (done 2026-10-15; display rating = round(900 + 30 × (mu − 3σ)), bot anchors in `bot_level_anchors`)
-- Web: lobby browser, create/join lobby, lobby room and live game screens on `@game/protocol` (web workflow)
+- ~~Web: lobby browser, create/join lobby, lobby room and live game screens on `@game/protocol`~~ (done 2026-10-15; `/play`, `/match/:roomId`, `/history`; private lobbies with password prompt, host bot/seat controls, live clocks, reconnect after reload)
+- ~~One-command local development (`pnpm dev`: database, WASM build, bot-service, server, web)~~ (done 2026-10-15)
 - Lobbies: spectator role (read-only) for spectating/replays
 - Game server scale-out: startup abort of `in_progress` matches assumes a single game-server process (revisit with Redis presence)
 - Ratings: recalibrate `bot_level_anchors` from bot-arena results and the shadow pool

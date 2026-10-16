@@ -38,11 +38,24 @@ export function Landing() {
                 {displayName(user)}
               </strong>
             </p>
-            <div className="rounded-2xl border border-parchment/10 bg-panel/80 p-6 text-sm text-parchment/70">
-              Lobbies and live games arrive in the next update.
-            </div>
+            <Link
+              to="/play"
+              className={`${linkButton} bg-gold text-ink shadow-[0_8px_24px_-12px_rgba(212,160,23,0.7)] hover:bg-gold-bright`}
+              data-testid="play"
+            >
+              Play
+            </Link>
+            <Link
+              to="/history"
+              className={`${linkButton} border border-parchment/25 hover:border-parchment/50 hover:bg-parchment/5`}
+            >
+              Match history
+            </Link>
             {isGuest(user) ? (
-              <Link to="/sign-up" className={`${linkButton} bg-gold text-ink hover:bg-gold-bright`}>
+              <Link
+                to="/sign-up"
+                className={`${linkButton} border border-gold/50 text-gold hover:bg-gold/10`}
+              >
                 Create account and keep your history
               </Link>
             ) : null}

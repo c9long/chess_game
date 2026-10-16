@@ -1,7 +1,9 @@
 import { APP_NAME } from '@game/config'
+import { Suspense } from 'react'
 import { Link, Outlet, useLocation, useNavigate } from 'react-router'
 import { displayName, isGuest, useAppState } from '../lib/app-state.tsx'
 import { authClient } from '../lib/auth-client.ts'
+import { Spinner } from './ui.tsx'
 
 function Emblem() {
   return (
@@ -35,7 +37,7 @@ export function Shell() {
   return (
     <div className="flex min-h-full flex-col">
       <header className="border-b border-parchment/10 bg-ink/70 backdrop-blur">
-        <div className="mx-auto flex h-16 max-w-5xl items-center justify-between gap-4 px-4">
+        <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-4">
           <Link to="/" className="flex min-w-0 items-center gap-3">
             <Emblem />
             <span className="truncate font-display text-lg font-semibold tracking-tight">
@@ -45,6 +47,19 @@ export function Shell() {
           <nav className="flex shrink-0 items-center gap-2 text-sm">
             {user ? (
               <>
+                <Link
+                  to="/play"
+                  className="rounded-lg px-3 py-2 font-semibold text-gold hover:bg-parchment/5"
+                  data-testid="nav-play"
+                >
+                  Play
+                </Link>
+                <Link
+                  to="/history"
+                  className="hidden rounded-lg px-3 py-2 text-parchment/85 hover:bg-parchment/5 hover:text-parchment md:inline-block"
+                >
+                  History
+                </Link>
                 <Link
                   to="/account"
                   className="rounded-lg px-3 py-2 text-parchment/85 hover:bg-parchment/5 hover:text-parchment"
@@ -85,7 +100,15 @@ export function Shell() {
         </div>
       </header>
       <main className="flex-1">
-        <Outlet />
+        <Suspense
+          fallback={
+            <div className="flex items-center justify-center gap-3 py-24 text-parchment/60">
+              <Spinner /> Loading…
+            </div>
+          }
+        >
+          <Outlet />
+        </Suspense>
       </main>
       <footer className="border-t border-parchment/10 py-6 text-center text-xs text-parchment/45">
         <Link to="/terms" className="hover:text-parchment">
