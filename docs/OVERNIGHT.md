@@ -112,6 +112,26 @@ all fixed):
   no longer lose an Elo update.
 - Note: Elo can drift by a point per game because each player's change is rounded separately.
 
+### 5. UI round 1: landing page, sign-in and account pages, UI library choice (commits 7d744f4, dc0dbdc, 4bd1027)
+
+- **Landing page:** a two-column hero (stacked on phones) with the title, clear buttons and four
+  short value props, beside a **live 4-player board playing a calm game against itself** (using
+  the real rules engine and the new animations). It loads after the page appears, is silent,
+  pauses when off screen or in a hidden tab, and shows a still position with reduced motion.
+  The nine civ emblems appear below as brass medallions.
+- **Sign-in, sign-up and recovery pages** share one card style with the brand mark, show/hide
+  password toggles and checks as you leave each field; sign-in offers passkeys first.
+- **Account page:** clean cards with a side nav, status pills and an accessible passkey Rename
+  dialog (replacing the browser prompt).
+- **New fonts** (self-hosted Fraunces for headings, Inter for text), dark form controls,
+  calmer disabled buttons.
+- **UI libraries:** evaluated Radix, Base UI, React Aria, Ark and Headless UI (see
+  `docs/ui-libraries.md`, with measured bundle sizes). Adopted **Radix primitives** styled with
+  our own theme, plus **lucide-react** icons; Radix only loads with lazy pages so the first
+  download stays small.
+- Verified: web unit tests (18), the landing/auth/account browser specs, an independent
+  art-direction, accessibility and performance review (all findings fixed).
+
 ## Not done / left for you
 
 _(Filled in at the end.)_
