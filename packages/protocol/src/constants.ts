@@ -72,6 +72,43 @@ export const LOBBY_NAME_MIN = 3
 export const LOBBY_NAME_MAX = 40
 export const LOBBY_PASSWORD_MAX = 64
 
+/** Lobby names: letters (any script), digits, spaces and common punctuation. */
+const LOBBY_NAME_CHARSET = /^[\p{L}\p{N} _.,!?'"&()+:#-]+$/u
+
+/**
+ * Normalizes a lobby name the way the server stores it: Unicode NFC, typographic quotes
+ * (which phones and macOS insert automatically) turned into plain ones, and runs of
+ * whitespace collapsed.
+ */
+export function normalizeLobbyName(raw: string): string {
+  return raw
+    .normalize('NFC')
+    .replace(/[\u2018\u2019\u201A\u201B\u02BC\u2032]/g, "'")
+    .replace(/[\u201C\u201D\u201E\u201F\u2033]/g, '"')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+/**
+ * The format rule for lobby names, shared by the web form (live feedback) and the server
+ * (which also applies its moderation policy on top).
+ */
+export function checkLobbyNameFormat(
+  raw: string,
+): { ok: true; name: string } | { ok: false; reason: string } {
+  const name = normalizeLobbyName(raw)
+  if (name.length < LOBBY_NAME_MIN || name.length > LOBBY_NAME_MAX) {
+    return { ok: false, reason: `Lobby names need ${LOBBY_NAME_MIN}–${LOBBY_NAME_MAX} characters.` }
+  }
+  if (!LOBBY_NAME_CHARSET.test(name)) {
+    return {
+      ok: false,
+      reason: 'Use letters, numbers, spaces and simple punctuation (. , ! ? \' " & ( ) + : # -).',
+    }
+  }
+  return { ok: true, name }
+}
+
 /** Pre-game countdown after the host starts. */
 export const DEFAULT_COUNTDOWN_MS = 3_000
 /** Reconnect grace (PLAN §2). */

@@ -1,8 +1,8 @@
 import type { Room } from '@colyseus/sdk'
 import { TIME_CONTROLS } from '@game/config'
 import {
+  checkLobbyNameFormat,
   LOBBY_NAME_MAX,
-  LOBBY_NAME_MIN,
   LOBBY_PASSWORD_MAX,
   type LobbyMetadata,
   ROOM_NAMES,
@@ -76,7 +76,7 @@ function CreateLobby() {
   const { session } = useAppState()
   const navigate = useNavigate()
   const [name, setName] = useState(() =>
-    session ? `${displayName(session.user)}’s game`.slice(0, LOBBY_NAME_MAX) : '',
+    session ? `${displayName(session.user)}'s game`.slice(0, LOBBY_NAME_MAX) : '',
   )
   const [mode, setMode] = useState<'ffa' | 'teams'>('ffa')
   const [timeControl, setTimeControl] = useState<keyof typeof TIME_CONTROLS>('10+0')
@@ -84,12 +84,9 @@ function CreateLobby() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string>()
 
-  const nameError =
-    name.trim().length < LOBBY_NAME_MIN
-      ? `At least ${LOBBY_NAME_MIN} characters.`
-      : name.length > LOBBY_NAME_MAX
-        ? `At most ${LOBBY_NAME_MAX} characters.`
-        : undefined
+  // Same rule as the server (@game/protocol), so a bad name is flagged before submitting.
+  const nameCheck = checkLobbyNameFormat(name)
+  const nameError = nameCheck.ok ? undefined : nameCheck.reason
 
   async function submit(e: FormEvent) {
     e.preventDefault()
@@ -98,7 +95,7 @@ function CreateLobby() {
     setError(undefined)
     try {
       const room = await createMatch({
-        name: name.trim(),
+        name: nameCheck.ok ? nameCheck.name : name.trim(),
         mode,
         timeControl,
         pickMode: 'blind',
@@ -298,7 +295,7 @@ function SeatPips({ filled }: { filled: number }) {
 
 export function Play() {
   const navigate = useNavigate()
-  const current = useMatchStore((s) => s.room)
+  const current = useMatchStore((s) => (s.closed?.roomId === s.room?.roomId ? null : s.room))
   const { rooms, status } = useLobbyList()
   const [joining, setJoining] = useState<string>()
   const [passwordFor, setPasswordFor] = useState<Listing>()

@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { clockOffset, matchClient, remainingNow } from './client.ts'
 import {
   CIV_SLUGS,
+  checkLobbyNameFormat,
   clientMessageSchemas,
   createOptionsSchema,
   isReservedMessageType,
@@ -39,6 +40,27 @@ describe('join options', () => {
     expect(createOptionsSchema.safeParse({ ...base, protocolVersion: 2 }).success).toBe(false)
     expect(createOptionsSchema.safeParse({ ...base, name: 'ab' }).success).toBe(false)
     expect(joinOptionsSchema.safeParse({ protocolVersion: 1, password: 'x' }).success).toBe(true)
+  })
+})
+
+describe('lobby names', () => {
+  it('accepts typographic apostrophes and quotes (phones and macOS insert them) as plain ones', () => {
+    expect(checkLobbyNameFormat('linkedlist’s game')).toEqual({
+      ok: true,
+      name: "linkedlist's game",
+    })
+    expect(checkLobbyNameFormat('“Friday” night')).toEqual({ ok: true, name: '"Friday" night' })
+    expect(checkLobbyNameFormat("Bob's  table ")).toEqual({ ok: true, name: "Bob's table" })
+    expect(checkLobbyNameFormat('Partie de Zoë')).toMatchObject({ ok: true })
+    expect(checkLobbyNameFormat('四人象棋')).toMatchObject({ ok: true })
+  })
+
+  it('rejects names that are too short, too long or use unsupported symbols', () => {
+    expect(checkLobbyNameFormat('ab')).toMatchObject({ ok: false })
+    expect(checkLobbyNameFormat('x'.repeat(41))).toMatchObject({ ok: false })
+    expect(checkLobbyNameFormat('<script>')).toMatchObject({ ok: false })
+    expect(checkLobbyNameFormat('bad\u0000name')).toMatchObject({ ok: false })
+    expect(checkLobbyNameFormat('party 🎉')).toMatchObject({ ok: false })
   })
 })
 

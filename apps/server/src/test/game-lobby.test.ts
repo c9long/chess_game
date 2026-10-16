@@ -55,6 +55,12 @@ describe('authentication and eligibility', () => {
     )
   })
 
+  it('accepts a typographic apostrophe in the lobby name and stores a plain one', async () => {
+    const b = await guest(h)
+    const host = await createLobby(b, { name: 'linkedlist’s game' })
+    expect(host.state.name).toBe("linkedlist's game")
+  })
+
   it('validates create options and the protocol version', async () => {
     const b = await guest(h)
     const sdk = b.sdk()

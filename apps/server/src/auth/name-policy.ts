@@ -1,3 +1,4 @@
+import { checkLobbyNameFormat } from '@game/protocol'
 /**
  * Pluggable username policy (PLAN §3 "Moderation"). v1 checks length and charset only;
  * the profanity filter and reserved/impersonation names plug in here before release.
@@ -16,11 +17,6 @@ export interface NamePolicy {
    */
   checkLobbyName(name: string): { ok: true; name: string } | { ok: false; reason: string }
 }
-
-/** Lobby names: letters (any script), digits, spaces and common punctuation. */
-const LOBBY_CHARSET = /^[\p{L}\p{N} _.,!?'&()+:#-]+$/u
-export const LOBBY_NAME_MIN = 3
-export const LOBBY_NAME_MAX = 40
 
 const CHARSET = /^[A-Za-z0-9_]+$/
 
@@ -45,17 +41,9 @@ export const lengthCharsetPolicy: NamePolicy = {
     return { ok: true }
   },
   checkLobbyName(raw) {
-    const name = raw.normalize('NFC').replace(/\s+/g, ' ').trim()
-    if (name.length < LOBBY_NAME_MIN || name.length > LOBBY_NAME_MAX) {
-      return {
-        ok: false,
-        reason: `Lobby names need ${LOBBY_NAME_MIN}–${LOBBY_NAME_MAX} characters.`,
-      }
-    }
-    if (!LOBBY_CHARSET.test(name)) {
-      return { ok: false, reason: 'Use letters, numbers, spaces and simple punctuation.' }
-    }
-    return { ok: true, name }
+    // Format rule shared with the web form (@game/protocol); moderation (profanity, reserved
+    // names) plugs in here later.
+    return checkLobbyNameFormat(raw)
   },
 }
 
