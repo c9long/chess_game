@@ -43,6 +43,7 @@ export const STATUS_LABEL: Record<string, string> = {
 export const END_REASON_LABEL: Record<string, string> = {
   last_standing: 'Last civilization standing',
   team_eliminated: 'A team was eliminated',
+  team_resigned: 'A team resigned',
   move_limit: 'Move limit reached (25 rounds without a capture or pawn move)',
   agreed_draw: 'Every player still in the game agreed to a draw',
   server_shutdown: 'Game cancelled: the server restarted',

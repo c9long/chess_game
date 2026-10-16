@@ -187,7 +187,10 @@ const ERROR_MESSAGES: Record<string, string> = {
   draw_offer_pending: 'A draw offer is already waiting for answers.',
   draw_offer_cooldown: 'Make a few more moves before offering another draw.',
   no_draw_offer: 'There is no draw offer to answer any more.',
-  already_responded: 'You have already answered this draw offer.',
+  already_responded: 'You have already answered this.',
+  resign_proposal_pending: 'You already asked your teammate. Wait for their answer.',
+  resign_proposal_cooldown: 'Make a few more moves before asking your teammate again.',
+  no_resign_proposal: 'There is no request from your teammate to answer any more.',
   invalid_message: 'That request was not valid.',
   internal: 'The server hit a problem. Please try again.',
 }
@@ -199,7 +202,7 @@ export function matchErrorMessage(err: unknown): string {
 }
 
 /** Codes whose server message carries live detail (e.g. moves left), so it beats a fixed text. */
-const SERVER_DETAIL_CODES = new Set(['draw_offer_cooldown'])
+const SERVER_DETAIL_CODES = new Set(['draw_offer_cooldown', 'resign_proposal_cooldown'])
 
 export function errorCodeMessage(code: string, fallback?: string): string {
   if (fallback && SERVER_DETAIL_CODES.has(code)) return fallback

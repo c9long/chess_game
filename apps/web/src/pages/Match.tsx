@@ -93,6 +93,8 @@ export interface MatchFeed {
   gameOver: ServerMessages['gameOver'] | null
   /** Latest `drawEvent` message, with a local id so repeats are told apart. */
   lastDraw: (ServerMessages['drawEvent'] & { id: number }) | null
+  /** Latest `resignEvent` message (Teams resignation votes), with a local id. */
+  lastResign: (ServerMessages['resignEvent'] & { id: number }) | null
   /** Refusals, problems and game notes (toasts), newest last. */
   notices: Notice[]
   notify: (text: string, tone?: NoticeTone) => void
@@ -109,6 +111,7 @@ function useMatchFeed(room: MatchRoom, onClosed: (reason: string) => void): Matc
   const [clock, setClock] = useState<ClockSync | null>(null)
   const [gameOver, setGameOver] = useState<ServerMessages['gameOver'] | null>(null)
   const [lastDraw, setLastDraw] = useState<MatchFeed['lastDraw']>(null)
+  const [lastResign, setLastResign] = useState<MatchFeed['lastResign']>(null)
   const [notices, setNotices] = useState<Notice[]>([])
   const [reconnecting, setReconnecting] = useState(false)
   const [notify] = useState(() => (text: string, tone: NoticeTone = 'error') => {
@@ -133,6 +136,9 @@ function useMatchFeed(room: MatchRoom, onClosed: (reason: string) => void): Matc
       }),
       room.onMessage('drawEvent', (e: ServerMessages['drawEvent']) => {
         setLastDraw({ ...e, id: ++noticeSeq })
+      }),
+      room.onMessage('resignEvent', (e: ServerMessages['resignEvent']) => {
+        setLastResign({ ...e, id: ++noticeSeq })
       }),
       room.onMessage('kicked', () => onClosed('kicked')),
       room.onMessage('welcome', () => {}),
@@ -164,6 +170,7 @@ function useMatchFeed(room: MatchRoom, onClosed: (reason: string) => void): Matc
     clock: clock ?? (state.clock.serverTimestamp > 0 ? toSync(state.clock) : null),
     gameOver,
     lastDraw,
+    lastResign,
     notices,
     notify,
     dismiss: (id) => setNotices((n) => n.filter((x) => x.id !== id)),
@@ -233,10 +240,11 @@ function MatchView({ room }: { room: MatchRoom }) {
         </div>
       ) : null}
       {/* In a game, toasts sit bottom-left over the board's corner on wide screens, clear of the
-          side panel's buttons, and let clicks through so they never block a move. */}
+          side panel's buttons; on narrower screens they sit at the top, clear of the action row
+          and its hints below the board. They let clicks through so they never block a move. */}
       <div
-        className={`pointer-events-none fixed right-4 bottom-4 z-50 flex w-80 max-w-[calc(100vw-2rem)] flex-col gap-2 ${
-          inGame ? 'lg:right-auto lg:left-4' : ''
+        className={`pointer-events-none fixed right-4 z-50 flex w-80 max-w-[calc(100vw-2rem)] flex-col gap-2 ${
+          inGame ? 'top-4 lg:top-auto lg:right-auto lg:bottom-4 lg:left-4' : 'bottom-4'
         }`}
       >
         {feed.notices.map((n) => (

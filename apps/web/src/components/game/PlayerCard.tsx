@@ -31,11 +31,14 @@ const STATUS_TONE: Record<StatusTone, string> = {
 function seatStatus(
   seat: SeatStateJson,
   defeatReason: string | null,
+  inGame: boolean,
 ): { text: string; tone: StatusTone } | null {
   // A resignation replaces the generic status (it says more, and the line stays short).
+  // "(frozen)" only while the game goes on: once it is over the losing team's pieces have
+  // left the board (a Teams resignation), so there is nothing frozen in place to point at.
   if (defeatReason === 'resign') {
     const resigned = DEFEAT_REASON_LABEL.resign ?? 'Resigned'
-    return seat.status === 'frozen'
+    return seat.status === 'frozen' && inGame
       ? { text: `${resigned} (frozen)`, tone: 'resigned' }
       : { text: resigned, tone: 'resigned' }
   }
@@ -128,7 +131,7 @@ export const PlayerCard = memo(function PlayerCard({
 }) {
   const name = seatName(index)
   const out = seat.status === 'removed' || seat.status === 'frozen'
-  const status = seatStatus(seat, defeatReason)
+  const status = seatStatus(seat, defeatReason, inGame)
   const armyRemoved = seat.status === 'removed'
 
   return (

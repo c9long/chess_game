@@ -126,9 +126,18 @@ export function GameOver({
     parts.push('You share 1st place')
   }
   if (result.type === 'teams_winner') {
-    parts[0] = won
-      ? 'Your team wins'
-      : `${teamLabel(result.winnerTeam === 'south_north' ? 0 : 1)} wins`
+    const winnerTeam = result.winnerTeam === 'south_north' ? 0 : 1
+    const loserTeam = 1 - winnerTeam
+    const myTeam = mySeat >= 0 ? mySeat % 2 : -1
+    if (result.endReason === 'team_resigned') {
+      parts[0] = won
+        ? 'The other team resigned. Your team wins'
+        : myTeam === loserTeam
+          ? 'Your team resigned'
+          : `${teamLabel(loserTeam)} resigned. ${teamLabel(winnerTeam)} wins`
+    } else {
+      parts[0] = won ? 'Your team wins' : `${teamLabel(winnerTeam)} wins`
+    }
   }
   if (result.type === 'ffa_winner' && result.winnerSeat >= 0) {
     const w = state.seats[result.winnerSeat]
@@ -210,7 +219,11 @@ export function GameOver({
             >
               {headline}
             </h2>
-            {subline ? <p className="mt-2 text-sm text-parchment/65">{subline}</p> : null}
+            {subline ? (
+              <p className="mt-2 text-sm text-parchment/65" data-testid="game-over-subline">
+                {subline}
+              </p>
+            ) : null}
           </div>
         </div>
 

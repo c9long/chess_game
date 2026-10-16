@@ -16,7 +16,7 @@ import { PlayerCard } from '../game/PlayerCard.tsx'
 import { TurnBanner } from '../game/TurnBanner.tsx'
 import { ConfirmDialog } from '../overlay.tsx'
 import { Alert, Spinner } from '../ui.tsx'
-import { DrawOfferCard, GameActions } from './GameActions.tsx'
+import { DrawOfferCard, GameActions, TeamResignCard } from './GameActions.tsx'
 import { GameOver } from './GameOver.tsx'
 import { RankedBadge } from './RankedBadge.tsx'
 import { MODE_LABEL, seatHex, seatName, teamLabel } from './seats.ts'
@@ -396,6 +396,7 @@ export function GameRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) {
 
         {finished ? null : (
           <div className="order-4 empty:hidden lg:order-none">
+            <TeamResignCard room={room} feed={feed} />
             <DrawOfferCard room={room} feed={feed} />
           </div>
         )}
@@ -430,9 +431,11 @@ export function GameRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) {
           </ol>
         </section>
 
+        {/* On wide screens the actions stay pinned at the bottom of the side panel, so a
+            vote or draw card above can't push Resign / Leave out of view. */}
         <section
           aria-label="Actions"
-          className="order-6 lg:order-none lg:mt-auto lg:border-t lg:border-parchment/10 lg:pt-3"
+          className="order-6 lg:sticky lg:-bottom-4 lg:z-10 lg:order-none lg:-mx-4 lg:mt-auto lg:rounded-b-2xl lg:last:-mb-4 lg:border-t lg:border-parchment/10 lg:bg-panel lg:px-4 lg:pt-3 lg:pb-4"
         >
           {finished ? (
             <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">{moreButtons}</div>
