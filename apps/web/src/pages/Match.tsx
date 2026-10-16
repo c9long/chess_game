@@ -6,6 +6,7 @@ import { GameRoom } from '../components/match/GameRoom.tsx'
 import { LobbyRoom } from '../components/match/LobbyRoom.tsx'
 import { Alert, Button, Card, CenteredPage, Field, Spinner } from '../components/ui.tsx'
 import {
+  type CloseReason,
   errorCodeMessage,
   forgetRoom,
   joinMatch,
@@ -22,19 +23,27 @@ type Connection =
   | { kind: 'password'; error?: string }
   | { kind: 'error'; message: string }
   | { kind: 'other-room'; otherId: string }
+  | { kind: 'closed'; reason: CloseReason }
   | { kind: 'ready' }
 
 /** Gets this page's room: the one in the store, a reconnect after reload, or a fresh join. */
 function useRoomFor(roomId: string): [Connection, (password: string) => Promise<void>] {
   const room = useMatchStore((s) => s.room)
+  const closed = useMatchStore((s) => s.closed)
   const [conn, setConn] = useState<Connection>({ kind: 'connecting' })
 
   useEffect(() => {
+    // This room closed on us: say so instead of trying to rejoin a lobby that is gone.
+    if (!room && closed?.roomId === roomId) {
+      setConn({ kind: 'closed', reason: closed.reason })
+      return
+    }
     if (room?.roomId === roomId) {
       setConn({ kind: 'ready' })
       return
     }
-    if (room) {
+    // A live seat elsewhere blocks joining; a room that already closed doesn't.
+    if (room && closed?.roomId !== room.roomId) {
       setConn({ kind: 'other-room', otherId: room.roomId })
       return
     }
@@ -53,7 +62,7 @@ function useRoomFor(roomId: string): [Connection, (password: string) => Promise<
     return () => {
       cancelled = true
     }
-  }, [room, roomId])
+  }, [room, roomId, closed])
 
   async function withPassword(password: string) {
     try {
@@ -153,11 +162,11 @@ function toSync(c: MatchStateJson['clock']): ClockSync {
 
 function MatchView({ room }: { room: MatchRoom }) {
   const navigate = useNavigate()
-  const setRoom = useMatchStore((s) => s.setRoom)
+  const markClosed = useMatchStore((s) => s.markClosed)
   const [closed, setClosed] = useState<string>()
   const [onClosed] = useState(() => (reason: string) => {
     setClosed(reason)
-    setRoom(null)
+    markClosed(room.roomId, reason as CloseReason)
   })
   const feed = useMatchFeed(room, onClosed)
 
@@ -175,7 +184,9 @@ function MatchView({ room }: { room: MatchRoom }) {
               ? 'The host removed you from this lobby.'
               : closed === 'closed'
                 ? 'This lobby was closed.'
-                : 'You are no longer connected to this game.'}
+                : import.meta.env.DEV
+                  ? 'You are no longer connected to this game. Locally this usually means the server restarted after a code change, which closes every open lobby.'
+                  : 'You are no longer connected to this game.'}
           </p>
           <Button onClick={() => navigate('/play')}>Back to lobbies</Button>
         </Card>
@@ -269,6 +280,23 @@ export function Match() {
           </p>
           <Link className="font-semibold text-gold hover:underline" to={`/match/${conn.otherId}`}>
             Return to your lobby
+          </Link>
+        </Card>
+      </CenteredPage>
+    )
+  }
+  if (conn.kind === 'closed') {
+    return (
+      <CenteredPage>
+        <Card>
+          <h1 className="mb-3 font-display text-2xl font-semibold">This lobby has closed</h1>
+          <p className="mb-6 text-parchment/70">
+            {conn.reason === 'kicked'
+              ? 'The host removed you from this lobby.'
+              : 'It is no longer available (the server may have restarted). Create or join another one.'}
+          </p>
+          <Link className="font-semibold text-gold hover:underline" to="/play">
+            Back to lobbies
           </Link>
         </Card>
       </CenteredPage>

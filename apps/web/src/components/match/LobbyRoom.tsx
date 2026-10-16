@@ -347,7 +347,7 @@ export function LobbyRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) 
               </p>
               <CivPicker
                 value={me.civ}
-                disabled={me.ready}
+                disabled={false}
                 onPick={(civ) => send('setCiv', { civ: civ as never })}
               />
               <Button

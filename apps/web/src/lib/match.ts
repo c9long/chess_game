@@ -34,14 +34,22 @@ export function matchApi(room: MatchRoom): MatchClient {
   return matchClient(room as unknown as RoomLike)
 }
 
+export type CloseReason = 'kicked' | 'closed' | 'left'
+
 interface MatchStore {
   room: MatchRoom | null
+  /** The last room that closed on us (kicked, server closed it, connection lost for good). */
+  closed: { roomId: string; reason: CloseReason } | null
   setRoom: (room: MatchRoom | null) => void
+  markClosed: (roomId: string, reason: CloseReason) => void
 }
 
 export const useMatchStore = create<MatchStore>((set) => ({
   room: null,
-  setRoom: (room) => set({ room }),
+  closed: null,
+  setRoom: (room) => set(room ? { room, closed: null } : { room }),
+  // The room object stays (so a finished game keeps showing); nothing rejoins a closed room.
+  markClosed: (roomId, reason) => set({ closed: { roomId, reason } }),
 }))
 
 const TOKEN_KEY = (roomId: string) => `match:reconnect:${roomId}`
@@ -103,19 +111,24 @@ export async function reconnectMatch(roomId: string): Promise<MatchRoom | null> 
 }
 
 export async function leaveMatch(): Promise<void> {
-  const { room, setRoom } = useMatchStore.getState()
+  const { room } = useMatchStore.getState()
+  useMatchStore.setState({ room: null, closed: null })
   if (!room) return
-  setRoom(null)
   forgetRoom(room.roomId)
   try {
     await room.leave(true)
   } catch {}
 }
 
-/** Plain-JSON copy of the synced room state (what the UI renders). */
+/**
+ * Plain-JSON copy of the synced room state (what the UI renders), or null until the first
+ * full state has arrived (right after joining, the schema object exists but is still empty).
+ */
 export function stateJson(room: MatchRoom): MatchStateJson | null {
   const s = room.state as { toJSON?: () => unknown } | undefined
-  return s?.toJSON ? (s.toJSON() as MatchStateJson) : null
+  if (!s?.toJSON) return null
+  const json = s.toJSON() as Partial<MatchStateJson>
+  return Array.isArray(json.seats) && json.seats.length === 4 ? (json as MatchStateJson) : null
 }
 
 /** Matchmaking error code (the server answers `{ error: <code> }`), or undefined. */

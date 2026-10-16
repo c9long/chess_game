@@ -43,11 +43,12 @@ test('guest creates a lobby, fills it with bots, plays and sees the result', asy
 
   await page.getByTestId('play').click()
   await expect(page.getByRole('heading', { name: 'Lobbies' })).toBeVisible()
-  await page.getByTestId('lobby-name').fill('E2E table')
+  // Keep the pre-filled name ("<name>'s game"): it must be accepted as is.
+  await expect(page.getByTestId('lobby-name')).toHaveValue(/^Guest-\d{4}'s game$/)
   await page.getByTestId('create-lobby').click()
 
   // Lobby room: the creator is South and host.
-  await expect(page.getByRole('heading', { name: 'E2E table' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: /^Guest-\d{4}'s game$/ })).toBeVisible()
   const south = page.getByTestId('seat-south')
   await expect(south.getByTestId('seat-name')).toHaveText(/^Guest-\d{4}$/)
 
@@ -109,16 +110,17 @@ test('a private lobby asks for its password', async ({ browser }) => {
   const host = await hostCtx.newPage()
   await startAsGuest(host)
   await host.goto('/play')
-  await host.getByTestId('lobby-name').fill('Secret table')
+  // A typographic apostrophe (as phones and macOS type it) is fine.
+  await host.getByTestId('lobby-name').fill('Bob’s secret table')
   await host.getByTestId('lobby-password').fill('hunter22')
   await host.getByTestId('create-lobby').click()
-  await expect(host.getByRole('heading', { name: 'Secret table' })).toBeVisible()
+  await expect(host.getByRole('heading', { name: "Bob's secret table" })).toBeVisible()
 
   const guestCtx = await browser.newContext()
   const guest = await guestCtx.newPage()
   await startAsGuest(guest)
   await guest.goto('/play')
-  const row = guest.getByTestId('lobby-list').locator('li', { hasText: 'Secret table' })
+  const row = guest.getByTestId('lobby-list').locator('li', { hasText: "Bob's secret table" })
   await expect(row).toBeVisible()
   await expect(row.getByTitle('Private: password required')).toBeVisible()
   await row.getByTestId('join-lobby').click()
@@ -127,9 +129,45 @@ test('a private lobby asks for its password', async ({ browser }) => {
   await expect(guest.getByRole('alert')).toContainText('password is not right')
   await guest.getByTestId('join-password').fill('hunter22')
   await guest.getByTestId('join-submit').click()
-  await expect(guest.getByRole('heading', { name: 'Secret table' })).toBeVisible()
+  await expect(guest.getByRole('heading', { name: "Bob's secret table" })).toBeVisible()
   // Both players see each other in the seats.
   await expect(host.getByTestId('seat-west').getByTestId('seat-name')).toHaveText(/^Guest-\d{4}$/)
   await hostCtx.close()
   await guestCtx.close()
+})
+
+test('a player who joins by invite link can pick and change a civilization', async ({
+  browser,
+}) => {
+  const hostCtx = await browser.newContext()
+  const host = await hostCtx.newPage()
+  await startAsGuest(host)
+  await host.goto('/play')
+  await host.getByTestId('lobby-name').fill('Invite table')
+  await host.getByTestId('create-lobby').click()
+  await expect(host.getByRole('heading', { name: 'Invite table' })).toBeVisible()
+
+  // The second player opens the lobby's URL directly (as from "Copy invite link").
+  const joinCtx = await browser.newContext()
+  const joiner = await joinCtx.newPage()
+  const errors: string[] = []
+  joiner.on('pageerror', (e) => errors.push(e.message))
+  await startAsGuest(joiner)
+  await joiner.goto(host.url())
+  await expect(joiner.getByRole('heading', { name: 'Invite table' })).toBeVisible()
+
+  await joiner.getByTestId('civ-france').click()
+  await expect(joiner.getByTestId('civ-france')).toHaveAttribute('aria-checked', 'true')
+  const west = host.getByTestId('seat-west')
+  await expect(west).toContainText('France')
+
+  // Ready doesn't lock the choice: switching civ still works.
+  await joiner.getByTestId('ready').click()
+  await expect(west).toContainText('Ready')
+  await joiner.getByTestId('civ-mali').click()
+  await expect(joiner.getByTestId('civ-mali')).toHaveAttribute('aria-checked', 'true')
+  await expect(west).toContainText('Mali')
+  expect(errors).toEqual([])
+  await hostCtx.close()
+  await joinCtx.close()
 })
