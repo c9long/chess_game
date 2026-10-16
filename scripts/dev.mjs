@@ -3,13 +3,13 @@
 //
 // 1. Creates apps/server/.env from .env.example if it is missing.
 // 2. Makes sure the local Postgres role/database exist, then migrates and seeds them.
-// 3. Builds the WebAssembly rules engine if it has not been built yet.
+// 3. Builds the WebAssembly rules engine if it is missing or older than its Rust sources.
 // 4. Starts bot-service (Rust, release build), the API/game server and the web app, with
 //    each line of output prefixed by its source. Ctrl-C stops everything.
 //
 // Then open http://localhost:5173.
 import { spawn, spawnSync } from 'node:child_process'
-import { copyFileSync, existsSync } from 'node:fs'
+import { copyFileSync, existsSync, readdirSync, statSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -65,7 +65,26 @@ step('migrating the database', 'pnpm', ['--filter', '@game/db', 'migrate'], { DA
 step('seeding the civilization catalog', 'pnpm', ['--filter', '@game/db', 'seed'], {
   DATABASE_URL,
 })
-if (!existsSync(join(root, 'packages/rules/wasm/rules_wasm_bg.wasm'))) {
+// Rebuild the rules engine when it is missing or older than its Rust sources (e.g. after a
+// `git pull` that changed the rules), so the browser and server never run stale rules.
+function newestMtime(dir) {
+  let newest = 0
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const path = join(dir, entry.name)
+    if (entry.isDirectory()) newest = Math.max(newest, newestMtime(path))
+    else if (entry.name.endsWith('.rs') || entry.name === 'Cargo.toml') {
+      newest = Math.max(newest, statSync(path).mtimeMs)
+    }
+  }
+  return newest
+}
+const wasmFile = join(root, 'packages/rules/wasm/rules_wasm_bg.wasm')
+const rulesSources = Math.max(
+  newestMtime(join(root, 'crates/rules-core')),
+  newestMtime(join(root, 'crates/rules-wasm')),
+  statSync(join(root, 'Cargo.lock')).mtimeMs,
+)
+if (!existsSync(wasmFile) || statSync(wasmFile).mtimeMs < rulesSources) {
   step('building the rules engine (WebAssembly)', 'pnpm', ['build:wasm'])
 }
 
