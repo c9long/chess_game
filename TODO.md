@@ -82,6 +82,7 @@ Conventions (see [CLAUDE.md](CLAUDE.md)):
 - ~~OpenSkill ratings (public + hidden shadow ratings)~~ (done 2026-10-15; display rating = round(900 + 30 × (mu − 3σ)), bot anchors in `bot_level_anchors`)
 - ~~Web: lobby browser, create/join lobby, lobby room and live game screens on `@game/protocol`~~ (done 2026-10-15; `/play`, `/match/:roomId`, `/history`; private lobbies with password prompt, host bot/seat controls, live clocks, reconnect after reload)
 - ~~One-command local development (`pnpm dev`: database, WASM build, bot-service, server, web)~~ (done 2026-10-15)
+- ~~Local dev mailbox page (`/dev/mail`) linked from the check-email screens, kept across server restarts; `pnpm dev` stops every process it started and checks its ports first~~ (done 2026-10-15)
 - Lobbies: spectator role (read-only) for spectating/replays
 - Game server scale-out: startup abort of `in_progress` matches assumes a single game-server process (revisit with Redis presence)
 - Ratings: recalibrate `bot_level_anchors` from bot-arena results and the shadow pool

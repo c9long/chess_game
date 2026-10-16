@@ -14,6 +14,7 @@
 **/node_modules
 **/target
 **/.env
+**/.dev-mailbox.json
 **/*.test.ts
 apps/server/src/test
 packages/rules/wasm

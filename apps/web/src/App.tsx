@@ -21,6 +21,10 @@ import { VerifyEmail } from './pages/VerifyEmail.tsx'
 const Match = lazy(() => import('./pages/Match.tsx').then((m) => ({ default: m.Match })))
 const Play = lazy(() => import('./pages/Play.tsx').then((m) => ({ default: m.Play })))
 const History = lazy(() => import('./pages/History.tsx').then((m) => ({ default: m.History })))
+// Development builds only (the dev mailbox); removed from production builds.
+const DevMail = import.meta.env.DEV
+  ? lazy(() => import('./pages/DevMail.tsx').then((m) => ({ default: m.DevMail })))
+  : null
 const LegalDoc = lazy(() => import('./pages/LegalDoc.tsx').then((m) => ({ default: m.LegalDoc })))
 
 function NotFound() {
@@ -58,6 +62,7 @@ export function App() {
       <Routes>
         <Route element={<Shell />}>
           {/* Always reachable: legal documents and links that arrive by email. */}
+          {DevMail ? <Route path="dev/mail" element={<DevMail />} /> : null}
           <Route path="terms" element={<LegalDoc kind="terms" />} />
           <Route path="privacy" element={<LegalDoc kind="privacy" />} />
           <Route path="verify-email" element={<VerifyEmail />} />

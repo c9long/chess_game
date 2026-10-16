@@ -24,3 +24,6 @@ blob-report/
 
 # Claude Code local session state
 .claude/scheduled_tasks.lock
+
+# Development emails (local dev mailbox)
+apps/server/.dev-mailbox.json

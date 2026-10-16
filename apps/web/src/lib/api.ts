@@ -57,6 +57,8 @@ export interface PublicConfig {
   legalVersions: Record<'terms' | 'privacy', string>
   username: { minLength: number; maxLength: number; description: string }
   passwordMinLength: number
+  /** Development only: emails are stored in the dev mailbox (/dev/mail) instead of sent. */
+  devMailbox?: boolean
 }
 
 export type OAuthProvider = 'google' | 'discord' | 'github' | 'microsoft'

@@ -1,5 +1,6 @@
 import { type FormEvent, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
+import { DevMailHint } from '../components/DevMailHint.tsx'
 import { Turnstile } from '../components/Turnstile.tsx'
 import { Alert, Button, Card, CenteredPage, Field, PageTitle } from '../components/ui.tsx'
 import { authErrorMessage } from '../lib/api.ts'
@@ -40,7 +41,12 @@ export function ForgotPassword() {
           subtitle="We’ll email you a link to choose a new one."
         />
         {sent ? (
-          <Alert tone="success">If an account uses that address, a reset link is on its way.</Alert>
+          <div className="flex flex-col gap-4">
+            <Alert tone="success">
+              If an account uses that address, a reset link is on its way.
+            </Alert>
+            <DevMailHint email={email} />
+          </div>
         ) : (
           <form onSubmit={submit} className="flex flex-col gap-4">
             <Field

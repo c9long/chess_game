@@ -20,6 +20,7 @@ import { gameRouter } from './game/routes.ts'
 import { GameService } from './game/service.ts'
 import { normalizeForwardedFor } from './http/client-ip.ts'
 import { devMailRouter } from './http/dev-routes.ts'
+
 import { requestLogger } from './http/request-log.ts'
 import { requireTrustedOrigin, securityHeaders } from './http/security.ts'
 import { legalRouter } from './legal/routes.ts'
@@ -45,7 +46,11 @@ export function createApp(config: AppConfig, overrides: AppOverrides = {}) {
     overrides.email ??
     (config.email.resendApiKey
       ? new ResendEmailSender(config.email.resendApiKey, config.email.from, logger)
-      : new MemoryEmailSender(logger))
+      : new MemoryEmailSender(logger, 500, {
+          // Development keeps the dev mailbox across watch-mode restarts (tests stay in memory).
+          file: config.devMailboxFile,
+          viewUrl: config.devMailEndpoint ? `${config.webOrigin}/dev/mail` : undefined,
+        }))
   const auth = createAuth({ config, db, email, logger, namePolicy })
   const game = new GameService({
     config,
@@ -84,6 +89,7 @@ export function createApp(config: AppConfig, overrides: AppOverrides = {}) {
   })
 
   /** Public, non-secret settings the web client needs before signing in. */
+  const devMailbox = config.devMailEndpoint && email instanceof MemoryEmailSender
   app.get('/api/config', (_req, res) => {
     res.json({
       appName: APP_NAME,
@@ -96,6 +102,8 @@ export function createApp(config: AppConfig, overrides: AppOverrides = {}) {
         description: namePolicy.description,
       },
       passwordMinLength: 10,
+      // Development only: true when emails land in the dev mailbox instead of being sent.
+      devMailbox: devMailbox,
     })
   })
 
@@ -104,7 +112,7 @@ export function createApp(config: AppConfig, overrides: AppOverrides = {}) {
   app.use('/api', gameRouter({ db, auth }))
   // Colyseus matchmaking (the WebSocket side is attached to the http.Server in server.ts).
   app.use(COLYSEUS_PATH, matchmakeRouter(config, game))
-  if (config.devMailEndpoint && email instanceof MemoryEmailSender) {
+  if (devMailbox && email instanceof MemoryEmailSender) {
     app.use('/api/dev', devMailRouter(email))
   }
 

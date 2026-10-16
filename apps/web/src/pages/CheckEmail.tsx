@@ -1,5 +1,6 @@
 import { type FormEvent, useState } from 'react'
 import { Link, useLocation } from 'react-router'
+import { DevMailHint } from '../components/DevMailHint.tsx'
 import { Turnstile } from '../components/Turnstile.tsx'
 import { Alert, Button, Card, CenteredPage, Field, PageTitle } from '../components/ui.tsx'
 import { authErrorMessage } from '../lib/api.ts'
@@ -60,6 +61,7 @@ export function CheckEmail() {
           }
         />
         <form onSubmit={resend} className="flex flex-col gap-4">
+          <DevMailHint email={email || undefined} />
           {sent ? (
             <Alert tone="success">
               If that address has an unverified account, a new link is on its way. It can take a

@@ -1,3 +1,4 @@
+import { readFileSync, writeFileSync } from 'node:fs'
 import { APP_NAME } from '@game/config'
 import { Resend } from 'resend'
 import type { Logger } from '../logger.ts'
@@ -24,7 +25,9 @@ export interface StoredEmail extends EmailMessage {
 
 /**
  * Development/test sender: logs that a message was sent (never its contents, which hold
- * tokens) and keeps it in memory for the guarded dev mail endpoint.
+ * tokens) and keeps it for the guarded dev mailbox (`GET /api/dev/mail`, shown in the web app
+ * at /dev/mail). In development the messages are also saved to a local file so the server's
+ * watch-mode restarts don't wipe them.
  */
 export class MemoryEmailSender implements EmailSender {
   readonly name = 'memory'
@@ -32,16 +35,48 @@ export class MemoryEmailSender implements EmailSender {
   private readonly messages: StoredEmail[] = []
   private readonly logger: Logger | undefined
   private readonly limit: number
+  private readonly file: string | undefined
+  private readonly viewUrl: string | undefined
 
-  constructor(logger?: Logger, limit = 500) {
+  constructor(
+    logger?: Logger,
+    limit = 500,
+    options: { file?: string | undefined; viewUrl?: string | undefined } = {},
+  ) {
     this.logger = logger
     this.limit = limit
+    this.file = options.file
+    this.viewUrl = options.viewUrl
+    if (this.file) {
+      try {
+        const saved = JSON.parse(readFileSync(this.file, 'utf8')) as StoredEmail[]
+        if (Array.isArray(saved)) {
+          this.messages.push(...saved.slice(-limit))
+          this.nextId = Math.max(0, ...this.messages.map((m) => m.id)) + 1
+        }
+      } catch {
+        // No saved mailbox yet (or unreadable): start empty.
+      }
+    }
   }
 
   async send(message: EmailMessage): Promise<void> {
     this.messages.push({ ...message, id: this.nextId++, sentAt: new Date().toISOString() })
     if (this.messages.length > this.limit) this.messages.shift()
-    this.logger?.info({ kind: message.kind }, 'email stored in dev mailbox')
+    this.save()
+    this.logger?.info(
+      { kind: message.kind, ...(this.viewUrl ? { readAt: this.viewUrl } : {}) },
+      'email stored in dev mailbox (not sent)',
+    )
+  }
+
+  private save(): void {
+    if (!this.file) return
+    try {
+      writeFileSync(this.file, JSON.stringify(this.messages))
+    } catch (err) {
+      this.logger?.warn({ err: (err as Error).message }, 'could not save the dev mailbox file')
+    }
   }
 
   /** Messages for one recipient (case-insensitive), oldest first. */
@@ -53,6 +88,7 @@ export class MemoryEmailSender implements EmailSender {
 
   clear(): void {
     this.messages.length = 0
+    this.save()
   }
 }
 

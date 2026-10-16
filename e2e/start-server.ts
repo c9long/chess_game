@@ -26,6 +26,8 @@ Object.assign(process.env, {
   // per-IP auth limits. Rate limiting is covered by the server integration tests instead.
   RATE_LIMIT_ENABLED: 'false',
   DEV_MAIL_ENDPOINT: 'true',
+  // Keep E2E mail in memory, out of the developer's own dev mailbox file.
+  DEV_MAILBOX_FILE: '',
   GUEST_PURGE_INTERVAL_MINUTES: '0',
   RESEND_API_KEY: '',
 })

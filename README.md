@@ -82,8 +82,11 @@ Without `BOT_SERVICE_URL` (or when bot-service is busy or down) bots play quick 
 The real-bot integration test runs only when the variable is set:
 `BOT_SERVICE_URL=http://127.0.0.1:7700 pnpm --filter @game/server test`.
 
-In development, emails are not sent. They are kept in memory and readable at
-`GET /api/dev/mail?to=<address>` (development/test only, loopback only). Turnstile uses
+**Creating an account locally:** in development no email is really sent. Verification and
+password-reset emails land in the **dev mailbox** at http://localhost:5173/dev/mail (the "Check
+your email" screen links to it). Open it, click the link in the email, and you're verified.
+The mailbox is saved to `apps/server/.dev-mailbox.json` (gitignored) so server restarts keep it,
+and it doesn't exist in production. Turnstile uses
 Cloudflare's always-pass test keys unless real keys are configured. Every server variable is
 documented in [`apps/server/.env.example`](apps/server/.env.example). `NODE_ENV` has no
 default (the copied `.env` sets `development`), and `NODE_ENV=production` refuses to start

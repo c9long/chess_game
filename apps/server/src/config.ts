@@ -1,8 +1,12 @@
+import { fileURLToPath } from 'node:url'
 import { z } from 'zod'
 
 /** Cloudflare's documented always-pass Turnstile test keys (dev/test only). */
 export const TURNSTILE_TEST_SITE_KEY = '1x00000000000000000000AA'
 export const TURNSTILE_TEST_SECRET_KEY = '1x0000000000000000000000000000000AA'
+
+/** Local, gitignored file holding development emails. */
+const DEFAULT_DEV_MAILBOX_FILE = fileURLToPath(new URL('../.dev-mailbox.json', import.meta.url))
 
 const DEV_SECRET = 'dev-only-secret-do-not-use-in-production-0123456789'
 
@@ -39,6 +43,8 @@ const envSchema = z.object({
   EMAIL_FROM: optionalString,
   IP_HASH_SECRET: optionalString,
   DEV_MAIL_ENDPOINT: bool.optional(),
+  /** Development only: file that keeps dev emails across restarts ('' = memory only). */
+  DEV_MAILBOX_FILE: z.string().optional(),
   GUEST_INACTIVE_DAYS: z.coerce.number().int().positive().default(30),
   GUEST_PURGE_INTERVAL_MINUTES: z.coerce
     .number()
@@ -100,6 +106,8 @@ export interface AppConfig {
   email: { resendApiKey: string | undefined; from: string }
   ipHashSecret: string
   devMailEndpoint: boolean
+  /** Development only: where the dev mailbox is saved, or undefined to keep it in memory. */
+  devMailboxFile: string | undefined
   guestInactiveDays: number
   guestPurgeIntervalMinutes: number
   oauth: Partial<Record<OAuthProviderId, OAuthCredentials>>
@@ -237,6 +245,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     ipHashSecret: e.IP_HASH_SECRET ?? `${authSecret}:ip-hash`,
     devMailEndpoint:
       e.NODE_ENV === 'development' || e.NODE_ENV === 'test' ? (e.DEV_MAIL_ENDPOINT ?? true) : false,
+    devMailboxFile:
+      e.NODE_ENV === 'development'
+        ? e.DEV_MAILBOX_FILE === undefined
+          ? DEFAULT_DEV_MAILBOX_FILE
+          : e.DEV_MAILBOX_FILE || undefined
+        : undefined,
     guestInactiveDays: e.GUEST_INACTIVE_DAYS,
     guestPurgeIntervalMinutes: e.GUEST_PURGE_INTERVAL_MINUTES,
     oauth,

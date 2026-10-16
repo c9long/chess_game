@@ -4,7 +4,12 @@ import type { MemoryEmailSender } from '../email/sender.ts'
 
 function isLoopback(req: Request): boolean {
   const a = req.socket.remoteAddress ?? ''
-  return a === '127.0.0.1' || a === '::1' || a === '::ffff:127.0.0.1'
+  const fromLoopback = a === '127.0.0.1' || a === '::1' || a === '::ffff:127.0.0.1'
+  // Also require a local Host header, so a web page can't reach the mailbox through DNS
+  // rebinding (its requests would carry the attacker's host name).
+  const host = (req.headers.host ?? '').replace(/:\d+$/, '').toLowerCase()
+  const localHost = host === 'localhost' || host === '127.0.0.1' || host === '[::1]'
+  return fromLoopback && localHost
 }
 
 /**
