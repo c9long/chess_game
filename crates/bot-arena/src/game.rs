@@ -156,6 +156,8 @@ fn result_name(r: &GameResult) -> &'static str {
         GameResult::FfaMoveLimitTie { .. } => "ffa_move_limit_tie",
         GameResult::TeamsWinner { .. } => "teams_winner",
         GameResult::TeamsDraw => "teams_draw",
+        GameResult::FfaAgreedDraw { .. } => "ffa_agreed_draw",
+        GameResult::TeamsAgreedDraw => "teams_agreed_draw",
     }
 }
 

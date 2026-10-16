@@ -466,7 +466,7 @@ impl Searcher<'_> {
                         -(WIN - p)
                     });
                 }
-                GameResult::TeamsDraw => return Some(0),
+                GameResult::TeamsDraw | GameResult::TeamsAgreedDraw => return Some(0),
                 GameResult::FfaWinner { seat } => {
                     if seat == self.root {
                         WIN - p
@@ -474,7 +474,8 @@ impl Searcher<'_> {
                         -(WIN - p)
                     }
                 }
-                GameResult::FfaMoveLimitTie { survivors } => {
+                GameResult::FfaMoveLimitTie { survivors }
+                | GameResult::FfaAgreedDraw { survivors } => {
                     if survivors[self.root.index()] {
                         // On the evaluation's scale: the static evaluation
                         // already counts `ffa_opponent_out` per removed
