@@ -33,6 +33,8 @@
     "already_in_room",
     "kicked",
     "maintenance",
+    "account_required",
+    "ranked_no_bots",
     "invalid_message",
     "unknown_message",
     "not_host",
@@ -47,6 +49,11 @@
     "not_your_turn",
     "not_seated",
     "illegal_move",
+    "not_playing",
+    "draw_offer_pending",
+    "draw_offer_cooldown",
+    "no_draw_offer",
+    "already_responded",
     "not_implemented",
     "internal"
   ],
@@ -55,15 +62,7 @@
     "seatLost": 4101,
     "roomClosed": 4102
   },
-  "reservedMessageTypes": [
-    "resign",
-    "offerDraw",
-    "respondDraw",
-    "takebackRequest",
-    "takebackRespond",
-    "chat.send",
-    "chat.emote"
-  ],
+  "reservedMessageTypes": ["takebackRequest", "takebackRespond", "chat.send", "chat.emote"],
   "joinOptions": {
     "create": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -101,6 +100,10 @@
               "default": "blind",
               "type": "string",
               "enum": ["blind", "draft"]
+            },
+            "ranked": {
+              "default": false,
+              "type": "boolean"
             }
           },
           "required": ["protocolVersion", "name", "mode", "timeControl"],
@@ -200,9 +203,21 @@
       "pickMode": {
         "type": "string",
         "enum": ["blind", "draft"]
+      },
+      "ranked": {
+        "type": "boolean"
       }
     },
-    "required": ["name", "mode", "timeControl", "seatsFilled", "locked", "phase", "pickMode"],
+    "required": [
+      "name",
+      "mode",
+      "timeControl",
+      "seatsFilled",
+      "locked",
+      "phase",
+      "pickMode",
+      "ranked"
+    ],
     "additionalProperties": false
   },
   "clientMessages": {
@@ -436,6 +451,29 @@
       "required": ["move"],
       "additionalProperties": false
     },
+    "resign": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "offerDraw": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "respondDraw": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "accept": {
+          "type": "boolean"
+        }
+      },
+      "required": ["accept"],
+      "additionalProperties": false
+    },
     "syncClock": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
@@ -505,7 +543,7 @@
         },
         "action": {
           "type": "string",
-          "enum": ["move", "timeout", "abandon"]
+          "enum": ["move", "timeout", "abandon", "resign", "agreed_draw"]
         },
         "seat": {
           "anyOf": [
@@ -780,6 +818,62 @@
       "required": ["matchId", "result", "placements", "endReason", "rated", "ratings"],
       "additionalProperties": false
     },
+    "drawEvent": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["offered", "accepted", "declined", "lapsed"]
+        },
+        "seat": {
+          "anyOf": [
+            {
+              "type": "number",
+              "const": 0
+            },
+            {
+              "type": "number",
+              "const": 1
+            },
+            {
+              "type": "number",
+              "const": 2
+            },
+            {
+              "type": "number",
+              "const": 3
+            }
+          ]
+        },
+        "offerSeat": {
+          "anyOf": [
+            {
+              "type": "number",
+              "const": 0
+            },
+            {
+              "type": "number",
+              "const": 1
+            },
+            {
+              "type": "number",
+              "const": 2
+            },
+            {
+              "type": "number",
+              "const": 3
+            }
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "enum": ["round", "voters_changed"]
+        }
+      },
+      "required": ["type", "seat", "offerSeat"],
+      "additionalProperties": false
+    },
     "error": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
@@ -802,6 +896,8 @@
             "already_in_room",
             "kicked",
             "maintenance",
+            "account_required",
+            "ranked_no_bots",
             "invalid_message",
             "unknown_message",
             "not_host",
@@ -816,6 +912,11 @@
             "not_your_turn",
             "not_seated",
             "illegal_move",
+            "not_playing",
+            "draw_offer_pending",
+            "draw_offer_cooldown",
+            "no_draw_offer",
+            "already_responded",
             "not_implemented",
             "internal"
           ]

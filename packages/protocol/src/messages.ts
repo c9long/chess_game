@@ -41,6 +41,12 @@ export const createLobbyOptionsSchema = z.strictObject({
   password: z.string().max(LOBBY_PASSWORD_MAX).optional(),
   /** Only 'blind' is playable; 'draft' is answered with `not_implemented`. */
   pickMode: z.enum(PICK_MODES).default('blind'),
+  /**
+   * Ranked lobby: Elo-rated, registered accounts only (guests get `account_required` when
+   * creating or joining) and no bots (`addBot` answers `ranked_no_bots`). Casual lobbies
+   * (the default) are never rated.
+   */
+  ranked: z.boolean().default(false),
 })
 export type CreateLobbyOptions = z.input<typeof createLobbyOptionsSchema>
 
@@ -86,6 +92,8 @@ export const lobbyMetadataSchema = z.object({
   locked: z.boolean(),
   phase: z.string(),
   pickMode: z.enum(PICK_MODES),
+  /** Ranked lobby (Elo-rated, registered accounts only, no bots). */
+  ranked: z.boolean(),
 })
 export type LobbyMetadata = z.infer<typeof lobbyMetadataSchema>
 
@@ -109,6 +117,18 @@ export const clientMessageSchemas = {
   startGame: empty,
   // game
   move: z.strictObject({ move: z.string().min(4).max(8) }),
+  /**
+   * Resign: any seat still taking turns, at any time in game (not only on its turn). FFA:
+   * the army is removed; Teams: the seat freezes and the partner plays on.
+   */
+  resign: empty,
+  /**
+   * Offer a draw: a draw voter (a seat still taking turns), when no offer is pending and the
+   * cooldown after an earlier lapsed or declined offer has passed.
+   */
+  offerDraw: empty,
+  /** Answer the pending draw offer (voters still pending only). */
+  respondDraw: z.strictObject({ accept: z.boolean() }),
   /** Asks for an immediate `clock` message (e.g. after the tab was in the background). */
   syncClock: empty,
 } as const
@@ -124,9 +144,6 @@ export type ClientMessages = {
  * `chat.` is reserved too.
  */
 export const RESERVED_MESSAGE_TYPES = [
-  'resign',
-  'offerDraw',
-  'respondDraw',
   'takebackRequest',
   'takebackRespond',
   'chat.send',
@@ -144,6 +161,14 @@ export function isReservedMessageType(type: string): boolean {
 // ---------------------------------------------------------------------------
 // Server -> client messages
 // ---------------------------------------------------------------------------
+
+/** Kinds of game action in `events` messages (and their persisted match events). */
+export const GAME_ACTIONS = ['move', 'timeout', 'abandon', 'resign', 'agreed_draw'] as const
+export type GameAction = (typeof GAME_ACTIONS)[number]
+
+/** Why a draw offer lapsed (see the `drawEvent` message). */
+export const DRAW_LAPSE_REASONS = ['round', 'voters_changed'] as const
+export type DrawLapseReason = (typeof DRAW_LAPSE_REASONS)[number]
 
 const seatOrNone = z.union([seatSchema, z.literal(-1)])
 
@@ -173,11 +198,12 @@ export const serverMessageSchemas = {
     seat: seatOrNone,
     isHost: z.boolean(),
   }),
-  /** The result of one game action (a move, a timeout or an abandon). */
+  /** The result of one game action (a move, a timeout, an abandon, a resign or an agreed draw). */
   events: z.object({
     /** Action number in this game, from 1. */
     seq: z.number().int(),
-    action: z.enum(['move', 'timeout', 'abandon']),
+    action: z.enum(GAME_ACTIONS),
+    /** The acting seat (`agreed_draw`: the seat whose acceptance completed the agreement). */
     seat: seatSchema,
     /** The move notation for `move` actions, else null. */
     notation: z.string().nullable(),
@@ -196,9 +222,29 @@ export const serverMessageSchemas = {
     result: z.looseObject({ type: z.string() }),
     placements: z.tuple([z.number(), z.number(), z.number(), z.number()]),
     endReason: z.string(),
+    /** Elo was applied (ranked lobby, all four results recorded). */
     rated: z.boolean(),
-    /** Per seat: display rating before/after (rated games, registered humans), else null. */
+    /** Per seat: Elo before/after when `rated`, else null. */
     ratings: z.array(z.object({ before: z.number(), after: z.number() }).nullable()),
+  }),
+  /**
+   * A change to the draw offer, sent to everyone. The current offer itself is in the room
+   * state (`drawOfferSeat`, `drawVotes`); this message says what happened, for toasts.
+   * - `offered`: `seat` offered a draw (its own vote counts as accepted)
+   * - `accepted`: `seat` accepted (when everyone has, an `events` message with action
+   *   `agreed_draw` and the game end follow)
+   * - `declined`: `seat` declined; the offer is over
+   * - `lapsed`: the offer ended unanswered; `reason` is `round` (a full round passed: every
+   *   other voter took a turn and the turn is back with the offerer) or `voters_changed` (a
+   *   seat was defeated out of the game, removed or froze)
+   */
+  drawEvent: z.object({
+    type: z.enum(['offered', 'accepted', 'declined', 'lapsed']),
+    /** Who acted (for `lapsed`: the offerer). */
+    seat: seatSchema,
+    /** Who made the offer. */
+    offerSeat: seatSchema,
+    reason: z.enum(DRAW_LAPSE_REASONS).optional(),
   }),
   /** A request was refused, or a server-side problem. */
   error: z.object({

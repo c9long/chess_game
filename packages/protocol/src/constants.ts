@@ -131,6 +131,24 @@ export function checkLobbyNameFormat(
   return { ok: true, name }
 }
 
+/**
+ * Draw offers: after an offer of yours lapses or is declined, you must make this many more
+ * moves before you may offer again.
+ */
+export const DRAW_OFFER_COOLDOWN_MOVES = 2
+
+/**
+ * Leaderboard (`GET /api/leaderboard`): players need at least this many ranked games in a
+ * mode x time control to be listed there.
+ */
+export const LEADERBOARD_MIN_GAMES = 5
+/** Leaderboard page size: default and maximum `limit`. */
+export const LEADERBOARD_DEFAULT_LIMIT = 50
+export const LEADERBOARD_MAX_LIMIT = 100
+
+/** `drawVotes` entries in the room state: not a voter, waiting for an answer, accepted. */
+export const DRAW_VOTE = { notVoter: -1, pending: 0, accepted: 1 } as const
+
 /** Pre-game countdown after the host starts. */
 export const DEFAULT_COUNTDOWN_MS = 3_000
 /** Reconnect grace (PLAN §2). */
@@ -157,6 +175,9 @@ export const ERROR_CODES = [
   'already_in_room',
   'kicked',
   'maintenance',
+  // ranked lobbies: registered accounts only, no bots
+  'account_required',
+  'ranked_no_bots',
   // lobby / game messages
   'invalid_message',
   'unknown_message',
@@ -172,6 +193,12 @@ export const ERROR_CODES = [
   'not_your_turn',
   'not_seated',
   'illegal_move',
+  // resign / draw offers
+  'not_playing',
+  'draw_offer_pending',
+  'draw_offer_cooldown',
+  'no_draw_offer',
+  'already_responded',
   'not_implemented',
   'internal',
 ] as const

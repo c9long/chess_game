@@ -8,10 +8,16 @@ import {
   clientMessageSchemas,
   createOptionsSchema,
   createSoloOptionsSchema,
+  DRAW_OFFER_COOLDOWN_MOVES,
+  DRAW_VOTE,
+  ERROR_CODES,
+  GAME_ACTIONS,
   isReservedMessageType,
   isUntimed,
   joinOptionsSchema,
   PROTOCOL_VERSION,
+  RESERVED_MESSAGE_TYPES,
+  serverMessageSchemas,
   teamOfSeat,
   UNTIMED,
 } from './index.ts'
@@ -33,7 +39,27 @@ describe('join options', () => {
       mode: 'teams',
       timeControl: '3+2',
       pickMode: 'blind',
+      ranked: false,
     })
+  })
+
+  it('takes a ranked flag for lobbies only (never for solo games)', () => {
+    const base = { protocolVersion: 1, name: 'Ladder', mode: 'ffa', timeControl: '10+0' }
+    expect(createOptionsSchema.parse({ ...base, ranked: true })).toMatchObject({ ranked: true })
+    expect(createOptionsSchema.safeParse({ ...base, ranked: 'yes' }).success).toBe(false)
+    const solo = {
+      protocolVersion: 1,
+      kind: 'solo',
+      mode: 'ffa',
+      timeControl: UNTIMED,
+      civ: CIV_SLUGS[0],
+      botLevel: '1200',
+    }
+    expect(createOptionsSchema.safeParse(solo).success).toBe(true)
+    expect(createOptionsSchema.safeParse({ ...solo, ranked: true }).success).toBe(false)
+    expect(createOptionsSchema.safeParse({ ...solo, ranked: false }).success).toBe(false)
+    expect(ERROR_CODES).toContain('account_required')
+    expect(ERROR_CODES).toContain('ranked_no_bots')
   })
 
   it('rejects unknown modes, time controls, extra keys and wrong versions', () => {
@@ -140,10 +166,67 @@ describe('client messages', () => {
   })
 
   it('knows the reserved namespaces', () => {
-    for (const t of ['resign', 'offerDraw', 'respondDraw', 'takebackAccept', 'chat.send']) {
+    for (const t of ['takebackRequest', 'takebackRespond', 'takebackAccept', 'chat.send']) {
       expect(isReservedMessageType(t)).toBe(true)
     }
-    expect(isReservedMessageType('move')).toBe(false)
+    for (const t of ['move', 'resign', 'offerDraw', 'respondDraw']) {
+      expect(isReservedMessageType(t)).toBe(false)
+    }
+    expect(RESERVED_MESSAGE_TYPES).not.toContain('resign')
+  })
+
+  it('validates resign and draw-offer payloads', () => {
+    expect(clientMessageSchemas.resign.safeParse({}).success).toBe(true)
+    expect(clientMessageSchemas.resign.safeParse({ seat: 1 }).success).toBe(false)
+    expect(clientMessageSchemas.offerDraw.safeParse({}).success).toBe(true)
+    expect(clientMessageSchemas.offerDraw.safeParse({ to: 2 }).success).toBe(false)
+    expect(clientMessageSchemas.respondDraw.safeParse({ accept: true }).success).toBe(true)
+    expect(clientMessageSchemas.respondDraw.safeParse({ accept: false }).success).toBe(true)
+    expect(clientMessageSchemas.respondDraw.safeParse({}).success).toBe(false)
+    expect(clientMessageSchemas.respondDraw.safeParse({ accept: 'yes' }).success).toBe(false)
+    expect(clientMessageSchemas.respondDraw.safeParse({ accept: true, x: 1 }).success).toBe(false)
+  })
+
+  it('describes resign and agreed-draw actions and draw events from the server', () => {
+    expect(GAME_ACTIONS).toEqual(['move', 'timeout', 'abandon', 'resign', 'agreed_draw'])
+    const clock = {
+      remainingMs: [0, 0, 0, 0],
+      runningSeat: -1,
+      serverTimestamp: 1,
+      turnStartedAt: 0,
+    }
+    const events = serverMessageSchemas.events
+    const base = {
+      seq: 3,
+      seat: 1,
+      notation: null,
+      events: [],
+      positionString: 'x',
+      seatToMove: 2,
+      clock,
+    }
+    expect(events.safeParse({ ...base, action: 'resign' }).success).toBe(true)
+    expect(events.safeParse({ ...base, action: 'agreed_draw', seatToMove: -1 }).success).toBe(true)
+    expect(events.safeParse({ ...base, action: 'surrender' }).success).toBe(false)
+    const draw = serverMessageSchemas.drawEvent
+    expect(draw.safeParse({ type: 'offered', seat: 0, offerSeat: 0 }).success).toBe(true)
+    expect(
+      draw.safeParse({ type: 'lapsed', seat: 0, offerSeat: 0, reason: 'voters_changed' }).success,
+    ).toBe(true)
+    expect(draw.safeParse({ type: 'lapsed', seat: 0, offerSeat: 0, reason: 'bored' }).success).toBe(
+      false,
+    )
+    expect(draw.safeParse({ type: 'withdrawn', seat: 0, offerSeat: 0 }).success).toBe(false)
+    for (const code of [
+      'not_playing',
+      'draw_offer_pending',
+      'draw_offer_cooldown',
+      'no_draw_offer',
+    ]) {
+      expect(ERROR_CODES).toContain(code)
+    }
+    expect(DRAW_OFFER_COOLDOWN_MOVES).toBe(2)
+    expect(DRAW_VOTE).toEqual({ notVoter: -1, pending: 0, accepted: 1 })
   })
 
   it('maps seats to teams (S+N vs W+E)', () => {
@@ -179,6 +262,21 @@ describe('state schema', () => {
   it('has 4 seats and encodes, with a reflectable definition', () => {
     const state = createMatchState()
     expect(state.seats.length).toBe(4)
+    // No draw offer by default; the draw fields are appended after the v1 fields.
+    expect(state.drawOfferSeat).toBe(-1)
+    expect([...state.drawVotes]).toEqual([-1, -1, -1, -1])
+    expect(state.drawOfferActionSeq).toBe(0)
+    expect([...state.drawCooldowns]).toEqual([0, 0, 0, 0])
+    expect(state.ranked).toBe(false)
+    const keys = Object.keys(state.toJSON())
+    expect(keys.slice(keys.indexOf('reconnectGraceMs'))).toEqual([
+      'reconnectGraceMs',
+      'drawOfferSeat',
+      'drawVotes',
+      'drawOfferActionSeq',
+      'drawCooldowns',
+      'ranked',
+    ])
     const encoder = new Encoder(state)
     expect(encoder.encodeAll().length).toBeGreaterThan(0)
     const reflected = Reflection.decode(Reflection.encode(encoder))

@@ -24,14 +24,19 @@ accepted the current Terms/Privacy versions and (registered accounts) chosen a u
 | Room | Call | Options |
 |---|---|---|
 | `lobby` | `joinOrCreate('lobby')` | none. Colyseus LobbyRoom: `rooms` (full list), `+` `[roomId, listing]`, `-` roomId |
-| `match` | `create('match', CreateOptions)` | lobby: `{ protocolVersion: 1, kind?: 'lobby', name, mode: 'ffa'\|'teams', timeControl: '10+0'\|'3+2', password?, pickMode?: 'blind' }` |
+| `match` | `create('match', CreateOptions)` | lobby: `{ protocolVersion: 1, kind?: 'lobby', name, mode: 'ffa'\|'teams', timeControl: '10+0'\|'3+2', password?, pickMode?: 'blind', ranked?: boolean }` |
 | `match` | `create('match', CreateOptions)` | solo: `{ protocolVersion: 1, kind: 'solo', name?, mode, timeControl: 'untimed', civ, botLevel }` |
 | `match` | `joinById(roomId, JoinOptions)` | `{ protocolVersion: 1, password? }` |
 | any | `reconnect(room.reconnectionToken)` | within the reconnect grace (60 s) |
 
 Listing metadata (`listing.metadata`): `{ name, mode, timeControl, seatsFilled, locked, phase,
-pickMode }` (`locked` = password-protected). Only lobbies are listed: a room leaves the list
+pickMode, ranked }` (`locked` = password-protected). Only lobbies are listed: a room leaves the list
 (`-` roomId) when its game starts, and seated players rejoin it by id.
+
+Ranked lobbies (`ranked: true`, default false): Elo-rated (see REST below). Guests can't
+create or join one (`account_required`), bots can't be added (`addBot` answers
+`ranked_no_bots`), and solo games can't be ranked (`invalid_options`). Casual lobbies are
+never rated, whoever plays. `state.ranked` and `metadata.ranked` say which a room is.
 
 Solo games (`kind: 'solo'`, singleplayer): the creator plays South with `civ`; three bots at
 `botLevel` sit at West, North and East with random civs (distinct from each other and from the
@@ -58,7 +63,8 @@ message is the code: `unauthorized`, `age_confirmation_required`, `legal_accepta
 `username_required`, `protocol_mismatch`, `invalid_options`, `invalid_password`,
 `too_many_attempts` (5 wrong passwords per minute per IP and per room), `room_not_found`,
 `room_not_joinable`, `room_full`, `already_seated`, `already_in_room` (one seat per user),
-`kicked`, `maintenance`, `not_implemented` (`pickMode: 'draft'`).
+`kicked`, `maintenance`, `account_required` (a guest creating or joining a ranked lobby),
+`not_implemented` (`pickMode: 'draft'`).
 
 ## Client -> server messages (`room.send(type, payload)`)
 
@@ -66,26 +72,35 @@ message is the code: `unauthorized`, `age_confirmation_required`, `legal_accepta
 |---|---|---|
 | `setCiv` | `{ civ }` (civ slug, duplicates allowed) | seated human, lobby |
 | `setReady` | `{ ready }` (needs a civ) | seated human, lobby |
-| `addBot` | `{ seat: 0-3, level: '600'…'2400'\|'max' }` (random enabled civ) | host, lobby |
+| `addBot` | `{ seat: 0-3, level: '600'…'2400'\|'max' }` (random enabled civ; `ranked_no_bots` in ranked lobbies) | host, lobby |
 | `removeBot` | `{ seat }` | host, lobby |
 | `setBotCiv` | `{ seat, civ }` | host, lobby |
 | `kick` | `{ seat }` (kicked users can't rejoin this lobby) | host, lobby |
 | `swapSeats` | `{ a, b }` (teams: S+N vs W+E) | host, lobby |
 | `startGame` | `{}` (4 seats, all civs, all humans ready and connected) | host, `civ_select` |
 | `move` | `{ move }` (rules-core notation, e.g. `c2c4`, `c6c7q`) | seat to move, `in_game` |
+| `resign` | `{}` | any seat still taking turns, any time in `in_game` (not only on its turn) |
+| `offerDraw` | `{}` | a draw voter (seat still taking turns), no offer pending, no cooldown, `in_game` |
+| `respondDraw` | `{ accept: boolean }` | a voter still pending on the current offer, `in_game` |
 | `syncClock` | `{}` | anyone |
 
-Reserved (answered with `error { code: 'not_implemented', requestType }`): `resign`,
-`offerDraw`, `respondDraw`, `takeback*`, `chat.*`.
+Reserved (answered with `error { code: 'not_implemented', requestType }`): `takeback*`,
+`chat.*`.
+
+Refusals of the game messages: `wrong_phase` (not in game), `not_seated`, `not_playing` (the
+seat no longer takes turns: removed or frozen; also a non-voter answering an offer),
+`draw_offer_pending` (an offer already waits), `draw_offer_cooldown` (`message`: how many
+more moves), `no_draw_offer`, `already_responded` (the offerer, or a voter who accepted).
 
 ## Server -> client messages
 
 | Type | Payload |
 |---|---|
 | `welcome` | `{ protocolVersion, roomId, sessionId, seat (-1 = none), isHost }` on join and reconnect |
-| `events` | `{ seq, action: 'move'\|'timeout'\|'abandon', seat, notation, events: GameEvent[], positionString, seatToMove, clock }` after every game action |
+| `events` | `{ seq, action: 'move'\|'timeout'\|'abandon'\|'resign'\|'agreed_draw', seat, notation, events: GameEvent[], positionString, seatToMove, clock }` after every game action (`GAME_ACTIONS`; for `agreed_draw`, `seat` is the voter whose acceptance completed it and `events` is the `game_ended` event) |
+| `drawEvent` | `{ type: 'offered'\|'accepted'\|'declined'\|'lapsed', seat, offerSeat, reason?: 'round'\|'voters_changed' }` on every change to the draw offer (`seat`: who acted; for `lapsed`, the offerer) |
 | `clock` | `{ remainingMs: [S,W,N,E], runningSeat, serverTimestamp, turnStartedAt }` on game start, every 5 s, on `syncClock` |
-| `gameOver` | `{ matchId, result, placements, endReason, rated, ratings: ({ before, after } \| null)[] }` once saved (`rated` is false if no public rating could be applied, e.g. a participant deleted their account; `state.rated` follows) |
+| `gameOver` | `{ matchId, result, placements, endReason, rated, ratings: ({ before, after } \| null)[] }` once saved (`ratings` are Elo before/after per seat; `rated` is true only for a ranked game whose Elo was applied, false if it couldn't be, e.g. a participant deleted their account; `state.rated` follows) |
 | `error` | `{ code, message?, requestType? }` |
 | `kicked` | `{ reason }`, then the connection closes with code 4100 |
 
@@ -98,7 +113,9 @@ Render clocks with `remainingNow(sync, Date.now(), offset)` from `@game/protocol
 
 `protocolVersion, name, mode, timeControl, pickMode, hasPassword, hostSeat, phase,
 countdownEndsAt, seats[4], matchId, rated, positionString, seatToMove, actionSeq, clock,
-lastEvents[], result, reconnectGraceMs`
+lastEvents[], result, reconnectGraceMs, drawOfferSeat, drawVotes[4], drawOfferActionSeq,
+drawCooldowns[4], ranked` (the four draw fields and `ranked` were appended in protocol v1;
+older decoders ignore them)
 
 - `seats[i]` (0 = South, 1 = West, 2 = North, 3 = East): `occupied, sessionId, displayName,
   isGuest, isBot, botLevel, civ, ready, connected, graceDeadline, team, status`. User ids are
@@ -108,9 +125,16 @@ lastEvents[], result, reconnectGraceMs`
 - `clock`: `remainingMs[4], runningSeat, serverTimestamp, turnStartedAt, incrementMs`.
 - `lastEvents`: the latest action's events, flattened (`type, seat, notation, from, to,
   square, piece, pieceOwner, promotion, flag, reason`).
-- `result`: `type` (`ffa_winner`, `ffa_move_limit_tie`, `teams_winner`, `teams_draw`,
-  `aborted`), `winnerSeat, winnerTeam, endReason, placements[4]`.
-- `endReason`: `last_standing`, `team_eliminated`, `move_limit` for a finished game; for an
+- `drawOfferSeat`: seat of the pending draw offer, or -1. `drawVotes[i]` (`DRAW_VOTE`): -1 not
+  a voter, 0 pending, 1 accepted (all -1 without an offer). `drawOfferActionSeq`: `actionSeq`
+  when the offer was made (0 without one). `drawCooldowns[i]`: moves seat i must still make
+  before it may offer again (`DRAW_OFFER_COOLDOWN_MOVES` = 2 after its offer lapses or is
+  declined).
+- `result`: `type` (`ffa_winner`, `ffa_move_limit_tie`, `ffa_agreed_draw`, `teams_winner`,
+  `teams_draw`, `teams_agreed_draw`, `aborted`), `winnerSeat, winnerTeam, endReason,
+  placements[4]`.
+- `endReason`: `last_standing`, `team_eliminated`, `move_limit`, `agreed_draw` for a finished
+  game; for an
   aborted (unrated) one `server_shutdown`, `server_restart`,
   `persist_failed` (the result couldn't be saved), `resimulation_mismatch`, `room_disposed`.
 
@@ -130,6 +154,28 @@ lastEvents[], result, reconnectGraceMs`
   bot-service with a virtual 10-minute clock (no increment). While a seated human still takes
   turns or is connected (e.g. eliminated and watching), bots keep their level and pacing; once
   no human takes turns and none is connected, they finish with quick unpaced local moves.
+- Resign: any seat still taking turns may resign at any time in game (`Game.applyResign`):
+  FFA removes its army, Teams freezes the seat and the partner plays on. A resign by the seat
+  to move ends its turn with no increment; an off-turn resign leaves the running clock alone.
+  The resigned player keeps their seat in the room as a spectator (no more turns, resigns or
+  offers) and may leave without further effect. Persisted as a `resign` match event (an
+  action replayed by the re-simulation).
+- Draw offers: only a draw voter (`Game.drawVoters()`: seats still taking turns) may offer,
+  one offer at a time. The offerer's vote counts as accepted; every other voter is pending.
+  When every voter has accepted, the server applies `Game.applyAgreedDraw()` and the game
+  ends (`ffa_agreed_draw` / `teams_agreed_draw`, end reason `agreed_draw`). The offer ends
+  without a draw when anyone declines (`drawEvent` `declined`), when the voters change (a
+  defeat out of the game, a removal or a freeze: `lapsed`/`voters_changed`) or after one full
+  round (every other voter took a turn since the offer and the turn is back with the offerer,
+  or the offerer's turn came round as an automatic pass: `lapsed`/`round`). After a lapse or
+  decline the offerer must make 2 more moves before offering again; other seats aren't affected. Persisted as `draw_offer` and `draw_response`
+  match events; an agreed draw's `game_end` event carries `agreedDraw: true` and is the action
+  the re-simulation replays.
+- Bots as voters answer after a paced delay (`BOT_MIN_MOVE_MS`, then half that more for each
+  further bot): they accept only when clearly losing, i.e. when the material in play (P1 N3 B3
+  R5 Q9, leader excluded, frozen pieces not counted) of their own army (Teams: their team) is
+  at most 80% of the strongest other remaining player's (Teams: the enemy team's); otherwise
+  they decline.
 - Untimed (solo) rooms: a server drain aborts a running untimed game at once instead of
   waiting for it.
 - Bots move once bot-service answers (and the pacing allows); when it is saturated, slow or
@@ -143,11 +189,22 @@ lastEvents[], result, reconnectGraceMs`
 ## REST
 
 - `GET /api/matches?limit=20&before=<cursor>`: your finished/aborted matches (`MatchListResponse`;
-  solo games have `timeControl: 'untimed'`, `rated: false`)
+  solo games have `timeControl: 'untimed'`, `rated: false`; `ranked` says the game was played in a
+  ranked lobby, `rated` that its Elo was applied, so an aborted ranked game is `ranked`, not `rated`)
 - `GET /api/matches/:id`: players and the full event log, participants only (`MatchDetailResponse`)
-- `GET /api/ratings/me`: your public ratings (`RatingsResponse`)
+- `GET /api/ratings/me`: your Elo ratings, `{ mode, timeControl, rating, gamesPlayed, peak }`
+  per mode × time control you have played ranked (`RatingsResponse`)
+- `GET /api/leaderboard?mode=ffa|teams&tc=10%2B0|3%2B2&limit=1..100` (public, no session;
+  defaults FFA, 10+0, 50): top registered players with at least `LEADERBOARD_MIN_GAMES` (5)
+  ranked games in that rating, by Elo; `{ mode, timeControl, minGames, entries: [{ rank,
+  username, rating, gamesPlayed, peak }] }` (`LeaderboardResponse`; equal ratings share a
+  rank). Usernames only; deleted accounts and guests never appear. Encode `+` in `tc` (`%2B`);
+  a bare `+` (decoded as a space) is accepted too.
 
-Ratings: OpenSkill Plackett–Luce over placements, per mode × time control. Display rating =
-`round(900 + 30 × (mu − 3 sigma))` (900 for a new player; 400 points ≈ 10:1 odds between
-established players). Rated games need four registered humans; casual games with bots update
-a hidden shadow rating against fixed bot anchors (`bot_level_anchors`); guests are never rated.
+Ratings: only ranked lobbies are rated, with 4-player Elo per mode × time control (start
+1200; K 40 for the first 30 games, then 20, 10 once the peak reached 2400). FFA: every pair of
+players is a mini-game (1 / 0.5 / 0 by placement), Δ = round(K / 3 × Σ(S − E)). Teams: team
+rating = mean of the two players, standard Elo team vs team, Δ = round(K × (S − E)) per
+player. Agreed draws and move-limit ties are ties; aborted games are unrated. Casual games
+with bots update a hidden OpenSkill shadow rating against fixed bot anchors
+(`bot_level_anchors`), never exposed; guests are never rated.

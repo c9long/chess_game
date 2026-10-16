@@ -75,12 +75,15 @@ export type EventState = SchemaType<typeof EventState>
 
 export const ResultState = schema(
   {
-    /** '' until the game ends; then ffa_winner, ffa_move_limit_tie, teams_winner, teams_draw or aborted. */
+    /**
+     * '' until the game ends; then ffa_winner, ffa_move_limit_tie, ffa_agreed_draw,
+     * teams_winner, teams_draw, teams_agreed_draw or aborted.
+     */
     type: t.string().default(''),
     winnerSeat: t.int8().default(-1),
     /** Teams: 'south_north' or 'west_east'. */
     winnerTeam: t.string().default(''),
-    /** last_standing, team_eliminated, move_limit, server_shutdown, ... */
+    /** last_standing, team_eliminated, move_limit, agreed_draw, server_shutdown, ... */
     endReason: t.string().default(''),
     /** Placement per seat (1 = best; ties share). */
     placements: t.array('uint8'),
@@ -116,6 +119,26 @@ export const MatchState = schema(
     result: ResultState,
     /** Reconnect grace in ms (for client display). */
     reconnectGraceMs: t.float64().default(60_000),
+    /**
+     * Seat that made the pending draw offer, or -1. The offer lapses when anyone declines,
+     * when the set of voters changes (a defeat, removal or freeze) or after one full round:
+     * every other voter has taken a turn since the offer and the turn is back with this seat.
+     */
+    drawOfferSeat: t.int8().default(-1),
+    /** Per seat while an offer is pending: -1 not a voter, 0 pending, 1 accepted (all -1 otherwise). */
+    drawVotes: t.array('int8'),
+    /** `actionSeq` when the pending offer was made (0 when none): tells offers apart. */
+    drawOfferActionSeq: t.uint32().default(0),
+    /**
+     * Per seat: moves still to make before it may offer a draw again (set to
+     * DRAW_OFFER_COOLDOWN_MOVES when its offer lapses or is declined).
+     */
+    drawCooldowns: t.array('uint8'),
+    /**
+     * Ranked lobby (set at create, never changes): Elo-rated, registered accounts only, no
+     * bots. `rated` says whether the finished game was actually rated.
+     */
+    ranked: t.boolean().default(false),
   },
   'MatchState',
 )
@@ -135,6 +158,8 @@ export function createMatchState(): MatchState {
   state.result = new ResultState()
   state.result.placements = new ArraySchema<number>()
   state.lastEvents = new ArraySchema<EventState>()
+  state.drawVotes = new ArraySchema<number>(-1, -1, -1, -1)
+  state.drawCooldowns = new ArraySchema<number>(0, 0, 0, 0)
   return state
 }
 
@@ -171,6 +196,11 @@ export interface MatchStateJson {
     placements: number[]
   }
   reconnectGraceMs: number
+  drawOfferSeat: number
+  drawVotes: number[]
+  drawOfferActionSeq: number
+  drawCooldowns: number[]
+  ranked: boolean
 }
 
 export interface SeatStateJson {

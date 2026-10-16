@@ -58,7 +58,10 @@ export const matches = pgTable(
     mode: matchMode('mode').notNull(),
     /** '10+0' | '3+2' (TIME_CONTROLS in @game/config), or 'untimed' (solo games, never rated). */
     timeControl: text('time_control').notNull(),
+    /** Whether the game Elo-counts: a ranked game that finished with its Elo applied. */
     rated: boolean('rated').notNull().default(false),
+    /** Played in a ranked lobby (stays true when the game ends aborted or unrated). */
+    ranked: boolean('ranked').notNull().default(false),
     rulesVersion: integer('rules_version').notNull(),
     startedAt: ts('started_at').notNull().defaultNow(),
     endedAt: ts('ended_at'),
@@ -91,8 +94,9 @@ export const matchPlayers = pgTable(
     placement: smallint('placement'),
     defeatReason: text('defeat_reason'),
     defeatSeq: integer('defeat_seq'),
-    ratingBefore: doublePrecision('rating_before'),
-    ratingAfter: doublePrecision('rating_after'),
+    /** Ranked games: the player's Elo before and after this game (null otherwise). */
+    ratingBefore: integer('rating_before'),
+    ratingAfter: integer('rating_after'),
   },
   (t) => [
     primaryKey({ columns: [t.matchId, t.seat] }),
@@ -149,8 +153,9 @@ export const ratings = pgTable(
     mode: matchMode('mode').notNull(),
     timeControl: text('time_control').notNull(),
     /**
-     * Rating pool: 'public' (rated games: four registered humans) or 'shadow' (hidden;
-     * casual games with bots, rated against `bot_level_anchors`; used to calibrate bot labels).
+     * Rating pool: 'shadow' (hidden; casual games with bots, rated against
+     * `bot_level_anchors`; used to calibrate bot labels). 'public' rows are legacy: public
+     * ratings are Elo (`elo_ratings`) and no longer written here.
      */
     kind: text('kind').notNull().default('public'),
     mu: doublePrecision('mu').notNull(),
@@ -161,6 +166,33 @@ export const ratings = pgTable(
   (t) => [
     unique('ratings_user_mode_tc_kind').on(t.userId, t.mode, t.timeControl, t.kind),
     check('ratings_kind_pool', sql`${t.kind} in ('public', 'shadow')`),
+  ],
+)
+
+/**
+ * Public Elo ratings from ranked games (PLAN §5), one row per user x mode x time control.
+ * Integers; everyone starts at 1200. `games` counts ranked games in this bucket (it sets the
+ * K factor); `peak` is the highest rating reached.
+ */
+export const eloRatings = pgTable(
+  'elo_ratings',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    mode: matchMode('mode').notNull(),
+    /** '10+0' | '3+2' (ranked lobbies are always timed). */
+    timeControl: text('time_control').notNull(),
+    rating: integer('rating').notNull(),
+    games: integer('games').notNull().default(0),
+    peak: integer('peak').notNull(),
+    updatedAt: ts('updated_at').notNull().defaultNow(),
+  },
+  (t) => [
+    unique('elo_ratings_user_mode_tc').on(t.userId, t.mode, t.timeControl),
+    index('elo_ratings_leaderboard_idx').on(t.mode, t.timeControl, t.rating),
+    check('elo_ratings_games_nonnegative', sql`${t.games} >= 0`),
   ],
 )
 

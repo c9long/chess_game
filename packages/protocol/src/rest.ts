@@ -16,7 +16,10 @@ export interface MatchListItem {
   endedAt: string | null
   mode: 'ffa' | 'teams'
   timeControl: string
+  /** Elo-rated: a ranked game whose result and Elo were recorded. */
   rated: boolean
+  /** Played in a ranked lobby (true even when it ended aborted or unrated). */
+  ranked: boolean
   endReason: string | null
   /** The current user's seat, civ and result. */
   seat: number
@@ -68,6 +71,8 @@ export interface MatchDetailResponse {
   mode: 'ffa' | 'teams'
   timeControl: string
   rated: boolean
+  /** Played in a ranked lobby. */
+  ranked: boolean
   rulesVersion: number
   startedAt: string
   endedAt: string | null
@@ -76,17 +81,40 @@ export interface MatchDetailResponse {
   events: MatchDetailEvent[]
 }
 
+/** One Elo rating (ranked games), per mode x time control. */
 export interface RatingEntry {
   mode: 'ffa' | 'teams'
   timeControl: string
-  /** Elo-like display number (see docs/RATINGS in the server README). */
+  /** Elo (starts at 1200). */
   rating: number
-  mu: number
-  sigma: number
+  /** Ranked games played in this mode x time control. */
   gamesPlayed: number
+  /** Highest Elo reached. */
+  peak: number
 }
 
-/** GET /api/ratings/me (public ratings only; shadow ratings are never exposed). */
+/** GET /api/ratings/me: your Elo ratings (hidden shadow ratings are never exposed). */
 export interface RatingsResponse {
   ratings: RatingEntry[]
+}
+
+export interface LeaderboardEntry {
+  /** 1-based; players with the same rating share a rank. */
+  rank: number
+  username: string
+  rating: number
+  gamesPlayed: number
+  peak: number
+}
+
+/**
+ * GET /api/leaderboard?mode=ffa|teams&tc=10%2B0|3%2B2&limit= (public, no session needed):
+ * the top registered players with at least `minGames` ranked games. Deleted accounts and
+ * guests are never listed.
+ */
+export interface LeaderboardResponse {
+  mode: 'ffa' | 'teams'
+  timeControl: string
+  minGames: number
+  entries: LeaderboardEntry[]
 }
