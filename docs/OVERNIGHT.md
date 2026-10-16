@@ -162,6 +162,58 @@ all fixed):
   unit tests; an independent art-direction, accessibility and performance review
   (12 findings, all fixed).
 
+### 7. UI round 3: sign-out fix, accessible dialogs, keyboard civ picker, seated civs on lobby cards (commits 798241f … 9d18ce4)
+
+- **Sign-out fix:** signing out from the account page sometimes landed on the sign-in page
+  instead of home (and made one browser test flaky). Now it always lands on the landing page;
+  proven with repeated sign-outs under a 6× CPU slowdown.
+- **Proper dialogs instead of browser pop-ups:**
+  - Leave game, Resign, Remove passkey and the private-lobby password prompt now use
+    accessible dialogs: focus stays inside, Escape closes, and focus returns to the button
+    you pressed.
+  - The reasons on disabled Resign and Offer draw buttons are now tooltips you can reach with
+    the keyboard.
+- **Civ picker keyboard navigation:** the arrow keys move between civs, Home/End jump to the
+  ends, and Space/Enter pick.
+- **Lobby cards show the seated players' civ emblems,** updated live, beside seat dots that
+  match the actual seats.
+- Verified: an independent review (3 findings, all fixed), 53 browser tests, web/protocol/server
+  tests.
+
+## Final verification (on `main`)
+
+Run at 7:07 AM on the final code, everything green:
+
+| Check | Result |
+|---|---|
+| Lint (Biome, 300 files) | clean |
+| Rust: fmt, clippy (no warnings), tests | 409 passed |
+| Rules engine TypeScript wrapper | 30 passed |
+| Protocol | 18 passed |
+| Board renderer | 57 passed |
+| Web app | 22 passed |
+| Server (real Postgres) | 258 passed, 2 skipped (need a running bot-service) |
+| Browser end-to-end (Playwright) | 53 passed |
+
+Everything is committed and pushed to `main` in small, described commits.
+
 ## Not done / left for you
 
-_(Filled in at the end.)_
+- **Rules questions to confirm** (TODO.md, "Open rules questions"): the en passant rule;
+  "Abandon = timeout" after the 60-second reconnect grace; that a stalemated or timed-out
+  player's leader no longer keeps a Teams team alive; the attacked-leader glow default (off);
+  FFA move-limit placements; and the Teams resignation decision taken tonight (player-only).
+- **Draw-offer lapse timing:** an offer lapses once every other voter has had a turn and it is
+  the offerer's turn again. Change `lapseReason()` on the server if you want it stricter.
+- **Idle singleplayer games** stay open while the tab is connected (no hidden timeout, since you
+  asked for no timers). Tell me if you want an inactivity limit.
+- **Mobile:** the game, lobby and pages now work at phone and tablet sizes, but touch-specific
+  controls and installing as an app (PWA) are not done (still in TODO.md).
+- **Move log, chat, spectating and replays** remain designed-but-not-built, as originally
+  requested (in TODO.md).
+- **Game-message toasts** were not moved onto the new toast component (they sit over the board
+  corner and let clicks pass through, which the new component would change).
+- **Deployment** still needs your accounts (domain, Cloudflare, OVHcloud, Resend); see
+  `docs/DEPLOY.md`.
+- **Before a public launch:** attorney review of the legal drafts, trademark search, final art
+  (see TODO.md, "Before public release").
