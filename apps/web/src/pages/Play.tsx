@@ -1,14 +1,17 @@
 import type { Room } from '@colyseus/sdk'
 import { TIME_CONTROLS } from '@game/config'
 import {
+  BOT_LEVEL_LABELS,
   checkLobbyNameFormat,
   LOBBY_NAME_MAX,
   LOBBY_PASSWORD_MAX,
   type LobbyMetadata,
   ROOM_NAMES,
+  UNTIMED,
 } from '@game/protocol'
-import { type FormEvent, useEffect, useState } from 'react'
+import { type FormEvent, useEffect, useId, useState } from 'react'
 import { useNavigate } from 'react-router'
+import { CivPicker } from '../components/CivPicker.tsx'
 import { Alert, Button, Card, Field, Spinner } from '../components/ui.tsx'
 import { displayName, useAppState } from '../lib/app-state.tsx'
 import {
@@ -28,6 +31,159 @@ interface Listing {
 }
 
 const MODE_LABEL = { ffa: 'Free-for-all', teams: 'Teams 2v2' } as const
+
+/** A two-way choice button (mode, time control). */
+const choice = (active: boolean) =>
+  `h-11 flex-1 rounded-lg border px-3 text-sm font-semibold transition focus-visible:outline-2 focus-visible:outline-gold ${
+    active
+      ? 'border-gold bg-gold/15 text-parchment'
+      : 'border-parchment/20 text-parchment/70 hover:border-parchment/40'
+  }`
+
+function ModeChoice({
+  mode,
+  onChange,
+  teamsHint,
+}: {
+  mode: 'ffa' | 'teams'
+  onChange: (m: 'ffa' | 'teams') => void
+  teamsHint: string
+}) {
+  return (
+    <fieldset className="flex flex-col gap-2">
+      <legend className="mb-1.5 text-sm font-medium text-parchment/85">Mode</legend>
+      <div className="flex gap-2">
+        {(['ffa', 'teams'] as const).map((m) => (
+          <button
+            key={m}
+            type="button"
+            aria-pressed={mode === m}
+            className={choice(mode === m)}
+            onClick={() => onChange(m)}
+          >
+            {MODE_LABEL[m]}
+          </button>
+        ))}
+      </div>
+      <p className="text-xs text-parchment/55">
+        {mode === 'ffa'
+          ? 'Every player for themselves. Last civilization standing wins.'
+          : teamsHint}
+      </p>
+    </fieldset>
+  )
+}
+
+function botLevelText(level: string): string {
+  return level === 'max' ? 'Max strength' : `ELO ${level}`
+}
+
+/** Singleplayer: the player at South against three bots, untimed. */
+function PlayVsBots({ blocked }: { blocked: boolean }) {
+  const navigate = useNavigate()
+  const levelId = useId()
+  const [civ, setCiv] = useState('')
+  const [level, setLevel] = useState('1200')
+  const [mode, setMode] = useState<'ffa' | 'teams'>('ffa')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string>()
+
+  async function start(e: FormEvent) {
+    e.preventDefault()
+    if (!civ) return
+    setBusy(true)
+    setError(undefined)
+    try {
+      const room = await createMatch({
+        kind: 'solo',
+        mode,
+        timeControl: UNTIMED,
+        civ,
+        botLevel: level,
+      })
+      navigate(`/match/${room.roomId}`)
+    } catch (err) {
+      setError(matchErrorMessage(err))
+      setBusy(false)
+    }
+  }
+
+  return (
+    <section
+      id="vs-bots"
+      aria-labelledby="vs-bots-title"
+      className="mb-10 overflow-hidden rounded-2xl border border-gold/25 bg-gradient-to-br from-gold/[0.07] via-panel/90 to-panel/90 p-5 shadow-[0_24px_60px_-40px_rgba(212,160,23,0.6)] sm:p-7"
+      data-testid="vs-bots"
+    >
+      <form className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_340px]" onSubmit={start} noValidate>
+        <div className="min-w-0">
+          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-gold/80">
+            Singleplayer
+          </p>
+          <h2
+            id="vs-bots-title"
+            className="mt-1 font-display text-3xl font-semibold tracking-tight"
+          >
+            Play vs bots
+          </h2>
+          <p className="mt-1 mb-5 max-w-xl text-sm text-parchment/65">
+            You play South. Three bots take West, North and East, each with a random civilization.
+            No clocks: take as long as you like.
+          </p>
+          <h3 className="mb-2 text-sm font-medium text-parchment/85">Your civilization</h3>
+          <CivPicker value={civ} onPick={setCiv} label="Your civilization" />
+        </div>
+        <div className="flex flex-col gap-5 lg:pt-14">
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor={levelId} className="text-sm font-medium text-parchment/85">
+              Bot strength
+            </label>
+            <select
+              id={levelId}
+              value={level}
+              onChange={(e) => setLevel(e.target.value)}
+              className="h-11 rounded-lg border border-parchment/20 bg-ink/60 px-3 text-parchment outline-none transition focus:border-gold focus:ring-2 focus:ring-gold/30"
+              data-testid="bot-level"
+            >
+              {BOT_LEVEL_LABELS.map((l) => (
+                <option key={l} value={l}>
+                  {botLevelText(l)}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-parchment/55">All three bots play at this level.</p>
+          </div>
+          <ModeChoice
+            mode={mode}
+            onChange={setMode}
+            teamsHint="You and the North bot against West and East."
+          />
+          {error ? <Alert>{error}</Alert> : null}
+          <div className="mt-auto flex flex-col gap-2">
+            <Button
+              type="submit"
+              busy={busy}
+              disabled={!civ || blocked}
+              className="h-12"
+              data-testid="start-solo"
+            >
+              Start game
+            </Button>
+            <p className="text-center text-xs text-parchment/50" aria-live="polite">
+              {busy
+                ? 'Setting up the game…'
+                : blocked
+                  ? 'You already have a game or lobby in progress. Return to it or leave it first.'
+                  : civ
+                    ? 'Untimed and unrated.'
+                    : 'Choose a civilization to start.'}
+            </p>
+          </div>
+        </div>
+      </form>
+    </section>
+  )
+}
 
 /** Subscribes to the server's realtime lobby list. */
 function useLobbyList() {
@@ -95,6 +251,7 @@ function CreateLobby() {
     setError(undefined)
     try {
       const room = await createMatch({
+        kind: 'lobby',
         name: nameCheck.ok ? nameCheck.name : name.trim(),
         mode,
         timeControl,
@@ -109,13 +266,6 @@ function CreateLobby() {
     }
   }
 
-  const choice = (active: boolean) =>
-    `h-11 flex-1 rounded-lg border px-3 text-sm font-semibold transition focus-visible:outline-2 focus-visible:outline-gold ${
-      active
-        ? 'border-gold bg-gold/15 text-parchment'
-        : 'border-parchment/20 text-parchment/70 hover:border-parchment/40'
-    }`
-
   return (
     <Card className="lg:sticky lg:top-6">
       <h2 className="mb-5 font-display text-xl font-semibold">Create a lobby</h2>
@@ -128,27 +278,11 @@ function CreateLobby() {
           error={name ? nameError : undefined}
           data-testid="lobby-name"
         />
-        <fieldset className="flex flex-col gap-2">
-          <legend className="mb-1.5 text-sm font-medium text-parchment/85">Mode</legend>
-          <div className="flex gap-2">
-            {(['ffa', 'teams'] as const).map((m) => (
-              <button
-                key={m}
-                type="button"
-                aria-pressed={mode === m}
-                className={choice(mode === m)}
-                onClick={() => setMode(m)}
-              >
-                {MODE_LABEL[m]}
-              </button>
-            ))}
-          </div>
-          <p className="text-xs text-parchment/55">
-            {mode === 'ffa'
-              ? 'Every player for themselves. Last civilization standing wins.'
-              : 'South and North against West and East. Partners sit opposite each other.'}
-          </p>
-        </fieldset>
+        <ModeChoice
+          mode={mode}
+          onChange={setMode}
+          teamsHint="South and North against West and East. Partners sit opposite each other."
+        />
         <fieldset className="flex flex-col gap-2">
           <legend className="mb-1.5 text-sm font-medium text-parchment/85">Time control</legend>
           <div className="flex gap-2">
@@ -338,6 +472,7 @@ export function Play() {
           </Alert>
         </div>
       ) : null}
+      <PlayVsBots blocked={Boolean(current)} />
       <div className="grid gap-8 lg:grid-cols-[1fr_380px]">
         <section aria-labelledby="lobbies-title">
           <div className="mb-5 flex items-end justify-between gap-4">

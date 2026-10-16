@@ -1,4 +1,5 @@
 import { BoardView } from '@game/board'
+import { isUntimed } from '@game/protocol'
 import { Game, type GameEvent, type Snapshot } from '@game/rules'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
@@ -34,7 +35,9 @@ function readPosition(positionString: string, legalFor: number): Position | null
 function Board({ room, feed }: { room: MatchRoom; feed: MatchFeed }) {
   const host = useRef<HTMLDivElement>(null)
   const viewRef = useRef<BoardView | null>(null)
-  const [mounted, setMounted] = useState(false)
+  // Bumped each time a BoardView finishes mounting, so a re-created view (the mount effect
+  // ran again) always gets the current perspective and snapshot.
+  const [viewGen, setViewGen] = useState(0)
   const appliedRef = useRef<string>('')
   const prefs = usePrefs()
   const send = useMemo(() => matchApi(room).send, [room])
@@ -65,7 +68,9 @@ function Board({ room, feed }: { room: MatchRoom; feed: MatchFeed }) {
     let live = true
     view
       .mount(el)
-      .then(() => live && setMounted(true))
+      .then(() => {
+        if (live) setViewGen((g) => g + 1)
+      })
       .catch(() => {})
     return () => {
       live = false
@@ -85,9 +90,9 @@ function Board({ room, feed }: { room: MatchRoom; feed: MatchFeed }) {
   }, [prefs.sound, prefs.showAttackedLeaderGlow, prefs.colorblindPatterns, prefs.reducedMotion])
 
   useEffect(() => {
-    if (!mounted) return
+    if (viewGen === 0) return
     viewRef.current?.setPerspective(seatName(mySeat >= 0 ? mySeat : 0), { animate: false })
-  }, [mounted, mySeat])
+  }, [viewGen, mySeat])
 
   // Follow the authoritative position. The `events` message carries the rules events that
   // make animations exact; a state patch alone (e.g. after a reconnect) still animates by diff.
@@ -99,7 +104,7 @@ function Board({ room, feed }: { room: MatchRoom; feed: MatchFeed }) {
     lastEvents && lastEvents.positionString === ps ? lastEvents.events : undefined
   useEffect(() => {
     const view = viewRef.current
-    if (!mounted || !view || !ps) return
+    if (viewGen === 0 || !view || !ps) return
     const pos = readPosition(ps, mySeat)
     if (!pos) return
     const first = appliedRef.current === ''
@@ -113,7 +118,7 @@ function Board({ room, feed }: { room: MatchRoom; feed: MatchFeed }) {
       pos.snapshot.seatToMove === seatName(mySeat)
     view.setInteractive(myTurn ? seatName(mySeat) : null)
     view.setLegalMoves(myTurn ? pos.legal : [])
-  }, [mounted, ps, events, mySeat, state.phase])
+  }, [viewGen, ps, events, mySeat, state.phase])
 
   // A refused move: put the board back on the current position (the piece slides home).
   useEffect(() => {
@@ -132,7 +137,7 @@ function Board({ room, feed }: { room: MatchRoom; feed: MatchFeed }) {
       data-testid="board"
     >
       <div ref={host} className="absolute inset-0" />
-      {mounted ? null : (
+      {viewGen > 0 ? null : (
         <div className="absolute inset-0 flex items-center justify-center gap-3 text-parchment/60">
           <Spinner /> Setting up the board…
         </div>
@@ -148,7 +153,8 @@ function PlayerRow({
 }: {
   index: number
   feed: MatchFeed
-  remainingMs: number
+  /** Null in untimed games (no clock shown). */
+  remainingMs: number | null
 }) {
   const { state, mySeat } = feed
   const seat = state.seats[index]
@@ -156,7 +162,7 @@ function PlayerRow({
   const color = seatHex(index)
   const toMove = state.phase === 'in_game' && state.seatToMove === index
   const out = seat.status === 'removed' || seat.status === 'frozen'
-  const low = remainingMs < 20_000 && !out
+  const low = remainingMs !== null && remainingMs < 20_000 && !out
   return (
     <li
       className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 transition ${
@@ -186,14 +192,16 @@ function PlayerRow({
           {!seat.isBot && !seat.connected && !out ? ' · reconnecting' : ''}
         </p>
       </div>
-      <span
-        className={`rounded-lg px-2.5 py-1 font-mono text-base tabular-nums ${
-          toMove ? 'bg-parchment text-ink' : 'bg-ink/60 text-parchment/80'
-        } ${low && toMove ? '!bg-seat-south !text-parchment' : ''}`}
-        data-testid="clock"
-      >
-        {out ? '—' : formatClock(remainingMs)}
-      </span>
+      {remainingMs === null ? null : (
+        <span
+          className={`rounded-lg px-2.5 py-1 font-mono text-base tabular-nums ${
+            toMove ? 'bg-parchment text-ink' : 'bg-ink/60 text-parchment/80'
+          } ${low && toMove ? '!bg-seat-south !text-parchment' : ''}`}
+          data-testid="clock"
+        >
+          {out ? '—' : formatClock(remainingMs)}
+        </span>
+      )}
     </li>
   )
 }
@@ -228,6 +236,7 @@ export function GameRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) {
   const [showResult, setShowResult] = useState(true)
   const { state, mySeat } = feed
   const finished = state.phase === 'finished'
+  const untimed = isUntimed(state.timeControl)
   const myTurn = state.phase === 'in_game' && mySeat >= 0 && state.seatToMove === mySeat
 
   // The lobby's Start button sits below the fold: open the game at the top of the page.
@@ -238,12 +247,14 @@ export function GameRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) {
   async function leave() {
     if (!finished && mySeat >= 0) {
       const sure = window.confirm(
-        'Leave this game? Your seat will be eliminated (as if your time ran out).',
+        untimed
+          ? 'Leave this game? Your army will be eliminated and the bots will finish without you.'
+          : 'Leave this game? Your seat will be eliminated (as if your time ran out).',
       )
       if (!sure) return
     }
-    await leaveMatch()
     navigate('/play')
+    await leaveMatch()
   }
 
   if (error) {
@@ -270,7 +281,7 @@ export function GameRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) {
           <div className="mb-3 flex items-baseline justify-between gap-2">
             <h1 className="truncate font-display text-lg font-semibold">{state.name}</h1>
             <span className="shrink-0 text-xs text-parchment/50">
-              {MODE_LABEL[state.mode]} · {state.timeControl}
+              {MODE_LABEL[state.mode]} · {untimed ? 'Untimed' : state.timeControl}
             </span>
           </div>
           <p
@@ -293,7 +304,12 @@ export function GameRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) {
           ) : null}
           <ol className="flex flex-col gap-1.5">
             {[0, 1, 2, 3].map((i) => (
-              <PlayerRow key={i} index={i} feed={feed} remainingMs={clocks[i] ?? 0} />
+              <PlayerRow
+                key={i}
+                index={i}
+                feed={feed}
+                remainingMs={untimed ? null : (clocks[i] ?? 0)}
+              />
             ))}
           </ol>
         </section>
@@ -321,7 +337,7 @@ export function GameRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) {
             Move log, chat and replays are planned for a later update.
           </p>
           <Button variant="ghost" className="mt-2 h-10 w-full" onClick={leave}>
-            {finished ? 'Back to lobbies' : 'Leave game'}
+            {finished ? (untimed ? 'Back to Play' : 'Back to lobbies') : 'Leave game'}
           </Button>
         </section>
 

@@ -1,9 +1,10 @@
-import type { ClockSync, ServerMessages } from '@game/protocol'
+import { type ClockSync, isUntimed, type ServerMessages } from '@game/protocol'
 import type { MatchStateJson } from '@game/protocol/state'
 import { type FormEvent, useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { GameRoom } from '../components/match/GameRoom.tsx'
 import { LobbyRoom } from '../components/match/LobbyRoom.tsx'
+import { SoloStarting } from '../components/match/SoloStarting.tsx'
 import { Alert, Button, Card, CenteredPage, Field, Spinner } from '../components/ui.tsx'
 import {
   type CloseReason,
@@ -218,7 +219,14 @@ function MatchView({ room }: { room: MatchRoom }) {
           </div>
         ))}
       </div>
-      {inGame ? <GameRoom room={room} feed={feed} /> : <LobbyRoom room={room} feed={feed} />}
+      {inGame ? (
+        <GameRoom room={room} feed={feed} />
+      ) : isUntimed(feed.state.timeControl) ? (
+        // Only solo games are untimed; they start by themselves (no lobby to show).
+        <SoloStarting room={room} feed={feed} />
+      ) : (
+        <LobbyRoom room={room} feed={feed} />
+      )}
     </>
   )
 }
@@ -293,7 +301,9 @@ export function Match() {
           <p className="mb-6 text-parchment/70">
             {conn.reason === 'kicked'
               ? 'The host removed you from this lobby.'
-              : 'It is no longer available (the server may have restarted). Create or join another one.'}
+              : conn.reason === 'left'
+                ? 'You left this game. Create or join another one.'
+                : 'It is no longer available (the server may have restarted). Create or join another one.'}
           </p>
           <Link className="font-semibold text-gold hover:underline" to="/play">
             Back to lobbies

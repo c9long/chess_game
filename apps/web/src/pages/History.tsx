@@ -1,4 +1,9 @@
-import type { MatchListItem, MatchListResponse, RatingsResponse } from '@game/protocol'
+import {
+  isUntimed,
+  type MatchListItem,
+  type MatchListResponse,
+  type RatingsResponse,
+} from '@game/protocol'
 import { useCallback, useEffect, useState } from 'react'
 import { CivEmblem, civName } from '../components/CivEmblem.tsx'
 import { END_REASON_LABEL, MODE_LABEL, ordinal } from '../components/match/labels.ts'
@@ -25,7 +30,10 @@ function MatchRow({ m }: { m: MatchListItem }) {
       </span>
       <div className="min-w-0 flex-1">
         <p className="text-sm font-semibold">
-          {MODE_LABEL[m.mode]} · {m.timeControl} · {m.rated ? 'Rated' : 'Casual'}
+          {MODE_LABEL[m.mode]} ·{' '}
+          {isUntimed(m.timeControl)
+            ? 'Untimed · vs bots'
+            : `${m.timeControl} · ${m.rated ? 'Rated' : 'Casual'}`}
         </p>
         <p className="mt-0.5 text-xs text-parchment/55">
           {when(m.startedAt)} · as {civName(m.civ)}

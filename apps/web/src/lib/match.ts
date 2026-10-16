@@ -82,11 +82,17 @@ function adopt(room: MatchRoom): MatchRoom {
   return room
 }
 
-export async function createMatch(options: Omit<CreateOptions, 'protocolVersion'>) {
-  const room = await gameClient().create(ROOM_NAMES.match, {
-    protocolVersion: PROTOCOL_VERSION,
-    ...options,
-  } satisfies CreateOptions)
+/** Create options without the protocol version (added here), for a lobby or a solo game. */
+export type NewMatchOptions = CreateOptions extends infer T
+  ? T extends unknown
+    ? Omit<T, 'protocolVersion'>
+    : never
+  : never
+
+/** Creates a lobby, or a solo game against bots (`kind: 'solo'`), and takes its seat. */
+export async function createMatch(options: NewMatchOptions) {
+  const full = { protocolVersion: PROTOCOL_VERSION, ...options } as CreateOptions
+  const room = await gameClient().create(ROOM_NAMES.match, full)
   return adopt(room as MatchRoom)
 }
 
@@ -110,9 +116,16 @@ export async function reconnectMatch(roomId: string): Promise<MatchRoom | null> 
   }
 }
 
+/**
+ * Leaves the current room on purpose. The room is marked closed ('left') so the match page
+ * never rejoins it (a consented in-game leave gives the seat up).
+ */
 export async function leaveMatch(): Promise<void> {
   const { room } = useMatchStore.getState()
-  useMatchStore.setState({ room: null, closed: null })
+  useMatchStore.setState({
+    room: null,
+    closed: room ? { roomId: room.roomId, reason: 'left' } : null,
+  })
   if (!room) return
   forgetRoom(room.roomId)
   try {
@@ -144,7 +157,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   legal_acceptance_required: 'Please accept the current Terms of Service first.',
   username_required: 'Choose a username before playing.',
   protocol_mismatch: 'Your game client is out of date. Reload the page.',
-  invalid_options: 'Some lobby settings were not valid.',
+  invalid_options: 'Some game settings were not valid.',
   invalid_password: 'That password is not right.',
   too_many_attempts: 'Too many wrong passwords. Wait a minute and try again.',
   room_not_found: 'That lobby no longer exists.',

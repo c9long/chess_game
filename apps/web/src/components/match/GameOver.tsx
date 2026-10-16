@@ -1,3 +1,4 @@
+import { isUntimed } from '@game/protocol'
 import type { MatchFeed } from '../../pages/Match.tsx'
 import { CivEmblem, civName } from '../CivEmblem.tsx'
 import { Button } from '../ui.tsx'
@@ -43,7 +44,11 @@ export function GameOver({
     >
       <section className="w-full max-w-lg rounded-2xl border border-gold/30 bg-panel p-6 shadow-2xl shadow-black/60 sm:p-8">
         <p className="text-xs font-semibold uppercase tracking-[0.3em] text-gold/80">
-          {gameOver?.rated || state.rated ? 'Rated game' : 'Casual game'}
+          {isUntimed(state.timeControl)
+            ? 'Untimed game vs bots'
+            : gameOver?.rated || state.rated
+              ? 'Rated game'
+              : 'Casual game'}
         </p>
         <h2 id="game-over-title" className="mt-1 font-display text-4xl font-semibold">
           {headline}
@@ -99,7 +104,7 @@ export function GameOver({
             View board
           </Button>
           <Button onClick={onLeave} data-testid="back-to-lobbies">
-            Back to lobbies
+            {isUntimed(state.timeControl) ? 'Back to Play' : 'Back to lobbies'}
           </Button>
         </div>
       </section>

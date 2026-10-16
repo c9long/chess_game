@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router'
 import { leaveMatch, type MatchRoom, matchApi } from '../../lib/match.ts'
 import type { MatchFeed } from '../../pages/Match.tsx'
 import { CivEmblem, civName } from '../CivEmblem.tsx'
+import { CivPicker } from '../CivPicker.tsx'
 import { Button } from '../ui.tsx'
 import { MODE_LABEL, SEAT_LABEL, seatColorName, seatHex, seatName, teamLabel } from './seats.ts'
 
@@ -204,45 +205,7 @@ function SeatCard({
   )
 }
 
-function CivPicker({
-  value,
-  disabled,
-  onPick,
-}: {
-  value: string
-  disabled: boolean
-  onPick: (civ: string) => void
-}) {
-  return (
-    <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label="Civilization">
-      {CIVILIZATIONS.map((c) => {
-        const active = c.slug === value
-        return (
-          // biome-ignore lint/a11y/useSemanticElements: styled tile in a radiogroup
-          <button
-            key={c.slug}
-            type="button"
-            role="radio"
-            aria-checked={active}
-            disabled={disabled}
-            onClick={() => onPick(c.slug)}
-            className={`flex flex-col items-center gap-1.5 rounded-xl border px-2 py-3 text-xs font-semibold transition focus-visible:outline-2 focus-visible:outline-gold disabled:cursor-not-allowed disabled:opacity-50 ${
-              active
-                ? 'border-gold bg-gold/15 text-parchment'
-                : 'border-parchment/15 text-parchment/70 hover:border-parchment/40 hover:text-parchment'
-            }`}
-            data-testid={`civ-${c.slug}`}
-          >
-            <CivEmblem civ={c.slug} className={`h-9 w-9 ${active ? 'text-gold' : ''}`} />
-            {c.name}
-          </button>
-        )
-      })}
-    </div>
-  )
-}
-
-function Countdown({ endsAt }: { endsAt: number }) {
+export function Countdown({ endsAt }: { endsAt: number }) {
   const [now, setNow] = useState(Date.now())
   useEffect(() => {
     const id = window.setInterval(() => setNow(Date.now()), 100)
@@ -274,8 +237,8 @@ export function LobbyRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) 
   const canStart = viewerIsHost && state.phase === 'civ_select' && everyoneReady
 
   async function leave() {
-    await leaveMatch()
     navigate('/play')
+    await leaveMatch()
   }
 
   async function copyLink() {

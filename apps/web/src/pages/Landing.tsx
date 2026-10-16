@@ -38,13 +38,23 @@ export function Landing() {
                 {displayName(user)}
               </strong>
             </p>
-            <Link
-              to="/play"
-              className={`${linkButton} bg-gold text-ink shadow-[0_8px_24px_-12px_rgba(212,160,23,0.7)] hover:bg-gold-bright`}
-              data-testid="play"
-            >
-              Play
-            </Link>
+            <div className="grid grid-cols-2 gap-3">
+              <Link
+                to="/play"
+                className={`${linkButton} bg-gold text-ink shadow-[0_8px_24px_-12px_rgba(212,160,23,0.7)] hover:bg-gold-bright`}
+                title="Multiplayer lobbies"
+                data-testid="play"
+              >
+                Play
+              </Link>
+              <Link
+                to="/play"
+                className={`${linkButton} border border-gold/60 text-gold hover:bg-gold/10`}
+                data-testid="play-vs-bots"
+              >
+                Play vs bots
+              </Link>
+            </div>
             <Link
               to="/history"
               className={`${linkButton} border border-parchment/25 hover:border-parchment/50 hover:bg-parchment/5`}
