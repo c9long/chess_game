@@ -2,6 +2,7 @@ import {
   accounts,
   civilizations,
   deletionLog,
+  eloRatings,
   legalAcceptances,
   matches,
   matchPlayers,
@@ -45,6 +46,9 @@ async function seedHistory(userId: string) {
   await h.db
     .insert(ratings)
     .values({ userId, mode: 'teams', timeControl: '3+2', mu: 26.1, sigma: 7.9, gamesPlayed: 1 })
+  await h.db
+    .insert(eloRatings)
+    .values({ userId, mode: 'teams', timeControl: '3+2', rating: 1516, games: 1, peak: 1516 })
   return match.id
 }
 
@@ -74,6 +78,15 @@ describe('account export', () => {
     ).toEqual(expect.arrayContaining(['terms:accepted', 'privacy:acknowledged']))
     expect(data.ratings).toEqual([
       expect.objectContaining({ mode: 'teams', timeControl: '3+2', mu: 26.1, gamesPlayed: 1 }),
+    ])
+    expect(data.eloRatings).toEqual([
+      expect.objectContaining({
+        mode: 'teams',
+        timeControl: '3+2',
+        rating: 1516,
+        games: 1,
+        peak: 1516,
+      }),
     ])
     expect(data.matchHistory).toEqual([
       expect.objectContaining({
@@ -129,6 +142,10 @@ describe('account deletion', () => {
     expect(res.body.label).not.toBe(`Deleted player #${log[0]?.id}`)
     const [rating] = await h.db.select().from(ratings).where(eq(ratings.userId, placeholderId))
     expect(rating?.gamesPlayed).toBe(1)
+    // Elo rows are re-keyed the same way (and nothing is left under the original id).
+    const [elo] = await h.db.select().from(eloRatings).where(eq(eloRatings.userId, placeholderId))
+    expect(elo).toMatchObject({ rating: 1516, games: 1, peak: 1516 })
+    expect(await h.db.select().from(eloRatings).where(eq(eloRatings.userId, a.userId))).toEqual([])
     const acc = await h.db
       .select()
       .from(legalAcceptances)

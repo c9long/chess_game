@@ -51,9 +51,9 @@ async function consume(b: Browser, reservation: unknown): Promise<Player> {
   return p
 }
 
-async function startGame(browsers: Browser[]): Promise<Player[]> {
+async function startGame(browsers: Browser[], ranked = false): Promise<Player[]> {
   const [first, ...rest] = browsers
-  const host = await createLobby(first as Browser, { name: 'Integrity' })
+  const host = await createLobby(first as Browser, { name: 'Integrity', ranked })
   const players = [host]
   for (const b of rest) players.push(await joinLobby(b, host.room.roomId))
   await host.waitState((s) => s.seats.every((x) => x.occupied))
@@ -274,7 +274,7 @@ describe('attack-integrity: live game', () => {
   // must not leave the match stuck in_progress (applyRatings skips deleted users).
   it('a participant deleting their account mid-game does not strand the match', async () => {
     const browsers = await Promise.all([registered(h), registered(h), registered(h), registered(h)])
-    const players = await startGame(browsers)
+    const players = await startGame(browsers, true)
     const host = players[0] as Player
     const matchId = host.state.matchId
     expect(host.state.rated).toBe(true)
@@ -287,7 +287,7 @@ describe('attack-integrity: live game', () => {
     const [m] = await h.server.ctx.db.select().from(matches).where(eq(matches.id, matchId))
     expect(m?.status).not.toBe('in_progress')
     expect(over.endReason).not.toBe('persist_failed')
-    // No public rating could be applied (one participant is gone): stored and shown unrated.
+    // No Elo could be applied (one participant is gone): stored and shown unrated.
     expect(m?.rated).toBe(false)
     expect(over.rated).toBe(false)
   })

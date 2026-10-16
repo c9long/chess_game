@@ -1,11 +1,13 @@
 /**
- * OpenSkill ratings (PLAN §5), Plackett–Luce model over placements (ties allowed: a tie is
- * rated as the average over the strict orders of the tied players).
+ * Ratings (PLAN §5).
  *
- * - Public pool ('public'): rated games only, i.e. all four seats registered humans.
- * - Shadow pool ('shadow', hidden): casual games with at least one bot. Registered humans'
- *   shadow ratings move; bots are fixed anchors (`bot_level_anchors`), guests a fresh default.
- *   Never shown to players; used to calibrate bot labels.
+ * - Public ratings are Elo (`elo.ts`, table `elo_ratings`), applied only to games in ranked
+ *   lobbies (four registered humans by construction). Casual games are never Elo-rated.
+ * - Hidden shadow pool (OpenSkill, table `ratings`, kind 'shadow'): casual games with at
+ *   least one bot. Registered humans' shadow ratings move; bots are fixed anchors
+ *   (`bot_level_anchors`), guests a fresh default. Never shown to players; used to calibrate
+ *   bot labels. OpenSkill: Plackett–Luce over placements (a tie is rated as the average over
+ *   the strict orders of the tied players). The 'public' OpenSkill pool is no longer written.
  * - Guests are never rated. Each mode x time control is a separate rating.
  *
  * Display rating ("Elo-like"): round(900 + 30 * (mu - 3 * sigma)), i.e. a conservative
@@ -16,10 +18,11 @@
  */
 import type { BotLevel } from '@game/config'
 import { BOT_LEVELS } from '@game/config'
-import { botLevelAnchors, type Executor, ratings, users } from '@game/db'
-import { and, eq, inArray, sql } from 'drizzle-orm'
+import { botLevelAnchors, type Executor, eloRatings, ratings, users } from '@game/db'
+import { and, asc, eq, inArray, sql } from 'drizzle-orm'
 import { ordinal, type Rating, rate, rating } from 'openskill'
 import { plackettLuce } from 'openskill/models'
+import { type EloEntrant, newEloPlayer, rateElo } from './elo.ts'
 
 export const DISPLAY_BASE = 900
 export const DISPLAY_SCALE = 30
@@ -148,13 +151,113 @@ export interface RatingChange {
   after: number
 }
 
-/** Which pool a game feeds, or null when it changes no rating. */
+/** A ranked game's Elo change for one seat. */
+export interface EloChange {
+  seat: number
+  before: number
+  after: number
+}
+
+/**
+ * Which OpenSkill pool a casual game feeds, or null when it changes none: the hidden shadow
+ * pool for games with a bot and at least one registered human. The public OpenSkill pool is
+ * retired (public ratings are Elo from ranked games), so this never returns 'public'.
+ */
 export function poolForGame(players: RatedSeat[]): RatingPool | null {
-  const allRegistered = players.every((p) => p.userId && !p.isGuest && !p.botLevel)
-  if (allRegistered) return 'public'
   const hasBot = players.some((p) => p.botLevel)
-  const hasRegistered = players.some((p) => p.userId && !p.isGuest)
+  const hasRegistered = players.some((p) => p.userId && !p.isGuest && !p.botLevel)
   return hasBot && hasRegistered ? 'shadow' : null
+}
+
+const isRegisteredHuman = (p: RatedSeat): p is RatedSeat & { userId: string } =>
+  Boolean(p.userId && !p.isGuest && !p.botLevel)
+
+/**
+ * Applies a ranked game's Elo inside `tx` (the transaction that marks the match finished).
+ * Every seat must be a live registered account; otherwise (e.g. an account deleted
+ * mid-game) nothing changes and [] is returned, and the caller stores the game unrated.
+ */
+export async function applyElo(
+  tx: Executor,
+  game: { mode: 'ffa' | 'teams'; timeControl: string },
+  players: RatedSeat[],
+): Promise<EloChange[]> {
+  if (players.length !== 4 || !players.every(isRegisteredHuman)) return []
+  const ids = players.map((p) => p.userId as string)
+  if (new Set(ids).size !== ids.length) return []
+  const live = await tx
+    .select({ id: users.id, deletedAt: users.deletedAt, isGuest: users.isAnonymous })
+    .from(users)
+    .where(inArray(users.id, ids))
+  if (live.length !== ids.length || live.some((u) => u.deletedAt || u.isGuest)) return []
+
+  // Lock every participant's row before reading any, always in user_id order: a missing
+  // row is first created as a new-player placeholder (so FOR UPDATE has a row to lock and a
+  // concurrent first game waits instead of computing from a stale 1200), and the fixed
+  // order keeps two games with players in common from deadlocking.
+  const sorted = [...ids].sort()
+  const fresh = newEloPlayer()
+  const now = new Date()
+  for (const userId of sorted) {
+    await tx
+      .insert(eloRatings)
+      .values({
+        userId,
+        mode: game.mode,
+        timeControl: game.timeControl,
+        rating: fresh.rating,
+        games: fresh.games,
+        peak: fresh.peak,
+        updatedAt: now,
+      })
+      .onConflictDoNothing({
+        target: [eloRatings.userId, eloRatings.mode, eloRatings.timeControl],
+      })
+  }
+  const rows = await tx
+    .select()
+    .from(eloRatings)
+    .where(
+      and(
+        inArray(eloRatings.userId, ids),
+        eq(eloRatings.mode, game.mode),
+        eq(eloRatings.timeControl, game.timeControl),
+      ),
+    )
+    .orderBy(asc(eloRatings.userId))
+    .for('update')
+  const byUser = new Map(rows.map((r) => [r.userId, r]))
+  const entrants: EloEntrant[] = players.map((p) => {
+    const row = byUser.get(p.userId as string)
+    const base = row ? { rating: row.rating, games: row.games, peak: row.peak } : fresh
+    return { seat: p.seat, team: p.team, placement: p.placement, ...base }
+  })
+  const results = rateElo(game.mode, entrants)
+  const changes: EloChange[] = []
+  const bySeat = new Map(results.map((r) => [r.seat, r]))
+  for (const userId of sorted) {
+    const p = players.find((x) => x.userId === userId) as RatedSeat
+    const r = bySeat.get(p.seat)
+    const prev = entrants.find((e) => e.seat === p.seat) as EloEntrant
+    if (!r) continue
+    await tx
+      .update(eloRatings)
+      .set({
+        rating: r.after,
+        games: sql`${eloRatings.games} + 1`,
+        peak: Math.max(prev.peak, r.after),
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(eloRatings.userId, userId),
+          eq(eloRatings.mode, game.mode),
+          eq(eloRatings.timeControl, game.timeControl),
+        ),
+      )
+  }
+  for (const r of results) changes.push({ seat: r.seat, before: r.before, after: r.after })
+  return changes
 }
 
 async function loadAnchors(db: Executor, levels: string[]): Promise<Map<string, Rating>> {
@@ -170,9 +273,10 @@ async function loadAnchors(db: Executor, levels: string[]): Promise<Map<string, 
 }
 
 /**
- * Applies a finished game's rating updates inside `tx` (call within the transaction that
- * marks the match finished). Returns the display-rating change per updated seat. Deleted
- * (de-identified) accounts keep their re-keyed rows but are not updated.
+ * Applies a finished casual game's hidden shadow-rating updates inside `tx` (call within the
+ * transaction that marks the match finished). Returns the display-rating change per updated
+ * seat (never shown to players). Deleted (de-identified) accounts keep their re-keyed rows
+ * but are not updated.
  */
 export async function applyRatings(
   tx: Executor,
@@ -191,7 +295,6 @@ export async function applyRatings(
         .where(inArray(users.id, humanIds))
     : []
   const updatable = new Set(live.filter((u) => !u.deletedAt).map((u) => u.id))
-  if (pool === 'public' && updatable.size !== 4) return []
 
   const existing = humanIds.length
     ? await tx

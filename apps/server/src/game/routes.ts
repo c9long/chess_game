@@ -1,26 +1,48 @@
-/** Match history and ratings (REST, for the web and later Unity). */
+/** Match history, ratings and the leaderboard (REST, for the web and later Unity). */
+import { TIME_CONTROLS } from '@game/config'
 import {
   civilizations,
   type Database,
+  eloRatings,
   matchEvents,
   matches,
   matchPlayers,
-  ratings,
   users,
 } from '@game/db'
-import type {
-  MatchDetailResponse,
-  MatchListItem,
-  MatchListResponse,
-  RatingsResponse,
+import {
+  GAME_MODES,
+  LEADERBOARD_DEFAULT_LIMIT,
+  LEADERBOARD_MAX_LIMIT,
+  LEADERBOARD_MIN_GAMES,
+  type LeaderboardResponse,
+  type MatchDetailResponse,
+  type MatchListItem,
+  type MatchListResponse,
+  type RatingsResponse,
 } from '@game/protocol'
-import { and, asc, desc, eq, inArray, lt, ne, or } from 'drizzle-orm'
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lt, ne, or } from 'drizzle-orm'
 import { Router } from 'express'
 import { z } from 'zod'
 import type { Auth } from '../auth/auth.ts'
 import { requireSession, sessionOf } from '../http/session.ts'
 import { requireCurrentAcceptance } from '../legal/routes.ts'
-import { displayRating } from './ratings.ts'
+
+const leaderboardQuery = z.object({
+  mode: z.enum(GAME_MODES).default('ffa'),
+  // An unencoded '+' in a query string arrives as a space: accept '10 0' for '10+0'.
+  tc: z
+    .string()
+    .max(20)
+    .default('10+0')
+    .transform((v) => v.replace(' ', '+'))
+    .pipe(z.enum(Object.keys(TIME_CONTROLS) as [string, ...string[]])),
+  limit: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(LEADERBOARD_MAX_LIMIT)
+    .default(LEADERBOARD_DEFAULT_LIMIT),
+})
 
 const listQuery = z.object({
   limit: z.coerce.number().int().min(1).max(50).default(20),
@@ -118,6 +140,7 @@ export function gameRouter({ db, auth }: { db: Database; auth: Auth }) {
         mode: matches.mode,
         timeControl: matches.timeControl,
         rated: matches.rated,
+        ranked: matches.ranked,
         endReason: matches.endReason,
         seat: matchPlayers.seat,
       })
@@ -157,6 +180,7 @@ export function gameRouter({ db, auth }: { db: Database; auth: Auth }) {
         mode: m.mode,
         timeControl: m.timeControl,
         rated: m.rated,
+        ranked: m.ranked,
         endReason: m.endReason,
         seat: m.seat,
         civ: mine?.civ ?? '',
@@ -208,6 +232,7 @@ export function gameRouter({ db, auth }: { db: Database; auth: Auth }) {
       mode: match.mode,
       timeControl: match.timeControl,
       rated: match.rated,
+      ranked: match.ranked,
       rulesVersion: match.rulesVersion,
       startedAt: match.startedAt.toISOString(),
       endedAt: match.endedAt?.toISOString() ?? null,
@@ -240,24 +265,79 @@ export function gameRouter({ db, auth }: { db: Database; auth: Auth }) {
     res.json(body)
   })
 
-  /** The signed-in player's public ratings (shadow ratings are never exposed here). */
+  /** The signed-in player's Elo ratings (hidden shadow ratings are never exposed). */
   router.get('/ratings/me', ...guard, async (_req, res) => {
     const me = sessionOf(res).user.id
     const rows = await db
       .select()
-      .from(ratings)
-      .where(and(eq(ratings.userId, me), eq(ratings.kind, 'public')))
-      .orderBy(asc(ratings.mode), asc(ratings.timeControl))
+      .from(eloRatings)
+      .where(eq(eloRatings.userId, me))
+      .orderBy(asc(eloRatings.mode), desc(eloRatings.timeControl))
     const body: RatingsResponse = {
       ratings: rows.map((r) => ({
         mode: r.mode,
         timeControl: r.timeControl,
-        rating: displayRating({ mu: r.mu, sigma: r.sigma }),
-        mu: r.mu,
-        sigma: r.sigma,
-        gamesPlayed: r.gamesPlayed,
+        rating: r.rating,
+        gamesPlayed: r.games,
+        peak: r.peak,
       })),
     }
+    res.json(body)
+  })
+
+  /**
+   * Public leaderboard (no session needed): the top registered players by Elo in one
+   * mode x time control, with at least LEADERBOARD_MIN_GAMES ranked games. Usernames only;
+   * deleted accounts (their re-keyed placeholders) and guests are never listed.
+   */
+  router.get('/leaderboard', async (req, res) => {
+    const q = leaderboardQuery.safeParse(req.query)
+    if (!q.success) {
+      res.status(400).json({ error: 'BAD_REQUEST' })
+      return
+    }
+    const { mode, tc, limit } = q.data
+    const rows = await db
+      .select({
+        rating: eloRatings.rating,
+        games: eloRatings.games,
+        peak: eloRatings.peak,
+        username: users.displayUsername,
+        handle: users.username,
+      })
+      .from(eloRatings)
+      .innerJoin(users, eq(users.id, eloRatings.userId))
+      .where(
+        and(
+          eq(eloRatings.mode, mode),
+          eq(eloRatings.timeControl, tc),
+          gte(eloRatings.games, LEADERBOARD_MIN_GAMES),
+          isNull(users.deletedAt),
+          eq(users.isAnonymous, false),
+          isNotNull(users.username),
+        ),
+      )
+      .orderBy(desc(eloRatings.rating), desc(eloRatings.games), asc(users.username))
+      .limit(limit)
+    let rank = 0
+    let prev: number | undefined
+    const body: LeaderboardResponse = {
+      mode,
+      timeControl: tc,
+      minGames: LEADERBOARD_MIN_GAMES,
+      entries: rows.map((r, i) => {
+        if (r.rating !== prev) rank = i + 1
+        prev = r.rating
+        return {
+          rank,
+          username: r.username ?? r.handle ?? '',
+          rating: r.rating,
+          gamesPlayed: r.games,
+          peak: r.peak,
+        }
+      }),
+    }
+    res.set('cache-control', 'public, max-age=30')
     res.json(body)
   })
 

@@ -16,7 +16,11 @@ import {
   type ClockSync,
   clientMessageSchemas,
   createOptionsSchema,
+  DRAW_OFFER_COOLDOWN_MOVES,
+  DRAW_VOTE,
+  type DrawLapseReason,
   type ErrorCode,
+  type GameAction,
   isReservedMessageType,
   isUntimed,
   joinOptionsSchema,
@@ -39,6 +43,7 @@ import {
 import { hash, verify } from '@node-rs/argon2'
 import { BotServiceError, fallbackMove } from './bot-client.ts'
 import { GameClock, monoNow } from './clock.ts'
+import { allAccepted, botAcceptsDraw, initialVotes, lapseReason } from './draw-logic.ts'
 import { GameError, joinError } from './errors.ts'
 import {
   clearSeat,
@@ -173,10 +178,16 @@ export class MatchRoom
   private solo: { civ: string } | null = null
   /** Untimed game: no clock ever runs (solo rooms). */
   private untimed = false
+  /** Ranked lobby: registered accounts only, no bots, Elo-rated (fixed at create). */
+  private ranked = false
   /** Bot pacing: monotonic time of the latest game action (or the game start). */
   private lastActionAt = 0
   /** Bot pacing: how long after `lastActionAt` a bot's move may be applied. */
   private paceGapMs = 0
+  /** Pending bot answers to the current draw offer. */
+  private drawBotTimers: NodeJS.Timeout[] = []
+  /** Seats that took a turn (moved or passed) since the pending draw offer. */
+  private drawTurnsTaken = new Set<number>()
 
   // -------------------------------------------------------------------------
   // Authentication (matchmaking request: cookie or bearer token)
@@ -202,6 +213,9 @@ export class MatchRoom
       if (!parsed.success) throw joinError('invalid_options')
       const opts = parsed.data
       if (opts.kind === 'lobby' && opts.pickMode === 'draft') throw joinError('not_implemented')
+      if (opts.kind === 'lobby' && opts.ranked && player.isGuest) {
+        throw joinError('account_required')
+      }
       if (opts.name !== undefined && !svc.namePolicy.checkLobbyName(opts.name).ok) {
         throw joinError('invalid_options')
       }
@@ -277,6 +291,8 @@ export class MatchRoom
     const svc = this.svc
     // A solo room seats its creator only (who rejoins through isRejoin).
     if (this.solo && player.userId !== this.hostUserId) throw joinError('room_not_joinable')
+    // Ranked lobbies seat registered accounts only.
+    if (this.ranked && player.isGuest) throw joinError('account_required')
     if (this.kicked.has(player.userId)) throw joinError('kicked')
     const elsewhere = svc.seats.get(player.userId)
     if (elsewhere && elsewhere !== this.roomId) throw joinError('already_in_room')
@@ -328,6 +344,8 @@ export class MatchRoom
     s.timeControl = parsed.timeControl
     s.pickMode = parsed.kind === 'lobby' ? parsed.pickMode : 'blind'
     s.hasPassword = Boolean(this.passwordHash)
+    this.ranked = parsed.kind === 'lobby' && parsed.ranked
+    s.ranked = this.ranked
     s.phase = 'waiting'
     s.reconnectGraceMs = this.svc.config.game.reconnectGraceMs
     this.untimed = isUntimed(parsed.timeControl)
@@ -472,7 +490,11 @@ export class MatchRoom
       s.graceDeadline = 0
       this.svc.seats.delete(binding.userId)
       if (this.takesTurns(seat as SeatNum) && this.abandonPolicy(seat as SeatNum) === 'abandon') {
-        this.runAction('abandon', seat as SeatNum, null)
+        const now = monoNow()
+        this.settleFallenFlag(now)
+        if (this.state.phase === 'in_game' && this.takesTurns(seat as SeatNum)) {
+          this.runAction('abandon', seat as SeatNum, null, now)
+        }
       }
       return
     }
@@ -527,6 +549,7 @@ export class MatchRoom
     this.state.phase = 'finished'
     this.clearTimers()
     this.cancelBotTurn()
+    this.clearDrawOffer()
     this.state.result.type = 'aborted'
     this.state.result.endReason = reason
     this.state.seatToMove = -1
@@ -562,6 +585,7 @@ export class MatchRoom
     this.handle('addBot', async (client, { seat, level }) => {
       this.requireHost(client)
       this.requireLobby()
+      if (this.ranked) throw new GameError('ranked_no_bots', 'ranked games are for people only')
       if ((this.state.seats[seat] as SeatState).occupied) throw new GameError('seat_occupied')
       const civs = await this.enabledCivs()
       this.requireHost(client)
@@ -643,6 +667,44 @@ export class MatchRoom
       if (!this.game.legalMoveNotations().includes(move)) throw new GameError('illegal_move')
       this.runAction('move', seat, move, now)
     })
+    this.handle('resign', (client) => {
+      const seat = this.requireSeat(client)
+      this.requireGame()
+      if (!this.takesTurns(seat)) throw new GameError('not_playing')
+      const now = monoNow()
+      // A flag that fell before the resign arrived is a timeout first (the resigner's own
+      // or the seat to move's); the resign then applies only if the game and seat go on.
+      if (this.settleFallenFlag(now)) {
+        if (this.state.phase !== 'in_game' || !this.takesTurns(seat)) return
+      }
+      this.runAction('resign', seat, null, now)
+    })
+    this.handle('offerDraw', (client) => {
+      const seat = this.requireSeat(client)
+      this.requireGame()
+      this.settleFallenFlag(monoNow())
+      const game = this.requireGame()
+      const voters = game.drawVoters()
+      if (!voters[seat]) throw new GameError('not_playing')
+      const s = this.state
+      if (s.drawOfferSeat !== -1) throw new GameError('draw_offer_pending')
+      const wait = s.drawCooldowns[seat] ?? 0
+      if (wait > 0) {
+        throw new GameError(
+          'draw_offer_cooldown',
+          `Make ${wait} more move${wait === 1 ? '' : 's'} before offering another draw.`,
+        )
+      }
+      this.offerDraw(seat, voters)
+    })
+    this.handle('respondDraw', (client, { accept }) => {
+      const seat = this.requireSeat(client)
+      this.requireGame()
+      // A flag that fell first is a timeout; it changes the voters, so the offer lapses.
+      this.settleFallenFlag(monoNow())
+      this.requireGame()
+      this.respondDraw(seat, accept)
+    })
     this.handle('syncClock', (client) => {
       if (this.gameClock) client.send('clock', this.clockSync())
     })
@@ -710,6 +772,14 @@ export class MatchRoom
     return seat
   }
 
+  /** The live game (phase `in_game`), or `wrong_phase`. */
+  private requireGame(): Game {
+    if (this.state.phase !== 'in_game' || !this.game || !this.gameClock) {
+      throw new GameError('wrong_phase')
+    }
+    return this.game
+  }
+
   private requireLobby() {
     if (!isLobbyPhase(this.state.phase) || this.starting) throw new GameError('wrong_phase')
     // A solo room's seats, civs and bots are fixed at create; it starts by itself.
@@ -746,6 +816,7 @@ export class MatchRoom
       locked: s.hasPassword,
       phase: s.phase,
       pickMode: s.pickMode as LobbyMetadata['pickMode'],
+      ranked: s.ranked,
     }
   }
 
@@ -844,8 +915,12 @@ export class MatchRoom
         }),
       )
       if (players.some((p) => !p.userId && !p.botLevel)) throw new GameError('not_ready')
-      // Untimed (solo) games are never rated, publicly or in the shadow pool.
-      const rated = !this.untimed && s.seats.every((seat) => !seat.isBot && !seat.isGuest)
+      // Only ranked lobbies are rated (Elo); casual games never are, even with four
+      // registered players. Untimed (solo) games are never rated in any pool. A ranked
+      // lobby seats registered people only, so the seat check is a safety net.
+      const rated =
+        this.ranked && !this.untimed && s.seats.every((seat) => !seat.isBot && !seat.isGuest)
+      if (this.ranked && !rated) throw new GameError('not_ready')
       recorder = await MatchRecorder.start(
         svc.db,
         svc.logger,
@@ -926,16 +1001,11 @@ export class MatchRoom
   }
 
   /**
-   * Applies one game action (a move, a timeout or an abandon) with the clock bookkeeping,
-   * then records, broadcasts and either finishes the game or starts the next turn.
-   * `now` is monotonic time (monoNow()).
+   * Applies one game action (a move, a timeout, an abandon, a resign or an agreed draw) with
+   * the clock bookkeeping, then records, broadcasts and either finishes the game or starts
+   * the next turn. `now` is monotonic time (monoNow()).
    */
-  private runAction(
-    kind: 'move' | 'timeout' | 'abandon',
-    seat: SeatNum,
-    notation: string | null,
-    now = monoNow(),
-  ) {
+  private runAction(kind: GameAction, seat: SeatNum, notation: string | null, now = monoNow()) {
     const game = this.game
     const clock = this.gameClock
     if (!game || !clock || this.state.phase !== 'in_game') return
@@ -949,15 +1019,21 @@ export class MatchRoom
       clock.endTurn(now, { increment: false })
       clock.remaining[seat] = 0
       events = game.applyTimeout(rulesSeat)
-    } else {
+    } else if (kind === 'abandon') {
       events = game.applyAbandon(rulesSeat)
+    } else if (kind === 'resign') {
+      events = game.applyResign(rulesSeat)
+    } else {
+      events = game.applyAgreedDraw()
     }
     const snap = game.snapshot()
+    // Abandons and resigns can come off-turn: the running clock then keeps running.
+    const offTurnKind = kind === 'abandon' || kind === 'resign'
     if (snap.isOver) {
       clock.endTurn(now, { increment: false })
     } else {
       const next = seatIndex(snap.seatToMove) as SeatNum
-      if (kind !== 'abandon' || wasRunning === seat || clock.running !== next) {
+      if (!offTurnKind || wasRunning === seat || clock.running !== next) {
         clock.endTurn(now, { increment: false })
         if (!this.untimed) clock.startTurn(next, now)
       }
@@ -971,15 +1047,18 @@ export class MatchRoom
     this.setLastEvents(events)
     this.syncClockState(now)
 
-    // Persist: one row for the action, plus derived rows (passes, defeats, game end).
+    // Persist: one row for the action, plus derived rows (passes, defeats, game end). An
+    // agreed draw's action row is its game_end row (after the deciding draw_response).
     const promotion = events.some((e) => e.type === 'promotion')
-    const actionType: MatchEventType = kind === 'move' ? (promotion ? 'promotion' : 'move') : kind
-    const remaining = this.untimed
-      ? null
-      : kind === 'abandon'
-        ? clock.remainingAt(seat, now)
-        : clock.remaining[seat]
-    this.record(seat, actionType, { actionSeq: s.actionSeq, notation, events }, remaining)
+    if (kind !== 'agreed_draw') {
+      const actionType: MatchEventType = kind === 'move' ? (promotion ? 'promotion' : 'move') : kind
+      const remaining = this.untimed
+        ? null
+        : offTurnKind
+          ? clock.remainingAt(seat, now)
+          : clock.remaining[seat]
+      this.record(seat, actionType, { actionSeq: s.actionSeq, notation, events }, remaining)
+    }
     let endReason = ''
     for (const e of events) {
       if (e.type === 'pass') {
@@ -998,7 +1077,9 @@ export class MatchRoom
         this.record(
           null,
           'game_end',
-          { actionSeq: s.actionSeq, outcome: e.outcome, endReason, derived: true },
+          kind === 'agreed_draw'
+            ? { actionSeq: s.actionSeq, outcome: e.outcome, endReason, agreedDraw: true }
+            : { actionSeq: s.actionSeq, outcome: e.outcome, endReason, derived: true },
           null,
         )
       }
@@ -1015,6 +1096,7 @@ export class MatchRoom
       seatToMove: s.seatToMove as SeatNum | -1,
       clock: sync,
     })
+    this.drawAfterAction(kind, seat, events)
 
     if (snap.isOver && snap.outcome) {
       void this.finishGame(snap.outcome, endReason || endReasonOf(snap.outcome), now)
@@ -1079,6 +1161,20 @@ export class MatchRoom
     const token = this.state.actionSeq
     const wait = clock.msUntilFlag(monoNow())
     this.flagTimer = setTimeout(() => this.onFlagTimer(token), Math.max(0, wait) + 1)
+  }
+
+  /**
+   * Runs a flag fall the flag timer hasn't handled yet (it fires a moment after the flag
+   * falls, later on a busy event loop) as the timeout it is, so an off-turn message that
+   * arrives in that window (a resign, a draw answer, a leave) can't overtake it. Returns
+   * whether a timeout ran; callers re-check the phase and the sender's seat afterwards.
+   */
+  private settleFallenFlag(now: number): boolean {
+    const clock = this.gameClock
+    if (this.state.phase !== 'in_game' || !clock || clock.running === -1) return false
+    if (!clock.hasFlagged(now)) return false
+    this.runAction('timeout', clock.running, null, now)
+    return true
   }
 
   private onFlagTimer(token: number) {
@@ -1271,11 +1367,149 @@ export class MatchRoom
     }
   }
 
+  // -------------------------------------------------------------------------
+  // Draw offers
+  // -------------------------------------------------------------------------
+
+  /**
+   * `seat` (a voter, no offer pending, no cooldown) offers a draw: its own vote counts as
+   * accepted, every other voter is pending. Bot voters answer after a short paced delay.
+   */
+  private offerDraw(seat: SeatNum, voters: readonly [boolean, boolean, boolean, boolean]) {
+    const s = this.state
+    const votes = initialVotes(voters, seat)
+    s.drawOfferSeat = seat
+    s.drawOfferActionSeq = s.actionSeq
+    this.drawTurnsTaken = new Set()
+    for (const i of SEAT_NUMS) s.drawVotes[i] = votes[i] ?? DRAW_VOTE.notVoter
+    this.record(seat, 'draw_offer', { actionSeq: s.actionSeq, votes }, null)
+    this.broadcast('drawEvent', { type: 'offered', seat, offerSeat: seat })
+    if (allAccepted(votes)) {
+      this.runAction('agreed_draw', seat, null)
+      return
+    }
+    // Bots answer one after another, spaced like their moves, so clients see each answer.
+    const base = Math.max(0, this.svc.config.game.botMinMoveMs)
+    let k = 0
+    for (const i of SEAT_NUMS) {
+      if (votes[i] !== DRAW_VOTE.pending || !(s.seats[i] as SeatState).isBot) continue
+      const delay = Math.round(base * (1 + 0.5 * k++))
+      const token = s.drawOfferActionSeq
+      const timer = setTimeout(() => {
+        this.drawBotTimers = this.drawBotTimers.filter((t) => t !== timer)
+        this.botRespondDraw(i, seat, token)
+      }, delay)
+      this.drawBotTimers.push(timer)
+    }
+  }
+
+  /** A bot voter answers the offer `offerSeat` made at `token` (if it still stands). */
+  private botRespondDraw(seat: SeatNum, offerSeat: number, token: number) {
+    const s = this.state
+    if (s.phase !== 'in_game' || !this.game) return
+    this.settleFallenFlag(monoNow())
+    const game = this.game
+    if (s.phase !== 'in_game' || !game) return
+    if (s.drawOfferSeat !== offerSeat || s.drawOfferActionSeq !== token) return
+    if (s.drawVotes[seat] !== DRAW_VOTE.pending) return
+    try {
+      this.respondDraw(seat, botAcceptsDraw(game.snapshot(), seat), true)
+    } catch (err) {
+      if (!(err instanceof GameError)) {
+        this.svc.logger.error(
+          { room: this.roomId, err: (err as Error).message },
+          'bot draw answer failed',
+        )
+      }
+    }
+  }
+
+  /** A pending voter answers: a decline ends the offer; the last acceptance draws the game. */
+  private respondDraw(seat: SeatNum, accept: boolean, bot = false) {
+    const s = this.state
+    const offerSeat = s.drawOfferSeat
+    if (offerSeat === -1) throw new GameError('no_draw_offer')
+    const vote = s.drawVotes[seat]
+    if (vote === DRAW_VOTE.notVoter || vote === undefined) throw new GameError('not_playing')
+    if (vote !== DRAW_VOTE.pending) throw new GameError('already_responded')
+    const offer = offerSeat as SeatNum
+    this.record(
+      seat,
+      'draw_response',
+      { actionSeq: s.actionSeq, offerSeat: offer, accept, ...(bot ? { bot: true } : {}) },
+      null,
+    )
+    if (!accept) {
+      this.endDrawOffer()
+      this.broadcast('drawEvent', { type: 'declined', seat, offerSeat: offer })
+      return
+    }
+    s.drawVotes[seat] = DRAW_VOTE.accepted
+    this.broadcast('drawEvent', { type: 'accepted', seat, offerSeat: offer })
+    if (allAccepted([...s.drawVotes])) this.runAction('agreed_draw', seat, null)
+  }
+
+  /**
+   * Draw bookkeeping after a game action: a move counts down its seat's cooldown; a pending
+   * offer lapses when the voters changed or the turn came back to the offerer; a finished
+   * game drops it silently.
+   */
+  private drawAfterAction(kind: GameAction, seat: SeatNum, events: readonly GameEvent[]) {
+    const s = this.state
+    const game = this.game
+    if (kind === 'move' && (s.drawCooldowns[seat] ?? 0) > 0) {
+      s.drawCooldowns[seat] = (s.drawCooldowns[seat] ?? 1) - 1
+    }
+    if (s.drawOfferSeat === -1 || !game) return
+    // The offerer's own moves don't count (its turn coming back is the round's end); its
+    // automatic passes do, since a seat that passes is never the seat to move.
+    if (kind === 'move' && seat !== s.drawOfferSeat) this.drawTurnsTaken.add(seat)
+    for (const e of events) if (e.type === 'pass') this.drawTurnsTaken.add(seatIndex(e.seat))
+    if (game.snapshot().isOver) {
+      this.clearDrawOffer()
+      return
+    }
+    const reason = lapseReason(
+      [...s.drawVotes],
+      game.drawVoters(),
+      s.drawOfferSeat,
+      s.seatToMove,
+      this.drawTurnsTaken,
+    )
+    if (reason) this.lapseDrawOffer(reason)
+  }
+
+  private lapseDrawOffer(reason: DrawLapseReason) {
+    const offerSeat = this.state.drawOfferSeat as SeatNum
+    this.endDrawOffer()
+    this.broadcast('drawEvent', { type: 'lapsed', seat: offerSeat, offerSeat, reason })
+  }
+
+  /** Ends the pending offer unanswered or declined: the offerer waits before offering again. */
+  private endDrawOffer() {
+    const offerSeat = this.state.drawOfferSeat
+    if (offerSeat === -1) return
+    this.state.drawCooldowns[offerSeat] = DRAW_OFFER_COOLDOWN_MOVES
+    this.clearDrawOffer()
+  }
+
+  /** Drops any pending offer and the bots' pending answers (no cooldown, no message). */
+  private clearDrawOffer() {
+    for (const t of this.drawBotTimers) clearTimeout(t)
+    this.drawBotTimers = []
+    const s = this.state
+    if (s.drawOfferSeat === -1) return
+    s.drawOfferSeat = -1
+    s.drawOfferActionSeq = 0
+    for (const i of SEAT_NUMS) s.drawVotes[i] = DRAW_VOTE.notVoter
+  }
+
   private async finishGame(outcome: Outcome, endReason: string, now: number) {
     const s = this.state
     s.phase = 'finished'
     this.clearTimers()
     this.cancelBotTurn()
+    this.clearDrawOffer()
     const game = this.game
     const recorder = this.recorder
     s.result.type = outcome.result.type
@@ -1336,7 +1570,7 @@ export class MatchRoom
       endReason: result.endReason,
       rated: result.rated,
       ratings: SEAT_NUMS.map((i) => {
-        const c = result.ratingChanges.find((r) => r.seat === i && r.pool === 'public')
+        const c = result.ratingChanges.find((r) => r.seat === i)
         return c ? { before: c.before, after: c.after } : null
       }),
     })
@@ -1359,6 +1593,8 @@ export class MatchRoom
   }
 
   private clearTimers() {
+    for (const t of this.drawBotTimers) clearTimeout(t)
+    this.drawBotTimers = []
     clearTimeout(this.countdownTimer)
     clearTimeout(this.flagTimer)
     clearInterval(this.syncTimer)
@@ -1378,6 +1614,9 @@ export function endReasonOf(outcome: Outcome): string {
       return 'last_standing'
     case 'teams_winner':
       return 'team_eliminated'
+    case 'ffa_agreed_draw':
+    case 'teams_agreed_draw':
+      return 'agreed_draw'
     default:
       return 'move_limit'
   }

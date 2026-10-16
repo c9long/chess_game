@@ -2,6 +2,7 @@ import {
   accounts,
   civilizations,
   type Database,
+  eloRatings,
   legalAcceptances,
   matches,
   matchPlayers,
@@ -20,77 +21,91 @@ export async function buildAccountExport(db: Database, userId: string, now: Date
   const [user] = await db.select().from(users).where(eq(users.id, userId))
   if (!user) return undefined
 
-  const [linked, keys, acceptances, userRatings, history, activeSessions] = await Promise.all([
-    db
-      .select({ provider: accounts.providerId, createdAt: accounts.createdAt })
-      .from(accounts)
-      .where(eq(accounts.userId, userId)),
-    db
-      .select({
-        name: passkeys.name,
-        deviceType: passkeys.deviceType,
-        createdAt: passkeys.createdAt,
-      })
-      .from(passkeys)
-      .where(eq(passkeys.userId, userId)),
-    db
-      .select({
-        document: legalAcceptances.document,
-        version: legalAcceptances.version,
-        kind: legalAcceptances.kind,
-        acceptedAt: legalAcceptances.acceptedAt,
-      })
-      .from(legalAcceptances)
-      .where(eq(legalAcceptances.userId, userId))
-      .orderBy(asc(legalAcceptances.acceptedAt)),
-    db
-      .select({
-        mode: ratings.mode,
-        timeControl: ratings.timeControl,
-        kind: ratings.kind,
-        mu: ratings.mu,
-        sigma: ratings.sigma,
-        gamesPlayed: ratings.gamesPlayed,
-        updatedAt: ratings.updatedAt,
-      })
-      .from(ratings)
-      .where(eq(ratings.userId, userId)),
-    db
-      .select({
-        matchId: matches.id,
-        status: matches.status,
-        mode: matches.mode,
-        timeControl: matches.timeControl,
-        rated: matches.rated,
-        rulesVersion: matches.rulesVersion,
-        startedAt: matches.startedAt,
-        endedAt: matches.endedAt,
-        endReason: matches.endReason,
-        seat: matchPlayers.seat,
-        team: matchPlayers.team,
-        civ: civilizations.slug,
-        civVersion: matchPlayers.civVersion,
-        finalStatus: matchPlayers.finalStatus,
-        placement: matchPlayers.placement,
-        defeatReason: matchPlayers.defeatReason,
-        ratingBefore: matchPlayers.ratingBefore,
-        ratingAfter: matchPlayers.ratingAfter,
-      })
-      .from(matchPlayers)
-      .innerJoin(matches, eq(matches.id, matchPlayers.matchId))
-      .innerJoin(civilizations, eq(civilizations.id, matchPlayers.civId))
-      .where(eq(matchPlayers.userId, userId))
-      .orderBy(desc(matches.startedAt)),
-    db
-      .select({
-        createdAt: sessions.createdAt,
-        expiresAt: sessions.expiresAt,
-        ipAddress: sessions.ipAddress,
-        userAgent: sessions.userAgent,
-      })
-      .from(sessions)
-      .where(eq(sessions.userId, userId)),
-  ])
+  const [linked, keys, acceptances, userRatings, userElo, history, activeSessions] =
+    await Promise.all([
+      db
+        .select({ provider: accounts.providerId, createdAt: accounts.createdAt })
+        .from(accounts)
+        .where(eq(accounts.userId, userId)),
+      db
+        .select({
+          name: passkeys.name,
+          deviceType: passkeys.deviceType,
+          createdAt: passkeys.createdAt,
+        })
+        .from(passkeys)
+        .where(eq(passkeys.userId, userId)),
+      db
+        .select({
+          document: legalAcceptances.document,
+          version: legalAcceptances.version,
+          kind: legalAcceptances.kind,
+          acceptedAt: legalAcceptances.acceptedAt,
+        })
+        .from(legalAcceptances)
+        .where(eq(legalAcceptances.userId, userId))
+        .orderBy(asc(legalAcceptances.acceptedAt)),
+      db
+        .select({
+          mode: ratings.mode,
+          timeControl: ratings.timeControl,
+          kind: ratings.kind,
+          mu: ratings.mu,
+          sigma: ratings.sigma,
+          gamesPlayed: ratings.gamesPlayed,
+          updatedAt: ratings.updatedAt,
+        })
+        .from(ratings)
+        .where(eq(ratings.userId, userId)),
+      db
+        .select({
+          mode: eloRatings.mode,
+          timeControl: eloRatings.timeControl,
+          rating: eloRatings.rating,
+          games: eloRatings.games,
+          peak: eloRatings.peak,
+          updatedAt: eloRatings.updatedAt,
+        })
+        .from(eloRatings)
+        .where(eq(eloRatings.userId, userId))
+        .orderBy(asc(eloRatings.mode), asc(eloRatings.timeControl)),
+      db
+        .select({
+          matchId: matches.id,
+          status: matches.status,
+          mode: matches.mode,
+          timeControl: matches.timeControl,
+          rated: matches.rated,
+          ranked: matches.ranked,
+          rulesVersion: matches.rulesVersion,
+          startedAt: matches.startedAt,
+          endedAt: matches.endedAt,
+          endReason: matches.endReason,
+          seat: matchPlayers.seat,
+          team: matchPlayers.team,
+          civ: civilizations.slug,
+          civVersion: matchPlayers.civVersion,
+          finalStatus: matchPlayers.finalStatus,
+          placement: matchPlayers.placement,
+          defeatReason: matchPlayers.defeatReason,
+          ratingBefore: matchPlayers.ratingBefore,
+          ratingAfter: matchPlayers.ratingAfter,
+        })
+        .from(matchPlayers)
+        .innerJoin(matches, eq(matches.id, matchPlayers.matchId))
+        .innerJoin(civilizations, eq(civilizations.id, matchPlayers.civId))
+        .where(eq(matchPlayers.userId, userId))
+        .orderBy(desc(matches.startedAt)),
+      db
+        .select({
+          createdAt: sessions.createdAt,
+          expiresAt: sessions.expiresAt,
+          ipAddress: sessions.ipAddress,
+          userAgent: sessions.userAgent,
+        })
+        .from(sessions)
+        .where(eq(sessions.userId, userId)),
+    ])
 
   return {
     exportedAt: now.toISOString(),
@@ -112,7 +127,10 @@ export async function buildAccountExport(db: Database, userId: string, now: Date
     linkedAccounts: linked,
     passkeys: keys,
     legalAcceptances: acceptances,
+    /** OpenSkill ratings: the hidden shadow pool (bot games) and retired public ratings. */
     ratings: userRatings,
+    /** Public Elo ratings from ranked games. */
+    eloRatings: userElo,
     matchHistory: history,
     sessions: activeSessions,
   }

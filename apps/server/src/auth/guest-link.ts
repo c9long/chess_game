@@ -1,6 +1,7 @@
 import {
   type Database,
   type Executor,
+  eloRatings,
   legalAcceptances,
   matchPlayers,
   pendingGuestLinks,
@@ -31,6 +32,13 @@ export async function repointUserRows(tx: Executor, fromUserId: string, toUserId
     where g.user_id = ${fromUserId} and t.user_id = ${toUserId}
       and g.mode = t.mode and g.time_control = t.time_control and g.kind = t.kind`)
   await tx.update(ratings).set({ userId: toUserId }).where(eq(ratings.userId, fromUserId))
+  // Same for Elo: the target's existing bucket wins (guests never have Elo; a deletion
+  // re-keys to a fresh id with no rows of its own).
+  await tx.execute(sql`
+    delete from ${eloRatings} g using ${eloRatings} t
+    where g.user_id = ${fromUserId} and t.user_id = ${toUserId}
+      and g.mode = t.mode and g.time_control = t.time_control`)
+  await tx.update(eloRatings).set({ userId: toUserId }).where(eq(eloRatings.userId, fromUserId))
 }
 
 /**

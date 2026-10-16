@@ -96,8 +96,8 @@ describe('poolForGame', () => {
     botLevel: '1200',
   })
 
-  it('is public only with four registered humans', () => {
-    expect(poolForGame([human(0), human(1), human(2), human(3)])).toBe('public')
+  it('never feeds the retired public OpenSkill pool (public ratings are Elo)', () => {
+    expect(poolForGame([human(0), human(1), human(2), human(3)])).toBeNull()
   })
 
   it('is shadow for casual games with bots and at least one registered human', () => {

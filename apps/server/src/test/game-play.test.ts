@@ -1,5 +1,5 @@
 import { matchMaker } from '@colyseus/core'
-import { matchEvents, matches, matchPlayers, ratings } from '@game/db'
+import { eloRatings, matchEvents, matches, matchPlayers, ratings } from '@game/db'
 import type { MatchDetailResponse, MatchListResponse, RatingsResponse } from '@game/protocol'
 import { and, asc, eq } from 'drizzle-orm'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -33,10 +33,18 @@ afterAll(async () => {
 /** Seats everyone, picks civs, readies up and starts. */
 async function startGame(
   browsers: Browser[],
-  opts: { mode?: 'ffa' | 'teams'; bots?: { seat: 0 | 1 | 2 | 3; level: string }[] } = {},
+  opts: {
+    mode?: 'ffa' | 'teams'
+    ranked?: boolean
+    bots?: { seat: 0 | 1 | 2 | 3; level: string }[]
+  } = {},
 ): Promise<Player[]> {
   const [first, ...rest] = browsers
-  const host = await createLobby(first as Browser, { name: 'Game', mode: opts.mode ?? 'ffa' })
+  const host = await createLobby(first as Browser, {
+    name: 'Game',
+    mode: opts.mode ?? 'ffa',
+    ranked: opts.ranked ?? false,
+  })
   const players = [host]
   for (const b of rest) players.push(await joinLobby(b, host.room.roomId))
   for (const bot of opts.bots ?? []) host.send('addBot', bot)
@@ -53,16 +61,17 @@ async function startGame(
   return players
 }
 
-describe('a rated FFA game between four registered players', () => {
+describe('a ranked FFA game between four registered players', () => {
   let players: Player[]
   let browsers: Browser[]
   let matchId: string
 
   it('plays a full scripted game to a winner', async () => {
     browsers = await Promise.all([registered(h), registered(h), registered(h), registered(h)])
-    players = await startGame(browsers)
+    players = await startGame(browsers, { ranked: true })
     const host = players[0] as Player
     matchId = host.state.matchId
+    expect(host.state.ranked).toBe(true)
     expect(host.state.rated).toBe(true)
 
     // Illegal moves and moves out of turn are refused without changing anything.
@@ -126,19 +135,13 @@ describe('a rated FFA game between four registered players', () => {
     expect(mp.find((p) => p.placement === 1)?.finalStatus).toBe('active')
   })
 
-  it('updated public ratings only', async () => {
+  it('updated Elo only (no OpenSkill rows)', async () => {
     const db = h.server.ctx.db
-    const rows = await db
-      .select()
-      .from(ratings)
-      .where(eq(ratings.userId, (browsers[0] as Browser).userId))
+    const me = (browsers[0] as Browser).userId
+    expect(await db.select().from(ratings).where(eq(ratings.userId, me))).toEqual([])
+    const rows = await db.select().from(eloRatings).where(eq(eloRatings.userId, me))
     expect(rows).toHaveLength(1)
-    expect(rows[0]).toMatchObject({
-      kind: 'public',
-      mode: 'ffa',
-      timeControl: '10+0',
-      gamesPlayed: 1,
-    })
+    expect(rows[0]).toMatchObject({ mode: 'ffa', timeControl: '10+0', games: 1 })
   })
 
   it('shows up in match history, detail and ratings endpoints', async () => {

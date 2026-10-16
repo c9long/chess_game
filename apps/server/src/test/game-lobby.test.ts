@@ -119,6 +119,7 @@ describe('lobby browser and lobbies', () => {
       locked: false,
       phase: 'waiting',
       pickMode: 'blind',
+      ranked: false,
     })
     const other = await joinLobby(await guest(h), host.room.roomId)
     await waitFor(
@@ -268,7 +269,7 @@ describe('messages', () => {
   })
 
   it('answers reserved messages with not_implemented', async () => {
-    for (const type of ['resign', 'offerDraw', 'respondDraw', 'takebackRequest', 'chat.send']) {
+    for (const type of ['takebackRequest', 'takebackRespond', 'chat.send', 'chat.emote']) {
       const err = await host.expectError(type, {})
       expect(err).toEqual({ code: 'not_implemented', requestType: type })
     }

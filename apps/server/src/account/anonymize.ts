@@ -2,6 +2,7 @@ import { randomInt, randomUUID } from 'node:crypto'
 import {
   type Database,
   deletionLog,
+  eloRatings,
   legalAcceptances,
   matchPlayers,
   ratings,
@@ -39,6 +40,7 @@ async function hasSharedHistory(tx: Transaction, userId: string) {
         or(
           exists(tx.select().from(matchPlayers).where(eq(matchPlayers.userId, userId))),
           exists(tx.select().from(ratings).where(eq(ratings.userId, userId))),
+          exists(tx.select().from(eloRatings).where(eq(eloRatings.userId, userId))),
         ),
       ),
     )
@@ -47,10 +49,12 @@ async function hasSharedHistory(tx: Transaction, userId: string) {
 
 /**
  * The deletion itself (PLAN §5), inside the caller's transaction:
- * - `rekey`: match_players, ratings and legal_acceptances move to a fresh placeholder user
+ * - `rekey`: match_players, ratings, elo_ratings and legal_acceptances move to a fresh
+ *   placeholder user
  *   with a random id, which is never written to deletion_log or logs; IP hashes on the
  *   acceptances are cleared. Opponents' histories stay intact under "Deleted player #…".
- * - `erase`: the user's acceptances and ratings are deleted outright (guests with no games).
+ * - `erase`: the user's acceptances and ratings (OpenSkill and Elo) are deleted outright
+ *   (guests with no games).
  * Then the original users row is deleted, which cascades to sessions, credentials, passkeys,
  * 2FA secrets and device codes.
  */
@@ -87,6 +91,7 @@ async function removeUser(
   } else {
     await tx.delete(legalAcceptances).where(eq(legalAcceptances.userId, userId))
     await tx.delete(ratings).where(eq(ratings.userId, userId))
+    await tx.delete(eloRatings).where(eq(eloRatings.userId, userId))
   }
   // Password-reset and similar tokens store the user id as their value.
   await tx.delete(verifications).where(eq(verifications.value, userId))

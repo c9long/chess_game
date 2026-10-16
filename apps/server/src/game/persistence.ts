@@ -16,7 +16,7 @@ import { isUntimed } from '@game/protocol'
 import { type CivId, Game, type GameConfigInput, type Outcome } from '@game/rules'
 import { and, asc, eq, inArray, sql } from 'drizzle-orm'
 import type { Logger } from '../logger.ts'
-import { applyRatings, type RatedSeat, type RatingChange } from './ratings.ts'
+import { applyElo, applyRatings, type EloChange, type RatedSeat } from './ratings.ts'
 
 export type MatchEventType =
   | 'move'
@@ -28,9 +28,16 @@ export type MatchEventType =
   | 'disconnect'
   | 'reconnect'
   | 'game_end'
+  | 'resign'
+  | 'draw_offer'
+  | 'draw_response'
 
-/** Event types that are game actions; replaying them in seq order rebuilds the game. */
-export const ACTION_EVENT_TYPES = ['move', 'promotion', 'timeout', 'abandon'] as const
+/**
+ * Event types that are game actions; replaying them in seq order rebuilds the game. An
+ * agreed draw is replayed from its `game_end` row (payload `agreedDraw: true`); every other
+ * `game_end` row is derived from the action before it.
+ */
+export const ACTION_EVENT_TYPES = ['move', 'promotion', 'timeout', 'abandon', 'resign'] as const
 
 export interface EventRow {
   seat: number | null
@@ -52,6 +59,7 @@ export interface MatchPlayerInput {
 export interface StartMatchInput {
   mode: 'ffa' | 'teams'
   timeControl: string
+  /** Ranked lobby: the game gets Elo when it finishes (casual games never do). */
   rated: boolean
   rulesVersion: number
   startedAt: Date
@@ -68,16 +76,17 @@ export interface FinishInput {
   finalStatuses: string[]
   /** Defeat reason per seat, or null. */
   defeatReasons: (string | null)[]
-  /** Who is rated how (for OpenSkill). */
+  /** Who is rated how (Elo for ranked games, the hidden shadow pool for casual bot games). */
   ratingSeats: RatedSeat[]
 }
 
 export interface FinishResult {
   status: 'finished' | 'aborted'
   endReason: string
-  /** Whether the stored match is rated (false when no public rating could be applied). */
+  /** Whether the stored match is rated (false when its Elo could not be applied). */
   rated: boolean
-  ratingChanges: RatingChange[]
+  /** Elo changes per seat (ranked games only; shadow changes are never reported). */
+  ratingChanges: EloChange[]
 }
 
 /** Civ slug <-> id lookup (the catalog is tiny; refreshed every minute). */
@@ -165,6 +174,7 @@ export class MatchRecorder {
           mode: input.mode,
           timeControl: input.timeControl,
           rated: input.rated,
+          ranked: input.rated,
           rulesVersion: input.rulesVersion,
           startedAt: input.startedAt,
         })
@@ -268,57 +278,7 @@ export class MatchRecorder {
       return this.#abortWithRetry('resimulation_mismatch', input.endedAt)
     }
     try {
-      return await this.db.transaction(async (tx): Promise<FinishResult> => {
-        const [row] = await tx
-          .select({ status: matches.status, endReason: matches.endReason })
-          .from(matches)
-          .where(eq(matches.id, this.matchId))
-          .for('update')
-        if (row?.status !== 'in_progress') {
-          this.logger.warn(
-            { matchId: this.matchId, status: row?.status, endReason: row?.endReason },
-            'match no longer in progress: result not recorded',
-          )
-          return {
-            status: 'aborted',
-            endReason: row?.endReason ?? 'aborted',
-            rated: false,
-            ratingChanges: [],
-          }
-        }
-        // Untimed (solo) games touch no rating at all, public or shadow.
-        const changes =
-          !isUntimed(this.input.timeControl) &&
-          (this.input.rated || input.ratingSeats.some((s) => s.botLevel))
-            ? await applyRatings(
-                tx,
-                { mode: this.input.mode, timeControl: this.input.timeControl },
-                input.ratingSeats,
-              )
-            : []
-        // A rated game whose public ratings couldn't be applied (e.g. an account deleted
-        // mid-game) is stored and reported as unrated.
-        const rated = this.input.rated && changes.some((c) => c.pool === 'public')
-        for (let seat = 0; seat < 4; seat++) {
-          const change = changes.find((c) => c.seat === seat && c.pool === 'public')
-          await tx
-            .update(matchPlayers)
-            .set({
-              finalStatus: input.finalStatuses[seat] ?? null,
-              placement: input.outcome.placements[seat] ?? null,
-              defeatReason: input.defeatReasons[seat] ?? null,
-              defeatSeq: this.defeatSeq[seat] ?? null,
-              ratingBefore: change?.before ?? null,
-              ratingAfter: change?.after ?? null,
-            })
-            .where(and(eq(matchPlayers.matchId, this.matchId), eq(matchPlayers.seat, seat)))
-        }
-        await tx
-          .update(matches)
-          .set({ status: 'finished', rated, endedAt: input.endedAt, endReason: input.endReason })
-          .where(eq(matches.id, this.matchId))
-        return { status: 'finished', endReason: input.endReason, rated, ratingChanges: changes }
-      })
+      return await retryOnConflict(() => this.#recordResult(input))
     } catch (err) {
       this.logger.error(
         { matchId: this.matchId, err: (err as Error).message },
@@ -326,6 +286,61 @@ export class MatchRecorder {
       )
       return this.#abortWithRetry('persist_failed', input.endedAt)
     }
+  }
+
+  /** One attempt at recording the result (placements, ratings, finished) in a transaction. */
+  #recordResult(input: FinishInput): Promise<FinishResult> {
+    return this.db.transaction(async (tx): Promise<FinishResult> => {
+      const [row] = await tx
+        .select({ status: matches.status, endReason: matches.endReason })
+        .from(matches)
+        .where(eq(matches.id, this.matchId))
+        .for('update')
+      if (row?.status !== 'in_progress') {
+        this.logger.warn(
+          { matchId: this.matchId, status: row?.status, endReason: row?.endReason },
+          'match no longer in progress: result not recorded',
+        )
+        return {
+          status: 'aborted',
+          endReason: row?.endReason ?? 'aborted',
+          rated: false,
+          ratingChanges: [],
+        }
+      }
+      // Untimed (solo) games touch no rating at all, Elo or shadow. Ranked games get Elo;
+      // casual games with bots feed the hidden shadow pool; other casual games nothing.
+      const game = { mode: this.input.mode, timeControl: this.input.timeControl }
+      let changes: EloChange[] = []
+      if (!isUntimed(this.input.timeControl)) {
+        if (this.input.rated) changes = await applyElo(tx, game, input.ratingSeats)
+        else if (input.ratingSeats.some((s) => s.botLevel)) {
+          await applyRatings(tx, game, input.ratingSeats)
+        }
+      }
+      // A ranked game whose Elo couldn't be applied (e.g. an account deleted mid-game) is
+      // stored and reported as unrated.
+      const rated = this.input.rated && changes.length > 0
+      for (let seat = 0; seat < 4; seat++) {
+        const change = changes.find((c) => c.seat === seat)
+        await tx
+          .update(matchPlayers)
+          .set({
+            finalStatus: input.finalStatuses[seat] ?? null,
+            placement: input.outcome.placements[seat] ?? null,
+            defeatReason: input.defeatReasons[seat] ?? null,
+            defeatSeq: this.defeatSeq[seat] ?? null,
+            ratingBefore: change?.before ?? null,
+            ratingAfter: change?.after ?? null,
+          })
+          .where(and(eq(matchPlayers.matchId, this.matchId), eq(matchPlayers.seat, seat)))
+      }
+      await tx
+        .update(matches)
+        .set({ status: 'finished', rated, endedAt: input.endedAt, endReason: input.endReason })
+        .where(eq(matches.id, this.matchId))
+      return { status: 'finished', endReason: input.endReason, rated, ratingChanges: changes }
+    })
   }
 
   /** Marks the match aborted (unrated), e.g. when a shutdown cuts a game short. */
@@ -357,6 +372,30 @@ export class MatchRecorder {
         if (i >= attempts) throw err
         await new Promise((r) => setTimeout(r, 100 * i))
       }
+    }
+  }
+}
+
+/** Postgres SQLSTATEs worth retrying a whole transaction for: deadlock, serialization failure. */
+const RETRYABLE_SQLSTATES = new Set(['40P01', '40001'])
+
+function sqlState(err: unknown): string | undefined {
+  for (let e = err as { code?: unknown; cause?: unknown } | undefined, i = 0; e && i < 4; i++) {
+    if (typeof e.code === 'string') return e.code
+    e = e.cause as typeof e
+  }
+  return undefined
+}
+
+/** Runs `fn` (a whole transaction), retrying it a few times on a deadlock or serialization failure. */
+export async function retryOnConflict<T>(fn: () => Promise<T>, attempts = 4): Promise<T> {
+  for (let i = 1; ; i++) {
+    try {
+      return await fn()
+    } catch (err) {
+      const code = sqlState(err)
+      if (i >= attempts || !code || !RETRYABLE_SQLSTATES.has(code)) throw err
+      await new Promise((r) => setTimeout(r, 25 * i + Math.random() * 50))
     }
   }
 }
@@ -408,7 +447,10 @@ export async function resimulate(db: Executor, matchId: string): Promise<string>
     })
     .from(matchEvents)
     .where(
-      and(eq(matchEvents.matchId, matchId), inArray(matchEvents.type, [...ACTION_EVENT_TYPES])),
+      and(
+        eq(matchEvents.matchId, matchId),
+        inArray(matchEvents.type, [...ACTION_EVENT_TYPES, 'game_end']),
+      ),
     )
     .orderBy(asc(matchEvents.seq))
   const game = Game.create(config)
@@ -422,6 +464,10 @@ export async function resimulate(db: Executor, matchId: string): Promise<string>
         game.applyTimeout(seat)
       } else if (a.type === 'abandon' && seat) {
         game.applyAbandon(seat)
+      } else if (a.type === 'resign' && seat) {
+        game.applyResign(seat)
+      } else if (a.type === 'game_end' && (a.payload as { agreedDraw?: unknown }).agreedDraw) {
+        game.applyAgreedDraw()
       }
     }
     return game.positionString()
