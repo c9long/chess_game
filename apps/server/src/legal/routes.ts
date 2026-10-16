@@ -58,6 +58,9 @@ export function requireCurrentAcceptance(db: Database) {
   }
 }
 
+/** For development diagnostics: tells a restart apart from a long-running server. */
+const SERVER_STARTED_AT = new Date().toISOString()
+
 export function legalRouter({ config, db, auth }: { config: AppConfig; db: Database; auth: Auth }) {
   const router = Router()
 
@@ -80,6 +83,18 @@ export function legalRouter({ config, db, auth }: { config: AppConfig; db: Datab
       ageConfirmed: session ? Boolean(session.user.ageConfirmed) : Boolean(gate.ageOk),
       ageBand: (session ? session.user.ageBand : gate.ageOk?.band) ?? null,
       blocked: gate.blocked,
+      // Development only: why the age screen would or wouldn't show (no secrets or values).
+      ...(config.env === 'development'
+        ? {
+            diagnostics: {
+              sessionFound: Boolean(session),
+              accountAgeConfirmed: session ? Boolean(session.user.ageConfirmed) : null,
+              ageCookiePresent: (req.headers.cookie ?? '').includes(`${AGE_OK_COOKIE}=`),
+              ageCookieValid: Boolean(gate.ageOk),
+              serverStartedAt: SERVER_STARTED_AT,
+            },
+          }
+        : {}),
     })
   })
 
