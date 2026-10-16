@@ -137,7 +137,7 @@ for (const size of sizes) {
   })
 }
 
-test('ux solo Teams resign dialog + frozen + game over, 1920', async ({ browser }) => {
+test('ux solo Teams resign dialog + bot teammate declines, 1920', async ({ browser }) => {
   test.skip(!OUT, 'UX_SHOTS not set')
   test.setTimeout(240_000)
   const ctx = await browser.newContext({ viewport: { width: 1920, height: 1080 } })
@@ -157,10 +157,12 @@ test('ux solo Teams resign dialog + frozen + game over, 1920', async ({ browser 
   await page.getByTestId('resign').click()
   await shot(page, 'solo-teams-resign-dialog')
   await page.getByTestId('resign-confirm').click()
-  await shot(page, 'solo-teams-after-resign')
+  // The North bot declines in an even position: both play on.
+  await expect(page.getByTestId('team-resign-outcome')).toContainText('declined to resign', {
+    timeout: 15_000,
+  })
+  await shot(page, 'solo-teams-resign-declined')
   await page.setViewportSize({ width: 1280, height: 800 })
-  await shot(page, 'solo-teams-after-resign-1280')
-  await expect(page.getByTestId('game-over')).toBeVisible({ timeout: 200_000 })
-  await shot(page, 'solo-teams-gameover-1280')
+  await shot(page, 'solo-teams-resign-declined-1280')
   await ctx.close()
 })
