@@ -196,19 +196,33 @@ pub fn apply_abandon(state: &mut GameState, seat: Seat) -> Result<Vec<GameEvent>
 }
 
 /// A seat that still takes turns resigned. Allowed at any time, not only on
-/// its own turn. The effect is exactly that of a timeout, with
-/// [`DefeatReason::Resign`]: FFA — the seat is REMOVED (army off the board);
-/// Teams — the seat is FROZEN (pieces stay but never move; the partner plays
-/// on). An ACTIVE seat is recorded as defeated (`Defeat` event); a DEFEATED
-/// Teams seat keeps its original defeat record and just freezes (`Frozen`
-/// event only). If it was that seat's turn, the turn advances; otherwise the
-/// turn of the seat on move is re-resolved. The game may end (last ACTIVE
-/// seat in FFA, a team without an ACTIVE seat in Teams).
+/// its own turn.
+///
+/// * **FFA** — exactly a timeout with [`DefeatReason::Resign`]: the seat is
+///   REMOVED (army off the board, `Defeat` + `ArmyRemoved`). If it was that
+///   seat's turn, the turn advances; otherwise the turn of the seat on move is
+///   re-resolved. The game ends when one ACTIVE seat is left.
+/// * **Teams** — the seat's **whole team** resigns, and the game ends at once
+///   with the other team winning (winners place 1st, the resigning team 2nd;
+///   the resigning team's pieces are removed as at any Teams win). Every team
+///   seat still taking turns leaves play, the resigning seat first, then its
+///   partner: an ACTIVE seat is recorded as defeated ([`DefeatReason::Resign`],
+///   `Defeat` event) and freezes (`Frozen` event); a DEFEATED seat still
+///   playing freezes and its defeat record's reason becomes
+///   [`DefeatReason::Resign`] (it keeps its place in the defeat order; no new
+///   `Defeat` event). A partner already FROZEN did not vote and stays as it
+///   is, reason included. The engine never asks the partner: the
+///   caller (the server) collects the partner's consent first, and resigns
+///   immediately when the partner no longer takes turns. A single Teams seat
+///   leaving on its own is [`apply_abandon`] or [`apply_timeout`].
 ///
 /// Errors: [`RulesError::GameOver`] once the game has ended,
 /// [`RulesError::SeatNotInPlay`] for a REMOVED or FROZEN seat.
 pub fn apply_resign(state: &mut GameState, seat: Seat) -> Result<Vec<GameEvent>, RulesError> {
-    leave_any_time(state, seat, DefeatReason::Resign)
+    match state.mode() {
+        GameMode::Ffa => leave_any_time(state, seat, DefeatReason::Resign),
+        GameMode::Teams => resign_team(state, seat),
+    }
 }
 
 /// The seats whose agreement a draw needs, indexed by [`Seat::index`]: every
@@ -246,8 +260,8 @@ pub fn apply_agreed_draw(state: &mut GameState) -> Result<Vec<GameEvent>, RulesE
 // Internals
 // ---------------------------------------------------------------------------
 
-/// Abandon / resign: a seat that still takes turns leaves play, on its turn
-/// or not.
+/// Abandon / FFA resign: a seat that still takes turns leaves play, on its
+/// turn or not.
 fn leave_any_time(
     state: &mut GameState,
     seat: Seat,
@@ -269,6 +283,51 @@ fn leave_any_time(
             // The seat on move may have lost its only moves (e.g. an en
             // passant capture of the departed seat's pawn): re-resolve.
             settle_turn(state, &mut events);
+        }
+    }
+    Ok(events)
+}
+
+/// Teams resignation: every seat of `seat`'s team that still takes turns
+/// leaves play (resigner first), then the game ends with the other team
+/// winning.
+fn resign_team(state: &mut GameState, seat: Seat) -> Result<Vec<GameEvent>, RulesError> {
+    if state.is_over() {
+        return Err(RulesError::GameOver);
+    }
+    if !state.takes_turns(seat) {
+        return Err(RulesError::SeatNotInPlay(seat));
+    }
+    let partner = seat.partner();
+    let mut events = Vec::new();
+    for s in [seat, partner] {
+        if state.takes_turns(s) {
+            let already_defeated = state.status(s) == SeatStatus::Defeated;
+            retire(state, s, DefeatReason::Resign, &mut events);
+            // A DEFEATED seat still playing took part in the vote, so it is
+            // recorded as resigned too (it keeps its place in the defeat
+            // order). A FROZEN partner did not vote and keeps its reason.
+            if already_defeated {
+                state.defeats.set_reason(s, DefeatReason::Resign);
+            }
+        }
+    }
+    // The resigning team has no ACTIVE seat left, so this always ends the
+    // game (the other team still has one: the game was not over).
+    match outcome::elimination_outcome(state) {
+        Some(o) => finish(state, o, &mut events),
+        None => {
+            // Unreachable for consistent states; resolve the turn as after
+            // any departure rather than leave a seat that no longer plays on
+            // move.
+            debug_assert!(false, "a Teams resignation must end the game");
+            if !check_move_limit(state, &mut events) {
+                if state.takes_turns(state.seat_to_move()) {
+                    settle_turn(state, &mut events);
+                } else {
+                    advance(state, &mut events);
+                }
+            }
         }
     }
     Ok(events)
@@ -415,14 +474,22 @@ fn clear_castling_at(state: &mut GameState, sq: crate::geometry::Square) {
 }
 
 /// Takes `seat` out of ACTIVE status (or freezes a DEFEATED Teams seat on a
-/// clock loss or resignation), records the defeat, applies FFA removal / Teams freezing and
-/// ends the game if a seat or team is eliminated.
+/// clock loss, abandon or resignation), records the defeat, applies FFA
+/// removal / Teams freezing and ends the game if a seat or team is eliminated.
 fn leave_play(
     state: &mut GameState,
     seat: Seat,
     reason: DefeatReason,
     events: &mut Vec<GameEvent>,
 ) {
+    retire(state, seat, reason, events);
+    if let Some(o) = outcome::elimination_outcome(state) {
+        finish(state, o, events);
+    }
+}
+
+/// [`leave_play`] without the end-of-game check.
+fn retire(state: &mut GameState, seat: Seat, reason: DefeatReason, events: &mut Vec<GameEvent>) {
     let was_active = state.status(seat) == SeatStatus::Active;
     if was_active {
         state.defeats.push(DefeatRecord { seat, reason });
@@ -446,9 +513,6 @@ fn leave_play(
         }
         SeatStatus::Frozen => events.push(GameEvent::Frozen { seat }),
         _ => {}
-    }
-    if let Some(o) = outcome::elimination_outcome(state) {
-        finish(state, o, events);
     }
 }
 

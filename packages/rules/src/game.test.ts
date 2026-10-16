@@ -188,29 +188,28 @@ describe('Game', () => {
     game.free()
   })
 
-  it('handles resignation in Teams (player only, any time)', () => {
+  it('handles resignation in Teams (the whole team, any time)', () => {
     const game = Game.create({ mode: 'teams' })
     expect(game.drawVoters()).toEqual([true, true, true, true])
-    // North resigns while South is on move: frozen, South keeps the turn.
-    expect(game.applyResign('north')).toEqual([
+    expect(() => game.applyResign('up' as never)).toThrow('invalid seat "up"')
+    // North resigns while South is on move: North and South both resign, West–East win.
+    const events = game.applyResign('north')
+    validateEvents(events)
+    expect(events).toEqual([
       { type: 'defeat', seat: 'north', reason: 'resign' },
       { type: 'frozen', seat: 'north' },
+      { type: 'defeat', seat: 'south', reason: 'resign' },
+      { type: 'frozen', seat: 'south' },
+      { type: 'army_removed', seat: 'south' },
+      { type: 'army_removed', seat: 'north' },
+      {
+        type: 'game_ended',
+        outcome: { result: { type: 'teams_winner', team: 'west_east' }, placements: [2, 1, 2, 1] },
+      },
     ])
-    let s = snap(game)
-    expect(s.seatToMove).toBe('south')
-    expect(s.statuses).toEqual(['active', 'active', 'frozen', 'active'])
-    expect(s.board.filter((p) => p?.owner === 'north')).toHaveLength(16)
-    expect(game.drawVoters()).toEqual([true, true, false, true])
-    expect(() => game.applyResign('north')).toThrow('north no longer takes turns')
-    expect(() => game.applyResign('up' as never)).toThrow('invalid seat "up"')
-    // South resigns on its own turn: its team has no active player left.
-    const events = game.applyResign('south')
-    validateEvents(events)
-    expect(events.at(-1)).toEqual({
-      type: 'game_ended',
-      outcome: { result: { type: 'teams_winner', team: 'west_east' }, placements: [2, 1, 2, 1] },
-    })
-    s = snap(game)
+    const s = snap(game)
+    expect(s.isOver).toBe(true)
+    expect(s.statuses).toEqual(['frozen', 'active', 'frozen', 'active'])
     expect(s.defeats).toEqual([
       { seat: 'north', reason: 'resign' },
       { seat: 'south', reason: 'resign' },

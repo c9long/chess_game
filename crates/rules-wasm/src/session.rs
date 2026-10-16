@@ -97,7 +97,8 @@ impl Session {
     }
 
     /// A seat that still takes turns resigned (any time); returns the events
-    /// as JSON.
+    /// as JSON. FFA: that seat's army is removed. Teams: its whole team
+    /// resigns and the game ends (the caller collected the partner's consent).
     pub fn apply_resign(&mut self, seat: &str) -> Result<String, String> {
         let seat = parse_seat(seat)?;
         self.events = apply_resign(&mut self.state, seat).map_err(|e| e.to_string())?;
@@ -425,26 +426,21 @@ mod tests {
 
     #[test]
     fn resign_and_agreed_draw() {
-        // Teams: North resigns off turn and freezes; South keeps the turn.
+        // Teams: North leaves alone (abandon) and freezes; South keeps the turn.
         let mut s = Session::from_config_json(r#"{"mode":"teams"}"#).unwrap();
         assert_eq!(
             parse(&s.draw_voters_json()),
             json!([true, true, true, true])
         );
-        let ev = parse(&s.apply_resign("north").unwrap());
+        let ev = parse(&s.apply_abandon("north").unwrap());
         assert_eq!(
             ev,
             json!([
-                {"type": "defeat", "seat": "north", "reason": "resign"},
+                {"type": "defeat", "seat": "north", "reason": "abandon"},
                 {"type": "frozen", "seat": "north"}
             ])
         );
-        let snap = parse(&s.snapshot_json());
-        assert_eq!(snap["seatToMove"], "south");
-        assert_eq!(
-            snap["defeats"],
-            json!([{"seat": "north", "reason": "resign"}])
-        );
+        assert_eq!(parse(&s.snapshot_json())["seatToMove"], "south");
         assert_eq!(
             parse(&s.draw_voters_json()),
             json!([true, true, false, true])
@@ -474,6 +470,33 @@ mod tests {
         let back = Session::from_position(&text).unwrap();
         assert_eq!(back.state(), s.state());
         assert_eq!(back.snapshot_json(), s.snapshot_json());
+
+        // Teams: a resignation (off turn) resigns the whole team; the other
+        // team wins.
+        let mut s = Session::from_config_json(r#"{"mode":"teams"}"#).unwrap();
+        let ev = parse(&s.apply_resign("north").unwrap());
+        assert_eq!(
+            ev,
+            json!([
+                {"type": "defeat", "seat": "north", "reason": "resign"},
+                {"type": "frozen", "seat": "north"},
+                {"type": "defeat", "seat": "south", "reason": "resign"},
+                {"type": "frozen", "seat": "south"},
+                {"type": "army_removed", "seat": "south"},
+                {"type": "army_removed", "seat": "north"},
+                {"type": "game_ended", "outcome": {
+                    "result": {"type": "teams_winner", "team": "west_east"},
+                    "placements": [2, 1, 2, 1]
+                }}
+            ])
+        );
+        let snap = parse(&s.snapshot_json());
+        assert_eq!(
+            snap["defeats"],
+            json!([{"seat": "north", "reason": "resign"}, {"seat": "south", "reason": "resign"}])
+        );
+        let back = Session::from_position(&s.position_string()).unwrap();
+        assert_eq!(back.state(), s.state());
 
         // FFA: survivors share 1st, the resigned seat is last.
         let mut s = Session::from_config_json(r#"{"mode":"ffa"}"#).unwrap();

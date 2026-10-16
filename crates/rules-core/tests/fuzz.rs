@@ -155,7 +155,6 @@ fn play_game(seed: u64, game: usize, stats: &mut Stats, full_checks: bool) -> Ga
                     if seat != mover {
                         stats.resigns_off_turn += 1;
                     }
-                    // Exactly like a timeout, with reason Resign.
                     let defeat = GameEvent::Defeat {
                         seat,
                         reason: DefeatReason::Resign,
@@ -167,27 +166,42 @@ fn play_game(seed: u64, game: usize, stats: &mut Stats, full_checks: bool) -> Ga
                         stats.resigns_by_defeated += 1;
                         assert_eq!(s.mode(), GameMode::Teams);
                         assert_eq!(ev.first(), Some(&GameEvent::Frozen { seat }));
-                        assert_eq!(s.defeats().reason(seat), before.defeats().reason(seat));
+                        // A DEFEATED seat still playing is recorded as resigned too.
+                        assert_eq!(s.defeats().reason(seat), Some(DefeatReason::Resign));
                     }
-                    let left = match s.mode() {
-                        GameMode::Ffa => GameEvent::ArmyRemoved { seat },
-                        GameMode::Teams => GameEvent::Frozen { seat },
-                    };
-                    assert!(ev.contains(&left));
                     assert!(!s.takes_turns(seat));
-                    if seat == mover {
-                        // Same result as a timeout, apart from the reason.
-                        let mut via_timeout = before.clone();
-                        apply_timeout(&mut via_timeout, seat).unwrap();
-                        assert_eq!(via_timeout.statuses(), s.statuses());
-                        assert_eq!(via_timeout.seat_to_move(), s.seat_to_move());
-                        assert_eq!(via_timeout.board(), s.board());
-                        assert_eq!(via_timeout.ply(), s.ply());
-                        assert_eq!(via_timeout.no_progress(), s.no_progress());
-                        assert_eq!(
-                            via_timeout.outcome().map(|o| o.placements),
-                            s.outcome().map(|o| o.placements)
-                        );
+                    match s.mode() {
+                        GameMode::Ffa => {
+                            assert!(ev.contains(&GameEvent::ArmyRemoved { seat }));
+                            if seat == mover {
+                                // Exactly like a timeout, apart from the reason.
+                                let mut via_timeout = before.clone();
+                                apply_timeout(&mut via_timeout, seat).unwrap();
+                                assert_eq!(via_timeout.statuses(), s.statuses());
+                                assert_eq!(via_timeout.seat_to_move(), s.seat_to_move());
+                                assert_eq!(via_timeout.board(), s.board());
+                                assert_eq!(via_timeout.ply(), s.ply());
+                                assert_eq!(via_timeout.no_progress(), s.no_progress());
+                                assert_eq!(
+                                    via_timeout.outcome().map(|o| o.placements),
+                                    s.outcome().map(|o| o.placements)
+                                );
+                            }
+                        }
+                        GameMode::Teams => {
+                            // The whole team resigns; the other team wins at once.
+                            assert!(ev.contains(&GameEvent::Frozen { seat }));
+                            let o = *s.outcome().expect("a Teams resignation ends the game");
+                            assert_eq!(
+                                o.result,
+                                GameResult::TeamsWinner {
+                                    team: seat.team().other()
+                                }
+                            );
+                            assert!(!s.takes_turns(seat.partner()));
+                            assert_eq!(s.pieces_of(seat).count(), 0);
+                            assert_eq!(s.pieces_of(seat.partner()).count(), 0);
+                        }
                     }
                     events = ev;
                 }

@@ -1,12 +1,16 @@
 //! Adversarial, spec-derived tests for resignation and draw by agreement.
 //!
 //! Spec (task + docs/PLAN.md §2 + docs/RULES.md):
-//! * Resign: any seat that still takes turns, any time. Effect = timeout with
-//!   reason Resign (FFA removed, Teams frozen). Own turn → turn advances
-//!   (stalemate / auto-pass resolution as after timeouts). Off turn → the
-//!   seat on move is re-checked. Game may end. Errors after the end or for a
-//!   seat no longer taking turns. ACTIVE → Defeat{Resign} + ArmyRemoved/Frozen;
-//!   DEFEATED Teams seat → Frozen only.
+//! * Resign: any seat that still takes turns, any time. Errors after the end
+//!   or for a seat no longer taking turns.
+//!   - FFA: effect = timeout with reason Resign (army removed). Own turn →
+//!     turn advances (stalemate resolution as after timeouts). Off turn → the
+//!     seat on move is re-checked. Game may end. Defeat{Resign} + ArmyRemoved.
+//!   - Teams: the whole team resigns (the server collected the partner's
+//!     consent) and the game ends at once, the other team winning. Each team
+//!     seat still taking turns freezes, resigner first: ACTIVE →
+//!     Defeat{Resign} + Frozen; DEFEATED → Frozen only. A single Teams seat
+//!     leaving on its own is an abandon (used below to set up frozen seats).
 //! * En passant target is cleared when the seat stops taking turns.
 //! * Agreed draw: FFA survivors tie for best place, defeated keep reverse
 //!   defeat order; Teams everyone 1st. Voters = seats still taking turns.
@@ -99,15 +103,21 @@ fn resign_is_not_a_turn_and_resets_no_progress() {
         apply_resign(&mut s, Seat::North).unwrap();
         assert_eq!(s.ply(), ply, "{mode:?}: resign must not count as a turn");
         assert_eq!(s.no_progress(), 0, "{mode:?}: a defeat resets no-progress");
-        assert_eq!(s.seat_to_move(), Seat::West);
-        assert_eq!(s.move_limit(), 75);
+        if mode == GameMode::Ffa {
+            assert_eq!(s.seat_to_move(), Seat::West);
+            assert_eq!(s.move_limit(), 75);
+        } else {
+            // Teams: North's whole team resigned; the game is over.
+            assert!(s.is_over());
+        }
         full_check(&s);
     }
 }
 
 #[test]
-fn own_turn_resign_equals_timeout_in_both_modes() {
-    for mode in [GameMode::Ffa, GameMode::Teams] {
+fn own_turn_resign_equals_timeout_in_ffa() {
+    {
+        let mode = GameMode::Ffa;
         let mut s = start(mode);
         play(&mut s, "e2e4");
         let mut a = s.clone();
@@ -135,6 +145,29 @@ fn own_turn_resign_equals_timeout_in_both_modes() {
         assert_eq!(a.defeats().reason(Seat::West), Some(DefeatReason::Resign));
         full_check(&a);
     }
+}
+
+#[test]
+fn own_turn_resign_in_teams_differs_from_timeout() {
+    // A Teams timeout freezes one seat and the partner plays on; a Teams
+    // resignation takes the whole team out and ends the game.
+    let mut s = start(GameMode::Teams);
+    play(&mut s, "e2e4");
+    let mut a = s.clone();
+    let mut b = s.clone();
+    apply_resign(&mut a, Seat::West).unwrap();
+    apply_timeout(&mut b, Seat::West).unwrap();
+    assert!(a.is_over() && !b.is_over());
+    assert_eq!(a.status(Seat::East), SeatStatus::Frozen);
+    assert_eq!(b.status(Seat::East), SeatStatus::Active);
+    assert_eq!(
+        a.outcome().map(|o| o.result),
+        Some(GameResult::TeamsWinner {
+            team: Team::SouthNorth
+        })
+    );
+    full_check(&a);
+    full_check(&b);
 }
 
 // ---------------------------------------------------------------------------
@@ -185,20 +218,21 @@ fn ffa_off_turn_resign_of_ep_victim_stalemates_seat_on_move() {
 }
 
 #[test]
-fn teams_off_turn_resign_clears_ep_target_and_stalemates_seat_on_move() {
-    // Teams: West freezes, its pawn stays on d5, but its en passant target is
-    // cleared because West stopped taking turns -> South has no move.
+fn teams_off_turn_abandon_clears_ep_target_and_stalemates_seat_on_move() {
+    // Teams: West leaves alone (abandon) and freezes, its pawn stays on d5,
+    // but its en passant target is cleared because West stopped taking turns
+    // -> South has no move.
     let mut pieces = EP_TRAP.to_vec();
     pieces.push("nKg12");
     let mut s = build("teams", &pieces, "S AAAA - Wc5 0 0");
     assert_eq!(move_strings(&s), vec!["b4c5"]);
-    let ev = apply_resign(&mut s, Seat::West).unwrap();
+    let ev = apply_abandon(&mut s, Seat::West).unwrap();
     assert_eq!(
         ev,
         vec![
             GameEvent::Defeat {
                 seat: Seat::West,
-                reason: DefeatReason::Resign
+                reason: DefeatReason::Abandon
             },
             GameEvent::Frozen { seat: Seat::West },
             GameEvent::Defeat {
@@ -229,18 +263,18 @@ fn teams_off_turn_resign_clears_ep_target_and_stalemates_seat_on_move() {
 }
 
 #[test]
-fn teams_off_turn_resign_makes_defeated_seat_on_move_pass() {
+fn teams_off_turn_abandon_makes_defeated_seat_on_move_pass() {
     let mut pieces = EP_TRAP.to_vec();
     pieces.push("nKg12");
     let mut s = build("teams", &pieces, "S DAAA - Wc5 7 30 def=Sl");
     assert_eq!(move_strings(&s), vec!["b4c5"]);
-    let ev = apply_resign(&mut s, Seat::West).unwrap();
+    let ev = apply_abandon(&mut s, Seat::West).unwrap();
     assert_eq!(
         ev,
         vec![
             GameEvent::Defeat {
                 seat: Seat::West,
-                reason: DefeatReason::Resign
+                reason: DefeatReason::Abandon
             },
             GameEvent::Frozen { seat: Seat::West },
             GameEvent::Pass { seat: Seat::South },
@@ -334,13 +368,9 @@ fn teams_resign_with_frozen_partner_ends_game_and_removes_both_armies() {
 }
 
 #[test]
-fn teams_both_players_resign_one_by_one() {
+fn teams_one_resign_ends_the_game_for_both_partners() {
     let mut s = start(GameMode::Teams);
-    apply_resign(&mut s, Seat::East).unwrap();
-    assert!(!s.is_over());
-    assert_eq!(draw_voters(&s), [true, true, true, false]);
-    full_check(&s);
-    let ev = apply_resign(&mut s, Seat::West).unwrap();
+    let ev = apply_resign(&mut s, Seat::East).unwrap(); // off turn
     let o = ended(&ev).unwrap();
     assert_eq!(
         o.result,
@@ -352,6 +382,29 @@ fn teams_both_players_resign_one_by_one() {
     assert_eq!(s.pieces_of(Seat::West).count(), 0);
     assert_eq!(s.pieces_of(Seat::East).count(), 0);
     assert_eq!(s.pieces_of(Seat::South).count(), 16);
+    assert_eq!(s.defeats().reason(Seat::East), Some(DefeatReason::Resign));
+    assert_eq!(s.defeats().reason(Seat::West), Some(DefeatReason::Resign));
+    assert_eq!(draw_voters(&s), [false; 4]);
+    full_check(&s);
+}
+
+#[test]
+fn teams_abandon_then_resign_by_the_partner() {
+    let mut s = start(GameMode::Teams);
+    apply_abandon(&mut s, Seat::East).unwrap();
+    assert!(!s.is_over());
+    assert_eq!(draw_voters(&s), [true, true, true, false]);
+    full_check(&s);
+    let ev = apply_resign(&mut s, Seat::West).unwrap();
+    let o = ended(&ev).unwrap();
+    assert_eq!(
+        o.result,
+        GameResult::TeamsWinner {
+            team: Team::SouthNorth
+        }
+    );
+    assert_eq!(s.defeats().reason(Seat::East), Some(DefeatReason::Abandon));
+    assert_eq!(s.defeats().reason(Seat::West), Some(DefeatReason::Resign));
     full_check(&s);
 }
 
@@ -361,7 +414,16 @@ fn teams_both_players_resign_one_by_one() {
 
 #[test]
 fn double_resign_is_refused_in_both_modes() {
-    for mode in [GameMode::Ffa, GameMode::Teams] {
+    // Teams: the first resignation ends the game.
+    let mut s = start(GameMode::Teams);
+    apply_resign(&mut s, Seat::North).unwrap();
+    let before = s.clone();
+    for seat in Seat::ALL {
+        assert_eq!(apply_resign(&mut s, seat), Err(RulesError::GameOver));
+    }
+    assert_eq!(s, before);
+    {
+        let mode = GameMode::Ffa;
         let mut s = start(mode);
         apply_resign(&mut s, Seat::North).unwrap();
         let before = s.clone();
@@ -383,13 +445,13 @@ fn double_resign_is_refused_in_both_modes() {
 }
 
 #[test]
-fn teams_defeated_then_frozen_cannot_resign_again() {
+fn teams_defeated_then_frozen_cannot_resign() {
     let mut s = build(
         "teams",
         &["sKg1", "wKa7", "nRa12", "eKl7"],
         "W AADA - - 0 0 def=Nl",
     );
-    apply_resign(&mut s, Seat::North).unwrap();
+    apply_abandon(&mut s, Seat::North).unwrap();
     assert_eq!(s.status(Seat::North), SeatStatus::Frozen);
     let before = s.clone();
     assert_eq!(
@@ -415,7 +477,9 @@ fn resign_after_move_limit_end_is_refused() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn off_turn_resign_clears_only_the_resigners_ep_target() {
+fn off_turn_departure_clears_only_the_leavers_ep_target() {
+    // FFA: a resignation. Teams: a single seat leaving (abandon), since a
+    // Teams resignation ends the game.
     for mode in [GameMode::Ffa, GameMode::Teams] {
         let mut s = start(mode);
         play(&mut s, "c2c4");
@@ -423,7 +487,10 @@ fn off_turn_resign_clears_only_the_resigners_ep_target() {
         play(&mut s, "d11d9");
         assert_eq!(s.seat_to_move(), Seat::East);
         assert_eq!(ep_field(&s), "Sc3,Wc5,Nd10");
-        apply_resign(&mut s, Seat::West).unwrap();
+        match mode {
+            GameMode::Ffa => apply_resign(&mut s, Seat::West).unwrap(),
+            GameMode::Teams => apply_abandon(&mut s, Seat::West).unwrap(),
+        };
         assert_eq!(ep_field(&s), "Sc3,Nd10", "{mode:?}");
         assert!(s.ep_target(Seat::West).is_none());
         full_check(&s);
@@ -439,14 +506,14 @@ fn off_turn_resign_clears_only_the_resigners_ep_target() {
 }
 
 #[test]
-fn own_turn_resign_after_double_step_skip_expires_targets_on_the_walk() {
-    // Teams: West double-steps; North resigns; East and South move; when the
+fn own_turn_abandon_after_double_step_skip_expires_targets_on_the_walk() {
+    // Teams: West double-steps; North leaves; East and South move; when the
     // pointer reaches/skips North its (absent) target and West's expire as
     // normal.
     let mut s = start(GameMode::Teams);
     play(&mut s, "c2c4");
     play(&mut s, "b5d5");
-    apply_resign(&mut s, Seat::North).unwrap(); // off turn, North to move!
+    apply_abandon(&mut s, Seat::North).unwrap(); // North to move
     // North was on move: the turn advanced to East.
     assert_eq!(s.seat_to_move(), Seat::East);
     assert_eq!(ep_field(&s), "Sc3,Wc5");
@@ -455,7 +522,13 @@ fn own_turn_resign_after_double_step_skip_expires_targets_on_the_walk() {
 
 #[test]
 fn resign_clears_castling_of_resigner_only() {
-    for mode in [GameMode::Ffa, GameMode::Teams] {
+    // Teams: the whole resigning team loses its rights.
+    let mut s = start(GameMode::Teams);
+    apply_resign(&mut s, Seat::North).unwrap();
+    assert_eq!(castling_field(&s), "Wa3,Wa10,El3,El10");
+    full_check(&s);
+    {
+        let mode = GameMode::Ffa;
         let mut s = start(mode);
         assert_eq!(castling_field(&s), "Sc1,Sj1,Wa3,Wa10,Nc12,Nj12,El3,El10");
         apply_resign(&mut s, Seat::North).unwrap();
@@ -468,7 +541,7 @@ fn resign_clears_castling_of_resigner_only() {
 }
 
 #[test]
-fn teams_frozen_resigner_pieces_still_block_and_can_be_captured() {
+fn teams_frozen_pieces_still_block_and_can_be_captured() {
     let mut s = build(
         "teams",
         &["sKg1", "sRd1", "wKa7", "nKg12", "nRd5", "eKl7", "eRd12"],
@@ -476,7 +549,7 @@ fn teams_frozen_resigner_pieces_still_block_and_can_be_captured() {
     );
     // East's rook on d12 sees down to North's rook on d5? North is an enemy
     // of East, so East can capture it only after... (it is on move now).
-    apply_resign(&mut s, Seat::North).unwrap(); // off turn
+    apply_abandon(&mut s, Seat::North).unwrap(); // off turn
     assert_eq!(s.status(Seat::North), SeatStatus::Frozen);
     assert!(is_legal(&s, "d12d5"), "frozen pieces can be captured");
     assert!(!is_legal(&s, "d12d4"), "frozen pieces block");
@@ -572,7 +645,7 @@ fn teams_agreed_draw_with_defeated_and_frozen_seats() {
         &["sKg1", "wRa7", "nKg12", "eKl7", "eQl6"],
         "S ADAA - - 3 9 def=Wl",
     );
-    apply_resign(&mut s, Seat::North).unwrap(); // off turn
+    apply_abandon(&mut s, Seat::North).unwrap(); // off turn
     assert_eq!(draw_voters(&s), [true, true, false, true]);
     let ev = apply_agreed_draw(&mut s).unwrap();
     assert_eq!(ev.len(), 1);
@@ -598,9 +671,9 @@ fn voters_follow_every_status_change() {
     );
     // West is DEFEATED but still playing: it votes.
     assert_eq!(draw_voters(&s), [true, true, true, true]);
-    apply_resign(&mut s, Seat::West).unwrap(); // DEFEATED -> FROZEN
+    apply_abandon(&mut s, Seat::West).unwrap(); // DEFEATED -> FROZEN
     assert_eq!(draw_voters(&s), [true, false, true, true]);
-    apply_resign(&mut s, Seat::North).unwrap();
+    apply_abandon(&mut s, Seat::North).unwrap();
     assert_eq!(draw_voters(&s), [true, false, false, true]);
     for seat in Seat::ALL {
         assert_eq!(draw_voters(&s)[seat.index()], s.takes_turns(seat));
@@ -727,6 +800,10 @@ fn check_resign(
         return;
     }
     let ev = res.as_ref().unwrap();
+    if before.mode() == GameMode::Teams {
+        check_team_resign(before, after, seat, ev);
+        return;
+    }
     let was_active = before.status(seat) == SeatStatus::Active;
     let leave_ev = match before.mode() {
         GameMode::Ffa => GameEvent::ArmyRemoved { seat },
@@ -816,6 +893,61 @@ fn check_resign(
             after.outcome().map(|o| o.placements)
         );
     }
+}
+
+/// Teams: the resigner's whole team goes out and the other team wins at once.
+fn check_team_resign(before: &GameState, after: &GameState, seat: Seat, ev: &[GameEvent]) {
+    let team = seat.team();
+    let partner = seat.partner();
+    let o = ended(ev).expect("a Teams resignation ends the game");
+    assert!(matches!(ev.last(), Some(GameEvent::GameEnded { .. })));
+    assert_eq!(o.result, GameResult::TeamsWinner { team: team.other() });
+    for s2 in Seat::ALL {
+        let expected = if s2.team() == team { 2 } else { 1 };
+        assert_eq!(o.placements[s2.index()], expected);
+    }
+    assert_eq!(after.outcome(), Some(&o));
+    // Exactly the team's ACTIVE seats are newly defeated, resigner first.
+    let defeats: Vec<Seat> = ev
+        .iter()
+        .filter_map(|e| match e {
+            GameEvent::Defeat { seat: s2, reason } => {
+                assert_eq!(*reason, DefeatReason::Resign);
+                Some(*s2)
+            }
+            _ => None,
+        })
+        .collect();
+    let expected: Vec<Seat> = [seat, partner]
+        .into_iter()
+        .filter(|&s2| before.status(s2) == SeatStatus::Active)
+        .collect();
+    assert_eq!(defeats, expected);
+    for s2 in [seat, partner] {
+        if before.takes_turns(s2) {
+            assert_eq!(after.status(s2), SeatStatus::Frozen);
+            assert!(ev.contains(&GameEvent::Frozen { seat: s2 }));
+        } else {
+            assert_eq!(after.status(s2), before.status(s2));
+        }
+        // Every team seat still taking turns took part in the vote and is
+        // recorded as resigned; a FROZEN partner keeps its record.
+        if before.takes_turns(s2) {
+            assert_eq!(after.defeats().reason(s2), Some(DefeatReason::Resign));
+        } else {
+            assert_eq!(after.defeats().reason(s2), before.defeats().reason(s2));
+        }
+        assert_eq!(after.pieces_of(s2).count(), 0);
+        assert!(after.castling_rights(s2).is_empty());
+    }
+    // Nothing else happened: no passes, no turns, the winners untouched.
+    assert!(!ev.iter().any(|e| matches!(e, GameEvent::Pass { .. })));
+    assert_eq!(after.ply(), before.ply());
+    for s2 in team.other().seats() {
+        assert_eq!(after.status(s2), before.status(s2));
+        assert_eq!(after.pieces_of(s2).count(), before.pieces_of(s2).count());
+    }
+    assert_eq!(draw_voters(after), [false; 4]);
 }
 
 #[test]

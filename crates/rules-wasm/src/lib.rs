@@ -91,6 +91,8 @@ impl WasmGame {
     }
 
     /// A seat that still takes turns resigned (any time); returns events JSON.
+    /// FFA: that seat's army is removed. Teams: its whole team resigns and the
+    /// game ends (the caller collects the partner's consent first).
     #[wasm_bindgen(js_name = applyResign)]
     pub fn apply_resign(&mut self, seat: &str) -> Result<String, JsError> {
         self.inner.apply_resign(seat).map_err(js_err)

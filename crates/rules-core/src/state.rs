@@ -165,6 +165,16 @@ impl DefeatLog {
         self.iter().find(|r| r.seat == seat).map(|r| r.reason)
     }
 
+    /// Replaces the recorded reason of an already-defeated `seat`, keeping its
+    /// place in the defeat order. Does nothing for a seat not in the log.
+    pub(crate) fn set_reason(&mut self, seat: Seat, reason: DefeatReason) {
+        for rec in self.entries.iter_mut().take(self.len as usize).flatten() {
+            if rec.seat == seat {
+                rec.reason = reason;
+            }
+        }
+    }
+
     pub(crate) fn push(&mut self, rec: DefeatRecord) {
         if let Some(slot) = self.entries.get_mut(self.len as usize) {
             *slot = Some(rec);

@@ -70,8 +70,8 @@ describe('resign (WASM/TS)', () => {
     game.free()
   })
 
-  it('own-turn resign equals a timeout except for the reason', () => {
-    for (const mode of ['ffa', 'teams'] as const) {
+  it('own-turn resign equals a timeout except for the reason (FFA)', () => {
+    for (const mode of ['ffa'] as const) {
       const a = Game.create({ mode })
       const b = a.clone()
       const ea = act(a.applyResign('south'))
@@ -84,15 +84,16 @@ describe('resign (WASM/TS)', () => {
     }
   })
 
-  it('Teams off-turn resign clears only the resigner en passant target', () => {
+  it('Teams off-turn abandon clears only the leaver en passant target', () => {
+    // A single Teams seat leaving is an abandon (a resignation takes the whole team out).
     const game = Game.create({ mode: 'teams' })
     act(game.applyMove('c2c4'))
     act(game.applyMove('b5d5'))
     act(game.applyMove('d11d9'))
     expect(snap(game).seatToMove).toBe('east')
-    const ev = act(game.applyResign('west'))
+    const ev = act(game.applyAbandon('west'))
     expect(ev).toEqual([
-      { type: 'defeat', seat: 'west', reason: 'resign' },
+      { type: 'defeat', seat: 'west', reason: 'abandon' },
       { type: 'frozen', seat: 'west' },
     ])
     const s = snap(game)
@@ -105,12 +106,12 @@ describe('resign (WASM/TS)', () => {
     game.free()
   })
 
-  it('Teams off-turn resign can force an automatic pass of a defeated seat on move', () => {
+  it('Teams off-turn abandon can force an automatic pass of a defeated seat on move', () => {
     const game = Game.fromPosition(`teams ${EP_TRAP_BOARD} S DAAA - Wc5 7 30 def=Sl`)
     expect(game.legalMoveNotations()).toEqual(['b4c5'])
-    const ev = act(game.applyResign('west'))
+    const ev = act(game.applyAbandon('west'))
     expect(ev).toEqual([
-      { type: 'defeat', seat: 'west', reason: 'resign' },
+      { type: 'defeat', seat: 'west', reason: 'abandon' },
       { type: 'frozen', seat: 'west' },
       { type: 'pass', seat: 'south', notation: '--' },
     ])
@@ -147,9 +148,33 @@ describe('resign (WASM/TS)', () => {
     game.free()
   })
 
-  it('Teams resignations end the game when a team has no active seat', () => {
+  it('a Teams resignation by a defeated seat still playing resigns its team', () => {
+    // North lost its leader but still plays; South is active. North resigns off turn.
+    const game = Game.fromPosition(
+      'teams 6nR5/12/12/12/12/wK10eK/12/12/12/12/12/6sK5 W AADA - - 0 0 def=Nl',
+    )
+    const ev = act(game.applyResign('north'))
+    expect(ev.slice(0, 3)).toEqual([
+      { type: 'frozen', seat: 'north' },
+      { type: 'defeat', seat: 'south', reason: 'resign' },
+      { type: 'frozen', seat: 'south' },
+    ])
+    expect(ev.at(-1)).toEqual({
+      type: 'game_ended',
+      outcome: { result: { type: 'teams_winner', team: 'west_east' }, placements: [2, 1, 2, 1] },
+    })
+    // North took part in the resignation, so its record now says resign (first place kept).
+    expect(snap(game).defeats).toEqual([
+      { seat: 'north', reason: 'resign' },
+      { seat: 'south', reason: 'resign' },
+    ])
+    expectRoundTrip(game)
+    game.free()
+  })
+
+  it('a Teams resignation with a frozen partner ends the game at once', () => {
     const game = Game.create({ mode: 'teams' })
-    act(game.applyResign('north'))
+    act(game.applyAbandon('north'))
     expect(game.drawVoters()).toEqual([true, true, false, true])
     const ev = act(game.applyResign('south'))
     const last = ev.at(-1)
@@ -201,7 +226,7 @@ describe('agreed draw (WASM/TS)', () => {
     const game = Game.fromPosition(
       'teams 6nK5/12/12/12/12/wR10eK/12/12/12/12/12/6sK5 S ADAA - - 3 9 def=Wl',
     )
-    act(game.applyResign('north'))
+    act(game.applyAbandon('north'))
     expect(game.drawVoters()).toEqual([true, true, false, true])
     const ev = act(game.applyAgreedDraw())
     expect(ev).toEqual([
@@ -242,9 +267,15 @@ describe('agreed draw (WASM/TS)', () => {
                 ? { type: 'defeat', seat, reason: 'resign' }
                 : { type: 'frozen', seat },
             )
-            expect(snap(game).statuses[idx]).toBe(
-              before.config.mode === 'ffa' ? 'removed' : 'frozen',
-            )
+            const after = snap(game)
+            expect(after.statuses[idx]).toBe(before.config.mode === 'ffa' ? 'removed' : 'frozen')
+            if (before.config.mode === 'teams') {
+              // The whole team resigned: the other team wins at once.
+              expect(after.outcome?.result).toEqual({
+                type: 'teams_winner',
+                team: idx % 2 === 0 ? 'west_east' : 'south_north',
+              })
+            }
           } else {
             expect(() => game.applyResign(seat)).toThrow()
             expect(snap(game).hash).toBe(before.hash)

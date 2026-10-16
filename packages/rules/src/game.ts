@@ -63,8 +63,12 @@ export class Game {
 
   /**
    * A seat that still takes turns resigns. Allowed at any time, not only on its turn.
-   * Same effect as a timeout (FFA: removed; Teams: frozen, the partner plays on), with
-   * defeat reason 'resign'. Throws once the game is over or for a removed/frozen seat.
+   * FFA: same effect as a timeout (the army is removed), with defeat reason 'resign'.
+   * Teams: the seat's whole team resigns and the game ends at once, the other team winning
+   * (each team seat still taking turns freezes; an active one is recorded as defeated with
+   * reason 'resign'). The engine applies it as asked: the caller collects the partner's
+   * consent first (the server runs the teammate vote). Throws once the game is over or for
+   * a removed/frozen seat.
    */
   applyResign(seat: Seat): GameEvent[] {
     return JSON.parse(this.#inner.applyResign(seat)) as GameEvent[]
