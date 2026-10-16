@@ -88,6 +88,30 @@ all fixed):
 - **Reduced motion** uses short cross-fades instead.
 - Verified: 57 board unit tests, 45 board browser specs, frame strips reviewed by eye.
 
+### 4. Resignation, draw offers, ranked Elo and a leaderboard (commits 3d714fa … 7c9d2c6)
+
+- **Resign button** in every game (multiplayer and vs bots), with a confirm dialog that explains
+  what happens in FFA (army removed) and Teams (pieces freeze, partner plays on), and mentions
+  Elo in ranked games. You can keep watching after resigning.
+- **Offer draw:** a card shows who offered and each remaining player's answer (Accepted /
+  Waiting / Declined) with Accept and Decline buttons. Every player still in the game must
+  accept; the offer lapses on a decline, when someone is knocked out, or after a full round;
+  two-move cooldown after a failed offer. Bots answer automatically (accept only when clearly
+  losing). Results show "Draw agreed" (or your own place if you were already out).
+- **Ranked mode:** a Ranked toggle when creating a lobby (registered players only; guests get
+  a "Create account" link; no bots). Traditional Elo from 1200 adapted for four players
+  (pairwise by finishing order in FFA, team averages in Teams; FIDE K-factor). Casual games
+  no longer change ratings. Ranked badge and a Ranked/Casual filter in the lobby browser,
+  Elo changes on the result screen and in history, Elo cards (rating, games, best).
+- **Leaderboard page** (header link): top players per mode and time control (5+ ranked games,
+  usernames only).
+- Legal drafts updated to describe ranked play, Elo and the public leaderboard.
+- Verified: 258 server tests, 18 protocol tests, 47 browser tests. Three independent attackers
+  (game integrity, Elo math, UX) found 21 issues, all fixed: e.g. a resignation or draw can no
+  longer sneak in after the player to move ran out of time; two ranked games finishing at once
+  no longer lose an Elo update.
+- Note: Elo can drift by a point per game because each player's change is rounded separately.
+
 ## Not done / left for you
 
 _(Filled in at the end.)_
