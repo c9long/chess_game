@@ -30,6 +30,10 @@ the **Leaderboard**; the game and lobby on your phone (or a narrow browser windo
 - **Resignation in Teams:** only you resign. Your pieces freeze in place (like a Teams timeout)
   and your partner plays on. (This answers the open question "Teams resignation: player-only or
   whole team?" with "player-only"; change it if you prefer.)
+  - **Changed the next morning (2026-10-16):** you asked for a teammate vote instead. Resigning
+    in Teams now asks your partner; if they agree, your whole team resigns and loses at once; if
+    they decline, you both play on. See [the rule in docs/RULES.md](RULES.md#resigning) and
+    PLAN §2.
 - **When you can resign:** any time, not only on your turn.
 - **Draw by agreement:** every player still in the game must accept (removed or frozen armies
   don't vote). In Free-for-All the survivors share first place and defeated players keep their
@@ -254,7 +258,8 @@ Everything is committed and pushed to `main` in small, described commits.
 - **Rules questions to confirm** (TODO.md, "Open rules questions"): the en passant rule;
   "Abandon = timeout" after the 60-second reconnect grace; that a stalemated or timed-out
   player's leader no longer keeps a Teams team alive; the attacked-leader glow default (off);
-  FFA move-limit placements; and the Teams resignation decision taken tonight (player-only).
+  FFA move-limit placements; and the Teams resignation decision taken tonight (player-only;
+  since replaced by your teammate-vote rule, see above).
 - **Draw-offer lapse timing:** an offer lapses once every other voter has had a turn and it is
   the offerer's turn again. Change `lapseReason()` on the server if you want it stricter.
 - **Idle singleplayer games** stay open while the tab is connected (no hidden timeout, since you

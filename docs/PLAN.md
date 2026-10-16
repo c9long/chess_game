@@ -140,12 +140,13 @@ An ACTIVE seat is **defeated** when:
 2. **Stalemate = loss:** at the start of its turn it has **no legal move**. This happens once. Afterwards, a DEFEATED Teams seat with no legal move **passes automatically**: no clock time, no increment, logged as a `pass` event with notation `--`.
 3. **Timeout:** its clock reaches zero. In FFA the seat becomes REMOVED; in Teams it becomes FROZEN.
 4. **Abandon** *(proposed)*: the 60-second reconnect grace expires. This is treated exactly like a timeout. In casual lobbies with bot takeover (built later), a bot takes the seat instead. If a seat leaves off-turn and that removes the seat-to-move's last legal move, that turn is re-checked: an ACTIVE seat is stalemated, a DEFEATED Teams seat passes.
-5. *(Later)* **Resignation.**
+5. **Resignation** (any time, by a seat still taking turns). FFA: like a timeout, the seat is REMOVED. Teams: a vote with the teammate. The resigner proposes; if the teammate agrees, the **whole team resigns** (both seats out, the game ends at once, the other team wins: winners 1st, the resigning team 2nd; the end reason is `team_resigned`, and every team seat that still took turns, a DEFEATED one included, is recorded with defeat reason Resign; a FROZEN teammate, who could not vote, keeps its own reason); if the teammate declines, nothing happens and both play on. A teammate who no longer takes turns (FROZEN) can't be asked, so the team resigns at once. An unanswered proposal lapses after one full round or when either teammate stops taking turns; after a decline or lapse the proposer makes 2 more moves before asking again (an automatic pass counts as one). The server collects the vote; the rules core applies a team resignation (`apply_resign`). Leaving the game (abandon) still freezes only that seat. *(User rule, 2026-10-16.)*
 
 | | FFA | Teams |
 |---|---|---|
 | After defeat by leader loss or stalemate | REMOVED (army off the board) | DEFEATED: keeps taking its own turns while its partner is ACTIVE |
 | After timeout / abandon | REMOVED | FROZEN |
+| After resignation | REMOVED | the whole team resigns (teammate vote): the other team wins |
 | Game ends when… | **one ACTIVE seat remains** (last civ standing) | **a team has no ACTIVE seat**. That team's pieces are removed and the other team wins. |
 | Placement | 1st = survivor, then reverse order of defeat | Winning team 1st, losing team 2nd |
 
@@ -197,7 +198,7 @@ An ACTIVE seat is **defeated** when:
 | Feature | How it's accounted for |
 |---|---|
 | **Move log** | Every action is stored as an ordered event (`match_events`) with notation and clock times. The live room already broadcasts each move as an event. The UI panel is the only missing piece. |
-| **Resign** | `game.resign` is reserved. The rules core already has "defeat seat". (Open: in Teams, does a resignation defeat just the player or the whole team?) |
+| **Resign** | Built (M5): the `resign` message; in Teams a vote with the teammate (`respondResign`, `resignEvent`); a Teams resignation resigns the whole team (§2). |
 | **Offer / accept draw** | `game.offerDraw` and `game.respondDraw` are reserved. Results already support shared placements. |
 | **Takebacks, chat, emotes** | Reserved message namespaces (`game.takeback*`, `chat.*`). Moderation is designed (below) and built before release. |
 | **Spectating & replays** | Rooms support a read-only spectator role. Replays re-simulate `match_events` under the stored `rules_version` and civ versions. |
@@ -467,7 +468,7 @@ If many players fill seats with strong bots, the next step is a bigger OVH tier 
   - confirm the en passant rule (§2; it stays behind a flag until then);
   - confirm "Abandon = timeout" after the 60-second grace;
   - confirm that a stalemated or timed-out player's leader no longer keeps a Teams team alive;
-  - Teams resignation: player-only or whole team?
+  - ~~Teams resignation: player-only or whole team?~~ Whole team, by teammate vote (§2, decided 2026-10-16);
   - attacked-leader glow: default on or off, and a per-lobby toggle? (decide before M2);
   - review corner-pawn opening balance (East is exposed on both corners) with bot-arena data.
 - **Before public release:**

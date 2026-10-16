@@ -77,7 +77,7 @@ At every moment each player has exactly one status:
 |---|---|
 | **Active** | Still in the game, with their king. |
 | **Defeated** | Lost their king, or was stalemated. *In Teams only*, a defeated player keeps taking turns with their remaining pieces for as long as their partner is still active. |
-| **Frozen** | *Teams only.* Ran out of time, left the game, or resigned. The pieces stay on the board: they block squares and can be captured, but they never move again, and the player's turns are skipped. A defeated player who later runs out of time or resigns also becomes frozen. |
+| **Frozen** | *Teams only.* Ran out of time or left the game. The pieces stay on the board: they block squares and can be captured, but they never move again, and the player's turns are skipped. A defeated player who later runs out of time or leaves also becomes frozen. |
 | **Removed** | *Free-for-All only.* The player's army has been taken off the board, and their turns are skipped. |
 
 **(provisional)** Once a player is no longer active, a king they still have becomes an ordinary piece. Capturing it changes nothing, and it can't castle. In particular, a stalemated or timed-out Teams player's king does **not** keep their team alive.
@@ -100,14 +100,22 @@ What happens next depends on the mode:
 | | Free-for-All | Teams |
 |---|---|---|
 | King captured or stalemated | **Removed**: your army leaves the board | **Defeated**: you keep playing your pieces while your partner is active |
-| Out of time, left the game, or resigned | **Removed** | **Frozen** |
+| Out of time or left the game | **Removed** | **Frozen** |
+| Resigned | **Removed** | Your **whole team** resigns, if your partner agrees (see below) |
 
 ### Resigning
 
-- You can resign **at any time** while you are still taking turns, not only on your own turn.
-- Resigning counts exactly like running out of time. In **Free-for-All** your army is removed. In **Teams** only you resign: your pieces freeze in place (they still block squares and can be captured) and your partner plays on. If your partner was already out, your team is out and the other team wins.
-- If you were already defeated in Teams but still playing your pieces, resigning simply freezes them.
-- If it was your turn, play passes to the next player.
+- You can resign **at any time** while you are still taking turns, not only on your own turn. In Teams that includes a defeated player who is still playing their pieces.
+- **Free-for-All:** resigning counts exactly like running out of time: your army is removed and you are out. If it was your turn, play passes to the next player.
+- **Teams: resigning is a vote with your partner.** When you resign, your partner is asked whether to resign too:
+  - **If your partner agrees, your team resigns:** you both lose, and the game ends at once with the other team winning (the winners place 1st, your team 2nd).
+    Both of you are recorded as resigned, including a player who had lost their king but kept playing. A partner who was already frozen (and so could not vote) keeps the reason they were frozen for (time ran out, left the game).
+  - **If your partner declines, nothing happens:** you both play on.
+  - If your partner doesn't answer within one full round (every other player has had a turn and it is your turn again), or either of you stops taking turns, the request lapses and you both play on.
+  - After a request is declined or lapses, you must make 2 more moves before you can ask again (a turn you pass because you have no legal move counts as one).
+  - If your partner is already out of the game (frozen), there is nobody to ask: your team resigns at once.
+  - A bot partner agrees only when your team is clearly behind (your team's material is at most 80% of the other team's); otherwise it declines.
+- Leaving a Teams game (or disconnecting for longer than the reconnect grace) is not a resignation: only your own pieces freeze, and your partner plays on.
 
 ---
 
@@ -127,7 +135,7 @@ What happens next depends on the mode:
 - Any player still taking turns can offer a draw. The game ends in a draw only if **every player still taking turns accepts**: active players and, in Teams, defeated players who are still playing their pieces. Removed and frozen players don't vote.
 - The result is the same as at the move limit: in Free-for-All the remaining active players share the best remaining place and knocked-out players keep their places; in Teams everyone is 1st.
 - Only one offer can be open at a time, and your own vote counts as accepted. The offer ends without a draw as soon as anyone declines, when a player is knocked out or frozen, or after one full round (everyone else has had a turn and it is your turn again; if your turn is skipped because you have no legal move, the skipped turn counts as your turn coming round).
-- If your offer is declined or runs out, make two more moves before offering again.
+- If your offer is declined or runs out, make two more moves before offering again (a turn you pass because you have no legal move counts as one).
 - Bots accept only when they are clearly behind on material; otherwise they decline.
 - The move limit and a draw by agreement are the only ways a game can end without a single winner.
 

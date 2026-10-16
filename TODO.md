@@ -119,7 +119,7 @@ Conventions (see [CLAUDE.md](CLAUDE.md)):
 - Confirm en passant rule (§2); stays behind a flag until confirmed
 - Confirm "Abandon = timeout" after the 60-second reconnect grace
 - Confirm that a stalemated or timed-out player's leader no longer keeps a Teams team alive
-- Teams resignation: player-only or whole team?
+- ~~Teams resignation: player-only or whole team?~~ (done 2026-10-16; whole team, by teammate vote: the resigner proposes, the teammate agrees (both lose, the other team wins at once) or declines (both play on); a frozen teammate means the team resigns at once. User rule; see PLAN §2 and docs/RULES.md "Resigning")
 - Attacked-leader glow: default on or off, and per-lobby toggle? (decide before M2)
 - Review corner-pawn opening balance (East exposed on both corners) with bot-arena data (first bot data 2026-10-15 in [docs/bots-calibration.md](docs/bots-calibration.md): FFA East wins 23.0 ± 1.8% vs fair 25%, no Teams bias)
 - FFA move-limit tie placements: survivors share 1st and defeated seats keep their reverse-defeat placements (e.g. 1st, 1st, 3rd, 4th) — confirm this is what lobby results and ratings should show
@@ -173,6 +173,7 @@ Conventions (see [CLAUDE.md](CLAUDE.md)):
 ## Designed-for-later features
 - Move log UI
 - ~~Resign~~ (done 2026-10-16; `resign` message, any time while still taking turns: FFA removes the army, Teams freezes the seat; a resign on your turn ends it with no increment; the player stays in the room as a spectator; confirm dialog in the game panel; "Resigned" in the player list and the result)
+- ~~Teams resignation by teammate vote~~ (done 2026-10-16; `resign` in Teams proposes resigning the team and the teammate answers with `respondResign` (Agree: `Game.applyResign` resigns both seats, the game ends at once, end reason `team_resigned`, a loss for both in ranked Elo; Decline: both play on). Lapses after one full round or when either teammate stops taking turns; 2-move cooldown after a decline or lapse; a frozen teammate means an immediate team resignation; a bot teammate agrees only when its team is clearly losing (draw heuristic). Protocol v1 additions: `respondResign`, `resignEvent`, `teamResignSeat[2]` and `teamResignCooldowns[4]` state fields, three error codes; `resign_proposal` / `resign_response` match events (migration 0006). Web: Teams resign dialog explains the vote, "Waiting for …" status for the proposer, a request card with "Resign the game" / "Keep playing" for the teammate, toasts on decline and lapse, "Your team resigned" on the result screen)
 - ~~Draw offers~~ (done 2026-10-16; `offerDraw` / `respondDraw`, `drawEvent`, state `drawOfferSeat` / `drawVotes` / `drawOfferActionSeq` / `drawCooldowns`: every voter must accept, lapses on a decline, a voter change or after one full round, 2-move cooldown after a lapse or decline; bots accept only at ≤ 80% of the strongest rival's material; draw-offer card, toasts and "Draw agreed" result)
 - Takebacks
 - Chat / emotes
