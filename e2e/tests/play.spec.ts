@@ -1,41 +1,7 @@
-import { expect, type Page, test } from '@playwright/test'
-import { passAgeScreen } from './helpers.ts'
+import { expect, test } from '@playwright/test'
+import { playMove, position, startAsGuest } from './helpers.ts'
 
 const SHOTS = process.env.E2E_SCREENSHOTS
-
-async function startAsGuest(page: Page) {
-  await page.goto('/')
-  await passAgeScreen(page)
-  await page.getByRole('link', { name: 'Play as Guest' }).click()
-  await page.getByTestId('clickwrap-checkbox').check()
-  await page.getByTestId('guest-continue').click()
-  await expect(page.getByTestId('signed-in')).toBeVisible()
-}
-
-interface BoardHook {
-  squareToClient(s: string): { x: number; y: number } | null
-  position(): string
-}
-
-const position = (page: Page) =>
-  page.evaluate(() => (window as unknown as { __board: BoardHook }).__board.position())
-
-/**
- * Plays a move by clicking its from- and to-squares on the live board (dev-only hook),
- * then waits until the server has applied it (the position changes).
- */
-async function playMove(page: Page, from: string, to: string) {
-  const before = await position(page)
-  for (const sq of [from, to]) {
-    const pt = await page.evaluate(
-      (s) => (window as unknown as { __board: BoardHook }).__board.squareToClient(s),
-      sq,
-    )
-    if (!pt) throw new Error(`square ${sq} not on screen`)
-    await page.mouse.click(pt.x, pt.y)
-  }
-  await expect.poll(() => position(page), { timeout: 10_000 }).not.toBe(before)
-}
 
 test('guest creates a lobby, fills it with bots, plays and sees the result', async ({ page }) => {
   test.setTimeout(240_000)

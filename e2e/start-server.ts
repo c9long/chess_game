@@ -30,5 +30,7 @@ Object.assign(process.env, {
   DEV_MAILBOX_FILE: '',
   GUEST_PURGE_INTERVAL_MINUTES: '0',
   RESEND_API_KEY: '',
+  // Bot pacing as in production, so the specs see bot moves spaced for their animations.
+  BOT_MIN_MOVE_MS: '700',
 })
 await import('../apps/server/src/main.ts')

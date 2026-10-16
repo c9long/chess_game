@@ -90,3 +90,40 @@ export async function signInWithPassword(page: Page, identifier: string, passwor
 export function totpFrom(secret: string) {
   return new OTPAuth.TOTP({ secret: OTPAuth.Secret.fromBase32(secret), digits: 6, period: 30 })
 }
+
+/** Landing page → age screen → "Play as Guest" → signed in on the landing page. */
+export async function startAsGuest(page: Page) {
+  await page.goto('/')
+  await passAgeScreen(page)
+  await page.getByRole('link', { name: 'Play as Guest' }).click()
+  await page.getByTestId('clickwrap-checkbox').check()
+  await page.getByTestId('guest-continue').click()
+  await expect(page.getByTestId('signed-in')).toBeVisible()
+}
+
+/** The live board's development-only test hook (`window.__board`). */
+export interface BoardHook {
+  squareToClient(s: string): { x: number; y: number } | null
+  position(): string
+}
+
+/** The position string the board currently shows. */
+export const position = (page: Page) =>
+  page.evaluate(() => (window as unknown as { __board: BoardHook }).__board.position())
+
+/**
+ * Plays a move by clicking its from- and to-squares on the live board (dev-only hook),
+ * then waits until the server has applied it (the position changes).
+ */
+export async function playMove(page: Page, from: string, to: string) {
+  const before = await position(page)
+  for (const sq of [from, to]) {
+    const pt = await page.evaluate(
+      (s) => (window as unknown as { __board: BoardHook }).__board.squareToClient(s),
+      sq,
+    )
+    if (!pt) throw new Error(`square ${sq} not on screen`)
+    await page.mouse.click(pt.x, pt.y)
+  }
+  await expect.poll(() => position(page), { timeout: 10_000 }).not.toBe(before)
+}
