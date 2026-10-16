@@ -132,6 +132,36 @@ all fixed):
 - Verified: web unit tests (18), the landing/auth/account browser specs, an independent
   art-direction, accessibility and performance review (all findings fixed).
 
+### 6. UI round 2: game screen, results, lobby, lobby browser, leaderboard (commits 3880d2d, 298a954, ad64580)
+
+- **Game screen:**
+  - **Player cards:** seat-colour bars, tinted emblems, bot strength chips, a gold YOU chip,
+    animated status pills (Resigned, Eliminated, Frozen), and **pieces lost** per player shown
+    as small piece icons plus a −N figure.
+  - **Turn banner:** names who is thinking ("England bot is thinking…") and pops in gold when
+    it's your move; the browser tab title shows "● Your move" when the tab is in the background.
+  - **Tablets and phones:** below 1024 px the screen becomes the board, the banner, a compact
+    2×2 player strip and one row of buttons, fitting without scrolling. Board options sit
+    behind a gear.
+- **Result screen:** placements reveal from 4th to 1st with gold, silver and bronze medals,
+  confetti for a win (none with reduced motion), and a counting Elo change in ranked games.
+  It is keyboard-friendly: focus stays inside and Escape closes it.
+- **Lobby:**
+  - equal seat cards and distinct bot cards with a strength meter;
+  - a host crown and a host menu;
+  - pulsing open seats and a start checklist;
+  - an invite field with copy feedback;
+  - a line-up countdown with a sweeping ring;
+  - on phones, your civ picker first and a fixed Ready/Start bar.
+- **Lobby browser:** responsive cards with mode, time, Ranked and Private chips, animated
+  updates and an illustrated empty state.
+- **History** rows with medals and Elo pills; a **leaderboard podium** with your row
+  highlighted; a **phone header menu**; quick page fades.
+- **Speed:** only the running clock redraws each tick (the panel used to redraw 10 times a second).
+- Verified: 49 browser tests including new phone/tablet layout checks, web typecheck, lint,
+  unit tests; an independent art-direction, accessibility and performance review
+  (12 findings, all fixed).
+
 ## Not done / left for you
 
 _(Filled in at the end.)_
