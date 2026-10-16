@@ -17,7 +17,9 @@ import {
   joinOptionsSchema,
   PROTOCOL_VERSION,
   RESERVED_MESSAGE_TYPES,
+  RESIGN_EVENT_TYPES,
   serverMessageSchemas,
+  TEAM_RESIGN_COOLDOWN_MOVES,
   teamOfSeat,
   UNTIMED,
 } from './index.ts'
@@ -229,6 +231,44 @@ describe('client messages', () => {
     expect(DRAW_VOTE).toEqual({ notVoter: -1, pending: 0, accepted: 1 })
   })
 
+  it('describes Teams resignation votes', () => {
+    expect(clientMessageSchemas.resign.safeParse({}).success).toBe(true)
+    const respond = clientMessageSchemas.respondResign
+    expect(respond.safeParse({ accept: true }).success).toBe(true)
+    expect(respond.safeParse({ accept: false }).success).toBe(true)
+    expect(respond.safeParse({}).success).toBe(false)
+    expect(respond.safeParse({ accept: 'yes' }).success).toBe(false)
+    expect(respond.safeParse({ accept: true, seat: 2 }).success).toBe(false)
+    const ev = serverMessageSchemas.resignEvent
+    for (const type of RESIGN_EVENT_TYPES) {
+      expect(ev.safeParse({ type, seat: 2, team: 0 }).success).toBe(true)
+    }
+    expect(RESIGN_EVENT_TYPES).toEqual(['proposed', 'accepted', 'declined', 'lapsed', 'immediate'])
+    expect(ev.safeParse({ type: 'lapsed', seat: 1, team: 1, reason: 'round' }).success).toBe(true)
+    expect(
+      ev.safeParse({ type: 'lapsed', seat: 1, team: 1, reason: 'voters_changed' }).success,
+    ).toBe(true)
+    expect(
+      ev.safeParse({ type: 'lapsed', seat: 1, team: 1, reason: 'voters_changed', outSeat: 3 })
+        .success,
+    ).toBe(true)
+    expect(
+      ev.safeParse({ type: 'lapsed', seat: 1, team: 1, reason: 'voters_changed', outSeat: 4 })
+        .success,
+    ).toBe(false)
+    expect(ev.safeParse({ type: 'lapsed', seat: 1, team: 1, reason: 'bored' }).success).toBe(false)
+    expect(ev.safeParse({ type: 'proposed', seat: 1, team: 2 }).success).toBe(false)
+    expect(ev.safeParse({ type: 'withdrawn', seat: 1, team: 1 }).success).toBe(false)
+    for (const code of [
+      'resign_proposal_pending',
+      'resign_proposal_cooldown',
+      'no_resign_proposal',
+    ]) {
+      expect(ERROR_CODES).toContain(code)
+    }
+    expect(TEAM_RESIGN_COOLDOWN_MOVES).toBe(2)
+  })
+
   it('maps seats to teams (S+N vs W+E)', () => {
     expect([0, 1, 2, 3].map((s) => teamOfSeat(s as 0 | 1 | 2 | 3))).toEqual([0, 1, 0, 1])
   })
@@ -268,6 +308,9 @@ describe('state schema', () => {
     expect(state.drawOfferActionSeq).toBe(0)
     expect([...state.drawCooldowns]).toEqual([0, 0, 0, 0])
     expect(state.ranked).toBe(false)
+    // No resignation proposal by default (appended after `ranked`).
+    expect([...state.teamResignSeat]).toEqual([-1, -1])
+    expect([...state.teamResignCooldowns]).toEqual([0, 0, 0, 0])
     const keys = Object.keys(state.toJSON())
     expect(keys.slice(keys.indexOf('reconnectGraceMs'))).toEqual([
       'reconnectGraceMs',
@@ -276,6 +319,8 @@ describe('state schema', () => {
       'drawOfferActionSeq',
       'drawCooldowns',
       'ranked',
+      'teamResignSeat',
+      'teamResignCooldowns',
     ])
     const encoder = new Encoder(state)
     expect(encoder.encodeAll().length).toBeGreaterThan(0)

@@ -139,6 +139,19 @@ export const MatchState = schema(
      * bots. `rated` says whether the finished game was actually rated.
      */
     ranked: t.boolean().default(false),
+    /**
+     * Teams: per team (0 = South+North, 1 = West+East), the seat that proposed resigning the
+     * team and waits for its teammate's answer, or -1. A proposal lapses when the teammate
+     * declines, when the proposer or the teammate stops taking turns, or after one full
+     * round (every other seat still taking turns took a turn and the turn is back with the
+     * proposer). Always [-1, -1] in FFA.
+     */
+    teamResignSeat: t.array('int8'),
+    /**
+     * Per seat: moves still to make before it may propose resigning again (set to
+     * TEAM_RESIGN_COOLDOWN_MOVES when its proposal lapses or is declined).
+     */
+    teamResignCooldowns: t.array('uint8'),
   },
   'MatchState',
 )
@@ -160,6 +173,8 @@ export function createMatchState(): MatchState {
   state.lastEvents = new ArraySchema<EventState>()
   state.drawVotes = new ArraySchema<number>(-1, -1, -1, -1)
   state.drawCooldowns = new ArraySchema<number>(0, 0, 0, 0)
+  state.teamResignSeat = new ArraySchema<number>(-1, -1)
+  state.teamResignCooldowns = new ArraySchema<number>(0, 0, 0, 0)
   return state
 }
 
@@ -201,6 +216,10 @@ export interface MatchStateJson {
   drawOfferActionSeq: number
   drawCooldowns: number[]
   ranked: boolean
+  /** Per team: the seat proposing to resign the team, or -1 (appended in protocol v1). */
+  teamResignSeat: number[]
+  /** Per seat: moves left before it may propose resigning again (appended in protocol v1). */
+  teamResignCooldowns: number[]
 }
 
 export interface SeatStateJson {

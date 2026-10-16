@@ -128,8 +128,15 @@ export const clientMessageSchemas = {
   // game
   move: z.strictObject({ move: z.string().min(4).max(8) }),
   /**
-   * Resign: any seat still taking turns, at any time in game (not only on its turn). FFA:
-   * the army is removed; Teams: the seat freezes and the partner plays on.
+   * Resign: any seat still taking turns, at any time in game (not only on its turn).
+   * - FFA: the army is removed at once.
+   * - Teams: proposes resigning to the teammate (see `respondResign` and `resignEvent`). If
+   *   the teammate agrees, the whole team resigns and the game ends with the other team
+   *   winning; if they decline, both play on. A teammate who no longer takes turns can't be
+   *   asked, so the team resigns at once. Sending `resign` while your teammate's proposal is
+   *   pending agrees to it. Refused with `resign_proposal_pending` while your own proposal
+   *   waits, and with `resign_proposal_cooldown` for TEAM_RESIGN_COOLDOWN_MOVES moves after
+   *   it lapsed or was declined.
    */
   resign: empty,
   /**
@@ -139,6 +146,11 @@ export const clientMessageSchemas = {
   offerDraw: empty,
   /** Answer the pending draw offer (voters still pending only). */
   respondDraw: z.strictObject({ accept: z.boolean() }),
+  /**
+   * Teams: answer your teammate's pending proposal to resign. `accept: true` resigns the
+   * whole team (the game ends, the other team wins); `false` declines and both play on.
+   */
+  respondResign: z.strictObject({ accept: z.boolean() }),
   /** Asks for an immediate `clock` message (e.g. after the tab was in the background). */
   syncClock: empty,
 } as const
@@ -179,6 +191,20 @@ export type GameAction = (typeof GAME_ACTIONS)[number]
 /** Why a draw offer lapsed (see the `drawEvent` message). */
 export const DRAW_LAPSE_REASONS = ['round', 'voters_changed'] as const
 export type DrawLapseReason = (typeof DRAW_LAPSE_REASONS)[number]
+
+/** Why a Teams resignation proposal lapsed (see the `resignEvent` message). */
+export const RESIGN_LAPSE_REASONS = ['round', 'voters_changed'] as const
+export type ResignLapseReason = (typeof RESIGN_LAPSE_REASONS)[number]
+
+/** What happened to a Teams resignation proposal (see the `resignEvent` message). */
+export const RESIGN_EVENT_TYPES = [
+  'proposed',
+  'accepted',
+  'declined',
+  'lapsed',
+  'immediate',
+] as const
+export type ResignEventType = (typeof RESIGN_EVENT_TYPES)[number]
 
 const seatOrNone = z.union([seatSchema, z.literal(-1)])
 
@@ -255,6 +281,35 @@ export const serverMessageSchemas = {
     /** Who made the offer. */
     offerSeat: seatSchema,
     reason: z.enum(DRAW_LAPSE_REASONS).optional(),
+  }),
+  /**
+   * Teams: a change to a proposal to resign the team, sent to everyone. The pending
+   * proposals themselves are in the room state (`teamResignSeat`); this message says what
+   * happened, for toasts.
+   * - `proposed`: `seat` proposed resigning; its teammate must answer (`respondResign`)
+   * - `accepted`: `seat` (the teammate) agreed; an `events` message with action `resign`
+   *   (both seats out, the game over) follows
+   * - `declined`: `seat` (the teammate) declined; both play on
+   * - `lapsed`: the proposal ended unanswered; `seat` is the proposer, `reason` is `round`
+   *   (a full round passed: every other seat still taking turns took a turn and the turn is
+   *   back with the proposer) or `voters_changed` (the proposer or the teammate stopped
+   *   taking turns; `outSeat` says which)
+   * - `immediate`: `seat` resigned with a teammate who no longer takes turns (nobody to ask);
+   *   the `events` message with action `resign` follows
+   */
+  resignEvent: z.object({
+    type: z.enum(RESIGN_EVENT_TYPES),
+    /** Who acted (for `lapsed` and `immediate`: the proposer). */
+    seat: seatSchema,
+    /** The team concerned: 0 = South+North, 1 = West+East. */
+    team: z.union([z.literal(0), z.literal(1)]),
+    reason: z.enum(RESIGN_LAPSE_REASONS).optional(),
+    /**
+     * `lapsed` with `voters_changed`: the seat (the proposer or its teammate) that stopped
+     * taking turns. Sent with the event so clients can name it before the state patch that
+     * marks the seat out arrives.
+     */
+    outSeat: seatSchema.optional(),
   }),
   /** A request was refused, or a server-side problem. */
   error: z.object({

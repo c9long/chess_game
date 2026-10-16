@@ -82,9 +82,10 @@ message is the code: `unauthorized`, `age_confirmation_required`, `legal_accepta
 | `swapSeats` | `{ a, b }` (teams: S+N vs W+E) | host, lobby |
 | `startGame` | `{}` (4 seats, all civs, all humans ready and connected) | host, `civ_select` |
 | `move` | `{ move }` (rules-core notation, e.g. `c2c4`, `c6c7q`) | seat to move, `in_game` |
-| `resign` | `{}` | any seat still taking turns, any time in `in_game` (not only on its turn) |
+| `resign` | `{}` (FFA: resigns at once; Teams: proposes resigning the team to the teammate, or agrees to the teammate's pending proposal) | any seat still taking turns, any time in `in_game` (not only on its turn) |
 | `offerDraw` | `{}` | a draw voter (seat still taking turns), no offer pending, no cooldown, `in_game` |
 | `respondDraw` | `{ accept: boolean }` | a voter still pending on the current offer, `in_game` |
+| `respondResign` | `{ accept: boolean }` | Teams: the teammate of a seat whose resignation proposal is pending, `in_game` |
 | `syncClock` | `{}` | anyone |
 
 Reserved (answered with `error { code: 'not_implemented', requestType }`): `takeback*`,
@@ -93,7 +94,10 @@ Reserved (answered with `error { code: 'not_implemented', requestType }`): `take
 Refusals of the game messages: `wrong_phase` (not in game), `not_seated`, `not_playing` (the
 seat no longer takes turns: removed or frozen; also a non-voter answering an offer),
 `draw_offer_pending` (an offer already waits), `draw_offer_cooldown` (`message`: how many
-more moves), `no_draw_offer`, `already_responded` (the offerer, or a voter who accepted).
+more moves), `no_draw_offer`, `already_responded` (the offerer, or a voter who accepted;
+also a proposer answering its own resignation proposal), `resign_proposal_pending` (your
+Teams resignation proposal already waits), `resign_proposal_cooldown` (`message`: how many
+more moves), `no_resign_proposal` (no proposal from your teammate to answer, or FFA).
 
 ## Server -> client messages
 
@@ -102,6 +106,7 @@ more moves), `no_draw_offer`, `already_responded` (the offerer, or a voter who a
 | `welcome` | `{ protocolVersion, roomId, sessionId, seat (-1 = none), isHost }` on join and reconnect |
 | `events` | `{ seq, action: 'move'\|'timeout'\|'abandon'\|'resign'\|'agreed_draw', seat, notation, events: GameEvent[], positionString, seatToMove, clock }` after every game action (`GAME_ACTIONS`; for `agreed_draw`, `seat` is the voter whose acceptance completed it and `events` is the `game_ended` event) |
 | `drawEvent` | `{ type: 'offered'\|'accepted'\|'declined'\|'lapsed', seat, offerSeat, reason?: 'round'\|'voters_changed' }` on every change to the draw offer (`seat`: who acted; for `lapsed`, the offerer) |
+| `resignEvent` | Teams: `{ type: 'proposed'\|'accepted'\|'declined'\|'lapsed'\|'immediate', seat, team: 0\|1, reason?: 'round'\|'voters_changed', outSeat? }` on every change to a resignation proposal (`seat`: who acted; for `lapsed` and `immediate`, the proposer; `outSeat`: for a `voters_changed` lapse, the teammate who stopped taking turns). `accepted` and `immediate` are followed by the `events` message with action `resign` |
 | `clock` | `{ remainingMs: [S,W,N,E], runningSeat, serverTimestamp, turnStartedAt }` on game start, every 5 s, on `syncClock` |
 | `gameOver` | `{ matchId, result, placements, endReason, rated, ratings: ({ before, after } \| null)[] }` once saved (`ratings` are Elo before/after per seat; `rated` is true only for a ranked game whose Elo was applied, false if it couldn't be, e.g. a participant deleted their account; `state.rated` follows) |
 | `error` | `{ code, message?, requestType? }` |
@@ -117,8 +122,9 @@ Render clocks with `remainingNow(sync, Date.now(), offset)` from `@game/protocol
 `protocolVersion, name, mode, timeControl, pickMode, hasPassword, hostSeat, phase,
 countdownEndsAt, seats[4], matchId, rated, positionString, seatToMove, actionSeq, clock,
 lastEvents[], result, reconnectGraceMs, drawOfferSeat, drawVotes[4], drawOfferActionSeq,
-drawCooldowns[4], ranked` (the four draw fields and `ranked` were appended in protocol v1;
-older decoders ignore them)
+drawCooldowns[4], ranked, teamResignSeat[2], teamResignCooldowns[4]` (the four draw fields,
+`ranked` and the two resignation-vote fields were appended in protocol v1; older decoders
+ignore them)
 
 - `seats[i]` (0 = South, 1 = West, 2 = North, 3 = East): `occupied, sessionId, displayName,
   isGuest, isBot, botLevel, civ, ready, connected, graceDeadline, team, status`. User ids are
@@ -133,11 +139,15 @@ older decoders ignore them)
   when the offer was made (0 without one). `drawCooldowns[i]`: moves seat i must still make
   before it may offer again (`DRAW_OFFER_COOLDOWN_MOVES` = 2 after its offer lapses or is
   declined).
+- `teamResignSeat[t]` (Teams; t = 0 South+North, 1 West+East): the seat whose proposal to
+  resign the team waits for its teammate's answer, or -1 (always -1 in FFA).
+  `teamResignCooldowns[i]`: moves seat i must still make before it may propose again
+  (`TEAM_RESIGN_COOLDOWN_MOVES` = 2 after its proposal lapses or is declined).
 - `result`: `type` (`ffa_winner`, `ffa_move_limit_tie`, `ffa_agreed_draw`, `teams_winner`,
   `teams_draw`, `teams_agreed_draw`, `aborted`), `winnerSeat, winnerTeam, endReason,
   placements[4]`.
-- `endReason`: `last_standing`, `team_eliminated`, `move_limit`, `agreed_draw` for a finished
-  game; for an
+- `endReason`: `last_standing`, `team_eliminated`, `team_resigned` (Teams: a team resigned),
+  `move_limit`, `agreed_draw` for a finished game; for an
   aborted (unrated) one `server_shutdown`, `server_restart`,
   `persist_failed` (the result couldn't be saved), `resimulation_mismatch`, `room_disposed`.
 
@@ -157,12 +167,28 @@ older decoders ignore them)
   bot-service with a virtual 10-minute clock (no increment). While a seated human still takes
   turns or is connected (e.g. eliminated and watching), bots keep their level and pacing; once
   no human takes turns and none is connected, they finish with quick unpaced local moves.
-- Resign: any seat still taking turns may resign at any time in game (`Game.applyResign`):
-  FFA removes its army, Teams freezes the seat and the partner plays on. A resign by the seat
-  to move ends its turn with no increment; an off-turn resign leaves the running clock alone.
-  The resigned player keeps their seat in the room as a spectator (no more turns, resigns or
-  offers) and may leave without further effect. Persisted as a `resign` match event (an
-  action replayed by the re-simulation).
+- Resign (FFA): any seat still taking turns may resign at any time in game
+  (`Game.applyResign`): its army is removed. A resign by the seat to move ends its turn with
+  no increment; an off-turn resign leaves the running clock alone. The resigned player keeps
+  their seat in the room as a spectator (no more turns, resigns or offers) and may leave
+  without further effect. Persisted as a `resign` match event (an action replayed by the
+  re-simulation).
+- Resign (Teams) is a vote with the teammate. `resign` from a seat still taking turns
+  (DEFEATED-but-playing seats included) proposes it: `teamResignSeat[team]` is set and the
+  teammate answers with `respondResign` (a bot teammate answers after `BOT_MIN_MOVE_MS`,
+  agreeing only when its team is clearly losing by the draw heuristic below). Agreed: the
+  server applies `Game.applyResign(proposer)`, which resigns the whole team; the game ends at
+  once with the other team winning (placements 1/2, end reason `team_resigned`; in ranked
+  games a loss for both). Declined: nothing happens and both play on. A teammate who no
+  longer takes turns (frozen) can't be asked, so the team resigns at once (`immediate`). An
+  unanswered proposal lapses after one full round (as draw offers) or when the proposer or
+  the teammate stops taking turns. After a decline or lapse the proposer must make 2 more
+  moves before proposing again (an immediate resignation with a frozen teammate never waits). One proposal per team at a time; a draw offer and a
+  resignation proposal can be pending together. A flag that already fell is settled first.
+  Persisted as `resign_proposal` and `resign_response` match events, and the final `resign`
+  action (seat: the proposer, payload `team: true` plus `acceptedBy` or `immediate`), which
+  the re-simulation replays. Leaving the game (or a disconnect past the grace) still freezes
+  only the leaver's seat.
 - Draw offers: only a draw voter (`Game.drawVoters()`: seats still taking turns) may offer,
   one offer at a time. The offerer's vote counts as accepted; every other voter is pending.
   When every voter has accepted, the server applies `Game.applyAgreedDraw()` and the game

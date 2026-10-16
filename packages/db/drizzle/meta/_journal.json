@@ -43,6 +43,13 @@
       "when": 1792134044304,
       "tag": "0005_match_ranked",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792159845431,
+      "tag": "0006_team_resign_votes",
+      "breakpoints": true
     }
   ]
 }

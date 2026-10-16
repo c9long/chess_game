@@ -138,6 +138,12 @@ export function checkLobbyNameFormat(
 export const DRAW_OFFER_COOLDOWN_MOVES = 2
 
 /**
+ * Teams resignation votes: after a proposal of yours to resign the team lapses or your
+ * teammate declines it, you must make this many more moves before you may propose again.
+ */
+export const TEAM_RESIGN_COOLDOWN_MOVES = 2
+
+/**
  * Leaderboard (`GET /api/leaderboard`): players need at least this many ranked games in a
  * mode x time control to be listed there.
  */
@@ -199,6 +205,10 @@ export const ERROR_CODES = [
   'draw_offer_cooldown',
   'no_draw_offer',
   'already_responded',
+  // Teams resignation votes
+  'resign_proposal_pending',
+  'resign_proposal_cooldown',
+  'no_resign_proposal',
   'not_implemented',
   'internal',
 ] as const

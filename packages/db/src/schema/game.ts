@@ -125,6 +125,9 @@ export const matchEventType = pgEnum('match_event_type', [
   'resign',
   'draw_offer',
   'draw_response',
+  // Teams resignation votes (the final team resignation is a `resign` action).
+  'resign_proposal',
+  'resign_response',
 ])
 
 export const matchEvents = pgTable(
