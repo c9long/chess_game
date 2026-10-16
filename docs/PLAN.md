@@ -156,6 +156,7 @@ An ACTIVE seat is **defeated** when:
 - **10+0** (10 minutes per player) or **3+2** (3 minutes plus 2 seconds after each move).
 - Only the seat-to-move's clock runs, and frozen or removed seats' clocks stop. The **server is the authority on time**; clients display a countdown. Each event records the server timestamp and remaining time.
 - A disconnected player's clock keeps running, with a 60-second reconnect grace window shown to the others. After that, see "Abandon" above.
+- **Untimed** (singleplayer vs bots only): no clock runs and nobody can lose on time; disconnects still use the 60-second reconnect grace, then abandon. Untimed games are never rated.
 
 ### Rules versioning and civ-ability hooks
 - Every match stores its `rules_version` plus each seat's **civ version** (§5). All rules-config values (setup, promotion lines, move limit, en passant flag) are fixed per `rules_version`. Replays re-simulate exactly, even after rules or civs change.
@@ -189,7 +190,8 @@ An ACTIVE seat is **defeated** when:
    - reconnection.
 8. **End screen** with placements. The **match is saved to history** with the full event log.
 9. **Ratings** for rated games (see §5).
-10. **Bots** at selectable strength that move near-instantly.
+10. **Bots** at selectable strength. They think quickly, but each bot move is paced (at least ~0.7 s after the previous move, longer after a defeat) so every move's animation plays smoothly and several bots in a row read naturally (changed from "as quickly as possible", 2026-10-16).
+11. **Singleplayer ("Play vs bots"):** pick a civ, a bot strength and FFA/Teams; you play South against three bots at West, North and East with random civs. Untimed (no clocks), unlisted and unrated (no public or shadow rating); saved to history.
 
 ### Designed now, built later (each is tracked in `TODO.md`)
 | Feature | How it's accounted for |
@@ -295,7 +297,7 @@ When civ abilities arrive, move generation updates automatically through `rules-
 - Each level maps to a search-node budget, depth cap, evaluation noise and a controlled blunder rate. Blunders that hang the leader are capped by level, so low-level bots are weak without being absurd.
 - **Calibration:** `bot-arena` places levels on our scale. The hidden shadow ratings from casual games (§5) then re-anchor the labels against real humans.
 - **Caveat:** 4-player ratings aren't comparable to standard chess Elo. "1500" means 1500 *on our ladder*.
-- **Speed:** weak levels answer in under 50 ms. Strong levels use 100–500 ms, never more than a safe fraction of their clock. An optional short "think" delay is off by default (TODO).
+- **Speed:** weak levels answer in under 50 ms. Strong levels use 100–500 ms, never more than a safe fraction of their clock. The game server paces bot moves (`BOT_MIN_MOVE_MS`, default 700 ms after the previous move, overlapping the think time) so animations play fully; in timed games the wait runs on the bot's own clock and is skipped when the bot is low on time.
 - **CPU cost (honest numbers):**
   - Weak levels (≤1200) use well under 1% of a CPU core per bot. Strong levels and Max use roughly **3–8% of a core per bot** during a game.
   - On the recommended 4-vCPU server, bot-service runs in a CPU-limited container (2 cores) so it can never starve the game referee. That's enough for roughly **50–100 simultaneous games full of strong bots, or several hundred with weak bots**.
@@ -480,7 +482,7 @@ If many players fill seats with strong bots, the next step is a bigger OVH tier 
 - **Monetization (undecided):** options are cosmetic piece sets/boards/emblem frames, a supporter subscription, a paid Steam version alongside a free web version, or battle-pass-style progression. Constraints: no pay-to-win, and the choice affects progression data design.
 - **Mobile:** responsive layout, touch drag/tap controls, portrait board scaling, PWA install.
 - **Designed-for-later features:**
-  - **in-game:** move log UI, resign, draw offers, takebacks, chat/emotes, spectating, replays, rematch, AFK bot takeover (casual), premoves, optional bot "think" delay;
+  - **in-game:** move log UI, resign, draw offers, takebacks, chat/emotes, spectating, replays, rematch, AFK bot takeover (casual), premoves;
   - **game modes:** draft mode, unique-civ matchmaking, civ abilities, progression/XP/unlocks/civ mastery;
   - **Unity / Steam:** Unity client, Steam auth plugin + publisher Web API key, Steam integration;
   - **platform:** Sign in with Apple, NNUE bots, Redis scale-out, analytics (with cookie consent), marketing email (opt-in).

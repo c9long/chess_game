@@ -79,6 +79,9 @@ BOT_SERVICE_URL=http://127.0.0.1:7700
 ```
 
 Without `BOT_SERVICE_URL` (or when bot-service is busy or down) bots play quick local moves.
+Bot moves are paced by `BOT_MIN_MOVE_MS` (default 700 ms after the previous move) so every
+move animates smoothly; set it to 0 for instant bots. "Play vs bots" on the Play page starts
+an untimed singleplayer game against three bots.
 The real-bot integration test runs only when the variable is set:
 `BOT_SERVICE_URL=http://127.0.0.1:7700 pnpm --filter @game/server test`.
 

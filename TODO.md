@@ -83,6 +83,8 @@ Conventions (see [CLAUDE.md](CLAUDE.md)):
 - ~~Web: lobby browser, create/join lobby, lobby room and live game screens on `@game/protocol`~~ (done 2026-10-15; `/play`, `/match/:roomId`, `/history`; private lobbies with password prompt, host bot/seat controls, live clocks, reconnect after reload)
 - ~~One-command local development (`pnpm dev`: database, WASM build, bot-service, server, web)~~ (done 2026-10-15)
 - ~~Local dev mailbox page (`/dev/mail`) linked from the check-email screens, kept across server restarts; `pnpm dev` stops every process it started and checks its ports first~~ (done 2026-10-15)
+- ~~Singleplayer (vs bots, untimed)~~ (done 2026-10-16; "Play vs bots" on the Play page and the landing page: choose a civ, bot strength and FFA/Teams; South vs three bots at West/North/East with random distinct civs; `kind: 'solo'` create option, `timeControl: 'untimed'`; unlisted, joinable only by its creator, starts by itself, no clocks, unrated with no public or shadow rating, shown in history as "Untimed · vs bots")
+- ~~Bot move pacing~~ (done 2026-10-16; `BOT_MIN_MOVE_MS`, default 700: a bot's move is applied no earlier than that after the previous action (2.2× after a defeat) so each move's animation plays; think time overlaps the wait; in timed games it runs on the bot's clock and is skipped under 10 s; a move already waiting is paced again after an off-turn army removal; bots keep their level and pacing while a human still plays or watches, and finish unpaced only once nobody is connected)
 - Lobbies: spectator role (read-only) for spectating/replays
 - Game server scale-out: startup abort of `in_progress` matches assumes a single game-server process (revisit with Redis presence)
 - Ratings: recalibrate `bot_level_anchors` from bot-arena results and the shadow pool
@@ -178,7 +180,7 @@ Conventions (see [CLAUDE.md](CLAUDE.md)):
 - Rematch
 - AFK bot takeover (casual games)
 - Premoves
-- Optional bot "think" delay
+- ~~Optional bot "think" delay~~ (done 2026-10-16; superseded by bot move pacing, `BOT_MIN_MOVE_MS`, on by default)
 - Draft mode (bans + pick order)
 - Unique-civ matchmaking
 - Civ abilities

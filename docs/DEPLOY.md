@@ -175,5 +175,5 @@ TODO.md asks. A backup you have never restored is a hope, not a backup.
 | `api.yourdomain.com` doesn't answer | `docker compose ... ps` (all running?) and `docker compose ... logs cloudflared` |
 | Server keeps restarting | `docker compose ... logs server`: the first error line names the missing or unsafe setting |
 | No verification emails | Resend dashboard → Logs. Is the domain verified? The free tier allows 100 emails per day |
-| Bots move instantly but weakly | `docker compose ... logs bot-service`: when it is down, the server falls back to simple moves |
+| Bots play weak or random-looking moves | `docker compose ... logs bot-service`: when it is down, the server falls back to simple moves (still paced by `BOT_MIN_MOVE_MS`, so they don't look instant) |
 | Signing in fails on the live site | `WEB_ORIGIN`, `API_PUBLIC_URL` and `PASSKEY_RP_ID` must match your real domains exactly |
