@@ -222,6 +222,16 @@ all fixed):
 - Browsers with JavaScript turned off see a short explanation instead of a blank page.
 - Verified: lint, typecheck, build, landing and accessibility browser specs (7 passed).
 
+### 11. Skip link and a screen-reader fix (7:40–7:47)
+
+- A "Skip to content" link (shown only when you press Tab) lets keyboard users jump past the
+  header on every page.
+- The accessibility test caught decorative civ emblems on lobby cards being announced as
+  unlabelled images; they are now hidden from screen readers (the card already reads out the
+  seated civs).
+- Verified: lint, typecheck, accessibility, civ picker, lobby, guest and keyboard-order browser
+  specs (20 passed).
+
 ## Final verification (on `main`)
 
 Run at 7:07 AM on the final code, everything green:
