@@ -51,8 +51,10 @@ export function CivEmblem({
   return (
     <span
       className={`${className} inline-block shrink-0 [&>svg]:h-full [&>svg]:w-full`}
-      role="img"
-      aria-label={title ?? civName(civ)}
+      // title="" marks a decorative emblem (its meaning is given by nearby text).
+      {...(title === ''
+        ? { 'aria-hidden': true }
+        : { role: 'img', 'aria-label': title ?? civName(civ) })}
       // biome-ignore lint/security/noDangerouslySetInnerHtml: trusted, bundled SVG assets
       dangerouslySetInnerHTML={{ __html: svg }}
     />
