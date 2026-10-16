@@ -239,7 +239,7 @@ export function Account() {
                     active === n.id
                       ? 'border-gold font-semibold text-parchment'
                       : 'border-transparent text-parchment/60 hover:border-parchment/30 hover:text-parchment',
-                    n.id === 'danger-zone' && active !== n.id && 'text-seat-south-light/80',
+                    n.id === 'danger-zone' && active !== n.id && 'text-seat-south-light',
                   )}
                 >
                   {n.label}

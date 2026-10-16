@@ -59,7 +59,7 @@ function Podium({ entries, me }: { entries: LeaderboardEntry[]; me: string | nul
               <span className="block font-display text-2xl leading-none font-semibold tabular-nums sm:text-[28px]">
                 {e.rating}
               </span>
-              <span className="text-[11px] text-parchment/50 tabular-nums">
+              <span className="text-[11px] text-parchment/65 tabular-nums">
                 {e.gamesPlayed} game{e.gamesPlayed === 1 ? '' : 's'}
               </span>
             </p>
@@ -108,7 +108,7 @@ export function Leaderboard() {
     <div className="mx-auto w-full max-w-4xl px-4 py-8 sm:py-12">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <p className="flex items-center gap-3 text-xs font-semibold uppercase tracking-[0.3em] text-gold/80">
+          <p className="flex items-center gap-3 text-xs font-semibold uppercase tracking-[0.3em] text-gold">
             Ranked play <RankedBadge />
           </p>
           <h1 className="mt-1 font-display text-3xl font-semibold tracking-tight">Leaderboard</h1>
@@ -149,7 +149,7 @@ export function Leaderboard() {
               data-testid={`leaderboard-tab-${b.mode}-${b.timeControl}`}
             >
               <span>{MODE_LABEL[b.mode]}</span>
-              <span className="text-[11px] font-medium text-parchment/50 tabular-nums">
+              <span className="text-[11px] font-medium text-parchment/70 tabular-nums">
                 {b.timeControl}
               </span>
             </button>

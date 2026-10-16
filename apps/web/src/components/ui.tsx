@@ -273,7 +273,7 @@ export function PageTitle({
 
 export function Divider({ label }: { label?: string }) {
   return (
-    <div className="my-6 flex items-center gap-3 text-xs uppercase tracking-[0.2em] text-parchment/40">
+    <div className="my-6 flex items-center gap-3 text-xs uppercase tracking-[0.2em] text-parchment/60">
       <span className="h-px flex-1 bg-linear-to-r from-transparent to-parchment/15" />
       {label ? <span>{label}</span> : null}
       <span className="h-px flex-1 bg-linear-to-l from-transparent to-parchment/15" />

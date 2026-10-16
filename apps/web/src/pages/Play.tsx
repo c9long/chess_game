@@ -138,9 +138,7 @@ function PlayVsBots({ blocked }: { blocked: boolean }) {
     >
       <form className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_340px]" onSubmit={start} noValidate>
         <div className="min-w-0">
-          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-gold/80">
-            Singleplayer
-          </p>
+          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-gold">Singleplayer</p>
           <h2
             id="vs-bots-title"
             className="mt-1 font-display text-3xl font-semibold tracking-tight"
@@ -190,7 +188,7 @@ function PlayVsBots({ blocked }: { blocked: boolean }) {
             >
               Start game
             </Button>
-            <p className="text-center text-xs text-parchment/50" aria-live="polite">
+            <p className="text-center text-xs text-parchment/65" aria-live="polite">
               {busy
                 ? 'Setting up the game…'
                 : blocked
@@ -679,7 +677,7 @@ export function Play() {
                 Join an open table, or create your own and fill empty seats with bots.
               </p>
             </div>
-            <span className="flex items-center gap-2 text-xs text-parchment/50" aria-live="polite">
+            <span className="flex items-center gap-2 text-xs text-parchment/65" aria-live="polite">
               {status === 'connecting' ? (
                 <>
                   <Spinner /> Connecting

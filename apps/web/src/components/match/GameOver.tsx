@@ -194,7 +194,7 @@ export function GameOver({
             </span>
           ) : null}
           <div className="min-w-0">
-            <p className="flex items-center gap-3 text-xs font-semibold tracking-[0.3em] text-gold/80 uppercase">
+            <p className="flex items-center gap-3 text-xs font-semibold tracking-[0.3em] text-gold uppercase">
               {isUntimed(state.timeControl)
                 ? 'Untimed game vs bots'
                 : state.ranked

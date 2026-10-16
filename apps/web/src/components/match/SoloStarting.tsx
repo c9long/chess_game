@@ -31,7 +31,7 @@ export function SoloStarting({ room, feed }: { room: MatchRoom; feed: MatchFeed 
 
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-col items-center px-4 py-12 text-center sm:py-20">
-      <p className="text-xs font-semibold uppercase tracking-[0.3em] text-gold/80">
+      <p className="text-xs font-semibold uppercase tracking-[0.3em] text-gold">
         Singleplayer · {MODE_LABEL[state.mode]} · Untimed
       </p>
       <h1 className="mt-2 font-display text-3xl font-semibold tracking-tight">{state.name}</h1>
@@ -92,9 +92,7 @@ function InlineCountdown({ endsAt }: { endsAt: number }) {
   const secs = Math.max(1, Math.ceil((endsAt - now) / 1000))
   return (
     <div className="mt-8 flex flex-col items-center" data-testid="solo-countdown">
-      <p className="text-xs font-semibold uppercase tracking-[0.35em] text-gold/80">
-        Game starting
-      </p>
+      <p className="text-xs font-semibold uppercase tracking-[0.35em] text-gold">Game starting</p>
       <p className="mt-1 font-display text-6xl font-semibold tabular-nums" aria-live="assertive">
         {secs}
       </p>

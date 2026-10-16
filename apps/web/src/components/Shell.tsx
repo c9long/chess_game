@@ -216,7 +216,7 @@ export function Shell() {
           </PageTransition>
         </main>
         {inMatch ? null : (
-          <footer className="border-t border-parchment/10 py-6 text-center text-xs text-parchment/45">
+          <footer className="border-t border-parchment/10 py-6 text-center text-xs text-parchment/65">
             <Link to="/terms" className="hover:text-parchment">
               Terms of Service
             </Link>

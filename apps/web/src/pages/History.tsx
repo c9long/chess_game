@@ -207,11 +207,11 @@ export function History() {
                     {MODE_LABEL[mode]} · {timeControl}
                   </p>
                   <p
-                    className={`mt-1 font-display text-2xl font-semibold tabular-nums ${r ? '' : 'text-parchment/35'}`}
+                    className={`mt-1 font-display text-2xl font-semibold tabular-nums ${r ? '' : 'text-parchment/60'}`}
                   >
                     {r ? r.rating : ELO_START}
                   </p>
-                  <p className="text-xs text-parchment/45 tabular-nums">
+                  <p className="text-xs text-parchment/65 tabular-nums">
                     {r
                       ? `${r.gamesPlayed} game${r.gamesPlayed === 1 ? '' : 's'} · peak ${r.peak}`
                       : 'No ranked games yet'}

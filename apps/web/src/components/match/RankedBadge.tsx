@@ -12,7 +12,7 @@ export function RankedBadge({
   }
   return (
     <span
-      className={`inline-flex shrink-0 items-center rounded-full border border-gold/60 bg-gold/15 font-semibold uppercase tracking-wider text-gold ${sizes[size]} ${className}`}
+      className={`inline-flex shrink-0 items-center rounded-full border border-gold/60 bg-gold/15 font-semibold uppercase tracking-wider text-gold-bright ${sizes[size]} ${className}`}
       title="Ranked: Elo-rated, registered accounts only, no bots"
       data-testid="ranked-badge"
     >

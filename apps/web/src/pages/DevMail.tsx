@@ -75,7 +75,7 @@ export function DevMail() {
 
   return (
     <div className="mx-auto w-full max-w-3xl px-4 py-8 sm:py-12">
-      <p className="text-xs font-semibold uppercase tracking-[0.3em] text-gold/80">
+      <p className="text-xs font-semibold uppercase tracking-[0.3em] text-gold">
         Local development
       </p>
       <h1 className="mt-1 font-display text-3xl font-semibold tracking-tight">Dev mailbox</h1>

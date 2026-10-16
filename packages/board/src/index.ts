@@ -25,6 +25,7 @@ export * from './geometry.ts'
 export { MoveIndex, type MoveTarget, PROMOTION_ORDER } from './moves.ts'
 export {
   FROZEN_BASE,
+  lightFor,
   type MarkerShape,
   outlineFor,
   SEAT_STYLES,

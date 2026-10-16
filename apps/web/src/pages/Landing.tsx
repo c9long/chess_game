@@ -121,7 +121,7 @@ export function Landing() {
         </div>
 
         <div className="flex flex-col items-center text-center lg:items-start lg:text-left">
-          <p className="mb-4 inline-flex items-center gap-3 text-xs font-semibold tracking-[0.35em] text-gold/85 uppercase">
+          <p className="mb-4 inline-flex items-center gap-3 text-xs font-semibold tracking-[0.35em] text-gold uppercase">
             <span aria-hidden="true" className="h-px w-8 bg-gold/50" />
             Four-player chess
           </p>
@@ -193,7 +193,7 @@ export function Landing() {
                     Create account
                   </Link>
                 </div>
-                <p className="text-xs text-parchment/50">
+                <p className="text-xs text-parchment/65">
                   No sign-up needed to start: guests can keep their games later.
                 </p>
               </div>
@@ -218,7 +218,7 @@ export function Landing() {
       <section className="border-t border-parchment/10 bg-linear-to-b from-ink/60 to-ink/20">
         <div className="mx-auto max-w-6xl px-4 py-14 sm:py-16">
           <div className="mx-auto mb-10 max-w-xl text-center">
-            <p className="mb-3 text-xs font-semibold tracking-[0.35em] text-gold/85 uppercase">
+            <p className="mb-3 text-xs font-semibold tracking-[0.35em] text-gold uppercase">
               Nine civilizations
             </p>
             <h2 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">

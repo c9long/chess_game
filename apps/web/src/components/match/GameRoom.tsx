@@ -375,7 +375,7 @@ export function GameRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) {
           <h1 className="min-w-0 truncate font-display text-base font-semibold lg:text-lg">
             {state.name}
           </h1>
-          <span className="ml-auto flex shrink-0 items-center gap-2 text-xs text-parchment/50 lg:ml-0">
+          <span className="ml-auto flex shrink-0 items-center gap-2 text-xs text-parchment/65 lg:ml-0">
             {state.ranked ? <RankedBadge /> : null}
             <span>
               {MODE_LABEL[state.mode]} · {untimed ? 'Untimed' : state.timeControl}

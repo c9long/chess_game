@@ -12,7 +12,15 @@ import { CivPicker } from '../CivPicker.tsx'
 import { CheckIcon, CopyIcon, CrownIcon, DotsIcon, PlusIcon } from '../game/icons.tsx'
 import { Button } from '../ui.tsx'
 import { RankedBadge } from './RankedBadge.tsx'
-import { MODE_LABEL, SEAT_LABEL, seatColorName, seatHex, seatName, teamLabel } from './seats.ts'
+import {
+  MODE_LABEL,
+  SEAT_LABEL,
+  seatColorName,
+  seatHex,
+  seatName,
+  seatTextHex,
+  teamLabel,
+} from './seats.ts'
 
 const LEVEL_LABELS = BOT_LEVELS.map(String)
 
@@ -208,7 +216,7 @@ function SeatCard({
         />
       ) : null}
       <header className="flex min-h-8 items-center justify-between gap-2 text-[11px] tracking-[0.18em] uppercase">
-        <span className="truncate font-semibold" style={{ color }}>
+        <span className="truncate font-semibold" style={{ color: seatTextHex(index) }}>
           {SEAT_LABEL[seatName(index)]}
           <span className="hidden sm:inline"> · {seatColorName(index)}</span>
         </span>
@@ -386,9 +394,7 @@ export function Countdown({ endsAt, state }: { endsAt: number; state: MatchState
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center overflow-y-auto bg-ink/80 px-4 py-8 backdrop-blur-sm">
       <div className="flex w-full max-w-2xl flex-col items-center">
-        <p className="text-sm font-semibold tracking-[0.35em] text-gold/80 uppercase">
-          Game starting
-        </p>
+        <p className="text-sm font-semibold tracking-[0.35em] text-gold uppercase">Game starting</p>
         <div className="relative mt-6 flex h-32 w-32 items-center justify-center">
           {reduce ? null : (
             <svg viewBox="0 0 100 100" className="absolute inset-0 -rotate-90" aria-hidden="true">
@@ -585,7 +591,7 @@ export function LobbyRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) 
     <div className="mx-auto w-full max-w-6xl px-4 pt-6 pb-24 sm:py-10">
       <header className="mb-6 flex flex-wrap items-end justify-between gap-4 sm:mb-8">
         <div className="min-w-0">
-          <p className="flex items-center gap-3 text-xs font-semibold tracking-[0.3em] text-gold/80 uppercase">
+          <p className="flex items-center gap-3 text-xs font-semibold tracking-[0.3em] text-gold uppercase">
             {state.hasPassword ? 'Private lobby' : 'Public lobby'}
             {state.ranked ? <RankedBadge /> : null}
           </p>
