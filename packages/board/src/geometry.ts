@@ -200,3 +200,42 @@ export function indexOf(name: string): number {
 export function fileLetter(file: number): string {
   return FILE_LETTERS[file] ?? '?'
 }
+
+/**
+ * Peak hop offset of a flight, in board-local units, written to `out`. The
+ * board is drawn rotated by `angle`; (dx, dy) is the board-local path.
+ * Screen-up by default (a knight's jump). With `aside`, the offset is
+ * perpendicular to the on-screen path, on its upper side (when the path is
+ * exactly vertical: towards the board centre, judged from the board-local path
+ * midpoint (mx, my), so a rook by the frame stays on the board), and grows to
+ * 2x `size` as the path turns vertical on screen: a screen-up hop along a
+ * vertical path would not clear the piece it passes (the castling rook over
+ * its leader).
+ */
+export function hopOffset(
+  dx: number,
+  dy: number,
+  size: number,
+  angle: number,
+  aside: boolean,
+  out: { x: number; y: number },
+  mx = 0,
+  my = 0,
+): { x: number; y: number } {
+  const len = Math.hypot(dx, dy)
+  if (!aside || len < 1e-6) return rotateVector(0, -size, -angle, out)
+  // On-screen direction of the path.
+  rotateVector(dx / len, dy / len, angle, out)
+  const sx = out.x
+  const sy = out.y
+  // Screen normal on the upper side; a vertical path goes towards the centre.
+  let nx = -sy
+  let ny = sx
+  const midRight = mx * Math.cos(angle) - my * Math.sin(angle) > 0
+  if (ny > 1e-6 || (Math.abs(ny) <= 1e-6 && nx > 0 === midRight)) {
+    nx = -nx
+    ny = -ny
+  }
+  const k = size * (1 + Math.abs(sy))
+  return rotateVector(nx * k, ny * k, -angle, out)
+}

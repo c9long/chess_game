@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { Animator, ease } from './tween.ts'
+import { Animator, cubicBezier, ease, outBackWith } from './tween.ts'
 
 describe('Animator', () => {
   it('runs tweens over time with delays and completion callbacks', () => {
@@ -66,5 +66,54 @@ describe('Animator', () => {
     a.update(100)
     expect(kept).toBe(1)
     expect(a.busy).toBe(false)
+  })
+})
+
+describe('Animator.hurry', () => {
+  it('compresses tagged tweens without jumping and keeps untagged ones', () => {
+    const a = new Animator()
+    a.update(0)
+    let moved = 0
+    let other = 0
+    let pendingDone = false
+    a.add(300, (k) => (moved = k), { ease: ease.linear, tag: 1 })
+    a.add(0, () => {}, { delay: 250, tag: 1, done: () => (pendingDone = true) })
+    a.add(1000, (k) => (other = k), { ease: ease.linear })
+    a.update(150)
+    expect(moved).toBeCloseTo(0.5)
+    expect(a.remaining(1)).toBeCloseTo(150)
+    const left = a.hurry(90, 1)
+    expect(left).toBeCloseTo(90)
+    a.update(151)
+    // Continues from where it was (no jump).
+    expect(moved).toBeGreaterThan(0.5)
+    expect(moved).toBeLessThan(0.53)
+    a.update(240)
+    expect(moved).toBe(1)
+    expect(pendingDone).toBe(true)
+    expect(other).toBeCloseTo(0.24)
+    expect(a.remaining(1)).toBe(0)
+  })
+
+  it('leaves tweens that already end in time alone', () => {
+    const a = new Animator()
+    a.update(0)
+    let v = 0
+    a.add(50, (k) => (v = k), { ease: ease.linear, tag: 1 })
+    expect(a.hurry(90, 1)).toBeCloseTo(50)
+    a.update(25)
+    expect(v).toBeCloseTo(0.5)
+  })
+})
+
+describe('cubicBezier and outBackWith', () => {
+  it('approximates the CSS curve and overshoots as asked', () => {
+    const lin = cubicBezier(0.25, 0.25, 0.75, 0.75)
+    expect(lin(0.3)).toBeCloseTo(0.3, 2)
+    const back = outBackWith(1.6)
+    let peak = 0
+    for (let i = 0; i <= 100; i++) peak = Math.max(peak, back(i / 100))
+    expect(peak).toBeGreaterThan(1.05)
+    expect(back(1)).toBeCloseTo(1)
   })
 })

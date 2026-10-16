@@ -68,11 +68,14 @@ export async function renderedBoard(page: Page): Promise<RenderedPiece[]> {
     }
     const view = g.__sandbox.view
     const root = g.__pixiApp.stage.children[0] as Node
+    // Layers are found by label (BoardView names every root child).
+    const layer = (name: string) =>
+      (root.children as (Node & { label?: string })[]).find((c) => c.label === name)
     const layers: Record<string, Node | undefined> = {
-      pieces: root.children[11],
-      moving: root.children[12],
-      dissolve: root.children[13],
-      drag: root.children[16],
+      pieces: layer('pieces'),
+      moving: layer('moving'),
+      dissolve: layer('dissolve'),
+      drag: layer('drag'),
     }
     const names: string[] = []
     const centres: { x: number; y: number }[] = []
@@ -270,8 +273,12 @@ export async function turnIndicator(page: Page): Promise<string | null> {
     }
     const g = globalThis as unknown as { __pixiApp: { stage: N } }
     const root = g.__pixiApp.stage.children[0] as N
-    const band = root.children[2] as N
-    const medals = root.children[15] as N
+    const band = (root.children as (N & { label?: string })[]).find(
+      (c) => c.label === 'bandGlow',
+    ) as N
+    const medals = (root.children as (N & { label?: string })[]).find(
+      (c) => c.label === 'medals',
+    ) as N
     const glowSeat = ['south', 'west', 'north', 'east'].filter(
       (_, i) => (medals.children[i * 2] as N).visible,
     )

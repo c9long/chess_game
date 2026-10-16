@@ -2,6 +2,7 @@ import type { Seat } from '@game/rules'
 import { describe, expect, it } from 'vitest'
 import {
   type BoardLayout,
+  hopOffset,
   indexOf,
   isDarkSquare,
   nameOf,
@@ -127,5 +128,51 @@ describe('hit testing and cursor', () => {
     expect(indexOf('l12')).toBe(143)
     expect(indexOf('m1')).toBe(-1)
     expect(indexOf('a13')).toBe(-1)
+  })
+})
+
+describe('hopOffset', () => {
+  // Screen vector of a board-local offset (the board is drawn rotated by `angle`).
+  const toScreen = (v: { x: number; y: number }, angle: number) =>
+    rotateVector(v.x, v.y, angle, { x: 0, y: 0 })
+  const out = { x: 0, y: 0 }
+
+  it('is screen-up by default, whatever the path', () => {
+    for (const seat of ['south', 'west', 'north', 'east'] as Seat[]) {
+      const a = perspectiveAngle(seat)
+      const s = toScreen(hopOffset(3, 1, 10, a, false, out), a)
+      expect(s.x).toBeCloseTo(0)
+      expect(s.y).toBeCloseTo(-10)
+    }
+  })
+
+  it('aside: a horizontal on-screen path still hops straight up', () => {
+    const s = toScreen(hopOffset(-2, 0, 10, perspectiveAngle('south'), true, out), 0)
+    expect(s.x).toBeCloseTo(0)
+    expect(s.y).toBeCloseTo(-10)
+  })
+
+  it('aside: a vertical on-screen path hops sideways, twice as far, towards the centre', () => {
+    // A rank (board-local x) seen from the west runs vertically on screen.
+    const a = perspectiveAngle('west')
+    for (const dx of [2, -2]) {
+      // A path on the right half of the screen hops left, and vice versa.
+      for (const my of [-50, 50]) {
+        const mid = toScreen({ x: 0, y: my }, a)
+        const s = toScreen(hopOffset(dx, 0, 10, a, true, out, 0, my), a)
+        expect(s.y).toBeCloseTo(0)
+        expect(Math.abs(s.x)).toBeCloseTo(20)
+        expect(Math.sign(s.x)).toBe(-Math.sign(mid.x))
+      }
+    }
+  })
+
+  it('aside: the offset is perpendicular to the on-screen path, on its upper side', () => {
+    const a = perspectiveAngle('east')
+    const path = { x: 3, y: -2 }
+    const s = toScreen(hopOffset(path.x, path.y, 10, a, true, out), a)
+    const p = toScreen(path, a)
+    expect(s.x * p.x + s.y * p.y).toBeCloseTo(0)
+    expect(s.y).toBeLessThan(0)
   })
 })

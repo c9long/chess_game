@@ -67,9 +67,10 @@ test('castling (click) for every seat: final state matches engine', async ({ pag
 })
 
 async function sampleMotion(page: Page, squares: { kFrom: string; rFrom: string; kTo: string }) {
-  // Sample a few times while the step is slowed down; record where the king and rook are drawn.
+  // Sample while the step is slowed down (the rook takes off halfway through the
+  // leader's move); record where the king and rook are drawn.
   const samples: { king: string; kingOff: number; kingLayer: string; rook: string[] }[] = []
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < 16; i++) {
     const ren = await renderedBoard(page)
     const king = ren.find((r) => r.kind === 'king' && r.variant === 'south')
     const rooks = ren.filter((r) => r.kind === 'rook' && r.variant === 'south')

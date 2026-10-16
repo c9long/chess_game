@@ -24,6 +24,7 @@ import {
   type BoardLayout,
   boardExtent,
   fileLetter,
+  hopOffset,
   indexOf,
   nameOf,
   nearestAngle,
@@ -35,6 +36,26 @@ import {
   squareCenter,
   stepCursor,
 } from './geometry.ts'
+import {
+  blendPolicy,
+  chebyshev,
+  contactTime,
+  flightLift,
+  HANDOVER_AT,
+  HINT_IN_MS,
+  HINT_OUT_MS,
+  handoverTiming,
+  hintDelay,
+  lastMoveTiming,
+  REDUCED_GHOST_MS,
+  SETTLE_MS,
+  SNAP_BACK,
+  scheduleMoves,
+  snapBackEase,
+  squareDistance,
+  TAG_MOTION,
+  TAG_USER,
+} from './motion.ts'
 import { MoveIndex } from './moves.ts'
 import { bandColor, bandGain, FROZEN_BASE, lightFor, seatColor } from './palette.ts'
 import { Particles } from './particles.ts'
@@ -53,7 +74,7 @@ import {
   PieceAtlas,
   type PieceVariant,
 } from './textures.ts'
-import { Animator, ease, type Tween } from './tween.ts'
+import { Animator, ease, outBackWith, type Tween } from './tween.ts'
 
 /** Display options (all can change at runtime through `setOptions`). */
 export interface BoardOptions {
@@ -99,8 +120,32 @@ const RT_PAD = 2
 const RESIZE_SETTLE_MS = 150
 /** Frame rate cap while nothing but the idle glow pulse moves. */
 const IDLE_FPS = 30
-const MOVE_MS = 180
 const ROTATE_MS = 760
+/** Glide of a dropped piece onto its square centre, ms. */
+const DROP_MS = 120
+const SETTLE_EASE = outBackWith(1.6)
+const MEDAL_IN_EASE = outBackWith(1.4)
+const PROMO_EASE = outBackWith(1.5)
+const HINT_EASE = outBackWith(1.7)
+/** Highlight colour of the last move (both square shades). */
+const LAST_MOVE_FILL = 0xffd66e
+/** Hover and selection lift. */
+const HOVER_LIFT = 0.22
+const SELECT_LIFT = 0.3
+/** Victim reaction on capture. */
+const KNOCK_MS = 230
+const KNOCK_SQ = 0.22
+const KNOCK_TILT = (14 * Math.PI) / 180
+/** Leader capture: hit-stop and board shake. */
+const HIT_STOP_MS = 120
+const HIT_STOP_SCALE = 0.3
+const SHAKE_MS = 160
+const SHAKE_PX = 2.5
+/** Delay of the army dissolve per square of distance from the leader, ms. */
+const DISSOLVE_SPREAD_MS = 45
+const DISSOLVE_MS = 1300
+/** Status cross-fade of medallions and bands, ms. */
+const STATUS_FADE_MS = 400
 /** Shadow offset in screen space, in squares (light from the upper left). */
 const SHADOW_DX = 0.045
 const SHADOW_DY = 0.06
@@ -114,16 +159,48 @@ interface PieceNode {
   kind: PieceKind
   readonly owner: Seat
   variant: PieceVariant
+  /** The kind whose texture is shown (lags `kind` during a promotion flourish). */
+  shown: PieceKind
   /** 0 resting, 1 fully lifted (drag). Drives scale and shadow. */
   lift: number
+  /** Scale multiplier for squash and settle (1 = none). */
+  squash: number
+  /** Screen-up offset of the body above its ground position (knight hops), local px. */
+  ox: number
+  oy: number
   /** Whether a tween currently drives this node's position. */
   moving: boolean
+  /** The flight tween driving the node, if any. */
+  tween: Tween | null
+  /** A hover/selection/drag lift tween, if any. */
+  liftTween: Tween | null
 }
 
 interface Medallion {
   readonly sprite: Sprite
   readonly glow: Sprite
+  /** Light ring around the medallion of the seat to move. */
+  readonly ring: Graphics
   key: string
+  /** Turn scale (1 idle, MEDALLION_ACTIVE for the seat to move), tweened. */
+  scale: number
+  /** Status scale and alpha (a removed seat's medallion shrinks and dims). */
+  statusScale: number
+  /** Turn glow and ring strength 0..1, tweened. */
+  glowFade: number
+}
+
+/** One last-move highlight: a fill and a border per square, drawn once and faded with alpha. */
+interface LastMoveSlot {
+  readonly from: Graphics
+  readonly to: Graphics
+  key: string
+}
+
+interface Hint {
+  readonly sprite: Sprite
+  readonly promo: Sprite
+  delay: number
 }
 
 interface Promo {
@@ -192,28 +269,75 @@ export class BoardView {
   readonly #root = new Container()
   readonly #boardShadow = new Sprite()
   readonly #boardSprite = new Sprite()
+  /** The previous board surface, fading out after a status change. */
+  readonly #boardFade = new Sprite()
   readonly #bandGlow = new Sprite()
+  /** The previous seat's band glow, fading out at a turn handover. */
+  readonly #bandGlowOut = new Sprite()
+  readonly #bandDims = new Container()
   readonly #labels = new Container()
+  readonly #lastMoveLayer = new Container()
   readonly #medalLayer = new Container()
   readonly #fx = new Graphics()
+  readonly #selectLayer = new Container()
+  readonly #selGfx = new Graphics()
+  readonly #targetGfx = new Graphics()
+  readonly #flashGfx = new Graphics()
+  readonly #halo = new Sprite()
+  readonly #hoverGlow = new Sprite()
+  readonly #hintLayer = new Container()
   readonly #hints = new Graphics()
   readonly #leaderGlows: Sprite[] = []
   readonly #shadowLayer = new Container()
   readonly #pieceLayer = new Container()
+  /** Captured pieces reacting and their debris: above resting pieces, below the attacker. */
+  readonly #captureLayer = new Container()
   readonly #movingLayer = new Container()
   readonly #dissolveLayer = new Container()
   readonly #dragLayer = new Container()
   readonly #overlay = new Container()
   readonly #light = new Sprite()
   #particles: Particles | null = null
+  /** Normal-blend debris (capture chips, coloured rings). */
+  #chips: Particles | null = null
   #effects: EffectTextures | null = null
   #boardMesh: Mesh<MeshGeometry, Shader> | null = null
   #boardRT: RenderTexture | null = null
   #atlas: PieceAtlas | null = null
   #atlasSize = 0
   readonly #medallions: Medallion[] = []
-  readonly #medalRing = new Graphics()
   #labelTexts: Text[] = []
+  // Turn indicator state (tweened at handovers).
+  /** Seat index the turn visuals point at (-1 none), and the one they will point at. */
+  #turnShown = -1
+  #turnTarget = -1
+  #bandFade = 0
+  #bandOutFade = 0
+  #bandOutGain = 1
+  readonly #dim = [0, 0, 0, 0]
+  #turnTweens: Tween[] = []
+  // Last move highlight.
+  readonly #lmSlots: LastMoveSlot[] = []
+  #lmCur = 0
+  #lmKey = ''
+  // Status shown by bands and medallions (lags the snapshot until its effect plays).
+  #shownStatuses: readonly string[] | null = null
+  /** The pending status flip of the last plan that changed statuses. */
+  #statusTrigger: Tween | null = null
+  // Interaction visuals.
+  readonly #hintPool: Hint[] = []
+  #hintCount = 0
+  #hintsFor = -1
+  #hintFade = 0
+  #hintTween: Tween | null = null
+  #selShownFor = -1
+  #selFade = 0
+  #selTween: Tween | null = null
+  #hoverNode: PieceNode | null = null
+  #hoverTween: Tween | null = null
+  // Leader-capture moment.
+  #hitStop = 0
+  #shakeLeft = 0
   /** Kings of active seats under attack (for the glow and its border). */
   #attackedLeaders: number[] = []
 
@@ -302,6 +426,7 @@ export class BoardView {
 
     this.#effects = createEffectTextures()
     this.#particles = new Particles(320)
+    this.#chips = new Particles(96)
     this.#buildScene()
     this.#bindInput(cv)
     cv.addEventListener('webglcontextlost', this.#onContextLost)
@@ -332,7 +457,9 @@ export class BoardView {
     const animate = (options.animate ?? true) && prev !== null
     const resync = prev !== null && prev.hash === snapshot.hash && prev.ply === snapshot.ply
     const plan = prev && !resync ? planTransition(prev, snapshot, events) : null
-    const willAnimate = !resync && animate && plan !== null && plan.appears.length <= 8
+    const policy = blendPolicy(this.#anim.remaining(TAG_MOTION), prev ? snapshot.ply - prev.ply : 0)
+    const canAnimate = !resync && animate && plan !== null && plan.appears.length <= 8
+    const willAnimate = canAnimate && policy.mode === 'chain'
     // The user's own move is already gliding to its square: when the host
     // confirms exactly that move, let the slide finish instead of snapping it.
     const commit = this.#commitSlide
@@ -344,17 +471,37 @@ export class BoardView {
       plan.moves.some((m) => !m.castleRook && m.from === commit.from && m.to === commit.to)
         ? commit
         : null
-    this.#anim.finishAll(keep?.tween ?? null)
+    // A move still in flight is hurried (never jumped) and the new one starts
+    // right after it; a big catch-up is shown at once with a short cross-fade.
+    let start = 0
+    if (willAnimate)
+      start = this.#anim.hurry(policy.mode === 'chain' ? policy.hurryMs : 0, TAG_MOTION)
+    else this.#anim.finishAll(keep?.tween ?? null)
     if (prev && !resync) this.#lastMove = this.#nextLastMove(prev, snapshot, events, plan)
     this.#selected = -1
     this.#moves = new MoveIndex([])
+    this.#handoverAt = start
+    this.#lastMoveAt = { from: start, to: start }
     if (resync) {
       this.#settleAll()
     } else if (willAnimate && plan) {
-      this.#applyPlan(snapshot, plan, keep)
+      // Until the plan's effect starts, bands and medallions keep the old
+      // statuses (or, while an earlier effect is still pending, what it shows now).
+      if (plan.statusChanges.length > 0 && prev && !this.#statusTrigger?.alive) {
+        this.#shownStatuses = [...prev.statuses]
+      }
+      this.#applyPlan(snapshot, plan, keep, start)
     } else {
-      this.#applyInstant(snapshot)
+      this.#applyInstant(snapshot, canAnimate && policy.mode === 'instant' ? policy.fadeMs : 0)
     }
+    // Bands and medallions: a plan schedules its own status change, and an
+    // earlier one still waiting for its burn or frost keeps its turn; otherwise now.
+    const statusPending = willAnimate && this.#statusTrigger?.alive === true
+    if (!(willAnimate && plan && plan.statusChanges.length > 0) && !statusPending) {
+      this.#applyShownStatuses(null, canAnimate)
+    }
+    this.#syncTurn(this.#handoverAt, canAnimate)
+    this.#drawLastMove(canAnimate)
     if (
       prev &&
       !resync &&
@@ -363,7 +510,7 @@ export class BoardView {
       prev.seatToMove !== this.#interactive &&
       !snapshot.isOver
     ) {
-      this.#playLater('turn', 260)
+      this.#playLater('turn', Math.max(260, this.#handoverAt + 120))
     }
     this.#refreshAll()
   }
@@ -420,6 +567,7 @@ export class BoardView {
     if (seat === this.#interactive) return
     this.#interactive = seat
     this.#selected = -1
+    this.#setHoverPiece(null)
     this.#closePromo(true)
     this.#refreshFx()
   }
@@ -428,6 +576,8 @@ export class BoardView {
   setLegalMoves(moves: readonly MoveView[]): void {
     this.#moves = new MoveIndex(moves)
     if (this.#selected >= 0 && !this.#moves.canMoveFrom(this.#selected)) this.#selected = -1
+    // Re-show the hints of a still-selected piece for the new move list.
+    if (this.#selected >= 0) this.#hintsFor = -2
     this.#refreshFx()
   }
 
@@ -457,6 +607,8 @@ export class BoardView {
     return (
       this.#anim.busy ||
       (this.#particles?.active ?? 0) > 0 ||
+      (this.#chips?.active ?? 0) > 0 ||
+      this.#shakeLeft > 0 ||
       this.#dissolveLayer.children.length > 0 ||
       this.#relayoutTimer !== 0 ||
       this.#rebuilding
@@ -495,6 +647,7 @@ export class BoardView {
       this.#atlas = null
       this.#boardRT?.destroy(true)
       this.#boardRT = null
+      this.#endSurfaceFade()
       if (this.#effects) destroyEffectTextures(this.#effects)
       this.#effects = null
       for (const sprite of [
@@ -526,10 +679,20 @@ export class BoardView {
     const fxTex = this.#effects as EffectTextures
     this.#boardShadow.anchor.set(0.5)
     this.#boardSprite.anchor.set(0.5)
-    this.#bandGlow.texture = fxTex.bar
-    this.#bandGlow.anchor.set(0.5)
-    this.#bandGlow.blendMode = 'add'
-    this.#bandGlow.visible = false
+    this.#boardFade.visible = false
+    for (const g of [this.#bandGlow, this.#bandGlowOut]) {
+      g.texture = fxTex.bar
+      g.anchor.set(0.5)
+      g.blendMode = 'add'
+      g.visible = false
+    }
+    for (let i = 0; i < 4; i++) {
+      const d = new Sprite(Texture.WHITE)
+      d.tint = 0x0c0806
+      d.alpha = 0
+      d.visible = false
+      this.#bandDims.addChild(d)
+    }
     for (let i = 0; i < 4; i++) {
       const g = new Sprite(fxTex.halo)
       g.anchor.set(0.5)
@@ -544,10 +707,46 @@ export class BoardView {
       const sprite = new Sprite()
       sprite.anchor.set(0.5)
       this.#medalLayer.addChild(glow, sprite)
-      this.#medallions.push({ sprite, glow, key: '' })
+      const ring = new Graphics()
+      ring.alpha = 0
+      ring.visible = false
+      this.#medallions.push({
+        sprite,
+        glow,
+        ring,
+        key: '',
+        scale: 1,
+        statusScale: 1,
+        glowFade: 0,
+      })
     }
-    this.#medalRing.visible = false
-    this.#medalLayer.addChild(this.#medalRing)
+    // Rings after the glow/sprite pairs (medalLayer.children[2i] is seat i's glow).
+    for (const m of this.#medallions) this.#medalLayer.addChild(m.ring)
+    for (let i = 0; i < 2; i++) {
+      const slot: LastMoveSlot = { from: new Graphics(), to: new Graphics(), key: '' }
+      slot.from.alpha = 0
+      slot.to.alpha = 0
+      this.#lastMoveLayer.addChild(slot.from, slot.to)
+      this.#lmSlots.push(slot)
+    }
+    for (const sp of [this.#halo, this.#hoverGlow]) {
+      sp.texture = fxTex.glow
+      sp.anchor.set(0.5)
+      sp.blendMode = 'add'
+      sp.alpha = 0
+      sp.visible = false
+    }
+    this.#selGfx.visible = false
+    this.#targetGfx.visible = false
+    this.#flashGfx.visible = false
+    this.#selectLayer.addChild(
+      this.#selGfx,
+      this.#hoverGlow,
+      this.#halo,
+      this.#targetGfx,
+      this.#flashGfx,
+    )
+    this.#hintLayer.addChild(this.#hints)
     // Coordinates on all four edges (each seat reads its own edge).
     const texts: Text[] = []
     for (let side = 0; side < 4; side++) {
@@ -571,22 +770,36 @@ export class BoardView {
     }
     this.#labelTexts = texts
 
-    this.#root.addChild(
-      this.#boardShadow,
-      this.#boardSprite,
-      this.#bandGlow,
-      this.#labels,
-      this.#fx,
-      ...this.#leaderGlows,
-      this.#hints,
-      this.#shadowLayer,
-      this.#pieceLayer,
-      this.#movingLayer,
-      this.#dissolveLayer,
-      (this.#particles as Particles).container,
-      this.#medalLayer,
-      this.#dragLayer,
-    )
+    const particles = (this.#particles as Particles).container
+    const chips = (this.#chips as Particles).container
+    // Labels name the layers for tests and devtools (the order is the draw order).
+    const layers: readonly [Container, string][] = [
+      [this.#boardShadow, 'boardShadow'],
+      [this.#boardSprite, 'board'],
+      [this.#boardFade, 'boardFade'],
+      [this.#bandGlowOut, 'bandGlowOut'],
+      [this.#bandGlow, 'bandGlow'],
+      [this.#bandDims, 'bandDims'],
+      [this.#labels, 'labels'],
+      [this.#lastMoveLayer, 'lastMove'],
+      [this.#fx, 'fx'],
+      [this.#selectLayer, 'select'],
+      ...this.#leaderGlows.map((g, i) => [g, `leaderGlow${i}`] as [Container, string]),
+      [this.#hintLayer, 'hints'],
+      [this.#shadowLayer, 'shadows'],
+      [this.#pieceLayer, 'pieces'],
+      [this.#captureLayer, 'captures'],
+      [chips, 'chips'],
+      [this.#movingLayer, 'moving'],
+      [this.#dissolveLayer, 'dissolve'],
+      [particles, 'particles'],
+      [this.#medalLayer, 'medals'],
+      [this.#dragLayer, 'drag'],
+    ]
+    for (const [c, label] of layers) {
+      c.label = label
+      this.#root.addChild(c)
+    }
     this.#light.anchor.set(0.5)
     this.#light.eventMode = 'none'
     app.stage.addChild(this.#root, this.#light, this.#overlay)
@@ -650,6 +863,7 @@ export class BoardView {
     // Running slides hold pixel targets of the old layout: land them first.
     this.#anim.finishAll()
     this.#particles?.clear()
+    this.#chips?.clear()
     this.#layout = { square: sq, frame: Math.round(sq * FRAME * res) / res }
     this.#builtRes = res
     this.#setAngle(this.#angle)
@@ -720,20 +934,20 @@ export class BoardView {
   /** Board surface (wood, frame, seat bands) into its render texture. Cheap GPU work. */
   #renderSurface(): void {
     const app = this.#app as Application
-    this.#statusKey = this.#snapshot ? this.#snapshot.statuses.join(',') : ''
+    this.#statusKey = this.#shownKey()
     const gl = (app.renderer as { gl?: WebGLRenderingContext }).gl
     if (this.#contextLost || gl?.isContextLost()) return // redrawn on restore
     const extent = boardExtent(this.#layout)
     const { square, frame } = this.#layout
     const seatRgb = (s: Seat) => {
-      const st = this.#statusOf(s)
+      const st = this.#shownStatusOf(seatOrder(s))
       let c = bandColor(s)
       if (st === 'removed') c = mixHex(shadeHex(c, 0.5), '#3a3430', 0.75)
       else if (st === 'frozen') c = mixHex(c, FROZEN_BASE, 0.75)
       else if (st === 'defeated') c = mixHex(c, '#4a4440', 0.45)
       return new Float32Array(hexToRgb(shadeHex(c, 0.9)))
     }
-    const gain = (s: Seat) => (this.#statusOf(s) === 'active' ? bandGain(s) : 1)
+    const gain = (s: Seat) => (this.#shownStatusOf(seatOrder(s)) === 'active' ? bandGain(s) : 1)
     const uniforms = {
       uSize: { value: new Float32Array([extent, extent]), type: 'vec2<f32>' },
       uSq: { value: square, type: 'f32' },
@@ -853,22 +1067,96 @@ export class BoardView {
       m.glow.position.set(p[0], p[1])
       m.glow.width = sq * MEDALLION * 1.9
       m.glow.height = sq * MEDALLION * 1.9
+      // The medallion art's bezel radius is 0.46 of the sprite; drawn at the active size.
+      const r = sq * MEDALLION * MEDALLION_ACTIVE * 0.46 + Math.max(1, sq * 0.02)
+      m.ring.clear()
+      m.ring.circle(0, 0, r).stroke({
+        color: hexToNumber(lightFor(bandColor(SEATS[i] as Seat))),
+        width: Math.max(2, sq * 0.04),
+        alpha: 0.95,
+      })
+      m.ring.position.set(p[0], p[1])
       this.#sizeMedallion(i)
     })
     this.#leaderGlows.forEach((g) => {
       g.width = sq * 1.5
       g.height = sq * 1.5
     })
+    // Dims over the bands of the seats not to move.
+    const a = half + frame * 0.5
+    const b = frame * 0.26
+    const len = sq * (BOARD_SIZE - 0.36)
+    this.#bandDims.children.forEach((d, i) => {
+      const sp = d as Sprite
+      if (i === 0) sp.position.set(-len / 2, a)
+      else if (i === 1) sp.position.set(-a - b, -len / 2)
+      else if (i === 2) sp.position.set(-len / 2, -a - b)
+      else sp.position.set(a, -len / 2)
+      sp.width = i === 0 || i === 2 ? len : b
+      sp.height = i === 0 || i === 2 ? b : len
+    })
+    this.#placeBand(this.#bandGlow, this.#turnShown)
+    this.#bandGlowOut.visible = false
+    this.#bandOutFade = 0
+    // Selection, hovered target and illegal-drop flash: drawn once per size, moved and faded.
+    const w = Math.max(1.5, sq * 0.04)
+    this.#selGfx.clear()
+    this.#selGfx
+      .rect(0, 0, sq, sq)
+      .fill({ color: 0xffd25e, alpha: 0.25 })
+      .roundRect(
+        w / 2 + sq * 0.03,
+        w / 2 + sq * 0.03,
+        sq - w - sq * 0.06,
+        sq - w - sq * 0.06,
+        sq * 0.1,
+      )
+      .stroke({ color: 0xffe9a0, alpha: 0.8, width: w })
+    const tw = Math.max(3, sq * 0.05)
+    this.#targetGfx.clear()
+    this.#targetGfx
+      .rect(0, 0, sq, sq)
+      .fill({ color: 0xffe9a0, alpha: 0.28 })
+      .rect(tw / 2, tw / 2, sq - tw, sq - tw)
+      .stroke({ color: 0xffe9a0, width: tw })
+    this.#flashGfx.clear()
+    this.#flashGfx.rect(0, 0, sq, sq).fill({ color: 0xff4d3d, alpha: 1 })
+    for (const sp of [this.#halo, this.#hoverGlow]) {
+      sp.width = sq * 1.3
+      sp.height = sq * 1.3
+    }
+    for (const h of this.#hintPool) this.#sizeHint(h)
+    this.#lmKey = ''
+    this.#drawLastMove(false)
   }
 
-  /** Medallion size: larger for the seat to move. */
+  /** Places a band glow sprite along seat `i`'s band (hidden for -1). */
+  #placeBand(g: Sprite, i: number): void {
+    if (i < 0) {
+      g.visible = false
+      return
+    }
+    const { square: sq, frame } = this.#layout
+    const half = (sq * BOARD_SIZE) / 2
+    const d = half + frame * 0.63
+    const color = bandColor(SEATS[i] as Seat)
+    g.tint = hexToNumber(mixHex(color, '#ffffff', 0.08))
+    g.width = sq * 12.2
+    g.height = frame * 0.62
+    g.rotation = i === 1 || i === 3 ? Math.PI / 2 : 0
+    if (i === 0) g.position.set(0, d)
+    else if (i === 1) g.position.set(-d, 0)
+    else if (i === 2) g.position.set(0, -d)
+    else g.position.set(d, 0)
+  }
+
+  /** Medallion size: larger for the seat to move (tweened at handovers), smaller once removed. */
   #sizeMedallion(i: number): void {
     const m = this.#medallions[i] as Medallion
-    const snap = this.#snapshot
-    const active = !!snap && !snap.isOver && seatOrder(snap.seatToMove) === i
-    const d = this.#layout.square * MEDALLION * (active ? MEDALLION_ACTIVE : 1)
+    const d = this.#layout.square * MEDALLION * m.scale * m.statusScale
     m.sprite.width = d
     m.sprite.height = d
+    m.ring.scale.set((m.scale * m.statusScale) / MEDALLION_ACTIVE)
   }
 
   #setAngle(angle: number): void {
@@ -947,10 +1235,16 @@ export class BoardView {
       marker,
       shadow,
       kind: piece.kind,
+      shown: piece.kind,
       owner: piece.owner,
       variant: this.#variantFor(piece.owner),
       lift: 0,
+      squash: 1,
+      ox: 0,
+      oy: 0,
       moving: false,
+      tween: null,
+      liftTween: null,
     }
     this.#pieceLayer.addChild(node)
     this.#shadowLayer.addChild(shadow)
@@ -964,8 +1258,24 @@ export class BoardView {
   }
 
   #destroyNode(n: PieceNode): void {
-    n.node.destroy({ children: true })
-    n.shadow.destroy()
+    this.#anim.cancel(n.tween)
+    this.#anim.cancel(n.liftTween)
+    if (this.#hoverNode === n) this.#hoverNode = null
+    if (!n.node.destroyed) n.node.destroy({ children: true })
+    if (!n.shadow.destroyed) n.shadow.destroy()
+  }
+
+  /** Stops whatever flight drives `n` and puts its body back on the ground. */
+  #stopMotion(n: PieceNode): void {
+    this.#anim.cancel(n.tween)
+    this.#anim.cancel(n.liftTween)
+    n.tween = null
+    n.liftTween = null
+    n.node.x -= n.ox
+    n.node.y -= n.oy
+    n.ox = 0
+    n.oy = 0
+    n.moving = false
   }
 
   #applyNodeTextures(n: PieceNode): void {
@@ -973,11 +1283,11 @@ export class BoardView {
     const sq = this.#layout.square
     const size = sq * PIECE_SCALE
     if (atlas) {
-      n.body.texture = atlas.piece(n.kind, n.variant)
-      n.shadow.texture = atlas.shadow(n.kind)
+      n.body.texture = atlas.piece(n.shown, n.variant)
+      n.shadow.texture = atlas.shadow(n.shown)
       n.marker.texture = atlas.marker(n.owner)
     }
-    const mirrored = n.kind === 'knight' && relativeSeat(n.owner, this.#perspective) >= 2
+    const mirrored = n.shown === 'knight' && relativeSeat(n.owner, this.#perspective) >= 2
     n.body.width = size
     n.body.height = size
     n.body.scale.x = Math.abs(n.body.scale.x) * (mirrored ? -1 : 1)
@@ -994,21 +1304,27 @@ export class BoardView {
     n.body.alpha = 1
   }
 
+  /**
+   * Scale and shadow from the node's lift and squash. The shadow stays on the
+   * ground (under the node minus its hop offset) and spreads, softens and
+   * drifts away from the light as the piece rises.
+   */
   #placeShadow(n: PieceNode): void {
     const k = 1 + n.lift * 2.2
     n.shadow.position.set(
-      n.node.x + this.#shadowLocal.x * k,
-      n.node.y + this.#shadowLocal.y * k + this.#layout.square * 0.01,
+      n.node.x - n.ox + this.#shadowLocal.x * k,
+      n.node.y - n.oy + this.#shadowLocal.y * k + this.#layout.square * 0.01,
     )
-    const s = 1 + n.lift * 0.15
+    const s = (1 + n.lift * 0.15) * n.squash
     n.node.scale.set(s)
     const base = this.#atlas ? this.#atlas.cell / this.#atlas.size : 1.2
-    const size = this.#layout.square * PIECE_SCALE * base * (1 + n.lift * 0.18)
+    const spread = (1 + n.lift * 0.18) * (1 + (1 - n.squash) * 1.6)
+    const size = this.#layout.square * PIECE_SCALE * base * spread
     const mirrored = n.shadow.scale.x < 0
     n.shadow.width = size
     n.shadow.height = size
     if (mirrored) n.shadow.scale.x = -Math.abs(n.shadow.scale.x)
-    n.shadow.alpha = n.node.alpha * (0.42 - n.lift * 0.14)
+    n.shadow.alpha = n.node.alpha * Math.max(0.2, 0.42 - n.lift * 0.18)
   }
 
   #refreshPieceTextures(): void {
@@ -1032,13 +1348,18 @@ export class BoardView {
       if (!n) continue
       squareCenter(i, this.#layout, this.#tmpVec)
       n.node.position.set(this.#tmpVec.x, this.#tmpVec.y)
+      n.ox = 0
+      n.oy = 0
       this.#applyNodeTextures(n)
       this.#placeShadow(n)
     }
   }
 
-  /** Makes the scene match `snap` immediately. */
-  #applyInstant(snap: Snapshot): void {
+  /**
+   * Makes the scene match `snap` immediately. With `fadeMs`, pieces that
+   * change cross-fade (old out, new in) instead of popping.
+   */
+  #applyInstant(snap: Snapshot, fadeMs = 0): void {
     this.#dissolveLayer.removeChildren().forEach((c) => {
       c.destroy({ children: true })
     })
@@ -1047,72 +1368,278 @@ export class BoardView {
       const have = this.#pieces[i] ?? null
       if (have && want && have.kind === want.kind && have.owner === want.owner) {
         const v = this.#variantFor(want.owner)
-        if (v !== have.variant) {
+        if (v !== have.variant || have.shown !== have.kind) {
           have.variant = v
+          have.shown = have.kind
           this.#applyNodeTextures(have)
         }
+        this.#stopMotion(have)
         have.node.alpha = 1
         have.lift = 0
+        have.squash = 1
         squareCenter(i, this.#layout, this.#tmpVec)
         have.node.position.set(this.#tmpVec.x, this.#tmpVec.y)
+        if (have.node.parent !== this.#pieceLayer) this.#pieceLayer.addChild(have.node)
         this.#placeShadow(have)
         continue
       }
-      if (have) this.#destroyNode(have)
-      this.#pieces[i] = want ? this.#createNode(want, i) : null
+      if (have) {
+        if (fadeMs > 0) this.#fadeAway(have, fadeMs)
+        else this.#destroyNode(have)
+      }
+      const n = want ? this.#createNode(want, i) : null
+      this.#pieces[i] = n
+      if (n && fadeMs > 0) {
+        n.node.alpha = 0
+        this.#placeShadow(n)
+        this.#anim.add(fadeMs, (k) => {
+          if (n.node.destroyed) return
+          n.node.alpha = k
+          this.#placeShadow(n)
+        })
+      }
     }
   }
 
-  /** Slides every displaced piece back to its square (rejected intent / resync). */
+  /** Fades a detached node out and destroys it. */
+  #fadeAway(n: PieceNode, ms: number): void {
+    this.#stopMotion(n)
+    this.#captureLayer.addChild(n.node)
+    const a0 = n.node.alpha
+    const s0 = n.shadow.alpha
+    this.#anim.add(
+      ms,
+      (k) => {
+        n.node.alpha = a0 * (1 - k)
+        n.shadow.alpha = s0 * (1 - k)
+      },
+      { ease: ease.outQuad, done: () => this.#destroyNode(n) },
+    )
+  }
+
+  /** Brings every displaced piece back to its square (rejected intent / resync). */
   #settleAll(): void {
-    const dur = this.#options.reducedMotion ? 0 : MOVE_MS
+    const reduced = this.#options.reducedMotion
     for (let i = 0; i < 144; i++) {
       const n = this.#pieces[i]
       if (!n) continue
       squareCenter(i, this.#layout, this.#tmpVec)
       const tx = this.#tmpVec.x
       const ty = this.#tmpVec.y
-      if (Math.hypot(n.node.x - tx, n.node.y - ty) < 0.5) continue
-      this.#slide(n, tx, ty, dur, 0)
+      if (Math.hypot(n.node.x - n.ox - tx, n.node.y - n.oy - ty) < 0.5 && n.lift < 0.01) continue
+      this.#returnHome(n, tx, ty, reduced)
     }
   }
 
-  #slide(
+  /** Eases a piece back to (tx, ty) with its lift held until the end, then settles. */
+  #returnHome(n: PieceNode, tx: number, ty: number, reduced: boolean): void {
+    if (reduced) {
+      this.#stopMotion(n)
+      n.lift = 0
+      n.node.position.set(tx, ty)
+      if (!n.node.destroyed) this.#pieceLayer.addChild(n.node)
+      this.#placeShadow(n)
+      return
+    }
+    const dist = Math.hypot(n.node.x - n.ox - tx, n.node.y - n.oy - ty) / this.#layout.square
+    this.#fly(n, tx, ty, {
+      duration: SNAP_BACK.duration,
+      ease: snapBackEase(dist),
+      liftFrom: n.lift,
+      peak: n.lift,
+      dropAt: SNAP_BACK.dropFrom,
+      settle: n.lift > 0.05 ? 0.95 : 0,
+      tag: TAG_MOTION,
+    })
+  }
+
+  /**
+   * Flies a piece to (tx, ty): position eased along the path, an optional
+   * screen-up hop (knights, castling rook), lift rising from its current
+   * value to `peak` and dropping at the end, then an optional landing settle
+   * (squash from `settle` back to 1). The start position is read when the
+   * flight actually starts, so a delayed flight follows wherever an earlier
+   * (hurried) one left the piece. All closures are made here; per frame only
+   * numbers change.
+   */
+  #fly(
     n: PieceNode,
     tx: number,
     ty: number,
-    duration: number,
-    delay: number,
+    o: {
+      duration: number
+      delay?: number
+      ease?: (t: number) => number
+      peak?: number
+      liftFrom?: number
+      dropAt?: number
+      hop?: number
+      /** Hop sideways off the path instead of screen-up (the castling rook clears its leader). */
+      hopAside?: boolean
+      settle?: number
+      tag?: number
+    },
     done?: () => void,
   ): Tween {
-    const fx = n.node.x
-    const fy = n.node.y
-    const dist = Math.hypot(tx - fx, ty - fy)
-    const dur = dist < this.#layout.square * 0.15 ? Math.min(duration, 70) : duration
+    const sq = this.#layout.square
+    const posEase = o.ease ?? ease.move
+    let peak = o.peak ?? 0
+    let hop = o.hop ?? 0
+    let settle = o.settle ?? 0
+    const dropAt = o.dropAt ?? 0.7
+    let liftFrom = o.liftFrom ?? n.lift
+    let fx = 0
+    let fy = 0
+    // Peak hop offset (board-local), fixed when the flight starts.
+    let hx = 0
+    let hy = 0
+    let started = false
+    let tween: Tween | null = null
     n.moving = true
-    this.#movingLayer.addChild(n.node)
+    this.#anim.cancel(n.liftTween)
+    n.liftTween = null
+    if (n.node.parent !== this.#movingLayer) this.#movingLayer.addChild(n.node)
     n.node.rotation = -this.#angle
-    return this.#anim.add(
-      dur,
+    const update = (k: number) => {
+      if (n.node.destroyed) return
+      if (!started) {
+        started = true
+        if (n.tween && n.tween !== tween) this.#anim.cancel(n.tween)
+        n.tween = tween
+        this.#anim.cancel(n.liftTween)
+        n.liftTween = null
+        fx = n.node.x - n.ox
+        fy = n.node.y - n.oy
+        if (o.liftFrom === undefined) liftFrom = n.lift
+        // Nothing (or almost nothing) to travel: no lift or hop, and a short glide.
+        if (Math.hypot(tx - fx, ty - fy) < sq * 0.15) {
+          peak = Math.min(peak, liftFrom)
+          hop = 0
+          if (liftFrom < 0.05) settle = 0
+          if (tween && tween.duration > 90) tween.duration = 90
+        }
+        if (hop > 0) {
+          hopOffset(
+            tx - fx,
+            ty - fy,
+            hop * sq,
+            this.#angle,
+            o.hopAside === true,
+            this.#tmpVec2,
+            (fx + tx) / 2,
+            (fy + ty) / 2,
+          )
+          hx = this.#tmpVec2.x
+          hy = this.#tmpVec2.y
+        }
+      }
+      const p = posEase(k)
+      let ox = 0
+      let oy = 0
+      if (hop > 0) {
+        const h = Math.sin(Math.PI * k)
+        ox = hx * h
+        oy = hy * h
+      }
+      n.ox = ox
+      n.oy = oy
+      n.node.x = fx + (tx - fx) * p + ox
+      n.node.y = fy + (ty - fy) * p + oy
+      n.lift = flightLift(k, liftFrom, peak, dropAt)
+      this.#placeShadow(n)
+    }
+    tween = this.#anim.add(o.duration, update, {
+      delay: o.delay ?? 0,
+      ease: ease.linear,
+      tag: o.tag ?? 0,
+      done: () => {
+        if (n.tween === tween) n.tween = null
+        n.moving = false
+        n.lift = 0
+        n.ox = 0
+        n.oy = 0
+        if (!n.node.destroyed) {
+          n.node.position.set(tx, ty)
+          this.#pieceLayer.addChild(n.node)
+          this.#placeShadow(n)
+          if (settle > 0) this.#settle(n, settle)
+        }
+        done?.()
+      },
+    })
+    if (tween.alive && !started) n.tween = tween
+    return tween
+  }
+
+  /** Landing settle: a small squash that springs back (outBack) while the shadow tightens. */
+  #settle(n: PieceNode, from: number): void {
+    if (this.#options.reducedMotion) return
+    n.squash = from
+    this.#placeShadow(n)
+    this.#anim.add(
+      SETTLE_MS,
       (k) => {
-        n.node.x = fx + (tx - fx) * k
-        n.node.y = fy + (ty - fy) * k
-        n.lift = dist > this.#layout.square * 0.5 ? Math.sin(Math.PI * k) * 0.35 : 0
+        if (n.node.destroyed) return
+        n.squash = from + (1 - from) * k
         this.#placeShadow(n)
       },
-      {
-        delay,
-        ease: ease.inOutCubic,
-        done: () => {
-          n.moving = false
-          n.lift = 0
-          if (!n.node.destroyed) {
-            this.#pieceLayer.addChild(n.node)
-            this.#placeShadow(n)
-          }
+      { ease: SETTLE_EASE },
+    )
+  }
+
+  /** Reduced motion: the piece fades out where it is and fades in on its new square. */
+  #crossFadeMove(
+    n: PieceNode,
+    tx: number,
+    ty: number,
+    delay: number,
+    fadeMs: number,
+    tag: number,
+    done?: () => void,
+  ): void {
+    this.#anim.add(
+      0,
+      () => {
+        if (n.node.destroyed) return
+        this.#stopMotion(n)
+        const dist = Math.hypot(n.node.x - tx, n.node.y - ty)
+        n.lift = 0
+        if (dist >= this.#layout.square * 0.15) {
+          const ghost = new Sprite(n.body.texture)
+          ghost.anchor.set(0.5)
+          ghost.width = n.body.width
+          ghost.height = n.body.height
+          ghost.scale.x = n.body.scale.x
+          ghost.position.set(n.node.x, n.node.y + n.body.y)
+          ghost.rotation = -this.#angle
+          this.#captureLayer.addChild(ghost)
+          this.#anim.add(
+            REDUCED_GHOST_MS,
+            (k) => {
+              ghost.alpha = 1 - k
+            },
+            { ease: ease.linear, done: () => ghost.destroy() },
+          )
+          n.node.alpha = 0
+        }
+        n.node.position.set(tx, ty)
+        this.#pieceLayer.addChild(n.node)
+        this.#placeShadow(n)
+        if (n.node.alpha >= 1) {
           done?.()
-        },
+          return
+        }
+        this.#anim.add(
+          fadeMs,
+          (k) => {
+            if (n.node.destroyed) return
+            n.node.alpha = k
+            this.#placeShadow(n)
+          },
+          done ? { ease: ease.linear, done } : { ease: ease.linear },
+        )
       },
+      { delay, tag },
     )
   }
 
@@ -1120,10 +1647,11 @@ export class BoardView {
     next: Snapshot,
     plan: AnimationPlan,
     keep: { node: PieceNode; tween: Tween } | null = null,
+    start = 0,
   ): void {
     const reduced = this.#options.reducedMotion
-    const moveMs = reduced ? 0 : MOVE_MS
     const sq = this.#layout.square
+    const now = this.#anim.now
 
     // Detach captured, dissolving and moving pieces before re-slotting.
     const captured: { n: PieceNode; square: number; onDest: boolean }[] = []
@@ -1132,19 +1660,64 @@ export class BoardView {
       this.#pieces[c.square] = null
       if (n) captured.push({ n, square: c.square, onDest: c.onDestination })
     }
-    const dissolving: PieceNode[] = []
+    const dissolving: { n: PieceNode; square: number }[] = []
     for (const d of plan.dissolves) {
       const n = this.#pieces[d.square]
       this.#pieces[d.square] = null
-      if (n) dissolving.push(n)
+      if (n) dissolving.push({ n, square: d.square })
     }
-    const movers: { n: PieceNode; to: number; promote: PieceKind | null; rook: boolean }[] = []
-    for (const m of plan.moves) {
+    const schedule = scheduleMoves(
+      plan.moves.map((m) => ({
+        kind: m.piece.kind,
+        distSq: squareDistance(m.from, m.to),
+        castleRook: m.castleRook,
+      })),
+      reduced,
+    )
+    const movers: {
+      n: PieceNode
+      from: number
+      to: number
+      promote: PieceKind | null
+      rook: boolean
+      /** Absolute timing relative to now, ms. */
+      start: number
+      duration: number
+      land: number
+      contact: number
+    }[] = []
+    plan.moves.forEach((m, idx) => {
       const n = this.#pieces[m.from]
       this.#pieces[m.from] = null
-      if (n) movers.push({ n, to: m.to, promote: m.promoteTo, rook: m.castleRook })
-    }
-    for (const mv of movers) {
+      if (!n) return
+      const item = schedule.items[idx] as (typeof schedule.items)[number]
+      const isKeep = !!keep && keep.node === n && keep.tween.alive
+      const st = isKeep ? 0 : start + item.delay
+      const dur = isKeep
+        ? Math.max(
+            0,
+            (keep as { tween: Tween }).tween.start +
+              (keep as { tween: Tween }).tween.duration -
+              now,
+          )
+        : item.duration
+      const land = isKeep ? dur : st + dur * item.timing.landAt
+      const dist = squareDistance(m.from, m.to)
+      const contact = isKeep ? dur * 0.8 : st + contactTime(item.timing, dist)
+      movers.push({
+        n,
+        from: m.from,
+        to: m.to,
+        promote: m.promoteTo,
+        rook: m.castleRook,
+        start: st,
+        duration: dur,
+        land,
+        contact,
+      })
+    })
+    const captureAt = new Set(captured.filter((c) => c.onDest).map((c) => c.square))
+    for (const [idx, mv] of movers.entries()) {
       // A piece left on the destination (should not happen) is replaced.
       const stale = this.#pieces[mv.to]
       if (stale) this.#destroyNode(stale)
@@ -1152,30 +1725,73 @@ export class BoardView {
       squareCenter(mv.to, this.#layout, this.#tmpVec)
       const tx = this.#tmpVec.x
       const ty = this.#tmpVec.y
-      const promote = mv.promote
-      const landed = () => {
-        if (promote) {
-          mv.n.kind = promote
-          this.#applyNodeTextures(mv.n)
-          this.#promotionBurst(tx, ty, mv.n.owner)
-        }
-      }
-      if (keep && keep.node === mv.n && keep.tween.alive) {
+      const n = mv.n
+      // The kind changes now (the snapshot is the truth); the texture at the flourish.
+      if (mv.promote) n.kind = mv.promote
+      const landed = mv.promote ? () => this.#promotionFlourish(n, tx, ty) : undefined
+      if (keep && keep.node === n && keep.tween.alive) {
         // The user's slide is already heading here: chain onto it.
         const prevDone = keep.tween.done
         keep.tween.done = () => {
           prevDone?.()
-          landed()
+          landed?.()
         }
         continue
       }
-      this.#slide(mv.n, tx, ty, moveMs, mv.rook ? (reduced ? 0 : 70) : 0, landed)
+      const item = schedule.items[idx] as (typeof schedule.items)[number]
+      const t = item.timing
+      if (t.crossFade) {
+        this.#crossFadeMove(n, tx, ty, mv.start, t.duration, TAG_MOTION, landed)
+        continue
+      }
+      this.#fly(
+        n,
+        tx,
+        ty,
+        {
+          duration: t.duration,
+          delay: mv.start,
+          ease: t.ease,
+          peak: t.lift,
+          hop: t.hop,
+          hopAside: mv.rook,
+          settle: t.settleMs > 0 ? (captureAt.has(mv.to) ? 0.93 : 0.95) : 0,
+          tag: TAG_MOTION,
+        },
+        landed,
+      )
     }
-    const impactDelay = reduced ? 0 : moveMs * 0.82
+    const main = movers.find((m) => !m.rook) ?? movers[0] ?? null
+    const landAt = main ? Math.max(...movers.map((m) => m.land)) : start
+    const endAt = movers.length > 0 ? Math.max(...movers.map((m) => m.start + m.duration)) : start
+
+    // Captures react when the attacker arrives (en passant: when it lands).
+    let leaderHit: { square: number; at: number; owner: Seat } | null = null
     for (const c of captured) {
-      this.#captureEffect(c.n, c.square, impactDelay)
+      const attacker = movers.find((m) => m.to === c.square) ?? main
+      const at = c.onDest && attacker ? attacker.contact : main ? main.land : start
+      let dir: { x: number; y: number } | null = null
+      if (attacker) {
+        const ax = (attacker.to % 12) - (attacker.from % 12)
+        const ay = Math.floor(attacker.from / 12) - Math.floor(attacker.to / 12)
+        const len = Math.hypot(ax, ay)
+        if (len > 0) dir = { x: ax / len, y: ay / len }
+      }
+      this.#captureEffect(c.n, c.square, at, dir)
+      if (c.n.kind === 'king') leaderHit = { square: c.square, at, owner: c.n.owner }
     }
-    if (dissolving.length > 0) this.#dissolve(dissolving, reduced ? 0 : moveMs)
+    if (leaderHit && !reduced) this.#leaderMoment(leaderHit.square, leaderHit.owner, leaderHit.at)
+
+    // The army burns away (outward from its leader) after the hit; statuses change as it starts.
+    const effectAt = leaderHit ? leaderHit.at + (reduced ? 0 : 140) : landAt
+    if (dissolving.length > 0) {
+      const lead =
+        leaderHit?.square ??
+        dissolving.find((d) => d.n.kind === 'king')?.square ??
+        dissolving[0]?.square ??
+        0
+      this.#dissolve(dissolving, lead, effectAt)
+    }
 
     for (const a of plan.appears) {
       const stale = this.#pieces[a.square]
@@ -1183,24 +1799,52 @@ export class BoardView {
       const n = this.#createNode(a.piece, a.square)
       this.#pieces[a.square] = n
       n.node.alpha = 0
-      this.#anim.add(reduced ? 120 : 260, (k) => {
-        n.node.alpha = k
-        this.#placeShadow(n)
-      })
+      this.#anim.add(
+        reduced ? 120 : 260,
+        (k) => {
+          n.node.alpha = k
+          this.#placeShadow(n)
+        },
+        { delay: start },
+      )
     }
 
-    // Status changes: freeze cross-fades to frosted grey.
+    // Status changes: freeze cross-fades to frosted grey, sweeping out from the leader.
     for (const ch of plan.statusChanges) {
-      if (ch.status === 'frozen') this.#freezeSeat(ch.seat, reduced ? 0 : moveMs)
+      if (ch.status !== 'frozen') continue
+      let lead = -1
+      for (let i = 0; i < 144; i++) {
+        const p = next.board[i]
+        if (p && p.owner === ch.seat && p.kind === 'king') lead = i
+      }
+      this.#freezeSeat(ch.seat, effectAt, lead)
+    }
+    // Bands and medallions change when the effect that explains them plays.
+    // (A burn shows nothing for its first ~15%, so a removal waits for the first embers.)
+    const statusAt = effectAt + (dissolving.length > 0 && !reduced ? 0.15 * DISSOLVE_MS : 0)
+    // Untagged like the burn and frost it explains, so a following move's
+    // hurry cannot flip it ahead of them; chained after any earlier pending one.
+    if (plan.statusChanges.length > 0) {
+      const statuses = [...next.statuses]
+      const pending = this.#statusTrigger
+      const after = pending?.alive ? pending.start - this.#anim.now + 1 : 0
+      this.#statusTrigger = this.#anim.add(
+        0,
+        () => {
+          const snap = this.#snapshot
+          // Caught up with the snapshot: stop lagging.
+          const same = !!snap && statuses.every((st, i) => st === snap.statuses[i])
+          this.#applyShownStatuses(same ? null : statuses, true)
+        },
+        { delay: Math.max(statusAt, after) },
+      )
     }
 
     // Safety net: anything still out of sync with the snapshot is fixed instantly.
     for (let i = 0; i < 144; i++) {
       const want = next.board[i] ?? null
       const have = this.#pieces[i] ?? null
-      const promoting = movers.some((m) => m.to === i && m.promote !== null)
-      if (have && want && have.owner === want.owner && (have.kind === want.kind || promoting))
-        continue
+      if (have && want && have.owner === want.owner && have.kind === want.kind) continue
       if (!have && !want) continue
       if (have) this.#destroyNode(have)
       this.#pieces[i] = want ? this.#createNode(want, i) : null
@@ -1218,95 +1862,214 @@ export class BoardView {
         if (place !== 1) return
         const [x, y] = spots[i] as readonly [number, number]
         this.#anim.add(0, () => this.#burst(x, y, seatColor(SEATS[i] as Seat), 'promote'), {
-          delay: moveMs + 250 + i * 120,
+          delay: endAt + 250 + i * 120,
         })
       })
     }
+    const firstCapture =
+      captured.length > 0
+        ? Math.min(...captured.map((c) => this.#captureTime(c, movers, main, start)))
+        : landAt
     for (const cue of soundCues(plan)) {
-      const delay =
-        cue === 'move' || cue === 'capture' || cue === 'castle' ? moveMs * 0.75 : moveMs + 60
+      let delay: number
+      if (cue === 'capture') delay = firstCapture
+      else if (cue === 'move' || cue === 'castle') delay = landAt
+      else if (cue === 'promotion') delay = landAt + 120
+      else if (cue === 'defeat' || cue === 'freeze') delay = statusAt
+      else delay = endAt + 60
       this.#playLater(cue, delay)
     }
+    // Turn handover and last-move highlight follow the piece, not the dispatch.
+    // A reduced-motion cross-fade has no flight to follow: hand over as it starts
+    // (the user's own drop is already on its square and fades nothing).
+    // (Reduced motion always cross-fades; see moveTiming.)
+    this.#handoverAt = !main
+      ? effectAt
+      : reduced
+        ? main.start
+        : main.start + main.duration * HANDOVER_AT
+    this.#lastMoveAt = { from: main ? main.start : start, to: main ? main.land : start }
   }
 
-  #captureEffect(n: PieceNode, square: number, delay: number): void {
+  #captureTime(
+    c: { square: number; onDest: boolean },
+    movers: readonly { to: number; contact: number; land: number }[],
+    main: { land: number } | null,
+    start: number,
+  ): number {
+    const attacker = movers.find((m) => m.to === c.square)
+    if (c.onDest && attacker) return attacker.contact
+    return main ? main.land : start
+  }
+
+  /** When (ms from now) the turn visuals hand over, and when the last move lights up; set by a plan. */
+  #handoverAt = 0
+  #lastMoveAt = { from: 0, to: 0 }
+
+  /**
+   * The captured piece is knocked along the attacker's path (tilting away
+   * from it), shrinks and fades, while chips in its colour scatter forward.
+   * Drawn below the moving layer, so the attacker always lands on top.
+   */
+  #captureEffect(
+    n: PieceNode,
+    square: number,
+    delay: number,
+    dir: { x: number; y: number } | null,
+  ): void {
+    this.#stopMotion(n)
     squareCenter(square, this.#layout, this.#tmpVec)
     const x = this.#tmpVec.x
     const y = this.#tmpVec.y
-    const color = seatColor(n.owner)
     const reduced = this.#options.reducedMotion
+    const sq = this.#layout.square
+    if (reduced) {
+      this.#anim.add(
+        100,
+        (k) => {
+          n.node.alpha = 1 - k
+          n.shadow.alpha = 0.42 * (1 - k)
+        },
+        { delay, ease: ease.outQuad, tag: TAG_MOTION, done: () => this.#destroyNode(n) },
+      )
+      return
+    }
+    // Board-local push direction; the tilt reads in screen space.
+    const dx = dir ? dir.x : 0
+    const dy = dir ? dir.y : 0
+    rotateVector(dx, dy, this.#angle, this.#tmpVec2)
+    const tilt = (this.#tmpVec2.x >= 0 ? 1 : -1) * KNOCK_TILT
+    const color = seatColor(n.owner)
     this.#anim.add(
-      reduced ? 100 : 170,
-      (k) => {
-        n.node.alpha = 1 - k
-        n.node.scale.set(1 - k * 0.35)
-        n.shadow.alpha = 0.42 * (1 - k)
+      0,
+      () => {
+        if (n.node.destroyed) return
+        this.#captureLayer.addChild(n.node)
+        const x0 = n.node.x
+        const y0 = n.node.y
+        const r0 = -this.#angle
+        const s0 = n.node.scale.x
+        const sh0 = n.shadow.alpha
+        const shx = n.shadow.x
+        const shy = n.shadow.y
+        this.#chipBurst(x, y, color, dir)
+        this.#anim.add(
+          KNOCK_MS,
+          (k) => {
+            if (n.node.destroyed) return
+            n.node.position.set(x0 + dx * KNOCK_SQ * sq * k, y0 + dy * KNOCK_SQ * sq * k)
+            n.node.rotation = r0 + tilt * k
+            n.node.scale.set(s0 * (1 - 0.2 * k))
+            n.node.alpha = 1 - k
+            const ks = Math.min(1, (k * KNOCK_MS) / 150)
+            n.shadow.alpha = sh0 * (1 - ks)
+            n.shadow.position.set(shx + dx * KNOCK_SQ * sq * k, shy + dy * KNOCK_SQ * sq * k)
+          },
+          { ease: ease.outCubic, done: () => this.#destroyNode(n) },
+        )
       },
-      {
-        delay,
-        ease: ease.outQuad,
-        done: () => this.#destroyNode(n),
-      },
+      { delay, tag: TAG_MOTION },
     )
-    if (reduced) return
-    this.#anim.add(0, () => this.#burst(x, y, color, 'capture'), { delay })
   }
 
-  #burst(x: number, y: number, color: string, kind: 'capture' | 'promote' | 'freeze'): void {
+  /** Capture debris: shards in the victim's colour thrown forward, and one coloured ring. */
+  #chipBurst(x: number, y: number, color: string, dir: { x: number; y: number } | null): void {
+    const p = this.#chips
+    const fx = this.#effects
+    if (!p || !fx) return
+    const sq = this.#layout.square
+    const base = hexToNumber(color)
+    const dark = hexToNumber(shadeHex(color, 0.62))
+    const light = hexToNumber(shadeHex(color, 1.25))
+    const heading = dir ? Math.atan2(dir.y, dir.x) : 0
+    const spread = dir ? Math.PI / 3 : Math.PI
+    for (let i = 0; i < 12; i++) {
+      const a = heading + (Math.random() * 2 - 1) * spread
+      const v = sq * (2.5 + Math.random() * 1.5)
+      p.emit(
+        fx.chip,
+        x + Math.cos(a) * sq * 0.12,
+        y + Math.sin(a) * sq * 0.12,
+        Math.cos(a) * v,
+        Math.sin(a) * v,
+        0.35 + Math.random() * 0.15,
+        sq * (0.08 + Math.random() * 0.06),
+        i % 3 === 0 ? dark : i % 3 === 1 ? base : light,
+        { drag: 4, spin: (Math.random() < 0.5 ? -1 : 1) * 8, endScale: 0.55, blend: 'normal' },
+      )
+    }
+    p.emit(fx.ring, x, y, 0, 0, 0.26, sq * 0.5, hexToNumber(lightFor(color)), {
+      endScale: 2.4,
+      drag: 0,
+      alpha: 0.45,
+      blend: 'normal',
+    })
+  }
+
+  /**
+   * A leader falls: a brief hit-stop, a shockwave in its colour and a small
+   * board shake (none of it under reduced motion).
+   */
+  #leaderMoment(square: number, owner: Seat, delay: number): void {
+    squareCenter(square, this.#layout, this.#tmpVec)
+    const x = this.#tmpVec.x
+    const y = this.#tmpVec.y
+    const sq = this.#layout.square
+    const tint = hexToNumber(lightFor(seatColor(owner)))
+    this.#anim.add(
+      0,
+      () => {
+        this.#hitStop = HIT_STOP_MS
+        this.#shakeLeft = SHAKE_MS
+        const fx = this.#effects
+        this.#chips?.emit(fx?.ring ?? Texture.EMPTY, x, y, 0, 0, 0.48, sq, tint, {
+          endScale: 7,
+          drag: 0,
+          alpha: 0.5,
+          blend: 'normal',
+        })
+        this.#particles?.emit(fx?.glow ?? Texture.EMPTY, x, y, 0, 0, 0.35, sq * 1.4, tint, {
+          endScale: 1.6,
+          alpha: 0.35,
+        })
+      },
+      { delay, tag: TAG_MOTION },
+    )
+  }
+
+  #burst(x: number, y: number, color: string, kind: 'promote' | 'freeze'): void {
     const p = this.#particles
     const fx = this.#effects
     if (!p || !fx) return
     const sq = this.#layout.square
-    const tint = hexToNumber(mixHex(color, '#ffffff', 0.25))
-    if (kind === 'capture') {
-      for (let i = 0; i < 20; i++) {
-        const a = Math.random() * Math.PI * 2
-        const v = sq * (1.6 + Math.random() * 2.6)
-        p.emit(
-          fx.dot,
-          x,
-          y,
-          Math.cos(a) * v,
-          Math.sin(a) * v,
-          0.4 + Math.random() * 0.35,
-          sq * (0.1 + Math.random() * 0.12),
-          tint,
-          { drag: 3.2 },
+    if (kind === 'promote') {
+      const tint = hexToNumber(mixHex(color, '#fff4d6', 0.5))
+      p.emit(fx.glow, x, y, 0, 0, 0.5, sq * 1.1, tint, { endScale: 1.6, alpha: 0.45 })
+      // Sparks start around the piece's edge and drift screen-up, clear of its face.
+      for (let i = 0; i < 10; i++) {
+        const side = i % 2 === 0 ? -1 : 1
+        rotateVector(
+          side * sq * (0.1 + Math.random() * 0.25),
+          -sq * (0.7 + Math.random() * 0.9),
+          -this.#angle,
+          this.#tmpVec2,
         )
-      }
-      for (let i = 0; i < 8; i++) {
-        const a = Math.random() * Math.PI * 2
-        const v = sq * (2.5 + Math.random() * 3)
+        rotateVector(
+          side * sq * (0.3 + Math.random() * 0.14),
+          (Math.random() - 0.3) * sq * 0.6,
+          -this.#angle,
+          this.#tmpVec,
+        )
         p.emit(
           fx.spark,
-          x,
-          y,
-          Math.cos(a) * v,
-          Math.sin(a) * v,
-          0.28 + Math.random() * 0.2,
-          sq * 0.26,
-          0xfff2d0,
-          { drag: 6, spin: 6 },
-        )
-      }
-      p.emit(fx.ring, x, y, 0, 0, 0.32, sq * 0.5, tint, { endScale: 3.4, drag: 0, alpha: 0.75 })
-      p.emit(fx.glow, x, y, 0, 0, 0.22, sq * 1.2, 0xffe6b0, { endScale: 1.5, alpha: 0.32 })
-    } else if (kind === 'promote') {
-      p.emit(fx.glow, x, y, 0, 0, 0.6, sq * 1.2, 0xffe08a, { endScale: 2.6, alpha: 0.9 })
-      p.emit(fx.ring, x, y, 0, 0, 0.45, sq * 0.6, 0xffe9b0, { endScale: 3.2, drag: 0, alpha: 0.9 })
-      for (let i = 0; i < 16; i++) {
-        const a = (i / 16) * Math.PI * 2
-        const v = sq * (1.5 + Math.random() * 1.5)
-        p.emit(
-          fx.spark,
-          x,
-          y,
-          Math.cos(a) * v,
-          Math.sin(a) * v,
-          0.5 + Math.random() * 0.3,
-          sq * 0.24,
+          x + this.#tmpVec.x,
+          y + this.#tmpVec.y,
+          this.#tmpVec2.x,
+          this.#tmpVec2.y,
+          0.5,
+          sq * (0.1 + Math.random() * 0.06),
           0xfff0c0,
-          { drag: 3, spin: 4 },
+          { drag: 2.5, spin: 3, endScale: 0.4 },
         )
       }
     } else {
@@ -1328,18 +2091,89 @@ export class BoardView {
     }
   }
 
-  #promotionBurst(x: number, y: number, owner: Seat): void {
-    if (this.#options.reducedMotion) return
-    this.#burst(x, y, seatColor(owner), 'promote')
+  /**
+   * Promotion as a short transformation: the pawn rises and brightens, turns
+   * into the new piece at the peak under a ring in its seat's colour, and
+   * the new piece settles from slightly large with an overshoot. It stays
+   * readable throughout (the brightening is a partial additive copy).
+   */
+  #promotionFlourish(n: PieceNode, x: number, y: number): void {
+    if (n.node.destroyed) return
+    if (this.#options.reducedMotion || n.shown === n.kind) {
+      n.shown = n.kind
+      this.#applyNodeTextures(n)
+      return
+    }
+    const sq = this.#layout.square
+    const color = seatColor(n.owner)
+    const over = new Sprite(n.body.texture)
+    over.anchor.set(0.5)
+    over.width = n.body.width
+    over.height = n.body.height
+    over.scale.x = n.body.scale.x
+    over.y = n.body.y
+    over.blendMode = 'add'
+    over.alpha = 0
+    n.node.addChild(over)
+    const rise = 0.6
+    this.#anim.add(
+      120,
+      (k) => {
+        if (n.node.destroyed) return
+        n.lift = rise * k
+        over.alpha = 0.7 * k
+        this.#placeShadow(n)
+      },
+      {
+        ease: ease.outQuad,
+        done: () => {
+          if (n.node.destroyed) return
+          n.shown = n.kind
+          this.#applyNodeTextures(n)
+          over.texture = n.body.texture
+          over.width = n.body.width
+          over.height = n.body.height
+          over.scale.x = n.body.scale.x
+          const ring = hexToNumber(mixHex(color, '#fff4d6', 0.5))
+          this.#chips?.emit(this.#effects?.ring ?? Texture.EMPTY, x, y, 0, 0, 0.3, sq * 0.7, ring, {
+            endScale: 2,
+            drag: 0,
+            alpha: 0.6,
+            blend: 'normal',
+          })
+          this.#burst(x, y, color, 'promote')
+          this.#anim.add(
+            240,
+            (k) => {
+              if (n.node.destroyed) return
+              n.squash = 1.15 + (1 - 1.15) * PROMO_EASE(k)
+              n.lift = rise * (1 - ease.inOutSine(k))
+              over.alpha = 0.7 * Math.max(0, 1 - (k * 240) / 180)
+              this.#placeShadow(n)
+            },
+            {
+              ease: ease.linear,
+              done: () => {
+                if (!over.destroyed) over.destroy()
+                if (n.node.destroyed) return
+                n.squash = 1
+                n.lift = 0
+                this.#placeShadow(n)
+              },
+            },
+          )
+        },
+      },
+    )
   }
 
-  #freezeSeat(seat: Seat, delay: number): void {
+  #freezeSeat(seat: Seat, delay: number, leader: number): void {
     const reduced = this.#options.reducedMotion
     for (let i = 0; i < 144; i++) {
       const n = this.#pieces[i]
       if (!n || n.owner !== seat || n.variant === 'frozen') continue
       const atlas = this.#atlas
-      const over = new Sprite(atlas ? atlas.piece(n.kind, 'frozen') : Texture.EMPTY)
+      const over = new Sprite(atlas ? atlas.piece(n.shown, 'frozen') : Texture.EMPTY)
       over.anchor.set(0.5)
       over.width = n.body.width
       over.height = n.body.height
@@ -1347,7 +2181,8 @@ export class BoardView {
       over.y = n.body.y
       over.alpha = 0
       n.node.addChildAt(over, 1)
-      const stagger = reduced ? 0 : (i % 12) * 18 + Math.floor(i / 12) * 10
+      // The frost spreads outward from the leader.
+      const stagger = reduced ? 0 : leader >= 0 ? 40 * chebyshev(i, leader) : 0
       squareCenter(i, this.#layout, this.#tmpVec)
       const x = this.#tmpVec.x
       const y = this.#tmpVec.y
@@ -1361,7 +2196,7 @@ export class BoardView {
           ease: ease.inOutSine,
           done: () => {
             n.variant = 'frozen'
-            this.#applyNodeTextures(n)
+            if (!n.node.destroyed) this.#applyNodeTextures(n)
             over.destroy()
           },
         },
@@ -1374,8 +2209,11 @@ export class BoardView {
     }
   }
 
-  #dissolve(nodes: PieceNode[], delay: number): void {
+  /** The army burns away, spreading outward from `leader` (one filter pass for the group). */
+  #dissolve(items: { n: PieceNode; square: number }[], leader: number, delay: number): void {
     const reduced = this.#options.reducedMotion
+    const nodes = items.map((d) => d.n)
+    for (const n of nodes) this.#stopMotion(n)
     const group = new Container()
     this.#dissolveLayer.addChild(group)
     const shadows = new Container()
@@ -1385,12 +2223,26 @@ export class BoardView {
       shadows.addChild(n.shadow)
       group.addChild(n.node)
     }
+    const sq = this.#layout.square
+    // Per-piece start, as a fraction of the burn: 45 ms per king step from the leader.
+    const steps = items.map((d) => chebyshev(d.square, leader))
+    const maxSteps = Math.max(0, ...steps)
+    const spreadMs = reduced ? 0 : maxSteps * DISSOLVE_SPREAD_MS
     const edge = hexToRgb(mixHex(seatColor(owner), '#ffb347', 0.5))
     let uniforms: UniformGroup | null = null
+    squareCenter(leader, this.#layout, this.#tmpVec)
+    this.#tmpPoint.set(this.#tmpVec.x, this.#tmpVec.y)
+    const centre = this.#root.toGlobal(this.#tmpPoint)
+    const sqGlobal = sq * this.#fitScale
     if (!reduced) {
       uniforms = new UniformGroup({
         uProgress: { value: 0, type: 'f32' },
         uEdge: { value: new Float32Array(edge), type: 'vec3<f32>' },
+        uCenter: { value: new Float32Array([centre.x, centre.y]), type: 'vec2<f32>' },
+        uDelay: {
+          value: DISSOLVE_SPREAD_MS / DISSOLVE_MS / Math.max(1, sqGlobal),
+          type: 'f32',
+        },
       })
       group.filters = [
         new Filter({
@@ -1406,26 +2258,30 @@ export class BoardView {
         }),
       ]
     }
-    const sq = this.#layout.square
     const p = this.#particles
     const fx = this.#effects
     const tint = hexToNumber(mixHex(seatColor(owner), '#ffcf7a', 0.4))
-    const dur = reduced ? 300 : 1300
+    const burn = reduced ? 300 : DISSOLVE_MS
+    const dur = burn + spreadMs
+    const span = dur / burn
     let emitted = 0
     this.#anim.add(
       dur,
       (k) => {
         if (uniforms) {
-          ;(uniforms.uniforms as { uProgress: number }).uProgress = k
+          ;(uniforms.uniforms as { uProgress: number }).uProgress = k * span
         } else {
           group.alpha = 1 - k
         }
-        // Embers rise (screen up) while the army burns away.
-        if (!reduced && p && fx && k < 0.85) {
+        // Embers rise (screen up) from pieces that are burning right now.
+        if (!reduced && p && fx) {
           const want = Math.floor(k * nodes.length * 5)
           while (emitted < want) {
-            const n = nodes[emitted % nodes.length] as PieceNode
+            const idx = emitted % nodes.length
             emitted++
+            const local = k * span - ((steps[idx] as number) * DISSOLVE_SPREAD_MS) / burn
+            if (local <= 0 || local > 0.85) continue
+            const n = nodes[idx] as PieceNode
             rotateVector(0, -sq * (0.6 + Math.random() * 0.8), -this.#angle, this.#tmpVec2)
             p.emit(
               fx.dot,
@@ -1468,19 +2324,81 @@ export class BoardView {
       this.#applyNodeTextures(n)
     }
     this.#refreshLeaderGlows()
-    this.#refreshTurn()
+    this.#syncTurn(0, false)
     this.#refreshFx()
   }
 
   #statusKey = ''
 
+  /** Statuses the bands and medallions show (they lag the snapshot while an effect plays). */
+  #shownStatusOf(i: number): string {
+    return this.#shownStatuses?.[i] ?? this.#snapshot?.statuses[i] ?? 'active'
+  }
+
+  #shownKey(): string {
+    return [0, 1, 2, 3].map((i) => this.#shownStatusOf(i)).join(',')
+  }
+
   #refreshBoardIfStatusChanged(): void {
-    const key = this.#snapshot ? this.#snapshot.statuses.join(',') : ''
-    if (key === this.#statusKey) return
+    if (this.#shownKey() === this.#statusKey) return
     this.#renderSurface()
   }
 
-  async #refreshMedallions(force: boolean): Promise<void> {
+  /** Shows new statuses on the bands and medallions, cross-faded when `fade`. */
+  #applyShownStatuses(statuses: readonly string[] | null, fade: boolean): void {
+    this.#shownStatuses = statuses
+    if (!this.#ready) return
+    const doFade = fade && !this.#options.reducedMotion
+    if (this.#shownKey() !== this.#statusKey) {
+      if (doFade) this.#crossFadeSurface()
+      else this.#renderSurface()
+    }
+    void this.#refreshMedallions(
+      false,
+      fade ? (this.#options.reducedMotion ? 150 : STATUS_FADE_MS) : 0,
+    )
+  }
+
+  /** Renders the board surface into a fresh texture and fades the old one out on top. */
+  #crossFadeSurface(): void {
+    const app = this.#app
+    const gl = (app?.renderer as { gl?: WebGLRenderingContext } | undefined)?.gl
+    const old = this.#boardRT
+    if (!old || this.#contextLost || gl?.isContextLost()) {
+      this.#renderSurface()
+      return
+    }
+    this.#endSurfaceFade()
+    this.#boardRT = null
+    this.#renderSurface()
+    if (!this.#boardRT) {
+      this.#boardRT = old
+      return
+    }
+    const f = this.#boardFade
+    f.texture = old
+    f.anchor.copyFrom(this.#boardSprite.anchor)
+    f.position.copyFrom(this.#boardSprite.position)
+    f.alpha = 1
+    f.visible = true
+    this.#anim.add(
+      STATUS_FADE_MS,
+      (k) => {
+        f.alpha = 1 - k
+      },
+      { ease: ease.inOutSine, done: () => this.#endSurfaceFade() },
+    )
+  }
+
+  #endSurfaceFade(): void {
+    const f = this.#boardFade
+    const t = f.texture
+    f.visible = false
+    f.texture = Texture.EMPTY
+    if (t && t !== Texture.EMPTY && t !== this.#boardRT) t.destroy(true)
+  }
+
+  async #refreshMedallions(force: boolean, fadeMs = 0): Promise<void> {
     const snap = this.#snapshot
     const sizePx = Math.ceil(this.#layout.square * MEDALLION * this.#res)
     const gen = this.#generation
@@ -1488,63 +2406,215 @@ export class BoardView {
       SEATS.map(async (seat, i) => {
         const m = this.#medallions[i] as Medallion
         const civ = snap?.config.civs[i]?.id ?? 'canada'
-        const status = (snap?.statuses[i] ?? 'active') as MedallionState
+        const status = this.#shownStatusOf(i) as MedallionState
         const key = `${civ}:${status}:${sizePx}`
         if (!force && key === m.key) return
+        const statusChanged = m.key !== '' && m.key.split(':')[1] !== status
         m.key = key
         const c = await drawMedallion(civ, seat, status, sizePx)
         if (gen !== this.#generation || this.#destroyed || m.key !== key) return
         const old = m.sprite.texture
         m.sprite.texture = canvasTexture(c)
+        const removed = status === 'removed'
+        const targetScale = removed ? 0.9 : 1
+        const targetAlpha = removed ? 0.72 : 1
+        if (fadeMs > 0 && statusChanged && old !== Texture.EMPTY) {
+          // The old face fades out on top while the new one shrinks/dims into place.
+          const ghost = new Sprite(old)
+          ghost.anchor.set(0.5)
+          ghost.position.copyFrom(m.sprite.position)
+          ghost.width = m.sprite.width
+          ghost.height = m.sprite.height
+          ghost.rotation = m.sprite.rotation
+          ghost.alpha = m.sprite.alpha
+          this.#medalLayer.addChild(ghost)
+          const s0 = m.statusScale
+          const a0 = m.sprite.alpha
+          this.#anim.add(
+            fadeMs,
+            (k) => {
+              m.statusScale = s0 + (targetScale - s0) * k
+              m.sprite.alpha = a0 + (targetAlpha - a0) * k
+              this.#sizeMedallion(i)
+              ghost.alpha = a0 * (1 - k)
+              ghost.width = m.sprite.width
+              ghost.height = m.sprite.height
+            },
+            {
+              ease: ease.inOutSine,
+              done: () => {
+                ghost.destroy()
+                old.destroy(true)
+              },
+            },
+          )
+          return
+        }
+        m.statusScale = targetScale
         this.#sizeMedallion(i)
-        m.sprite.alpha = status === 'removed' ? 0.72 : 1
+        m.sprite.alpha = targetAlpha
         if (old !== Texture.EMPTY) old.destroy(true)
       }),
     )
   }
 
   /**
-   * Whose turn it is: the active seat's band glows (pulsing) and its medallion
-   * grows with a light ring; the other seats' bands are dimmed (in `#refreshFx`).
+   * Points the turn visuals at the seat to move. With `animate`, the hand-over
+   * starts after `delay` ms (when the moving piece lands): the old band glow
+   * fades out while the new one fades in, the new medallion grows with a
+   * small overshoot and the old one shrinks, and the band dims cross-fade.
    */
-  #refreshTurn(): void {
+  #syncTurn(delay: number, animate: boolean): void {
     const snap = this.#snapshot
-    const g = this.#bandGlow
-    const ring = this.#medalRing
-    for (const m of this.#medallions) m.glow.visible = false
-    for (let i = 0; i < 4; i++) this.#sizeMedallion(i)
-    ring.clear()
-    ring.visible = false
-    if (!snap || snap.isOver) {
-      g.visible = false
+    const want = snap && !snap.isOver ? seatOrder(snap.seatToMove) : -1
+    if (want === this.#turnTarget) {
+      if (this.#turnShown === want) {
+        this.#placeBand(this.#bandGlow, want)
+        for (let i = 0; i < 4; i++) this.#sizeMedallion(i)
+      }
       return
     }
-    const seat = snap.seatToMove
-    const i = seatOrder(seat)
-    const { square: sq, frame } = this.#layout
-    const half = (sq * BOARD_SIZE) / 2
-    const d = half + frame * 0.63
-    const color = bandColor(seat)
+    this.#turnTarget = want
+    if (!animate || delay <= 0) {
+      this.#handover(want, animate)
+      return
+    }
+    this.#anim.add(0, () => this.#handover(want, true), { delay, tag: TAG_MOTION })
+  }
+
+  #handover(to: number, animate: boolean): void {
+    for (const t of this.#turnTweens) this.#anim.cancel(t)
+    this.#turnTweens = []
+    const from = this.#turnShown
+    this.#turnShown = to
     // Additive glow on an already bright band (Gold) would blow out to white.
-    this.#bandGlowGain = seat === 'north' ? 0.45 : 1
-    g.visible = true
-    g.tint = hexToNumber(mixHex(color, '#ffffff', 0.08))
-    g.width = sq * 12.2
-    g.height = frame * 0.62
-    g.rotation = i === 1 || i === 3 ? Math.PI / 2 : 0
-    if (i === 0) g.position.set(0, d)
-    else if (i === 1) g.position.set(-d, 0)
-    else if (i === 2) g.position.set(0, -d)
-    else g.position.set(d, 0)
+    const gainFor = (i: number) => (i === 2 ? 0.45 : 1)
+    const tm = handoverTiming(this.#options.reducedMotion)
+    const track = (t: Tween) => {
+      if (t.alive) this.#turnTweens.push(t)
+    }
+    // Band glow: the old one moves to the outgoing sprite and fades.
+    if (animate && from >= 0 && from !== to && this.#bandFade > 0.01) {
+      const out = this.#bandGlowOut
+      this.#placeBand(out, from)
+      out.visible = true
+      this.#bandOutGain = this.#bandGlowGain
+      const f0 = this.#bandFade
+      this.#bandOutFade = f0
+      track(
+        this.#anim.add(
+          tm.outMs,
+          (k) => {
+            this.#bandOutFade = f0 * (1 - k)
+          },
+          {
+            ease: ease.inOutSine,
+            done: () => {
+              out.visible = false
+            },
+          },
+        ),
+      )
+    }
+    this.#placeBand(this.#bandGlow, to)
+    if (to >= 0) {
+      this.#bandGlowGain = gainFor(to)
+      if (animate && from !== to) {
+        this.#bandFade = 0
+        track(
+          this.#anim.add(
+            tm.inMs,
+            (k) => {
+              this.#bandFade = k
+            },
+            { ease: ease.inOutSine },
+          ),
+        )
+      } else {
+        this.#bandFade = 1
+      }
+    } else {
+      this.#bandFade = 0
+    }
+    if (!animate) {
+      this.#bandGlowOut.visible = false
+      this.#bandOutFade = 0
+    }
+    // Band dims and medallions.
+    for (let i = 0; i < 4; i++) {
+      const dim = this.#bandDims.children[i] as Sprite
+      const m = this.#medallions[i] as Medallion
+      const dimTo = to >= 0 && i !== to ? 0.18 : 0
+      const scaleTo = i === to ? MEDALLION_ACTIVE : 1
+      const glowTo = i === to ? 1 : 0
+      if (!animate) {
+        this.#dim[i] = dimTo
+        dim.alpha = dimTo
+        dim.visible = dimTo > 0
+        m.scale = scaleTo
+        m.glowFade = glowTo
+        this.#applyMedalGlow(i)
+        this.#sizeMedallion(i)
+        continue
+      }
+      const d0 = this.#dim[i] as number
+      if (Math.abs(d0 - dimTo) > 0.001) {
+        dim.visible = true
+        track(
+          this.#anim.add(
+            tm.inMs,
+            (k) => {
+              const v = d0 + (dimTo - d0) * k
+              this.#dim[i] = v
+              dim.alpha = v
+            },
+            {
+              ease: ease.inOutSine,
+              done: () => {
+                dim.visible = dimTo > 0
+              },
+            },
+          ),
+        )
+      }
+      const s0 = m.scale
+      if (Math.abs(s0 - scaleTo) > 0.001) {
+        const grow = scaleTo > s0
+        track(
+          this.#anim.add(
+            grow ? tm.medalInMs : tm.medalOutMs,
+            (k) => {
+              m.scale = s0 + (scaleTo - s0) * k
+              this.#sizeMedallion(i)
+            },
+            { ease: grow && !this.#options.reducedMotion ? MEDAL_IN_EASE : ease.outCubic },
+          ),
+        )
+      }
+      const g0 = m.glowFade
+      if (Math.abs(g0 - glowTo) > 0.001) {
+        track(
+          this.#anim.add(
+            glowTo > g0 ? tm.medalInMs : tm.medalOutMs,
+            (k) => {
+              m.glowFade = g0 + (glowTo - g0) * k
+              this.#applyMedalGlow(i)
+            },
+            { ease: ease.inOutSine },
+          ),
+        )
+      }
+    }
+  }
+
+  /** Medallion glow and ring visibility from its fade (the glow alpha also pulses in `#tick`). */
+  #applyMedalGlow(i: number): void {
     const m = this.#medallions[i] as Medallion
-    m.glow.visible = true
-    m.glow.tint = hexToNumber(mixHex(color, '#fff4d6', 0.3))
-    // The medallion art's bezel radius is 0.46 of the sprite.
-    const r = m.sprite.width * 0.46
-    ring
-      .circle(m.sprite.x, m.sprite.y, r + Math.max(1, sq * 0.02))
-      .stroke({ color: hexToNumber(lightFor(color)), width: Math.max(2, sq * 0.04), alpha: 0.95 })
-    ring.visible = true
+    const on = m.glowFade > 0.001
+    m.glow.visible = on
+    m.ring.visible = on
+    m.ring.alpha = m.glowFade
+    if (on) m.glow.tint = hexToNumber(mixHex(bandColor(SEATS[i] as Seat), '#fff4d6', 0.3))
   }
 
   #refreshLeaderGlows(): void {
@@ -1569,100 +2639,403 @@ export class BoardView {
     }
   }
 
+  /** Top-left corner of a square in board-local coordinates. */
+  #squareOrigin(i: number, out: { x: number; y: number }): { x: number; y: number } {
+    const sq = this.#layout.square
+    const half = (sq * BOARD_SIZE) / 2
+    out.x = (i % BOARD_SIZE) * sq - half
+    out.y = (BOARD_SIZE - 1 - Math.floor(i / BOARD_SIZE)) * sq - half
+    return out
+  }
+
+  /**
+   * Draws one last-move square into `g` (once per move; only alpha animates).
+   * The warm fill is lighter on maple and stronger on walnut so both read
+   * the same; the mover shows as a rounded inset in its light colour.
+   */
+  #drawLastMoveSquare(g: Graphics, i: number, seat: Seat, dest: boolean): void {
+    const sq = this.#layout.square
+    this.#squareOrigin(i, this.#tmpVec)
+    const x = this.#tmpVec.x
+    const y = this.#tmpVec.y
+    const dark = ((i % 12) + Math.floor(i / 12)) % 2 === 0
+    const fill = dest ? (dark ? 0.46 : 0.3) : dark ? 0.27 : 0.17
+    const w = Math.max(1.5, sq * 0.05)
+    const inset = w / 2 + sq * 0.035
+    g.clear()
+    g.rect(x, y, sq, sq).fill({ color: LAST_MOVE_FILL, alpha: fill })
+    g.roundRect(x + inset, y + inset, sq - 2 * inset, sq - 2 * inset, sq * 0.1).stroke({
+      color: hexToNumber(lightFor(seatColor(seat))),
+      width: w,
+      alpha: dest ? 0.75 : 0.45,
+    })
+  }
+
+  /**
+   * Shows `#lastMove`. With `animate`, the previous highlight fades out, the
+   * origin fades in as the piece leaves and the destination as it lands
+   * (times from the current plan).
+   */
+  #drawLastMove(animate: boolean): void {
+    const lm = this.#lastMove
+    const key = lm ? `${lm.from}-${lm.to}-${lm.seat}` : ''
+    if (key === this.#lmKey) return
+    this.#lmKey = key
+    const t = lastMoveTiming(this.#options.reducedMotion)
+    const prev = this.#lmSlots[this.#lmCur] as LastMoveSlot
+    this.#lmCur = 1 - this.#lmCur
+    const cur = this.#lmSlots[this.#lmCur] as LastMoveSlot
+    if (prev.key !== '') {
+      if (animate) {
+        const a = prev.from.alpha
+        const b = prev.to.alpha
+        this.#anim.add(
+          t.outMs,
+          (k) => {
+            prev.from.alpha = a * (1 - k)
+            prev.to.alpha = b * (1 - k)
+          },
+          { ease: ease.inOutSine },
+        )
+      } else {
+        prev.from.alpha = 0
+        prev.to.alpha = 0
+      }
+      prev.key = ''
+    }
+    cur.key = key
+    if (!lm) {
+      cur.from.clear()
+      cur.to.clear()
+      return
+    }
+    this.#drawLastMoveSquare(cur.from, lm.from, lm.seat, false)
+    this.#drawLastMoveSquare(cur.to, lm.to, lm.seat, true)
+    // The newest highlight draws above the fading one.
+    this.#lastMoveLayer.addChild(cur.from, cur.to)
+    if (!animate) {
+      cur.from.alpha = 1
+      cur.to.alpha = 1
+      return
+    }
+    cur.from.alpha = 0
+    cur.to.alpha = 0
+    this.#anim.add(
+      t.fromMs,
+      (k) => {
+        if (cur.key === key) cur.from.alpha = k
+      },
+      { delay: this.#lastMoveAt.from, ease: ease.inOutSine },
+    )
+    this.#anim.add(
+      t.toMs,
+      (k) => {
+        if (cur.key === key) cur.to.alpha = k
+      },
+      { delay: this.#lastMoveAt.to, ease: ease.inOutSine, tag: TAG_MOTION },
+    )
+  }
+
+  /** Static highlights (keyboard cursor, attacked leaders) and the selection/hint state. */
   #refreshFx(): void {
     const g = this.#fx
     const h = this.#hints
     g.clear()
     h.clear()
     if (!this.#ready) return
-    const { square: sq, frame } = this.#layout
-    const half = (sq * BOARD_SIZE) / 2
-    const rect = (i: number) => {
-      const file = i % BOARD_SIZE
-      const row = BOARD_SIZE - 1 - Math.floor(i / BOARD_SIZE)
-      return [file * sq - half, row * sq - half] as const
-    }
-    const insetBox = (i: number, width: number, color: number, alpha: number) => {
-      const [x, y] = rect(i)
-      const o = width / 2
-      g.rect(x + o, y + o, sq - width, sq - width).stroke({ color, alpha, width })
-    }
-    // Turn: dim the bands of the seats not to move.
-    const snap = this.#snapshot
-    if (snap && !snap.isOver) {
-      const a = half + frame * 0.5
-      const b = frame * 0.26
-      const len = sq * (BOARD_SIZE - 0.36)
-      for (let i = 0; i < 4; i++) {
-        if (i === seatOrder(snap.seatToMove)) continue
-        if (i === 0) g.rect(-len / 2, a, len, b)
-        else if (i === 1) g.rect(-a - b, -len / 2, b, len)
-        else if (i === 2) g.rect(-len / 2, -a - b, len, b)
-        else g.rect(a, -len / 2, b, len)
-        g.fill({ color: 0x0c0806, alpha: 0.18 })
-      }
-    }
-    // Last move: one neutral warm fill for every seat; the mover shows in the border colour.
-    const lm = this.#lastMove
-    if (lm) {
-      for (const i of [lm.from, lm.to]) {
-        const [x, y] = rect(i)
-        g.rect(x, y, sq, sq).fill({ color: 0xf7d978, alpha: i === lm.to ? 0.4 : 0.22 })
-        insetBox(i, Math.max(2, sq * 0.04), hexToNumber(seatColor(lm.seat)), 0.9)
-      }
-    }
+    const sq = this.#layout.square
     // Attacked leader: a steady red border (the halo under the piece pulses).
     for (const i of this.#attackedLeaders) {
-      const [x, y] = rect(i)
+      this.#squareOrigin(i, this.#tmpVec)
       const w = Math.max(2, sq * 0.04)
-      h.rect(x + w / 2, y + w / 2, sq - w, sq - w).stroke({ color: 0xff4d3d, width: w })
-    }
-    if (this.#selected >= 0) {
-      const [x, y] = rect(this.#selected)
-      g.rect(x, y, sq, sq).fill({ color: 0xffd25e, alpha: 0.42 })
-      insetBox(this.#selected, Math.max(1.5, sq * 0.04), 0xffe9a0, 0.85)
+      h.rect(this.#tmpVec.x + w / 2, this.#tmpVec.y + w / 2, sq - w, sq - w).stroke({
+        color: 0xff4d3d,
+        width: w,
+      })
     }
     if (this.#cursorVisible && this.#cursor >= 0) {
-      const [x, y] = rect(this.#cursor)
+      this.#squareOrigin(this.#cursor, this.#tmpVec)
       const inset = sq * 0.06
-      g.roundRect(x + inset, y + inset, sq - inset * 2, sq - inset * 2, sq * 0.08).stroke({
+      g.roundRect(
+        this.#tmpVec.x + inset,
+        this.#tmpVec.y + inset,
+        sq - inset * 2,
+        sq - inset * 2,
+        sq * 0.08,
+      ).stroke({
         color: 0xffffff,
         alpha: 0.95,
         width: Math.max(2, sq * 0.05),
       })
     }
-    // Legal-move hints for the selected piece: light marks that read on maple and walnut.
-    if (this.#selected >= 0) {
-      const mover = this.#snapshot?.board[this.#selected]?.owner ?? 'south'
-      const ringColor = hexToNumber(lightFor(seatColor(mover)))
-      const px = 1 / Math.max(1, this.#res)
-      for (const t of this.#moves.targetsFrom(this.#selected)) {
-        const [x, y] = rect(t.to)
-        const cx = x + sq / 2
-        const cy = y + sq / 2
-        if (t.to === this.#hover) {
-          h.rect(x, y, sq, sq).fill({ color: 0xffe9a0, alpha: 0.28 })
-          const w = Math.max(3, sq * 0.05)
-          h.rect(x + w / 2, y + w / 2, sq - w, sq - w).stroke({ color: 0xffe9a0, width: w })
-        }
-        if (t.capture) {
-          const w = sq * 0.08
-          h.circle(cx, cy, sq * 0.45 + w / 2 + px).stroke({
-            color: 0x1a120c,
-            alpha: 0.5,
-            width: Math.max(1, px * 1.5),
-          })
-          h.circle(cx, cy, sq * 0.45).stroke({ color: ringColor, alpha: 0.85, width: w })
-        } else {
-          h.circle(cx, cy, sq * 0.16)
-            .fill({ color: 0xf6ecd2, alpha: 0.6 })
-            .stroke({ color: 0x1a120c, alpha: 0.35, width: Math.max(1, px * 1.5) })
-        }
-        if (t.promotions.length > 0) {
-          h.circle(cx, cy, sq * 0.26).stroke({ color: 0xffd36b, alpha: 0.8, width: sq * 0.03 })
-        }
+    this.#syncSelection()
+    this.#syncTarget()
+  }
+
+  /**
+   * Selection visuals follow `#selected`: the square fill and the halo under
+   * the piece fade in, the piece lifts a little, and the legal-move hints
+   * ripple out from it; deselecting fades them away.
+   */
+  #syncSelection(): void {
+    const sel = this.#selected
+    if (sel === this.#selShownFor && sel === this.#hintsFor) return
+    const reduced = this.#options.reducedMotion
+    const prevSel = this.#selShownFor
+    if (sel !== prevSel) {
+      const old = prevSel >= 0 ? this.#pieces[prevSel] : null
+      if (old && !old.moving && this.#drag?.node !== old) {
+        this.#tweenLift(old, old === this.#hoverNode ? HOVER_LIFT : 0, 140)
       }
+      this.#selShownFor = sel
+      this.#anim.cancel(this.#selTween)
+      const node = sel >= 0 ? this.#pieces[sel] : null
+      if (sel >= 0) {
+        this.#squareOrigin(sel, this.#tmpVec)
+        this.#selGfx.position.set(this.#tmpVec.x, this.#tmpVec.y)
+        squareCenter(sel, this.#layout, this.#tmpVec)
+        this.#halo.position.set(this.#tmpVec.x, this.#tmpVec.y)
+        const owner = node?.owner ?? this.#snapshot?.board[sel]?.owner ?? 'south'
+        this.#halo.tint = hexToNumber(lightFor(seatColor(owner)))
+        this.#selGfx.visible = true
+        this.#halo.visible = true
+        if (node && !node.moving) this.#tweenLift(node, reduced ? 0 : SELECT_LIFT, 120)
+        if (node === this.#hoverNode) this.#fadeHoverGlow(0)
+      }
+      const f0 = this.#selFade
+      const target = sel >= 0 ? 1 : 0
+      this.#selTween = this.#anim.add(
+        reduced ? 0 : target > 0 ? 110 : HINT_OUT_MS,
+        (k) => {
+          this.#selFade = f0 + (target - f0) * k
+          this.#selGfx.alpha = this.#selFade
+        },
+        {
+          ease: ease.outCubic,
+          done: () => {
+            if (target === 0) {
+              this.#selGfx.visible = false
+              this.#halo.visible = false
+            }
+          },
+        },
+      )
     }
+    this.#showHints(sel)
+  }
+
+  /** Legal-move hints for `from` (-1 hides them). Sprites from a pool; one tween drives all. */
+  #showHints(from: number): void {
+    if (from === this.#hintsFor && from < 0) return
+    this.#hintsFor = from
+    this.#anim.cancel(this.#hintTween)
+    const reduced = this.#options.reducedMotion
+    if (from < 0) {
+      const count = this.#hintCount
+      const f0 = this.#hintFade
+      if (count === 0) return
+      this.#hintTween = this.#anim.add(
+        reduced ? 0 : HINT_OUT_MS,
+        (k) => {
+          this.#hintFade = f0 * (1 - k)
+          for (let i = 0; i < count; i++) {
+            const h = this.#hintPool[i] as Hint
+            h.sprite.alpha = Math.min(h.sprite.alpha, this.#hintFade)
+            h.promo.alpha = Math.min(h.promo.alpha, this.#hintFade)
+          }
+        },
+        {
+          ease: ease.outQuad,
+          done: () => {
+            for (let i = 0; i < count; i++) {
+              const h = this.#hintPool[i] as Hint
+              h.sprite.visible = false
+              h.promo.visible = false
+            }
+            this.#hintCount = 0
+          },
+        },
+      )
+      return
+    }
+    const fx = this.#effects
+    if (!fx) return
+    const targets = this.#moves.targetsFrom(from)
+    const mover = this.#snapshot?.board[from]?.owner ?? 'south'
+    const ringTint = hexToNumber(lightFor(seatColor(mover)))
+    while (this.#hintPool.length < targets.length) {
+      const sprite = new Sprite(fx.hintDot)
+      const promo = new Sprite(fx.hintPromo)
+      for (const sp of [sprite, promo]) {
+        sp.anchor.set(0.5)
+        sp.visible = false
+        this.#hintLayer.addChild(sp)
+      }
+      const h: Hint = { sprite, promo, delay: 0 }
+      this.#sizeHint(h)
+      this.#hintPool.push(h)
+    }
+    for (let i = targets.length; i < this.#hintCount; i++) {
+      const h = this.#hintPool[i] as Hint
+      h.sprite.visible = false
+      h.promo.visible = false
+    }
+    let maxDelay = 0
+    targets.forEach((t, i) => {
+      const h = this.#hintPool[i] as Hint
+      squareCenter(t.to, this.#layout, this.#tmpVec)
+      h.sprite.texture = t.capture ? fx.hintRing : fx.hintDot
+      h.sprite.tint = t.capture ? ringTint : 0xffffff
+      h.sprite.position.set(this.#tmpVec.x, this.#tmpVec.y)
+      h.promo.position.set(this.#tmpVec.x, this.#tmpVec.y)
+      h.promo.tint = 0xffd36b
+      h.sprite.visible = true
+      h.promo.visible = t.promotions.length > 0
+      h.delay = reduced ? 0 : hintDelay(from, t.to)
+      maxDelay = Math.max(maxDelay, h.delay)
+      this.#scaleHint(h, reduced ? 1 : 0.4)
+      h.sprite.alpha = reduced ? 1 : 0
+      h.promo.alpha = reduced ? 1 : 0
+    })
+    this.#hintCount = targets.length
+    this.#hintFade = 1
+    if (reduced || targets.length === 0) return
+    const total = HINT_IN_MS + maxDelay
+    const count = targets.length
+    this.#hintTween = this.#anim.add(
+      total,
+      (k) => {
+        const ms = k * total
+        for (let i = 0; i < count; i++) {
+          const h = this.#hintPool[i] as Hint
+          const u = Math.max(0, Math.min(1, (ms - h.delay) / HINT_IN_MS))
+          this.#scaleHint(h, 0.4 + 0.6 * HINT_EASE(u))
+          const a = ease.outQuad(u)
+          h.sprite.alpha = a
+          h.promo.alpha = a
+        }
+      },
+      { ease: ease.linear },
+    )
+  }
+
+  #sizeHint(h: Hint): void {
+    this.#scaleHint(h, 1)
+  }
+
+  #scaleHint(h: Hint, s: number): void {
+    const sq = this.#layout.square
+    const w = Math.max(1, h.sprite.texture.width)
+    h.sprite.scale.set((sq * s) / w)
+    h.promo.scale.set((sq * s) / Math.max(1, h.promo.texture.width))
+  }
+
+  /** The hovered legal target of the selected piece. */
+  #syncTarget(): void {
+    const t =
+      this.#selected >= 0 && this.#hover >= 0 && this.#hover !== this.#selected
+        ? this.#moves.target(this.#selected, this.#hover)
+        : null
+    if (!t) {
+      this.#targetGfx.visible = false
+      return
+    }
+    this.#squareOrigin(this.#hover, this.#tmpVec)
+    this.#targetGfx.position.set(this.#tmpVec.x, this.#tmpVec.y)
+    this.#targetGfx.visible = true
+  }
+
+  /** Tweens a resting piece's lift (hover, selection, drag), replacing any earlier lift tween. */
+  #tweenLift(n: PieceNode, to: number, ms: number): void {
+    this.#anim.cancel(n.liftTween)
+    n.liftTween = null
+    const from = n.lift
+    if (Math.abs(from - to) < 0.001) return
+    if (this.#options.reducedMotion) {
+      n.lift = to
+      this.#placeShadow(n)
+      return
+    }
+    n.liftTween = this.#anim.add(
+      ms,
+      (k) => {
+        if (n.node.destroyed || n.moving) return
+        n.lift = from + (to - from) * k
+        this.#placeShadow(n)
+      },
+      {
+        ease: ease.outCubic,
+        done: () => {
+          n.liftTween = null
+        },
+      },
+    )
+  }
+
+  /** Hover affordance on a movable piece of the interactive seat: a small lift and a soft glow. */
+  #setHoverPiece(n: PieceNode | null): void {
+    if (n === this.#hoverNode) return
+    const old = this.#hoverNode
+    this.#hoverNode = n
+    const selNode = this.#selected >= 0 ? this.#pieces[this.#selected] : null
+    if (old && !old.node.destroyed && !old.moving && old !== selNode && this.#drag?.node !== old) {
+      this.#tweenLift(old, 0, 160)
+    }
+    if (!n || n === selNode) {
+      this.#fadeHoverGlow(0)
+      return
+    }
+    if (!this.#options.reducedMotion) this.#tweenLift(n, HOVER_LIFT, 120)
+    const sq = this.#pieces.indexOf(n)
+    if (sq >= 0) {
+      squareCenter(sq, this.#layout, this.#tmpVec)
+      this.#hoverGlow.position.set(this.#tmpVec.x, this.#tmpVec.y)
+      this.#hoverGlow.tint = hexToNumber(lightFor(seatColor(n.owner)))
+      this.#fadeHoverGlow(0.3)
+    }
+  }
+
+  #fadeHoverGlow(to: number): void {
+    this.#anim.cancel(this.#hoverTween)
+    const g = this.#hoverGlow
+    const from = g.visible ? g.alpha : 0
+    if (Math.abs(from - to) < 0.001) {
+      g.visible = to > 0
+      return
+    }
+    g.visible = true
+    this.#hoverTween = this.#anim.add(
+      to > from ? 120 : 160,
+      (k) => {
+        g.alpha = from + (to - from) * k
+      },
+      {
+        ease: ease.outCubic,
+        done: () => {
+          g.visible = to > 0
+        },
+      },
+    )
+  }
+
+  /** Red flash on a refused drop target. */
+  #flashIllegal(square: number): void {
+    this.#squareOrigin(square, this.#tmpVec)
+    const f = this.#flashGfx
+    f.position.set(this.#tmpVec.x, this.#tmpVec.y)
+    f.visible = true
+    this.#anim.add(
+      220,
+      (k) => {
+        f.alpha = 0.25 * (1 - k)
+      },
+      {
+        ease: ease.outQuad,
+        done: () => {
+          f.visible = false
+        },
+      },
+    )
   }
 
   // ---------------------------------------------------------------------------
@@ -1687,17 +3060,40 @@ export class BoardView {
     // are clamped for both, so effects never drift apart.
     const raw = this.#lastTick ? Math.min(250, now - this.#lastTick) : 0
     this.#lastTick = now
-    const step = raw * this.#timeScale
+    let step = raw * this.#timeScale
+    // Hit-stop: a leader's fall briefly slows the whole scene.
+    if (this.#hitStop > 0) {
+      this.#hitStop -= step
+      step *= HIT_STOP_SCALE
+    }
     this.#clock += step
     const dt = step / 1000
     this.#time += dt
     this.#anim.update(this.#clock)
     this.#particles?.update(dt)
+    this.#chips?.update(dt)
+    if (this.#shakeLeft > 0) {
+      this.#shakeLeft = Math.max(0, this.#shakeLeft - step)
+      const t = 1 - this.#shakeLeft / SHAKE_MS
+      const amp = (this.#options.reducedMotion ? 0 : SHAKE_PX / this.#fitScale) * (1 - t) ** 2
+      this.#root.pivot.set(Math.sin(t * Math.PI * 7) * amp, Math.cos(t * Math.PI * 5.2) * amp * 0.7)
+    } else if (this.#root.pivot.x !== 0 || this.#root.pivot.y !== 0) {
+      this.#root.pivot.set(0, 0)
+    }
     const reduced = this.#options.reducedMotion
     const pulse = reduced ? 0.6 : 0.5 + 0.5 * Math.sin(this.#time * 2.4)
-    if (this.#bandGlow.visible) this.#bandGlow.alpha = (0.5 + 0.3 * pulse) * this.#bandGlowGain
+    const band = this.#bandGlow
+    band.visible = this.#turnShown >= 0 && this.#bandFade > 0.001
+    if (band.visible) band.alpha = (0.5 + 0.3 * pulse) * this.#bandGlowGain * this.#bandFade
+    const out = this.#bandGlowOut
+    if (out.visible) out.alpha = (0.5 + 0.3 * pulse) * this.#bandOutGain * this.#bandOutFade
     for (const m of this.#medallions) {
-      if (m.glow.visible) m.glow.alpha = 0.35 + 0.4 * pulse
+      if (m.glow.visible) m.glow.alpha = (0.35 + 0.4 * pulse) * m.glowFade
+    }
+    // Selected piece: a halo that breathes at 1.6 Hz (steady under reduced motion).
+    if (this.#halo.visible) {
+      const hp = reduced ? 0.5 : 0.5 + 0.5 * Math.sin(this.#time * Math.PI * 2 * 1.6)
+      this.#halo.alpha = (0.3 + 0.2 * hp) * this.#selFade
     }
     const lp = reduced ? 0.6 : 0.5 + 0.5 * Math.sin(this.#time * 5.5)
     for (const g of this.#leaderGlows) {
@@ -1747,7 +3143,10 @@ export class BoardView {
     stage.on('pointerup', (e) => this.#onUp(e))
     stage.on('pointerupoutside', (e) => this.#onUp(e))
     cv.addEventListener('keydown', (e) => this.#onKey(e))
-    cv.addEventListener('pointerleave', () => this.#setHover(-1))
+    cv.addEventListener('pointerleave', () => {
+      this.#setHover(-1)
+      this.#setHoverPiece(null)
+    })
     cv.addEventListener('contextmenu', (e) => {
       if (this.#drag) e.preventDefault()
     })
@@ -1816,9 +3215,11 @@ export class BoardView {
       if (cv) cv.style.cursor = 'grabbing'
       return
     }
+    const act = this.#canAct()
+    const movable = act && sq >= 0 && this.#moves.canMoveFrom(sq)
+    this.#setHoverPiece(movable && !this.#press ? (this.#pieces[sq] ?? null) : null)
     if (cv) {
-      const act = this.#canAct()
-      if (act && sq >= 0 && this.#moves.canMoveFrom(sq)) cv.style.cursor = 'grab'
+      if (movable) cv.style.cursor = 'grab'
       else if (act && this.#selected >= 0 && sq >= 0 && this.#moves.target(this.#selected, sq))
         cv.style.cursor = 'pointer'
       else cv.style.cursor = 'default'
@@ -1835,7 +3236,10 @@ export class BoardView {
         this.#endDrag(true)
         this.#commit(from, to, true)
       } else {
-        if (to >= 0 && to !== from) this.#sound.play('illegal')
+        if (to >= 0 && to !== from) {
+          this.#sound.play('illegal')
+          this.#flashIllegal(to)
+        }
         this.#endDrag(false)
         // Dropped back on its own square: keep it selected for click-to-move.
         if (to !== from) this.#select(-1)
@@ -1849,7 +3253,7 @@ export class BoardView {
     if (sq === this.#hover) return
     this.#hover = sq
     this.onSquareHover?.(sq >= 0 ? (nameOf(sq) as Square) : null)
-    if (this.#selected >= 0) this.#refreshFx()
+    if (this.#selected >= 0) this.#syncTarget()
   }
 
   #select(sq: number): void {
@@ -1863,13 +3267,11 @@ export class BoardView {
     const n = this.#pieces[square]
     if (!n) return
     this.#drag = { square, node: n }
+    this.#stopMotion(n)
+    this.#fadeHoverGlow(0)
     this.#dragLayer.addChild(n.node)
     n.node.rotation = -this.#angle
-    const from = n.lift
-    this.#anim.add(110, (k) => {
-      n.lift = from + (1 - from) * k
-      this.#placeShadow(n)
-    })
+    this.#tweenLift(n, 1, 110)
   }
 
   #fadeNode(n: PieceNode | null): void {
@@ -1896,15 +3298,13 @@ export class BoardView {
     const cv = this.#app?.canvas
     if (cv) cv.style.cursor = 'default'
     if (n.node.destroyed) return
+    this.#anim.cancel(n.liftTween)
+    n.liftTween = null
     this.#pieceLayer.addChild(n.node)
-    const from = n.lift
-    this.#anim.add(120, (k) => {
-      n.lift = from * (1 - k)
-      this.#placeShadow(n)
-    })
     if (!keep) {
+      // Back home with the lift held (it passes over other pieces), dropping at the end.
       squareCenter(d.square, this.#layout, this.#tmpVec)
-      this.#slide(n, this.#tmpVec.x, this.#tmpVec.y, this.#options.reducedMotion ? 0 : 160, 0)
+      this.#returnHome(n, this.#tmpVec.x, this.#tmpVec.y, this.#options.reducedMotion)
     }
   }
 
@@ -1915,8 +3315,34 @@ export class BoardView {
     const n = this.#pieces[from]
     if (n) {
       squareCenter(to, this.#layout, this.#tmpVec)
-      const dur = dropped ? 90 : this.#options.reducedMotion ? 0 : MOVE_MS
-      const tween = this.#slide(n, this.#tmpVec.x, this.#tmpVec.y, dur, 0)
+      const reduced = this.#options.reducedMotion
+      let tween: Tween
+      if (dropped) {
+        // Already over its square: glide to the centre and set it down.
+        tween = this.#fly(n, this.#tmpVec.x, this.#tmpVec.y, {
+          duration: reduced ? 0 : DROP_MS,
+          ease: ease.outQuad,
+          liftFrom: reduced ? 0 : n.lift,
+          peak: reduced ? 0 : n.lift,
+          dropAt: 0,
+          settle: reduced ? 0 : 0.95,
+          tag: TAG_USER,
+        })
+      } else {
+        const t = scheduleMoves(
+          [{ kind: n.kind, distSq: squareDistance(from, to), castleRook: false }],
+          reduced,
+        ).items[0]?.timing
+        tween = this.#fly(n, this.#tmpVec.x, this.#tmpVec.y, {
+          duration: reduced || !t ? 0 : t.duration,
+          ease: t?.ease ?? ease.move,
+          peak: reduced ? 0 : (t?.lift ?? 0),
+          liftFrom: reduced ? 0 : n.lift,
+          hop: reduced ? 0 : (t?.hop ?? 0),
+          settle: reduced || !t || t.settleMs === 0 ? 0 : 0.95,
+          tag: TAG_USER,
+        })
+      }
       this.#commitSlide = { node: n, from, to, tween }
     }
     this.#selected = -1

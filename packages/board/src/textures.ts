@@ -463,11 +463,31 @@ export interface EffectTextures {
   readonly bar: Texture
   /** Hot halo (attacked leader): white-yellow core, red rim, transparent edge. Not tinted. */
   readonly halo: Texture
+  /** Small irregular shard with a lit edge (capture debris, tinted with the victim's colour). */
+  readonly chip: Texture
+  /** Quiet-move hint, a full square: dark translucent dot with a thin light rim. Not tinted. */
+  readonly hintDot: Texture
+  /** Capture hint, a full square: white ring with a dark outline (tinted with the mover's light colour). */
+  readonly hintRing: Texture
+  /** Promotion marker, a full square: thin white ring (tinted). */
+  readonly hintPromo: Texture
 }
 
 /** Destroys effect textures together with their canvases (they are not shared). */
 export function destroyEffectTextures(fx: EffectTextures): void {
-  for (const t of [fx.dot, fx.glow, fx.spark, fx.ring, fx.bar, fx.halo]) t.destroy(true)
+  for (const t of [
+    fx.dot,
+    fx.glow,
+    fx.spark,
+    fx.ring,
+    fx.bar,
+    fx.halo,
+    fx.chip,
+    fx.hintDot,
+    fx.hintRing,
+    fx.hintPromo,
+  ])
+    t.destroy(true)
 }
 
 /** A texture for a canvas that never enters Pixi's global cache (so destroying it frees the canvas). */
@@ -552,6 +572,85 @@ export function createEffectTextures(): EffectTextures {
     g.fillStyle = gr
     g.fillRect(0, 0, 256, 256)
   }
+  const chipC = canvas(48, 48)
+  {
+    const g = ctx2d(chipC)
+    // An irregular faceted shard: lit upper facet, shaded lower one.
+    g.beginPath()
+    g.moveTo(6, 20)
+    g.lineTo(22, 4)
+    g.lineTo(42, 14)
+    g.lineTo(38, 36)
+    g.lineTo(16, 44)
+    g.closePath()
+    g.fillStyle = 'rgb(205,205,205)'
+    g.fill()
+    g.beginPath()
+    g.moveTo(6, 20)
+    g.lineTo(22, 4)
+    g.lineTo(42, 14)
+    g.lineTo(24, 24)
+    g.closePath()
+    g.fillStyle = 'rgb(255,255,255)'
+    g.fill()
+    g.beginPath()
+    g.moveTo(24, 24)
+    g.lineTo(38, 36)
+    g.lineTo(16, 44)
+    g.closePath()
+    g.fillStyle = 'rgb(140,140,140)'
+    g.fill()
+    g.lineWidth = 2
+    g.strokeStyle = 'rgba(30,22,16,0.55)'
+    g.beginPath()
+    g.moveTo(6, 20)
+    g.lineTo(22, 4)
+    g.lineTo(42, 14)
+    g.lineTo(38, 36)
+    g.lineTo(16, 44)
+    g.closePath()
+    g.stroke()
+  }
+  const H = 128
+  const hintDotC = canvas(H, H)
+  {
+    const g = ctx2d(hintDotC)
+    const r = H * 0.14
+    g.beginPath()
+    g.arc(H / 2, H / 2, r, 0, Math.PI * 2)
+    g.fillStyle = 'rgba(26,18,12,0.3)'
+    g.fill()
+    g.lineWidth = 2
+    g.strokeStyle = 'rgba(255,241,214,0.55)'
+    g.beginPath()
+    g.arc(H / 2, H / 2, r - 1, 0, Math.PI * 2)
+    g.stroke()
+  }
+  const hintRingC = canvas(H, H)
+  {
+    const g = ctx2d(hintRingC)
+    const w = H * 0.08
+    const r = H * 0.45 - w / 2
+    g.lineWidth = w + 3
+    g.strokeStyle = 'rgba(26,18,12,0.5)'
+    g.beginPath()
+    g.arc(H / 2, H / 2, r, 0, Math.PI * 2)
+    g.stroke()
+    g.lineWidth = w
+    g.strokeStyle = 'rgba(255,255,255,0.92)'
+    g.beginPath()
+    g.arc(H / 2, H / 2, r, 0, Math.PI * 2)
+    g.stroke()
+  }
+  const hintPromoC = canvas(H, H)
+  {
+    const g = ctx2d(hintPromoC)
+    g.lineWidth = H * 0.03
+    g.strokeStyle = 'rgba(255,255,255,0.85)'
+    g.beginPath()
+    g.arc(H / 2, H / 2, H * 0.26, 0, Math.PI * 2)
+    g.stroke()
+  }
   return {
     dot: canvasTexture(dotC),
     glow: canvasTexture(glowC),
@@ -559,6 +658,10 @@ export function createEffectTextures(): EffectTextures {
     ring: canvasTexture(ringC),
     bar: canvasTexture(barC),
     halo: canvasTexture(haloC),
+    chip: canvasTexture(chipC),
+    hintDot: canvasTexture(hintDotC),
+    hintRing: canvasTexture(hintRingC),
+    hintPromo: canvasTexture(hintPromoC),
   }
 }
 

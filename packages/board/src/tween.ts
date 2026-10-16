@@ -1,3 +1,41 @@
+/**
+ * A CSS-style cubic-bezier easing, precomputed into a lookup table when it is
+ * created, so evaluating it per frame neither solves nor allocates.
+ */
+export function cubicBezier(x1: number, y1: number, x2: number, y2: number, samples = 64): Easing {
+  const bx = (t: number) => 3 * (1 - t) * (1 - t) * t * x1 + 3 * (1 - t) * t * t * x2 + t * t * t
+  const by = (t: number) => 3 * (1 - t) * (1 - t) * t * y1 + 3 * (1 - t) * t * t * y2 + t * t * t
+  // y at evenly spaced x, found by bisection on the (monotonic) x curve.
+  const table = new Float32Array(samples + 1)
+  for (let i = 0; i <= samples; i++) {
+    const x = i / samples
+    let lo = 0
+    let hi = 1
+    for (let k = 0; k < 30; k++) {
+      const mid = (lo + hi) / 2
+      if (bx(mid) < x) lo = mid
+      else hi = mid
+    }
+    table[i] = by((lo + hi) / 2)
+  }
+  table[0] = 0
+  table[samples] = 1
+  return (t: number) => {
+    if (t <= 0) return 0
+    if (t >= 1) return 1
+    const f = t * samples
+    const i = Math.floor(f)
+    const a = table[i] as number
+    return a + ((table[i + 1] as number) - a) * (f - i)
+  }
+}
+
+/** Overshooting ease-out; `s` sets the overshoot (1.70158 is the classic ~10%). */
+export function outBackWith(s: number): Easing {
+  const c3 = s + 1
+  return (t: number) => 1 + c3 * (t - 1) ** 3 + s * (t - 1) ** 2
+}
+
 /** Easing curves (t in 0..1). */
 export const ease = {
   linear: (t: number) => t,
@@ -11,6 +49,8 @@ export const ease = {
     return 1 + c3 * (t - 1) ** 3 + c1 * (t - 1) ** 2
   },
   inOutSine: (t: number) => -(Math.cos(Math.PI * t) - 1) / 2,
+  /** Piece travel: quick take-off, long soft deceleration (cubic-bezier(0.32, 0, 0.18, 1)). */
+  move: cubicBezier(0.32, 0, 0.18, 1),
 } as const
 
 export type Easing = (t: number) => number
@@ -22,6 +62,8 @@ export interface Tween {
   update: (k: number) => void
   done: (() => void) | null
   alive: boolean
+  /** Bit flags for `hurry` / `remaining` (0 = untagged). */
+  tag: number
 }
 
 /**
@@ -43,7 +85,7 @@ export class Animator {
   add(
     duration: number,
     update: (k: number) => void,
-    options: { delay?: number; ease?: Easing; done?: () => void } = {},
+    options: { delay?: number; ease?: Easing; done?: () => void; tag?: number } = {},
   ): Tween {
     const tween: Tween = {
       start: this.#now + (options.delay ?? 0),
@@ -52,6 +94,7 @@ export class Animator {
       update,
       done: options.done ?? null,
       alive: true,
+      tag: options.tag ?? 0,
     }
     if (tween.duration === 0 && (options.delay ?? 0) === 0) {
       update(1)
@@ -109,6 +152,47 @@ export class Animator {
       }
     }
     this.#tweens = kept ? [kept] : []
+  }
+
+  /** Longest time (ms) until a live tween with any of `mask`'s tags ends, delays included. */
+  remaining(mask: number): number {
+    let max = 0
+    for (const tw of this.#tweens) {
+      if (!tw.alive || (tw.tag & mask) === 0) continue
+      max = Math.max(max, tw.start + tw.duration - this.#now)
+    }
+    return max
+  }
+
+  /**
+   * Compresses every live tween tagged with `mask` so that all of them end
+   * within `maxMs`, keeping their relative timing. A running tween continues
+   * from its current value (never jumps) and eases out over its shortened
+   * remainder; a pending one has its delay and length scaled. Returns the new
+   * longest remainder (<= maxMs), so follow-up animation can start after it.
+   */
+  hurry(maxMs: number, mask: number): number {
+    const longest = this.remaining(mask)
+    if (longest <= maxMs) return longest
+    const f = Math.max(0, maxMs) / longest
+    const now = this.#now
+    for (const tw of this.#tweens) {
+      if (!tw.alive || (tw.tag & mask) === 0) continue
+      const elapsed = now - tw.start
+      if (elapsed < 0) {
+        tw.start = now + -elapsed * f
+        tw.duration *= f
+        continue
+      }
+      if (tw.duration === 0) continue
+      const t0 = Math.min(1, elapsed / tw.duration)
+      const left = tw.duration * (1 - t0) * f
+      const orig = tw.ease
+      tw.start = now
+      tw.duration = left
+      tw.ease = (u: number) => orig(t0 + (1 - t0) * (1 - (1 - u) * (1 - u)))
+    }
+    return Math.min(maxMs, longest * f)
   }
 
   cancel(tween: Tween | null | undefined): void {

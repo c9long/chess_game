@@ -185,17 +185,21 @@ uniform vec4 uInputSize;
 uniform vec4 uOutputFrame;
 uniform float uProgress;
 uniform vec3 uEdge;
+uniform vec2 uCenter;
+uniform float uDelay;
 
 ${NOISE}
 
 void main() {
   vec4 c = texture(uTexture, vTextureCoord);
   vec2 px = vTextureCoord * uInputSize.xy + uOutputFrame.xy;
+  // The burn spreads outward from uCenter: uDelay progress per pixel of distance.
+  float prog = clamp(uProgress - length(px - uCenter) * uDelay, 0.0, 1.0);
   float n = fbm(px * 0.022) * 0.85 + vnoise(px * 0.25) * 0.15;
-  float t = uProgress * 1.3 - 0.15;
+  float t = prog * 1.3 - 0.15;
   float keep = smoothstep(t, t + 0.05, n);
   float edge = 1.0 - smoothstep(0.0, 0.07, abs(n - t - 0.03));
-  edge *= step(0.001, uProgress) * (1.0 - smoothstep(0.85, 1.0, uProgress));
+  edge *= step(0.001, prog) * (1.0 - smoothstep(0.85, 1.0, prog));
   vec3 rgb = c.rgb * keep + uEdge * edge * c.a * 1.6;
   finalColor = vec4(rgb, c.a * max(keep, edge * 0.9));
 }

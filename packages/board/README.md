@@ -26,8 +26,9 @@ view.destroy()
 ```
 
 - **Rejected intents.** If the host refuses a move, call `setSnapshot` again with the current snapshot and the piece slides back.
-- **Animations.** These come from `planTransition(prev, next, events)` in `plan.ts`, a pure function that turns the board difference (made clearer by the events) into moves, castle rooks, captures (including en passant away from the destination), promotions, dissolving armies and status changes.
-- **Pure helpers.** `geometry.ts` (perspective transforms, hit testing, cursor steps), `moves.ts` (`MoveIndex` over engine moves) and `palette.ts` (seat colours and markers) are exported and unit-tested.
+- **Animations.** These come from `planTransition(prev, next, events)` in `plan.ts`, a pure function that turns the board difference (made clearer by the events) into moves, castle rooks, captures (including en passant away from the destination), promotions, dissolving armies and status changes. Their timing comes from `motion.ts` (also pure): `moveTiming`, `scheduleMoves`, `castleTiming`, `contactTime`, `flightLift`, `blendPolicy` and friends.
+- **Back-to-back snapshots.** A move still in flight when the next snapshot arrives is hurried (`Animator.hurry`: it continues from where it is and finishes within 90 ms), and the new move starts right after it. Nothing jumps. A catch-up of more than two plies is shown at once with a 150 ms cross-fade.
+- **Pure helpers.** `geometry.ts` (perspective transforms, hit testing, cursor steps), `moves.ts` (`MoveIndex` over engine moves), `motion.ts` (timing and easing) and `palette.ts` (seat colours and markers) are unit-tested.
 - **Bundler.** The piece and emblem SVGs from `@game/assets` are imported with Vite `?raw`, so the package needs a Vite-compatible bundler.
 
 ## Look
@@ -36,8 +37,12 @@ view.destroy()
 - **Pieces.** The `packages/assets` SVGs are lit with injected gradients, then rasterised into one atlas at device resolution. The atlas holds each seat colour, frozen slate grey with an ice finish, soft shadows and colour-blind markers (the marker is the shape itself, in the seat colour, at the piece's upper right). Gold and Jade get a heavier outline so they hold up on light maple.
 - **Coordinates.** Shown on all four edges, kept upright for the viewer.
 - **Emblems.** Each civ emblem is a brass glyph on an enamel medallion on its seat's edge. Glyphs are always metal, never a light tint of the seat colour, so no seat/emblem pair can echo a flag.
-- **Turn.** The seat to move has a pulsing glow along its band and a larger, ringed medallion; the other bands are dimmed.
-- **Highlights.** Last move: one warm fill for every seat, with a border in the mover's colour. Move hints are light dots and rings that read on both square shades. An attacked leader (option) gets a hot halo under the piece and a steady red border.
+- **Moves.** Pieces lift (scale and a spreading shadow), glide on a quick-take-off, soft-landing curve that lasts 230 to 360 ms depending on distance, and settle with a small squash. Knights hop in a screen-up arc. When castling, the rook takes off halfway through the leader's move and hops over it.
+- **Captures.** The victim is knocked along the attacker's path, tilts, shrinks and fades, and chips in its colour scatter forward. All of this is drawn below the moving layer, so the attacker lands on top. A captured leader adds a brief hit-stop, a shockwave in its colour and a small board shake. Its army then burns away outward from the leader (one filter pass), and a Teams freeze spreads outward from the leader the same way.
+- **Promotion.** The pawn rises and brightens, becomes the new piece at the peak under a ring in its seat's colour, and settles with an overshoot.
+- **Turn.** The seat to move has a pulsing glow along its band and a larger, ringed medallion; the other bands are dimmed. The hand-over cross-fades when the moving piece lands, not when the move is sent. A seat's status change (grey medallion and band) waits until its burn or freeze starts, then cross-fades.
+- **Highlights.** Last move: a warm fill that is lighter on maple and stronger on walnut, with a rounded inset in the mover's light colour. The origin fades in as the piece leaves and the destination as it lands. Move hints are dark translucent dots and light rings. They ripple in from the selected piece and fade out when it is deselected. A movable piece lifts slightly under the pointer, and a selected one gets a soft halo that breathes. An illegal drop flashes the target square red, and the piece returns home still lifted, so it passes over other pieces. An attacked leader (option) gets a hot halo under the piece and a steady red border.
+- **Reduced motion.** Moves cross-fade: the piece fades out where it was and in on its new square, in 100 to 140 ms. Highlight and turn changes are short fades. There are no arcs, particles, shake or hit-stop.
 - **Lighting.** A light pass in screen space, clipped to the board, so it stays put while the board turns.
 
 ## Performance notes
@@ -45,7 +50,9 @@ view.destroy()
 - Resizes scale the existing scene at once and re-rasterise textures only after the size has been stable for 150 ms. A hidden container (zero size) stops the ticker; showing it resumes without a rebuild if the size is unchanged.
 - A `devicePixelRatio` change (zoom, moving to another screen) is caught with a resolution media query and re-rasterises at the new density.
 - MSAA is only enabled below 2x density (at 2x+ it costs hundreds of MB of VRAM for no visible gain). The board shadow and lighting are rasterised at reduced resolution.
-- When only the idle turn glow moves, the ticker is capped at 30 fps; it runs uncapped during animations and input.
+- When only the idle turn glow (or a selected piece's halo) moves, the ticker is capped at 30 fps; it runs uncapped during animations and input.
+- Animated decorations are pre-drawn and only change alpha, scale or position: sprites from pooled textures (move hints, glows), and Graphics drawn once per size or per move (selection, last move). Per-frame code allocates nothing. Coloured capture debris uses a second particle pool with normal blending.
+- Every layer of the root container has a `label` (`pieces`, `moving`, `captures`, and so on) for tests and devtools.
 - After a WebGL context loss and restore, the board surface is drawn again.
 - `destroy()` frees every texture and canvas the view created. A destroyed view can't be mounted again; create a new one.
 

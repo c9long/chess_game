@@ -47,10 +47,14 @@ async function crisp(page: Page) {
     }
     const app = g.__pixiApp
     const root = app.stage.children[0] as N & { scale: { x: number } }
-    const pieceLayer = root.children[11] as N
+    const pieceLayer = (root.children as (N & { label?: string })[]).find(
+      (c) => c.label === 'pieces',
+    ) as N
     const first = pieceLayer.children[0] as N
     const body = first.children[0] as N
-    const labels = root.children[3] as N
+    const labels = (root.children as (N & { label?: string })[]).find(
+      (c) => c.label === 'labels',
+    ) as N
     const label = labels.children[0] as N
     const rect = app.canvas.getBoundingClientRect()
     return {
@@ -73,6 +77,22 @@ async function crisp(page: Page) {
   })
 }
 
+/** True once the board stops animating within `ms` (polled, so a loaded machine's frame hiccups don't count). */
+async function quietWithin(page: Page, ms: number): Promise<boolean> {
+  try {
+    await page.waitForFunction(
+      () =>
+        !(globalThis as unknown as { __sandbox: { view: { animating: boolean } } }).__sandbox.view
+          .animating,
+      undefined,
+      { timeout: ms },
+    )
+    return true
+  } catch {
+    return false
+  }
+}
+
 test.describe('reduced motion', () => {
   test('OS setting (prefers-reduced-motion) turns the option on', async ({ page }) => {
     await openSandbox(page, { reducedMotion: true })
@@ -88,13 +108,13 @@ test.describe('reduced motion', () => {
   test('moves, perspective and drag are instant with reduced motion', async ({ page }) => {
     await openSandbox(page)
     await sb(page, 'setOptions', { reducedMotion: true })
-    // API move: no slide.
+    // API move: no slide. The piece is on its new square at once and only
+    // short fades (piece, highlight, turn) run, all done within ~150 ms.
     await sb(page, 'play', 'e2e4')
-    const a1 = await animating(page)
     const ren = await renderedBoard(page)
     const e4 = ren.find((r) => r.square === 'e4')
     expect(e4?.off ?? 1, 'pawn should already sit on e4').toBeLessThan(0.02)
-    expect(a1, 'a quiet move should leave nothing animating').toBe(false)
+    expect(await quietWithin(page, 500), 'a quiet move should only fade briefly').toBe(true)
     // Perspective change: no spin.
     await sb(page, 'setPerspective', 'west')
     const rot = await rootRotation(page)
@@ -107,9 +127,10 @@ test.describe('reduced motion', () => {
     const legal = await sb<string[]>(page, 'legal')
     expect(legal).toContain('b5d5')
     await dragSquare(page, 'b5', 'd5')
-    const a2 = await animating(page)
-    console.log('animating right after reduced-motion drop:', a2)
-    expect(a2, 'drop/lift tweens still run with reduced motion').toBe(false)
+    // Only the short highlight/turn fades (~150 ms) may still run.
+    expect(await quietWithin(page, 500), 'drop/lift tweens still run with reduced motion').toBe(
+      true,
+    )
     await expectBoardMatchesEngine(page, 'reduced motion')
   })
 
@@ -123,9 +144,12 @@ test.describe('reduced motion', () => {
           () =>
             (
               globalThis as unknown as {
-                __pixiApp: { stage: { children: { children: { alpha: number }[] }[] } }
+                __pixiApp: {
+                  stage: { children: { children: { alpha: number; label?: string }[] }[] }
+                }
               }
-            ).__pixiApp.stage.children[0]?.children[2]?.alpha ?? -1,
+            ).__pixiApp.stage.children[0]?.children.find((c) => c.label === 'bandGlow')?.alpha ??
+            -1,
         ),
       )
       await page.waitForTimeout(150)
@@ -139,13 +163,17 @@ test.describe('reduced motion', () => {
     // South c2xb3 captures West's corner pawn on move 1.
     await sb(page, 'play', 'c2b3')
     const particles = await page.evaluate(() => {
-      type N = { children: unknown[] }
+      type N = { children: unknown[]; label?: string; visible?: boolean }
       const root = (
         globalThis as unknown as { __pixiApp: { stage: { children: { children: N[] }[] } } }
       ).__pixiApp.stage.children[0]
-      return root?.children[14]?.children.length ?? -1
+      const visible = (name: string) =>
+        (root?.children.find((c) => c.label === name)?.children as N[] | undefined)?.filter(
+          (c) => c.visible,
+        ).length ?? -1
+      return visible('particles') + visible('chips')
     })
-    console.log('particle container children after reduced capture', particles)
+    expect(particles, 'no particles with reduced motion').toBe(0)
     await settle(page)
     await expectBoardMatchesEngine(page, 'reduced capture')
   })

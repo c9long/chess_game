@@ -71,10 +71,10 @@ test('attacked-leader glow only for ACTIVE seats (frozen Teams king not highligh
   await load(page, pos)
   const glows = async () =>
     page.evaluate(() => {
-      type N = { children: N[]; visible: boolean; x: number; y: number }
+      type N = { children: N[]; visible: boolean; x: number; y: number; label?: string }
       const root = (globalThis as unknown as { __pixiApp: { stage: N } }).__pixiApp.stage
         .children[0] as N
-      return [5, 6, 7, 8].filter((i) => (root.children[i] as N).visible).length
+      return root.children.filter((c) => c.label?.startsWith('leaderGlow') && c.visible).length
     })
   const attacked = async () =>
     page.evaluate(
