@@ -180,6 +180,13 @@ all fixed):
 - Verified: an independent review (3 findings, all fixed), 53 browser tests, web/protocol/server
   tests.
 
+### 8. Browser-tab icon and page titles (final small item)
+
+- A proper tab icon in the game's mark (it had none), and readable tab titles per page
+  ("Lobbies · …", "Match history · …", "Game · …").
+- Verified: web build, lint, typecheck, and the landing, singleplayer and guest browser specs
+  (including a new title/icon check).
+
 ## Final verification (on `main`)
 
 Run at 7:07 AM on the final code, everything green:
