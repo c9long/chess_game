@@ -6,7 +6,14 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": ["**", "!**/target", "!**/pkg", "!**/dist", "!docs/PLAN.md"]
+    "includes": [
+      "**",
+      "!**/target",
+      "!**/pkg",
+      "!**/dist",
+      "!docs/PLAN.md",
+      "!packages/db/drizzle/meta"
+    ]
   },
   "formatter": {
     "enabled": true,
