@@ -15,8 +15,21 @@ export async function passAgeScreen(page: Page, { month = '5', day = '17', year 
   await page.getByTestId('dob-month').selectOption(month)
   await page.getByTestId('dob-day').selectOption(day)
   await page.getByTestId('dob-year').fill(year)
-  await page.getByRole('button', { name: 'Continue' }).click()
-  await expect(page.getByTestId('dob-form')).toBeHidden()
+  // Every E2E browser shares 127.0.0.1, so the age endpoint's per-IP rate limit can trip in
+  // a full run. The app then says "Too many attempts. Try again in N seconds": do that.
+  const form = page.getByTestId('dob-form')
+  const tooMany = form.getByRole('alert').filter({ hasText: 'Too many attempts' })
+  for (let attempt = 0; attempt < 5; attempt++) {
+    await page.getByRole('button', { name: 'Continue' }).click()
+    const outcome = await Promise.race([
+      form.waitFor({ state: 'hidden' }).then(() => 'done' as const),
+      tooMany.waitFor({ state: 'visible' }).then(() => 'limited' as const),
+    ])
+    if (outcome === 'done') return
+    const seconds = Number((await tooMany.textContent())?.match(/(\d+) second/)?.[1] ?? 2)
+    await page.waitForTimeout((seconds + 1) * 1000)
+  }
+  await expect(form).toBeHidden()
 }
 
 export async function latestMailLink(request: APIRequestContext, to: string, kind: string) {
