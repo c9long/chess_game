@@ -9,10 +9,13 @@ import {
   ROOM_NAMES,
   UNTIMED,
 } from '@game/protocol'
-import { type FormEvent, useEffect, useId, useState } from 'react'
+import { AnimatePresence, motion } from 'motion/react'
+import { type FormEvent, type ReactNode, useEffect, useId, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router'
 import { CivPicker } from '../components/CivPicker.tsx'
+import { ClockIcon, LockIcon } from '../components/game/icons.tsx'
 import { RankedBadge } from '../components/match/RankedBadge.tsx'
+import { seatHex } from '../components/match/seats.ts'
 import { Alert, Button, Card, Field, Spinner } from '../components/ui.tsx'
 import { displayName, isGuest, useAppState } from '../lib/app-state.tsx'
 import {
@@ -278,8 +281,11 @@ function CreateLobby() {
   }
 
   return (
-    <Card className="lg:sticky lg:top-6">
-      <h2 className="mb-5 font-display text-xl font-semibold">Create a lobby</h2>
+    <Card className="lg:sticky lg:top-6 lg:self-start">
+      <h2 className="font-display text-xl font-semibold">Create a lobby</h2>
+      <p className="mt-1 mb-5 text-xs text-parchment/55">
+        Blind pick: everyone chooses a civilization at once. Draft with bans is coming soon.
+      </p>
       <form className="flex flex-col gap-5" onSubmit={submit} noValidate>
         <Field
           label="Lobby name"
@@ -315,22 +321,6 @@ function CreateLobby() {
               : '3 minutes per player, plus 2 seconds per move.'}
           </p>
         </fieldset>
-        <fieldset className="flex flex-col gap-2">
-          <legend className="mb-1.5 text-sm font-medium text-parchment/85">Civ picks</legend>
-          <div className="flex gap-2">
-            <button type="button" aria-pressed className={choice(true)}>
-              Blind pick
-            </button>
-            <button
-              type="button"
-              disabled
-              className={`${choice(false)} cursor-not-allowed opacity-45`}
-              title="Draft mode with bans and pick order is coming soon"
-            >
-              Draft · soon
-            </button>
-          </div>
-        </fieldset>
         <RankedToggle ranked={ranked && !guest} guest={guest} onChange={setRanked} />
         <Field
           label="Password (optional)"
@@ -342,7 +332,7 @@ function CreateLobby() {
           hint={
             password
               ? 'Private lobby: players need this password to join.'
-              : 'Leave empty for a public lobby anyone can join.'
+              : 'Empty: a public lobby anyone can join.'
           }
           data-testid="lobby-password"
         />
@@ -471,27 +461,70 @@ function JoinPasswordDialog({ listing, onClose }: { listing: Listing; onClose: (
   )
 }
 
-function LockIcon() {
+function SeatPips({ filled }: { filled: number }) {
   return (
-    <svg viewBox="0 0 20 20" className="h-4 w-4" aria-hidden="true">
-      <path
-        d="M6 8V6a4 4 0 1 1 8 0v2h.5A1.5 1.5 0 0 1 16 9.5v7a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 4 16.5v-7A1.5 1.5 0 0 1 5.5 8H6Zm2 0h4V6a2 2 0 1 0-4 0v2Z"
-        fill="currentColor"
-      />
-    </svg>
+    <span className="flex items-center gap-2">
+      <span className="flex gap-1" role="img" aria-label={`${filled} of 4 seats filled`}>
+        {[0, 1, 2, 3].map((i) => (
+          <span
+            key={i}
+            className={`h-2.5 w-2.5 rounded-full transition-colors ${i < filled ? '' : 'border border-parchment/30'}`}
+            style={i < filled ? { backgroundColor: seatHex(i) } : undefined}
+          />
+        ))}
+      </span>
+      <span aria-hidden="true" className="text-xs font-semibold tabular-nums text-parchment/60">
+        {filled}/4
+      </span>
+    </span>
   )
 }
 
-function SeatPips({ filled }: { filled: number }) {
+function Chip({ children, title }: { children: ReactNode; title?: string }) {
   return (
-    <span className="flex gap-1" role="img" aria-label={`${filled} of 4 seats filled`}>
-      {[0, 1, 2, 3].map((i) => (
-        <span
-          key={i}
-          className={`h-2.5 w-2.5 rounded-full ${i < filled ? 'bg-gold' : 'border border-parchment/30'}`}
+    <span
+      className="inline-flex h-6 shrink-0 items-center gap-1 rounded-full border border-parchment/15 bg-ink/40 px-2 text-[11px] font-medium text-parchment/70"
+      title={title}
+    >
+      {children}
+    </span>
+  )
+}
+
+const EMPTY_CELLS = Array.from({ length: 16 }, (_, i) => ({
+  id: `c${i}`,
+  x: i % 4,
+  y: Math.floor(i / 4),
+})).filter((c) => (c.x + c.y) % 2 === 0)
+
+/** A small board with the four seat colours, for the empty lobby list. */
+function EmptyTables() {
+  return (
+    <svg viewBox="0 0 64 64" className="h-16 w-16" aria-hidden="true">
+      <rect
+        x="6"
+        y="6"
+        width="52"
+        height="52"
+        rx="6"
+        className="fill-ink/60 stroke-parchment/20"
+        strokeWidth="1.5"
+      />
+      {EMPTY_CELLS.map((c) => (
+        <rect
+          key={c.id}
+          x={12 + c.x * 10}
+          y={12 + c.y * 10}
+          width="10"
+          height="10"
+          className="fill-parchment/10"
         />
       ))}
-    </span>
+      <circle cx="32" cy="58" r="4" fill={seatHex(0)} />
+      <circle cx="6" cy="32" r="4" fill={seatHex(1)} />
+      <circle cx="32" cy="6" r="4" fill={seatHex(2)} />
+      <circle cx="58" cy="32" r="4" fill={seatHex(3)} />
+    </svg>
   )
 }
 
@@ -541,7 +574,10 @@ export function Play() {
       filter === 'all' ? true : filter === 'ranked' ? r.metadata.ranked : !r.metadata.ranked,
     )
     .sort(
-      (a, b) => b.metadata.seatsFilled - a.metadata.seatsFilled || a.roomId.localeCompare(b.roomId),
+      (a, b) =>
+        Number(a.metadata.seatsFilled >= 4) - Number(b.metadata.seatsFilled >= 4) ||
+        b.metadata.seatsFilled - a.metadata.seatsFilled ||
+        a.roomId.localeCompare(b.roomId),
     )
   const counts = {
     all: rooms.length,
@@ -631,64 +667,110 @@ export function Play() {
               and reload the page.
             </Alert>
           ) : sorted.length === 0 && status === 'live' ? (
-            <div className="rounded-2xl border border-dashed border-parchment/15 px-6 py-14 text-center text-parchment/60">
-              {filter === 'ranked'
-                ? 'No ranked lobbies right now. Create one and invite players with accounts.'
-                : filter === 'casual' && rooms.length > 0
-                  ? 'No casual lobbies right now. Create one, and add bots if nobody else joins.'
-                  : 'No open lobbies right now. Create one, and add bots if nobody else joins.'}
+            <div className="flex flex-col items-center rounded-2xl border border-dashed border-parchment/15 bg-panel/30 px-6 py-12 text-center">
+              <EmptyTables />
+              <h2 className="mt-4 font-display text-xl font-semibold">
+                {filter === 'ranked' ? 'No ranked tables' : 'No open tables'}
+              </h2>
+              <p className="mt-1 max-w-sm text-sm text-parchment/60">
+                {filter === 'ranked'
+                  ? 'Create a ranked lobby and invite players with accounts.'
+                  : 'Start one and invite friends, or fill the empty seats with bots.'}
+              </p>
+              <div className="mt-5 flex flex-wrap justify-center gap-2">
+                {current ? null : (
+                  <Button
+                    className="h-10"
+                    onClick={() => {
+                      const input = document.querySelector<HTMLInputElement>(
+                        '[data-testid="lobby-name"]',
+                      )
+                      input?.focus()
+                      input?.select()
+                    }}
+                  >
+                    Create a lobby
+                  </Button>
+                )}
+                <Button
+                  variant="secondary"
+                  className="h-10"
+                  onClick={() =>
+                    document.getElementById('vs-bots')?.scrollIntoView({ behavior: 'smooth' })
+                  }
+                >
+                  Play vs bots
+                </Button>
+              </div>
             </div>
           ) : (
             <ul className="flex flex-col gap-3" data-testid="lobby-list">
-              {sorted.map((r) => (
-                <li
-                  key={r.roomId}
-                  className="flex flex-wrap items-center gap-4 rounded-2xl border border-parchment/10 bg-panel/80 px-5 py-4"
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="flex items-center gap-2 truncate font-semibold">
-                      {r.metadata.locked ? (
-                        <span className="text-gold" title="Private: password required">
-                          <LockIcon />
-                        </span>
-                      ) : null}
-                      <span className="truncate">{r.metadata.name}</span>
-                      {r.metadata.ranked ? <RankedBadge /> : null}
-                    </p>
-                    <p className="mt-1 text-xs text-parchment/55">
-                      {MODE_LABEL[r.metadata.mode as 'ffa' | 'teams'] ?? r.metadata.mode} ·{' '}
-                      {r.metadata.timeControl} · Blind pick
-                      {r.metadata.ranked ? '' : ' · Casual'}
-                    </p>
-                  </div>
-                  <SeatPips filled={r.metadata.seatsFilled} />
-                  {r.metadata.ranked && guest && r.metadata.seatsFilled < 4 ? (
-                    <Link
-                      to="/sign-up"
-                      className="inline-flex h-10 items-center rounded-lg border border-gold/50 px-4 text-sm font-semibold text-gold hover:border-gold hover:bg-gold/10"
-                      title="Ranked games are for players with an account"
-                      data-testid="join-lobby"
+              <AnimatePresence initial={false} mode="popLayout">
+                {sorted.map((r) => {
+                  const full = r.metadata.seatsFilled >= 4
+                  return (
+                    <motion.li
+                      key={r.roomId}
+                      layout
+                      initial={{ opacity: 0, y: 6 }}
+                      animate={{ opacity: full ? 0.6 : 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.98 }}
+                      transition={{ duration: 0.18, ease: 'easeOut' }}
+                      className="grid gap-3 rounded-2xl border border-parchment/10 bg-panel/80 px-4 py-3.5 transition-[border-color,translate] duration-150 hover:-translate-y-px hover:border-parchment/20 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center sm:gap-5 sm:px-5 sm:py-4"
                     >
-                      Create account to join
-                    </Link>
-                  ) : (
-                    <Button
-                      variant="secondary"
-                      className="h-10"
-                      busy={joining === r.roomId}
-                      disabled={
-                        r.metadata.seatsFilled >= 4 ||
-                        Boolean(current) ||
-                        (r.metadata.ranked && guest)
-                      }
-                      onClick={() => join(r)}
-                      data-testid="join-lobby"
-                    >
-                      {r.metadata.seatsFilled >= 4 ? 'Full' : 'Join'}
-                    </Button>
-                  )}
-                </li>
-              ))}
+                      <div className="min-w-0">
+                        <p className="flex min-w-0 items-center gap-2 font-semibold">
+                          {r.metadata.locked ? (
+                            <span className="shrink-0 text-gold" title="Private: password required">
+                              <LockIcon />
+                            </span>
+                          ) : null}
+                          <span className="truncate">{r.metadata.name}</span>
+                        </p>
+                        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                          <Chip>
+                            {MODE_LABEL[r.metadata.mode as 'ffa' | 'teams'] ?? r.metadata.mode}
+                          </Chip>
+                          <Chip title="Time control">
+                            <ClockIcon /> {r.metadata.timeControl}
+                          </Chip>
+                          {r.metadata.ranked ? <RankedBadge /> : <Chip>Casual</Chip>}
+                          {r.metadata.locked ? <Chip>Private</Chip> : null}
+                          {r.metadata.phase === 'countdown' ? (
+                            <Chip>Starting</Chip>
+                          ) : r.metadata.phase === 'in_game' ? (
+                            <Chip>In game</Chip>
+                          ) : null}
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between gap-3 sm:contents">
+                        <SeatPips filled={r.metadata.seatsFilled} />
+                        {r.metadata.ranked && guest && !full ? (
+                          <Link
+                            to="/sign-up"
+                            className="inline-flex h-10 items-center rounded-lg border border-gold/50 px-4 text-sm font-semibold whitespace-nowrap text-gold hover:border-gold hover:bg-gold/10"
+                            title="Ranked games are for players with an account"
+                            data-testid="join-lobby"
+                          >
+                            Create account to join
+                          </Link>
+                        ) : (
+                          <Button
+                            variant={full ? 'ghost' : 'secondary'}
+                            className="h-10 min-w-20"
+                            busy={joining === r.roomId}
+                            disabled={full || Boolean(current) || (r.metadata.ranked && guest)}
+                            onClick={() => join(r)}
+                            data-testid="join-lobby"
+                          >
+                            {full ? 'Full' : 'Join'}
+                          </Button>
+                        )}
+                      </div>
+                    </motion.li>
+                  )
+                })}
+              </AnimatePresence>
             </ul>
           )}
         </section>

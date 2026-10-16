@@ -4,17 +4,21 @@ import {
   type MatchListResponse,
   type RatingsResponse,
 } from '@game/protocol'
-import { useCallback, useEffect, useState } from 'react'
+import { type ReactNode, useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { CivEmblem, civName } from '../components/CivEmblem.tsx'
+import { ClockIcon } from '../components/game/icons.tsx'
+import { Medal } from '../components/game/Medal.tsx'
 import {
   ELO_START,
   END_REASON_LABEL,
   MODE_LABEL,
   ordinal,
   RATING_BUCKETS,
+  relativeTime,
 } from '../components/match/labels.ts'
 import { EloDelta, RankedBadge } from '../components/match/RankedBadge.tsx'
+import { seatHex } from '../components/match/seats.ts'
 import { Alert, Button, Spinner } from '../components/ui.tsx'
 import { api } from '../lib/api.ts'
 import { isGuest, useAppState } from '../lib/app-state.tsx'
@@ -26,29 +30,76 @@ function when(iso: string): string {
   })
 }
 
+const DRAW_REASONS = new Set(['agreed_draw', 'move_limit'])
+
+function HistoryChip({ children }: { children: ReactNode }) {
+  return (
+    <span className="inline-flex h-6 shrink-0 items-center gap-1 rounded-full border border-parchment/15 bg-ink/40 px-2 text-[11px] font-medium text-parchment/70">
+      {children}
+    </span>
+  )
+}
+
 function MatchRow({ m }: { m: MatchListItem }) {
   const delta = m.ratingDelta
+  const aborted = m.status === 'aborted'
+  const place = aborted ? null : m.placement
+  const draw = place === 1 && DRAW_REASONS.has(m.endReason ?? '')
+  const win = place === 1 && !draw
+  const bar = win ? '#7fd8b7' : draw ? 'rgba(244,239,230,0.3)' : 'transparent'
+  const untimed = isUntimed(m.timeControl)
   return (
-    <li className="flex flex-wrap items-center gap-4 rounded-2xl border border-parchment/10 bg-panel/80 px-5 py-4">
-      <span className="w-12 text-center font-display text-2xl font-semibold text-parchment/85">
-        {m.status === 'aborted' ? '—' : m.placement ? ordinal(m.placement) : '—'}
+    <li className="relative grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-x-3 gap-y-2 overflow-hidden rounded-2xl border border-parchment/10 bg-panel/80 py-3.5 pr-4 pl-4 sm:items-center sm:gap-x-4 sm:py-4 sm:pr-5 sm:pl-5">
+      <span
+        aria-hidden="true"
+        className="absolute inset-y-0 left-0 w-[3px]"
+        style={{ background: bar }}
+      />
+      <span className="flex flex-col items-center gap-1.5">
+        <Medal place={place} size="lg" label={place ? ordinal(place) : undefined} />
       </span>
-      <span className="text-gold">
-        <CivEmblem civ={m.civ} className="h-8 w-8" />
-      </span>
-      <div className="min-w-0 flex-1">
-        <p className="flex flex-wrap items-center gap-2 text-sm font-semibold">
-          <span>
-            {MODE_LABEL[m.mode]} ·{' '}
-            {isUntimed(m.timeControl)
-              ? 'Untimed · vs bots'
-              : `${m.timeControl}${m.ranked ? (m.rated ? '' : ' · Not rated') : ' · Casual'}`}
+      <div className="min-w-0">
+        <p className="flex min-w-0 items-center gap-2 text-sm font-semibold">
+          <span
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full"
+            style={{ backgroundColor: `${seatHex(m.seat)}26`, color: seatHex(m.seat) }}
+          >
+            <CivEmblem civ={m.civ} className="h-5 w-5" />
           </span>
-          {m.ranked ? <RankedBadge /> : null}
+          <span className="truncate">
+            {aborted
+              ? 'Cancelled'
+              : win
+                ? 'Victory'
+                : draw
+                  ? 'Draw'
+                  : place
+                    ? `${ordinal(place)} place`
+                    : m.status === 'in_progress'
+                      ? 'In progress'
+                      : 'Finished'}
+            <span className="font-normal text-parchment/50"> · as {civName(m.civ)}</span>
+          </span>
         </p>
-        <p className="mt-0.5 text-xs text-parchment/55">
-          {when(m.startedAt)} · as {civName(m.civ)}
-          {m.status === 'aborted'
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          <HistoryChip>{MODE_LABEL[m.mode]}</HistoryChip>
+          <HistoryChip>
+            {untimed ? (
+              'Untimed · vs bots'
+            ) : (
+              <>
+                <ClockIcon /> {m.timeControl}
+              </>
+            )}
+          </HistoryChip>
+          {m.ranked ? <RankedBadge /> : untimed ? null : <HistoryChip>Casual</HistoryChip>}
+          {m.ranked && !m.rated ? <HistoryChip>Not rated</HistoryChip> : null}
+        </div>
+        <p className="mt-2 text-xs text-parchment/55">
+          <time dateTime={m.startedAt} title={when(m.startedAt)}>
+            {relativeTime(m.startedAt)}
+          </time>
+          {aborted
             ? ` · ${END_REASON_LABEL[m.endReason ?? ''] ?? 'Cancelled'}`
             : m.endReason
               ? ` · ${END_REASON_LABEL[m.endReason] ?? ''}`
@@ -56,9 +107,11 @@ function MatchRow({ m }: { m: MatchListItem }) {
         </p>
         <p className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-parchment/65">
           {m.opponents.map((o) => (
-            <span key={o.seat} className="flex items-center gap-1">
-              <CivEmblem civ={o.civ} className="h-3.5 w-3.5" />
-              {o.name}
+            <span key={o.seat} className="inline-flex min-w-0 items-center gap-1">
+              <span style={{ color: seatHex(o.seat) }}>
+                <CivEmblem civ={o.civ} className="h-3.5 w-3.5" />
+              </span>
+              <span className="truncate">{o.name}</span>
             </span>
           ))}
         </p>
@@ -70,10 +123,18 @@ function MatchRow({ m }: { m: MatchListItem }) {
             <span className="ml-1 text-[11px] font-medium text-parchment/45">Elo</span>
           </span>
           {delta !== null ? (
-            <EloDelta delta={delta} className="block text-xs font-semibold" />
+            <span
+              className={`mt-1 inline-block rounded-full px-2 py-0.5 text-xs font-semibold ${
+                delta > 0 ? 'bg-[#7fd8b7]/12' : delta < 0 ? 'bg-seat-south/15' : 'bg-parchment/10'
+              }`}
+            >
+              <EloDelta delta={delta} />
+            </span>
           ) : null}
         </span>
-      ) : null}
+      ) : (
+        <span />
+      )}
     </li>
   )
 }
