@@ -20,7 +20,8 @@
 //! | ply | turns taken since the start (moves + passes) | `0` |
 //!
 //! Optional trailing `key=value` fields (each at most once, any order; the
-//! formatter always writes all of them in this order):
+//! formatter always writes `ep` to `rv` in this order, and `end` after them
+//! only when it applies):
 //!
 //! | Key | Value | Default |
 //! |---|---|---|
@@ -29,6 +30,11 @@
 //! | `civ` | four `slug.version` in seat order | `canada.1` ×4 |
 //! | `def` | defeat order: comma list of seat letter + reason letter (`l` leader captured, `s` stalemate, `t` timeout, `a` abandon, `r` resign), or `-` | `-` |
 //! | `rv` | rules version | `1` |
+//! | `end` | `draw` — the game ended in a draw by agreement ([`crate::apply_agreed_draw`]). Only valid if the game is not otherwise over (no elimination, move limit not reached) and the seat to move could still play. | absent |
+//!
+//! Resignations need no extra field: a resigned seat is `R` (FFA) or `F`
+//! (Teams) in the statuses, and an ACTIVE seat that resigned is listed in
+//! `def` with reason `r`.
 //!
 //! The start position (FFA) is:
 //!
@@ -36,8 +42,8 @@
 //! ffa 2nRnNnBnQnKnBnNnR2/2nPnPnPnPnPnPnPnP2/wRwP8ePeR/wNwP8ePeN/wBwP8ePeB/wKwP8ePeK/wQwP8ePeQ/wBwP8ePeB/wNwP8ePeN/wRwP8ePeR/2sPsPsPsPsPsPsPsP2/2sRsNsBsQsKsBsNsR2 S AAAA Sc1,Sj1,Wa3,Wa10,Nc12,Nj12,El3,El10 - 0 0 ep=on ml=25 civ=canada.1,canada.1,canada.1,canada.1 def=- rv=1
 //! ```
 //!
-//! The result is not stored: it is derived from statuses, defeat order and
-//! counters ([`crate::outcome::derive_outcome`]). Parsing validates the whole
+//! The result is not stored: it is derived from statuses, defeat order,
+//! counters and the `end` marker ([`crate::outcome::derive_outcome`]). Parsing validates the whole
 //! state (pieces in rosters, no pieces for REMOVED seats, pawns behind their
 //! promotion line, ACTIVE seats holding a leader, castling only for ACTIVE
 //! seats, defeat order matching statuses, and — unless the game is over —
@@ -140,6 +146,9 @@ pub fn format_position(state: &GameState) -> String {
         list_or_dash(&defs),
         c.rules_version
     );
+    if state.is_agreed_draw() {
+        out.push_str(" end=draw");
+    }
     out
 }
 
@@ -232,6 +241,7 @@ pub fn parse_position(s: &str) -> Result<GameState, PositionError> {
 
     let mut config = GameConfig::new(mode);
     let mut defeats = Vec::new();
+    let mut agreed_draw = false;
     let mut seen: Vec<&str> = Vec::new();
     for kv in &fields[8..] {
         let (k, v) = kv
@@ -294,6 +304,12 @@ pub fn parse_position(s: &str) -> Result<GameState, PositionError> {
                 }
                 config.rules_version = rv;
             }
+            "end" => {
+                if v != "draw" {
+                    return Err(err("end", format!("end must be draw, found {v:?}")));
+                }
+                agreed_draw = true;
+            }
             _ => return Err(err("options", format!("unknown key {k:?}"))),
         }
     }
@@ -308,6 +324,7 @@ pub fn parse_position(s: &str) -> Result<GameState, PositionError> {
         no_progress,
         ply,
         defeats,
+        agreed_draw,
     })
 }
 
@@ -490,6 +507,14 @@ mod tests {
             ),
             &START.replace("def=-", "def=Sx"),
             &START.replace("def=-", "def=Sl"),
+            &format!("{START} end=win"),
+            &format!("{START} end="),
+            &format!("{START} end=draw end=draw"),
+            // An agreed draw cannot coexist with another ending.
+            &format!("{} end=draw", START.replace(" - 0 0", " - 100 0")),
+            // A resigned Teams seat is FROZEN, never DEFEATED.
+            "teams 6nK5/12/12/12/12/12/wK10eK/12/12/12/12/6sK5 S AADA - - 0 0 def=Nr",
+            "teams 12/12/12/12/12/12/wK10eK/12/12/12/12/6sK5 S AARA - - 0 0 def=Nr",
             &format!("{START} ep=on"),
             &format!("{START} foo=bar"),
             &format!("{START} junk"),
@@ -498,5 +523,36 @@ mod tests {
         for b in bad {
             assert!(parse_position(b).is_err(), "should reject: {b}");
         }
+    }
+
+    #[test]
+    fn end_draw_marker_round_trips() {
+        let text = format!("{START} end=draw");
+        let s = parse_position(&text).unwrap();
+        assert!(s.is_agreed_draw());
+        assert!(s.is_over());
+        assert_eq!(
+            s.outcome().unwrap().result,
+            crate::GameResult::FfaAgreedDraw {
+                survivors: [true; 4]
+            }
+        );
+        assert_eq!(format_position(&s), text);
+        assert_ne!(s.hash(), parse_position(START).unwrap().hash());
+
+        let mut live = GameState::new(GameConfig::default()).unwrap();
+        crate::apply_agreed_draw(&mut live).unwrap();
+        assert_eq!(live, s);
+        assert_eq!(live.hash(), s.hash());
+    }
+
+    #[test]
+    fn resign_reason_letter() {
+        let s = parse_position(
+            "teams 6nK5/12/12/12/12/12/wK10eK/12/12/12/12/6sK5 S AAFA - - 0 0 def=Nr",
+        )
+        .unwrap();
+        assert_eq!(s.defeats().reason(Seat::North), Some(DefeatReason::Resign));
+        assert!(format_position(&s).contains("def=Nr"));
     }
 }

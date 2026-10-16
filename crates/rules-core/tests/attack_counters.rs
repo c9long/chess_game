@@ -1509,6 +1509,9 @@ fn check_transition(prev: &GameState, action: Action, ev: &[GameEvent], next: &G
                     assert!(t.seats().iter().any(|&s| active(s)), "{}", ctx());
                 }
             }
+            GameResult::FfaAgreedDraw { .. } | GameResult::TeamsAgreedDraw => {
+                panic!("agreed draws are not played in this model{}", ctx())
+            }
         }
     } else {
         assert!(!ev.iter().any(|e| matches!(e, GameEvent::GameEnded { .. })));
@@ -1617,6 +1620,9 @@ fn random_games_match_an_independent_counter_turn_and_ep_model() {
                 GameResult::FfaMoveLimitTie { .. } => 1,
                 GameResult::TeamsWinner { .. } => 2,
                 GameResult::TeamsDraw => 3,
+                GameResult::FfaAgreedDraw { .. } | GameResult::TeamsAgreedDraw => {
+                    unreachable!("agreed draws are not played here")
+                }
             };
             endings[k] += 1;
         }

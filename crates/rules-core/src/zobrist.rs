@@ -10,7 +10,8 @@
 //! * each seat's two castling rights,
 //! * each seat's en passant target (keyed by its skipped square; the pawn
 //!   square is implied by the geometry),
-//! * whether the game is over.
+//! * whether the game is over (an agreed draw is a finished game, so it is
+//!   covered by this key; its flag needs no key of its own).
 //!
 //! **Not hashed:** the no-progress counter, the ply counter, the defeat order
 //! and the game config (fixed per game). Search code that cares about the

@@ -1,5 +1,5 @@
-//! Seeded, deterministic randomized self-play with injected timeouts and
-//! abandons, checking invariants after every action, plus a cross-check of
+//! Seeded, deterministic randomized self-play with injected timeouts,
+//! abandons, resignations and agreed draws, checking invariants after every action, plus a cross-check of
 //! move generation against a naive, independently written reference
 //! generator.
 //!
@@ -70,6 +70,10 @@ struct Stats {
     stalemates: usize,
     timeouts: usize,
     abandons: usize,
+    resigns: usize,
+    resigns_off_turn: usize,
+    resigns_by_defeated: usize,
+    agreed_draws: usize,
     ep: usize,
     castles: usize,
     promotions: usize,
@@ -82,6 +86,8 @@ fn result_name(o: &Outcome) -> &'static str {
         GameResult::FfaMoveLimitTie { .. } => "ffa_tie",
         GameResult::TeamsWinner { .. } => "teams_winner",
         GameResult::TeamsDraw => "teams_draw",
+        GameResult::FfaAgreedDraw { .. } => "ffa_agreed_draw",
+        GameResult::TeamsAgreedDraw => "teams_agreed_draw",
     }
 }
 
@@ -139,6 +145,84 @@ fn play_game(seed: u64, game: usize, stats: &mut Stats, full_checks: bool) -> Ga
                     continue;
                 }
             }
+        } else if roll < 10 {
+            // Resignation by a random seat, on its turn or not.
+            let seat = Seat::ALL[rng.below(4)];
+            let was_status = s.status(seat);
+            match apply_resign(&mut s, seat) {
+                Ok(ev) => {
+                    stats.resigns += 1;
+                    if seat != mover {
+                        stats.resigns_off_turn += 1;
+                    }
+                    // Exactly like a timeout, with reason Resign.
+                    let defeat = GameEvent::Defeat {
+                        seat,
+                        reason: DefeatReason::Resign,
+                    };
+                    if was_status == SeatStatus::Active {
+                        assert_eq!(ev.first(), Some(&defeat));
+                        assert_eq!(s.defeats().reason(seat), Some(DefeatReason::Resign));
+                    } else {
+                        stats.resigns_by_defeated += 1;
+                        assert_eq!(s.mode(), GameMode::Teams);
+                        assert_eq!(ev.first(), Some(&GameEvent::Frozen { seat }));
+                        assert_eq!(s.defeats().reason(seat), before.defeats().reason(seat));
+                    }
+                    let left = match s.mode() {
+                        GameMode::Ffa => GameEvent::ArmyRemoved { seat },
+                        GameMode::Teams => GameEvent::Frozen { seat },
+                    };
+                    assert!(ev.contains(&left));
+                    assert!(!s.takes_turns(seat));
+                    if seat == mover {
+                        // Same result as a timeout, apart from the reason.
+                        let mut via_timeout = before.clone();
+                        apply_timeout(&mut via_timeout, seat).unwrap();
+                        assert_eq!(via_timeout.statuses(), s.statuses());
+                        assert_eq!(via_timeout.seat_to_move(), s.seat_to_move());
+                        assert_eq!(via_timeout.board(), s.board());
+                        assert_eq!(via_timeout.ply(), s.ply());
+                        assert_eq!(via_timeout.no_progress(), s.no_progress());
+                        assert_eq!(
+                            via_timeout.outcome().map(|o| o.placements),
+                            s.outcome().map(|o| o.placements)
+                        );
+                    }
+                    events = ev;
+                }
+                Err(e) => {
+                    assert_eq!(e, RulesError::SeatNotInPlay(seat));
+                    assert!(!before.takes_turns(seat));
+                    assert_eq!(s, before);
+                    continue;
+                }
+            }
+        } else if roll == 10 && rng.chance(250) {
+            // Draw by agreement (the server collects the votes).
+            let voters = draw_voters(&s);
+            for seat in Seat::ALL {
+                assert_eq!(voters[seat.index()], s.takes_turns(seat));
+            }
+            events = apply_agreed_draw(&mut s).unwrap();
+            stats.agreed_draws += 1;
+            assert_eq!(events.len(), 1);
+            let o = *s.outcome().unwrap();
+            assert!(o.result.is_agreed_draw());
+            assert!(s.is_agreed_draw());
+            match s.mode() {
+                GameMode::Teams => assert_eq!(o.placements, [1; 4]),
+                GameMode::Ffa => {
+                    // Same placements as a move-limit tie from this state.
+                    for seat in Seat::ALL {
+                        let survivor = s.status(seat) == SeatStatus::Active;
+                        assert_eq!(o.placement(seat) == 1, survivor);
+                    }
+                }
+            }
+            assert_eq!(draw_voters(&s), [false; 4]);
+            assert_eq!(apply_agreed_draw(&mut s), Err(RulesError::GameOver));
+            assert_eq!(apply_resign(&mut s, mover), Err(RulesError::GameOver));
         } else if roll < 12 {
             // Garbage move: accepted iff legal, otherwise no change.
             let from = Square::new(rng.below(144) as u8).unwrap();
@@ -296,7 +380,15 @@ fn fuzz_self_play_invariants() {
         assert!(stats.passes > 0, "no passes exercised");
         assert!(stats.stalemates > 0, "no stalemates exercised");
         assert!(stats.ep > 0 && stats.castles > 0 && stats.promotions > 0);
-        for k in ["ffa_winner", "ffa_tie", "teams_winner", "teams_draw"] {
+        assert!(stats.resigns > 0 && stats.resigns_off_turn > 0 && stats.resigns_by_defeated > 0);
+        for k in [
+            "ffa_winner",
+            "ffa_tie",
+            "teams_winner",
+            "teams_draw",
+            "ffa_agreed_draw",
+            "teams_agreed_draw",
+        ] {
             assert!(
                 stats.endings.get(k).copied().unwrap_or(0) > 0,
                 "no {k} endings"

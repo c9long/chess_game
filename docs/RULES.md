@@ -4,6 +4,8 @@ Four-player chess on a 12×12 board. These are the rules of **rules version 1**.
 
 Rules marked **(provisional)** are switched on for now but may still change.
 
+Resigning and draws by agreement are part of rules version 1. They add new ways to leave or end a game; how the pieces move is unchanged.
+
 ---
 
 ## The board and the players
@@ -75,7 +77,7 @@ At every moment each player has exactly one status:
 |---|---|
 | **Active** | Still in the game, with their king. |
 | **Defeated** | Lost their king, or was stalemated. *In Teams only*, a defeated player keeps taking turns with their remaining pieces for as long as their partner is still active. |
-| **Frozen** | *Teams only.* Ran out of time (or left the game). The pieces stay on the board: they block squares and can be captured, but they never move again, and the player's turns are skipped. A defeated player who later runs out of time also becomes frozen. |
+| **Frozen** | *Teams only.* Ran out of time, left the game, or resigned. The pieces stay on the board: they block squares and can be captured, but they never move again, and the player's turns are skipped. A defeated player who later runs out of time or resigns also becomes frozen. |
 | **Removed** | *Free-for-All only.* The player's army has been taken off the board, and their turns are skipped. |
 
 **(provisional)** Once a player is no longer active, a king they still have becomes an ordinary piece. Capturing it changes nothing, and it can't castle. In particular, a stalemated or timed-out Teams player's king does **not** keep their team alive.
@@ -91,13 +93,21 @@ You are knocked out when any one of these happens:
    - Your turn starts once the previous player has finished. If, while it is your turn, another player leaves the game and that takes away your last legal move (for example, your only move captured one of their pieces and, in Free-for-All, their army is taken off the board; or it was an en passant capture of their pawn, which expires when they leave), your turn is judged again: an active player is stalemated, and a defeated Teams player passes.
 3. **Your clock runs out.**
 4. **(provisional) You leave the game.** If you disconnect, your clock keeps running and the other players see a 60-second reconnect timer. If you don't come back in time, this counts exactly like running out of time.
+5. **You resign** (see below).
 
 What happens next depends on the mode:
 
 | | Free-for-All | Teams |
 |---|---|---|
 | King captured or stalemated | **Removed**: your army leaves the board | **Defeated**: you keep playing your pieces while your partner is active |
-| Out of time or left the game | **Removed** | **Frozen** |
+| Out of time, left the game, or resigned | **Removed** | **Frozen** |
+
+### Resigning
+
+- You can resign **at any time** while you are still taking turns, not only on your own turn.
+- Resigning counts exactly like running out of time. In **Free-for-All** your army is removed. In **Teams** only you resign: your pieces freeze in place (they still block squares and can be captured) and your partner plays on. If your partner was already out, your team is out and the other team wins.
+- If you were already defeated in Teams but still playing your pieces, resigning simply freezes them.
+- If it was your turn, play passes to the next player.
 
 ---
 
@@ -111,11 +121,16 @@ What happens next depends on the mode:
 - The game counts every turn taken (automatic passes included) since the last **capture**, **pawn move** (promotions count) or **defeat of a player**.
 - When that count reaches **25 × the number of players still taking turns**, the game ends. With four players that is 100 turns, or 25 full rounds. Removed and frozen players don't count.
 - In Free-for-All the remaining active players tie for the best remaining place. In Teams the game is a draw.
-- This is the only way a game can end without a single winner.
+
+### Draw by agreement
+
+- Any player still taking turns can offer a draw. The game ends in a draw only if **every player still taking turns accepts**: active players and, in Teams, defeated players who are still playing their pieces. Removed and frozen players don't vote.
+- The result is the same as at the move limit: in Free-for-All the remaining active players share the best remaining place and knocked-out players keep their places; in Teams everyone is 1st.
+- The move limit and a draw by agreement are the only ways a game can end without a single winner.
 
 ### Placements
 
-- **Free-for-All:** the winner is 1st. Everyone else is placed in reverse order of being knocked out, so the last player knocked out is 2nd. If the move limit ends the game, the remaining players share the best place (for example 1st, 1st, 3rd, 4th).
+- **Free-for-All:** the winner is 1st. Everyone else is placed in reverse order of being knocked out, so the last player knocked out is 2nd. If the move limit or a draw by agreement ends the game, the remaining players share the best place (for example 1st, 1st, 3rd, 4th).
 - **Teams:** both players of the winning team are 1st and both players of the losing team are 2nd. A draw puts everyone 1st.
 
 ---

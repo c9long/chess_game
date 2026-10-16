@@ -1,7 +1,7 @@
 //! Applying actions and advancing the turn.
 //!
-//! Every action ([`apply_move`], [`apply_timeout`], [`apply_abandon`]) leaves
-//! the state either finished or at the start of a playable turn: the seat to
+//! Every action ([`apply_move`], [`apply_timeout`], [`apply_abandon`],
+//! [`apply_resign`], [`apply_agreed_draw`]) leaves the state either finished or at the start of a playable turn: the seat to
 //! move takes turns and has at least one legal move. Getting there may
 //! involve automatic steps, all reported as events:
 //!
@@ -192,6 +192,67 @@ pub fn apply_timeout(state: &mut GameState, seat: Seat) -> Result<Vec<GameEvent>
 /// expired). Treated exactly like a timeout (provisional rule), but allowed
 /// for any seat; if it was that seat's turn, the turn advances.
 pub fn apply_abandon(state: &mut GameState, seat: Seat) -> Result<Vec<GameEvent>, RulesError> {
+    leave_any_time(state, seat, DefeatReason::Abandon)
+}
+
+/// A seat that still takes turns resigned. Allowed at any time, not only on
+/// its own turn. The effect is exactly that of a timeout, with
+/// [`DefeatReason::Resign`]: FFA — the seat is REMOVED (army off the board);
+/// Teams — the seat is FROZEN (pieces stay but never move; the partner plays
+/// on). An ACTIVE seat is recorded as defeated (`Defeat` event); a DEFEATED
+/// Teams seat keeps its original defeat record and just freezes (`Frozen`
+/// event only). If it was that seat's turn, the turn advances; otherwise the
+/// turn of the seat on move is re-resolved. The game may end (last ACTIVE
+/// seat in FFA, a team without an ACTIVE seat in Teams).
+///
+/// Errors: [`RulesError::GameOver`] once the game has ended,
+/// [`RulesError::SeatNotInPlay`] for a REMOVED or FROZEN seat.
+pub fn apply_resign(state: &mut GameState, seat: Seat) -> Result<Vec<GameEvent>, RulesError> {
+    leave_any_time(state, seat, DefeatReason::Resign)
+}
+
+/// The seats whose agreement a draw needs, indexed by [`Seat::index`]: every
+/// seat that still takes turns (ACTIVE seats, plus DEFEATED Teams seats still
+/// playing). REMOVED and FROZEN seats don't vote. All `false` once the game
+/// is over.
+pub fn draw_voters(state: &GameState) -> [bool; 4] {
+    if state.is_over() {
+        return [false; 4];
+    }
+    Seat::ALL.map(|s| state.takes_turns(s))
+}
+
+/// Ends the game in a draw by agreement. The caller is responsible for
+/// collecting the consent of every seat in [`draw_voters`]; the engine only
+/// applies the outcome. FFA: [`GameResult::FfaAgreedDraw`] — the ACTIVE
+/// seats tie for the best remaining placement and defeated seats keep their
+/// reverse-defeat-order placements (as at the move limit). Teams:
+/// [`GameResult::TeamsAgreedDraw`] — everyone places 1st. Returns the single
+/// `GameEnded` event.
+///
+/// Errors: [`RulesError::GameOver`] once the game has ended.
+pub fn apply_agreed_draw(state: &mut GameState) -> Result<Vec<GameEvent>, RulesError> {
+    if state.is_over() {
+        return Err(RulesError::GameOver);
+    }
+    state.agreed_draw = true;
+    let o = outcome::agreed_draw_outcome(state);
+    let mut events = Vec::with_capacity(1);
+    finish(state, o, &mut events);
+    Ok(events)
+}
+
+// ---------------------------------------------------------------------------
+// Internals
+// ---------------------------------------------------------------------------
+
+/// Abandon / resign: a seat that still takes turns leaves play, on its turn
+/// or not.
+fn leave_any_time(
+    state: &mut GameState,
+    seat: Seat,
+    reason: DefeatReason,
+) -> Result<Vec<GameEvent>, RulesError> {
     if state.is_over() {
         return Err(RulesError::GameOver);
     }
@@ -200,7 +261,7 @@ pub fn apply_abandon(state: &mut GameState, seat: Seat) -> Result<Vec<GameEvent>
     }
     let was_on_move = seat == state.seat_to_move();
     let mut events = Vec::new();
-    leave_play(state, seat, DefeatReason::Abandon, &mut events);
+    leave_play(state, seat, reason, &mut events);
     if !state.is_over() && !check_move_limit(state, &mut events) {
         if was_on_move {
             advance(state, &mut events);
@@ -212,10 +273,6 @@ pub fn apply_abandon(state: &mut GameState, seat: Seat) -> Result<Vec<GameEvent>
     }
     Ok(events)
 }
-
-// ---------------------------------------------------------------------------
-// Internals
-// ---------------------------------------------------------------------------
 
 /// Executes a known-legal move for the seat to move, then resolves defeats,
 /// the move limit and the turn advance.
@@ -358,7 +415,7 @@ fn clear_castling_at(state: &mut GameState, sq: crate::geometry::Square) {
 }
 
 /// Takes `seat` out of ACTIVE status (or freezes a DEFEATED Teams seat on a
-/// clock loss), records the defeat, applies FFA removal / Teams freezing and
+/// clock loss or resignation), records the defeat, applies FFA removal / Teams freezing and
 /// ends the game if a seat or team is eliminated.
 fn leave_play(
     state: &mut GameState,
@@ -374,7 +431,7 @@ fn leave_play(
     }
     let new_status = match state.mode() {
         GameMode::Ffa => SeatStatus::Removed,
-        GameMode::Teams if reason.is_clock_loss() => SeatStatus::Frozen,
+        GameMode::Teams if reason.freezes() => SeatStatus::Frozen,
         GameMode::Teams => SeatStatus::Defeated,
     };
     state.set_status(seat, new_status);

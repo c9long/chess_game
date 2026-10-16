@@ -7,7 +7,8 @@ use crate::civ::CivId;
 use crate::geometry::Seat;
 use crate::movegen::Move;
 
-/// Errors from game actions ([`crate::apply_move`], timeouts, abandons) and
+/// Errors from game actions ([`crate::apply_move`], timeouts, abandons,
+/// resignations, agreed draws) and
 /// state construction.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RulesError {

@@ -30,7 +30,7 @@ pub enum SeatStatus {
     /// own turns while its partner is ACTIVE (passing automatically when it
     /// has no legal move).
     Defeated = 1,
-    /// Teams only: timed out or abandoned. Pieces stay (block, can be
+    /// Teams only: timed out, abandoned or resigned. Pieces stay (block, can be
     /// captured) but never move; turns are skipped.
     Frozen = 2,
     /// FFA only: army taken off the board; turns are skipped.
@@ -78,7 +78,7 @@ pub enum DefeatReason {
     Timeout,
     /// Its reconnect grace expired (treated like a timeout; provisional).
     Abandon,
-    /// Reserved for later (resignation is not implemented in v1).
+    /// It resigned (see [`crate::apply_resign`]).
     Resign,
 }
 
@@ -106,9 +106,20 @@ impl DefeatReason {
         }
     }
 
-    /// Whether this reason freezes (Teams) rather than defeats.
+    /// Whether this is a clock loss (timeout, or abandon, which is treated
+    /// like a timeout).
     pub const fn is_clock_loss(self) -> bool {
         matches!(self, DefeatReason::Timeout | DefeatReason::Abandon)
+    }
+
+    /// Whether leaving play for this reason freezes a Teams seat (clock
+    /// losses and resignation) rather than defeating it (leader captured,
+    /// stalemate). In FFA every reason removes the seat.
+    pub const fn freezes(self) -> bool {
+        matches!(
+            self,
+            DefeatReason::Timeout | DefeatReason::Abandon | DefeatReason::Resign
+        )
     }
 }
 
@@ -221,6 +232,10 @@ pub struct GameState {
     pub(crate) ply: u32,
     pub(crate) defeats: DefeatLog,
     pub(crate) outcome: Option<Outcome>,
+    /// The game ended by agreement ([`crate::apply_agreed_draw`]). Kept as
+    /// state because, unlike every other result, it cannot be derived from
+    /// statuses and counters.
+    pub(crate) agreed_draw: bool,
     pub(crate) counts: [[u8; PieceKind::COUNT]; 4],
     pub(crate) hash: u64,
 }
@@ -256,6 +271,7 @@ impl GameState {
             ply: 0,
             defeats: DefeatLog::default(),
             outcome: None,
+            agreed_draw: false,
             counts: [[0; PieceKind::COUNT]; 4],
             hash: 0,
         };
@@ -351,6 +367,11 @@ impl GameState {
     /// Whether the game has ended.
     pub fn is_over(&self) -> bool {
         self.outcome.is_some()
+    }
+
+    /// Whether the game ended in a draw by agreement.
+    pub fn is_agreed_draw(&self) -> bool {
+        self.agreed_draw
     }
 
     /// Incrementally maintained Zobrist hash (see [`crate::zobrist`]).
@@ -546,11 +567,11 @@ impl GameState {
             if st == SeatStatus::Active {
                 return Err(err("defeats", format!("{} is listed but ACTIVE", rec.seat)));
             }
-            if st == SeatStatus::Defeated && rec.reason.is_clock_loss() {
+            if st == SeatStatus::Defeated && rec.reason.freezes() {
                 return Err(err(
                     "defeats",
                     format!(
-                        "{} is DEFEATED but its reason is a timeout/abandon",
+                        "{} is DEFEATED but its reason is a timeout/abandon/resign",
                         rec.seat
                     ),
                 ));
@@ -647,10 +668,17 @@ impl GameState {
         s.set_to_move(p.to_move);
         s.no_progress = p.no_progress;
         s.ply = p.ply;
+        s.agreed_draw = p.agreed_draw;
 
-        if let Some(o) = outcome::derive_outcome(&s) {
-            s.set_outcome(o);
-        } else {
+        let decided = outcome::natural_outcome(&s).is_some();
+        if p.agreed_draw && decided {
+            return Err(err(
+                "end",
+                "an agreed draw needs a game that was otherwise still in progress",
+            ));
+        }
+        if !decided {
+            // Ongoing, or drawn by agreement at the start of a playable turn.
             if !s.takes_turns(p.to_move) {
                 return Err(err("to_move", format!("{} does not take turns", p.to_move)));
             }
@@ -663,6 +691,9 @@ impl GameState {
                     ),
                 ));
             }
+        }
+        if let Some(o) = outcome::derive_outcome(&s) {
+            s.set_outcome(o);
         }
         debug_assert_eq!(s.hash, zobrist::compute_hash(&s));
         Ok(s)
@@ -681,6 +712,7 @@ impl GameState {
             no_progress: self.no_progress,
             ply: self.ply,
             defeats: self.defeats.iter().collect(),
+            agreed_draw: self.agreed_draw,
         }
     }
 }
@@ -713,6 +745,7 @@ pub(crate) struct StateParts {
     pub no_progress: u32,
     pub ply: u32,
     pub defeats: Vec<DefeatRecord>,
+    pub agreed_draw: bool,
 }
 
 #[cfg(test)]

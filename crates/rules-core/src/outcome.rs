@@ -8,6 +8,11 @@
 //!   still taking turns`): FFA survivors (ACTIVE seats) tie for the best
 //!   remaining placement, defeated seats keep reverse-defeat-order places
 //!   below them; Teams is a draw (everyone 1st).
+//! * **Agreed draw** ([`crate::apply_agreed_draw`], once every seat that
+//!   still takes turns agreed): placed exactly like the move limit — FFA
+//!   survivors tie for the best remaining placement, Teams everyone 1st.
+//!   The only result not derivable from statuses and counters alone, so the
+//!   state keeps a flag for it ([`GameState::is_agreed_draw`]).
 //!
 //! Placements use standard competition ranking (ties share a place, the
 //! next place skips: 1, 1, 3, 4).
@@ -38,6 +43,24 @@ pub enum GameResult {
     },
     /// Teams: move limit reached.
     TeamsDraw,
+    /// FFA: every seat still taking turns agreed to a draw; the surviving
+    /// (ACTIVE) seats tie for the best remaining placement.
+    FfaAgreedDraw {
+        /// Survivors, indexed by [`Seat::index`].
+        survivors: [bool; 4],
+    },
+    /// Teams: every seat still taking turns agreed to a draw (everyone 1st).
+    TeamsAgreedDraw,
+}
+
+impl GameResult {
+    /// Whether this is a draw by agreement.
+    pub const fn is_agreed_draw(self) -> bool {
+        matches!(
+            self,
+            GameResult::FfaAgreedDraw { .. } | GameResult::TeamsAgreedDraw
+        )
+    }
 }
 
 /// The final result with per-seat placements (1 = best).
@@ -136,21 +159,37 @@ pub(crate) fn elimination_outcome(state: &GameState) -> Option<Outcome> {
     }
 }
 
+fn survivors(state: &GameState) -> [bool; 4] {
+    Seat::ALL.map(|s| state.status(s) == SeatStatus::Active)
+}
+
 /// The outcome when the move limit is reached.
 pub(crate) fn move_limit_outcome(state: &GameState) -> Outcome {
     match state.mode() {
-        GameMode::Ffa => {
-            let mut survivors = [false; 4];
-            for s in Seat::ALL {
-                survivors[s.index()] = state.status(s) == SeatStatus::Active;
-            }
-            Outcome {
-                result: GameResult::FfaMoveLimitTie { survivors },
-                placements: ffa_placements(state),
-            }
-        }
+        GameMode::Ffa => Outcome {
+            result: GameResult::FfaMoveLimitTie {
+                survivors: survivors(state),
+            },
+            placements: ffa_placements(state),
+        },
         GameMode::Teams => Outcome {
             result: GameResult::TeamsDraw,
+            placements: [1; 4],
+        },
+    }
+}
+
+/// The outcome of a draw by agreement (same placements as the move limit).
+pub(crate) fn agreed_draw_outcome(state: &GameState) -> Outcome {
+    match state.mode() {
+        GameMode::Ffa => Outcome {
+            result: GameResult::FfaAgreedDraw {
+                survivors: survivors(state),
+            },
+            placements: ffa_placements(state),
+        },
+        GameMode::Teams => Outcome {
+            result: GameResult::TeamsAgreedDraw,
             placements: [1; 4],
         },
     }
@@ -161,10 +200,16 @@ pub(crate) fn move_limit_reached(state: &GameState) -> bool {
     state.no_progress() >= state.move_limit()
 }
 
-/// The outcome implied by a state's statuses and counters, if it is over.
-/// Every finished state produced by the engine satisfies
-/// `derive_outcome(s) == s.outcome()`.
-pub fn derive_outcome(state: &GameState) -> Option<Outcome> {
+/// The outcome implied by statuses and counters alone (elimination or move
+/// limit), ignoring an agreed draw.
+pub(crate) fn natural_outcome(state: &GameState) -> Option<Outcome> {
     elimination_outcome(state)
         .or_else(|| move_limit_reached(state).then(|| move_limit_outcome(state)))
+}
+
+/// The outcome implied by a state's statuses, counters and agreed-draw flag,
+/// if it is over. Every finished state produced by the engine satisfies
+/// `derive_outcome(s) == s.outcome()`.
+pub fn derive_outcome(state: &GameState) -> Option<Outcome> {
+    natural_outcome(state).or_else(|| state.is_agreed_draw().then(|| agreed_draw_outcome(state)))
 }

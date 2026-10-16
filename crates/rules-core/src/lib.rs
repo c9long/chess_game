@@ -27,7 +27,8 @@
 //! * [`setup`] — starting position and castling geometry.
 //! * [`state`] — [`GameState`] and seat statuses.
 //! * [`movegen`] — legal move generation (self-check allowed).
-//! * [`apply`] — applying moves, timeouts and abandons; turn advance.
+//! * [`apply`] — applying moves, timeouts, abandons, resignations and agreed
+//!   draws; turn advance.
 //! * [`outcome`] — results and placements.
 //! * [`notation`] / [`position_string`] — text formats.
 //! * [`zobrist`] — hashing. [`mod@perft`] — move-tree counting.
@@ -53,8 +54,8 @@ pub mod zobrist;
 mod serde_impl;
 
 pub use apply::{
-    GameEvent, PASS_NOTATION, apply_abandon, apply_generated_move, apply_move, apply_move_into,
-    apply_timeout,
+    GameEvent, PASS_NOTATION, apply_abandon, apply_agreed_draw, apply_generated_move, apply_move,
+    apply_move_into, apply_resign, apply_timeout, draw_voters,
 };
 pub use civ::{CivDefinition, CivHooks, CivId, Roster, civ_definition};
 pub use config::{CivSpec, GameConfig, GameMode};

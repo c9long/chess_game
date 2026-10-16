@@ -3,7 +3,8 @@
 //! * [`Square`] serializes as its name (`"e4"`).
 //! * [`GameState`] serializes as a structured object (config, list of placed
 //!   pieces, statuses, castling, en passant targets, seat to move, counters,
-//!   defeat order, outcome). Deserializing re-validates everything exactly
+//!   defeat order, `agreed_draw` flag (only present when true), outcome).
+//!   Deserializing re-validates everything exactly
 //!   like a position string; `outcome` is ignored on input and re-derived.
 
 use serde::de::Error as _;
@@ -46,6 +47,9 @@ struct GameStateRepr {
     no_progress: u32,
     ply: u32,
     defeats: Vec<DefeatRecord>,
+    /// Ended in a draw by agreement (omitted when false).
+    #[serde(default, skip_serializing_if = "core::ops::Not::not")]
+    agreed_draw: bool,
     #[serde(default, skip_deserializing)]
     outcome: Option<Outcome>,
 }
@@ -74,6 +78,7 @@ impl Serialize for GameState {
             no_progress: p.no_progress,
             ply: p.ply,
             defeats: p.defeats,
+            agreed_draw: p.agreed_draw,
             outcome: self.outcome().copied(),
         }
         .serialize(s)
@@ -102,6 +107,7 @@ impl<'de> Deserialize<'de> for GameState {
             no_progress: r.no_progress,
             ply: r.ply,
             defeats: r.defeats,
+            agreed_draw: r.agreed_draw,
         })
         .map_err(D::Error::custom)
     }
@@ -131,5 +137,35 @@ mod tests {
         assert_eq!(m, parse_move("a10a12").unwrap());
         assert!(serde_json::from_str::<Square>("\"m1\"").is_err());
         assert!(serde_json::from_str::<GameState>("{}").is_err());
+        assert!(!json.contains("agreed_draw"), "{json}");
+    }
+
+    #[test]
+    fn new_results_serialize_snake_case_and_round_trip() {
+        let mut s = GameState::new(GameConfig::new(GameMode::Ffa)).unwrap();
+        apply_resign(&mut s, Seat::North).unwrap();
+        let ev = apply_agreed_draw(&mut s).unwrap();
+        let ej = serde_json::to_value(&ev).unwrap();
+        assert_eq!(
+            ej[0]["outcome"]["result"],
+            serde_json::json!({"type": "ffa_agreed_draw", "survivors": [true, true, false, true]})
+        );
+        assert_eq!(
+            ej[0]["outcome"]["placements"],
+            serde_json::json!([1, 1, 4, 1])
+        );
+        let json = serde_json::to_string(&s).unwrap();
+        assert!(json.contains("\"agreed_draw\":true"), "{json}");
+        assert!(json.contains("\"reason\":\"resign\""), "{json}");
+        let back: GameState = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, s);
+        assert_eq!(back.outcome(), s.outcome());
+
+        let r: GameResult = serde_json::from_str(r#"{"type":"teams_agreed_draw"}"#).unwrap();
+        assert_eq!(r, GameResult::TeamsAgreedDraw);
+        assert_eq!(
+            serde_json::to_string(&GameResult::TeamsAgreedDraw).unwrap(),
+            r#"{"type":"teams_agreed_draw"}"#
+        );
     }
 }
