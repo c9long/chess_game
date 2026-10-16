@@ -10,6 +10,7 @@
 // Then open http://localhost:5173.
 import { spawn, spawnSync } from 'node:child_process'
 import { copyFileSync, existsSync } from 'node:fs'
+import { createServer } from 'node:net'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -27,6 +28,30 @@ function step(label, cmd, args, extraEnv = {}) {
     console.error(`\n✗ ${label} failed. See the output above.`)
     process.exit(r.status ?? 1)
   }
+}
+
+// Fail fast with a clear message when something (often an earlier `pnpm dev` that didn't shut
+// down) is still holding one of the ports.
+async function portFree(port) {
+  return new Promise((resolve) => {
+    const probe = createServer()
+      .once('error', () => resolve(false))
+      .once('listening', () => probe.close(() => resolve(true)))
+      .listen(port, '127.0.0.1')
+  })
+}
+const PORTS = { 7700: 'bot-service', 3000: 'the game server', 5173: 'the web app' }
+const busy = []
+for (const [port, what] of Object.entries(PORTS)) {
+  if (!(await portFree(Number(port)))) busy.push(`${port} (${what})`)
+}
+if (busy.length) {
+  console.error(
+    `\n✗ Port${busy.length > 1 ? 's' : ''} already in use: ${busy.join(', ')}.\n` +
+      '  Another `pnpm dev` (or a leftover process from one) is probably still running.\n' +
+      '  Stop it with Ctrl-C in its terminal, or find it with:  lsof -i :3000 -i :5173 -i :7700\n',
+  )
+  process.exit(1)
 }
 
 const serverEnv = join(root, 'apps/server/.env')
@@ -48,10 +73,13 @@ const COLORS = { bots: '35', server: '36', web: '33' }
 const children = []
 
 function run(name, cmd, args, extraEnv = {}) {
+  // Each service gets its own process group so shutdown stops everything it started
+  // (cargo → bot-service, pnpm → node --watch → server), not just the direct child.
   const child = spawn(cmd, args, {
     cwd: root,
     env: { ...env, ...extraEnv },
     stdio: ['ignore', 'pipe', 'pipe'],
+    detached: true,
   })
   const prefix = `\x1b[${COLORS[name]}m${name.padEnd(6)}│\x1b[0m `
   const pipe = (stream, out) => {
@@ -60,7 +88,8 @@ function run(name, cmd, args, extraEnv = {}) {
       buf += chunk
       const lines = buf.split('\n')
       buf = lines.pop() ?? ''
-      for (const line of lines) out.write(`${prefix}${line}\n`)
+      // After Ctrl-C, pnpm reports each stopped service as "failed": that's expected, hide it.
+      if (!shuttingDown) for (const line of lines) out.write(`${prefix}${line}\n`)
     })
   }
   pipe(child.stdout, process.stdout)
@@ -75,14 +104,39 @@ function run(name, cmd, args, extraEnv = {}) {
 }
 
 let shuttingDown = false
+function killGroup(child, signal) {
+  try {
+    process.kill(-child.pid, signal)
+  } catch {
+    // Already gone.
+  }
+}
+
 function shutdown(code = 0) {
   if (shuttingDown) return
   shuttingDown = true
-  for (const c of children) if (c.exitCode === null) c.kill('SIGTERM')
-  setTimeout(() => process.exit(code), 1500).unref()
+  process.exitCode = code
+  if (code === 0) console.log('\nStopping bot-service, server and web…')
+  for (const c of children) killGroup(c, 'SIGTERM')
+  // Anything still running after 3 s is stopped for good.
+  setTimeout(() => {
+    for (const c of children) killGroup(c, 'SIGKILL')
+    process.exit(code)
+  }, 3000).unref()
+  Promise.all(
+    // A child killed by a signal has exitCode null but signalCode set: it is gone too.
+    children.map((c) =>
+      c.exitCode !== null || c.signalCode !== null ? null : new Promise((r) => c.once('exit', r)),
+    ),
+  ).then(() => {
+    if (code === 0) console.log('Stopped.')
+    process.exit(code)
+  })
 }
-process.on('SIGINT', () => shutdown(0))
-process.on('SIGTERM', () => shutdown(0))
+for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(signal, () => shutdown(0))
+process.on('exit', () => {
+  for (const c of children) killGroup(c, 'SIGKILL')
+})
 
 run('bots', 'cargo', ['run', '--release', '-q', '-p', 'bot-service'], { BOT_BIND })
 run('server', 'pnpm', ['--filter', '@game/server', 'dev'], {
