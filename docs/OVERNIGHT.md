@@ -186,6 +186,7 @@ all fixed):
   ("Lobbies · …", "Match history · …", "Game · …").
 - Verified: web build, lint, typecheck, and the landing, singleplayer and guest browser specs
   (including a new title/icon check).
+- The README now opens with a short "What's in the game" feature list.
 
 ## Final verification (on `main`)
 
