@@ -26,8 +26,10 @@ import {
   joinOptionsSchema,
   type LobbyMetadata,
   PROTOCOL_VERSION,
+  type ResignLapseReason,
   type ServerMessages,
   SOLO_DEFAULT_NAME,
+  TEAM_RESIGN_COOLDOWN_MOVES,
 } from '@game/protocol'
 import { createMatchState, EventState, type MatchState, type SeatState } from '@game/protocol/state'
 import {
@@ -43,7 +45,13 @@ import {
 import { hash, verify } from '@node-rs/argon2'
 import { BotServiceError, fallbackMove } from './bot-client.ts'
 import { GameClock, monoNow } from './clock.ts'
-import { allAccepted, botAcceptsDraw, initialVotes, lapseReason } from './draw-logic.ts'
+import {
+  allAccepted,
+  botAcceptsDraw,
+  initialVotes,
+  lapseReason,
+  turnsPlayed,
+} from './draw-logic.ts'
 import { GameError, joinError } from './errors.ts'
 import {
   clearSeat,
@@ -63,6 +71,7 @@ import {
 } from './lobby-logic.ts'
 import { type FinishResult, type MatchEventType, MatchRecorder } from './persistence.ts'
 import { type PlayerAuth, resolvePlayer } from './player-auth.ts'
+import { botAcceptsTeamResign, resignLapseReason, teammateOf, teamOf } from './resign-logic.ts'
 import type { GameService, ManagedRoom } from './service.ts'
 
 /** What the matchmaking route passes as `AuthContext.req`. */
@@ -188,6 +197,13 @@ export class MatchRoom
   private drawBotTimers: NodeJS.Timeout[] = []
   /** Seats that took a turn (moved or passed) since the pending draw offer. */
   private drawTurnsTaken = new Set<number>()
+  /** Teams resignation votes, per team: a bot teammate's pending answer. */
+  private resignBotTimers: (NodeJS.Timeout | undefined)[] = [undefined, undefined]
+  /** Per team: seats that took a turn (moved or passed) since the pending proposal. */
+  private resignTurnsTaken: Set<number>[] = [new Set(), new Set()]
+  /** Per team: id of the pending proposal (tells proposals apart for bot answers). */
+  private resignProposalIds = [0, 0]
+  private resignProposalSeq = 0
 
   // -------------------------------------------------------------------------
   // Authentication (matchmaking request: cookie or bearer token)
@@ -550,6 +566,8 @@ export class MatchRoom
     this.clearTimers()
     this.cancelBotTurn()
     this.clearDrawOffer()
+    this.clearTeamResign(0)
+    this.clearTeamResign(1)
     this.state.result.type = 'aborted'
     this.state.result.endReason = reason
     this.state.seatToMove = -1
@@ -679,7 +697,20 @@ export class MatchRoom
       if (this.settleFallenFlag(now)) {
         if (this.state.phase !== 'in_game' || !this.takesTurns(seat)) return
       }
+      // Teams: a resignation resigns the whole team, so the teammate votes first.
+      if (this.state.mode === 'teams') {
+        this.proposeTeamResign(seat, now)
+        return
+      }
       this.runAction('resign', seat, null, now)
+    })
+    this.handle('respondResign', (client, { accept }) => {
+      const seat = this.requireSeat(client)
+      this.requireGame()
+      // A flag that fell first is a timeout; it may change the voters (the proposal lapses).
+      this.settleFallenFlag(monoNow())
+      this.requireGame()
+      this.respondTeamResign(seat, accept)
     })
     this.handle('offerDraw', (client) => {
       const seat = this.requireSeat(client)
@@ -1012,7 +1043,13 @@ export class MatchRoom
    * the clock bookkeeping, then records, broadcasts and either finishes the game or starts
    * the next turn. `now` is monotonic time (monoNow()).
    */
-  private runAction(kind: GameAction, seat: SeatNum, notation: string | null, now = monoNow()) {
+  private runAction(
+    kind: GameAction,
+    seat: SeatNum,
+    notation: string | null,
+    now = monoNow(),
+    extra: Record<string, unknown> = {},
+  ) {
     const game = this.game
     const clock = this.gameClock
     if (!game || !clock || this.state.phase !== 'in_game') return
@@ -1064,7 +1101,12 @@ export class MatchRoom
         : offTurnKind
           ? clock.remainingAt(seat, now)
           : clock.remaining[seat]
-      this.record(seat, actionType, { actionSeq: s.actionSeq, notation, events }, remaining)
+      this.record(
+        seat,
+        actionType,
+        { actionSeq: s.actionSeq, notation, events, ...extra },
+        remaining,
+      )
     }
     let endReason = ''
     for (const e of events) {
@@ -1080,7 +1122,11 @@ export class MatchRoom
         const d = seatIndex(e.seat)
         this.record(d, 'defeat', { actionSeq: s.actionSeq, reason: e.reason, derived: true }, null)
       } else if (e.type === 'game_ended') {
-        endReason = endReasonOf(e.outcome)
+        // A Teams resignation ends the game as a team win; say how it was won.
+        endReason =
+          kind === 'resign' && e.outcome.result.type === 'teams_winner'
+            ? 'team_resigned'
+            : endReasonOf(e.outcome)
         this.record(
           null,
           'game_end',
@@ -1104,6 +1150,7 @@ export class MatchRoom
       clock: sync,
     })
     this.drawAfterAction(kind, seat, events)
+    this.resignAfterAction(kind, seat, events)
 
     if (snap.isOver && snap.outcome) {
       void this.finishGame(snap.outcome, endReason || endReasonOf(snap.outcome), now)
@@ -1457,15 +1504,18 @@ export class MatchRoom
   }
 
   /**
-   * Draw bookkeeping after a game action: a move counts down its seat's cooldown; a pending
+   * Draw bookkeeping after a game action: a turn played (a move or an automatic pass) counts
+   * down its seat's cooldown; a pending
    * offer lapses when the voters changed or the turn came back to the offerer; a finished
    * game drops it silently.
    */
   private drawAfterAction(kind: GameAction, seat: SeatNum, events: readonly GameEvent[]) {
     const s = this.state
     const game = this.game
-    if (kind === 'move' && (s.drawCooldowns[seat] ?? 0) > 0) {
-      s.drawCooldowns[seat] = (s.drawCooldowns[seat] ?? 1) - 1
+    // A move or an automatic pass (a seat with no legal move) counts down its seat's
+    // cooldown, so a seat that can only pass isn't locked out of offering for good.
+    for (const i of turnsPlayed(kind, seat, events)) {
+      if ((s.drawCooldowns[i] ?? 0) > 0) s.drawCooldowns[i] = (s.drawCooldowns[i] ?? 1) - 1
     }
     if (s.drawOfferSeat === -1 || !game) return
     // The offerer's own moves don't count (its turn coming back is the round's end); its
@@ -1511,12 +1561,178 @@ export class MatchRoom
     for (const i of SEAT_NUMS) s.drawVotes[i] = DRAW_VOTE.notVoter
   }
 
+  // -------------------------------------------------------------------------
+  // Teams resignation votes
+  // -------------------------------------------------------------------------
+
+  /**
+   * Teams: `seat` (still taking turns) wants to resign. With a teammate still taking turns
+   * this proposes it and waits for the teammate's answer (a bot answers after a paced delay);
+   * with a teammate who no longer takes turns (frozen) nobody can be asked, so the team
+   * resigns at once. Sending it while the teammate's own proposal is pending agrees to that.
+   */
+  private proposeTeamResign(seat: SeatNum, now: number) {
+    const s = this.state
+    const team = teamOf(seat)
+    const pending = s.teamResignSeat[team] ?? -1
+    if (pending === seat) throw new GameError('resign_proposal_pending')
+    if (pending !== -1) {
+      this.respondTeamResign(seat, true)
+      return
+    }
+    // Nobody to ask (no cooldown either: the cooldown only stops repeated asking).
+    const partner = teammateOf(seat) as SeatNum
+    if (!this.takesTurns(partner)) {
+      this.record(seat, 'resign_proposal', { actionSeq: s.actionSeq, immediate: true }, null)
+      this.broadcast('resignEvent', { type: 'immediate', seat, team })
+      this.runAction('resign', seat, null, now, { team: true, immediate: true })
+      return
+    }
+    const wait = s.teamResignCooldowns[seat] ?? 0
+    if (wait > 0) {
+      throw new GameError(
+        'resign_proposal_cooldown',
+        `Make ${wait} more move${wait === 1 ? '' : 's'} before proposing to resign again.`,
+      )
+    }
+    s.teamResignSeat[team] = seat
+    this.resignProposalIds[team] = ++this.resignProposalSeq
+    this.resignTurnsTaken[team] = new Set()
+    this.record(seat, 'resign_proposal', { actionSeq: s.actionSeq, teammate: partner }, null)
+    this.broadcast('resignEvent', { type: 'proposed', seat, team })
+    if ((s.seats[partner] as SeatState).isBot) {
+      const id = this.resignProposalIds[team]
+      const delay = Math.max(0, this.svc.config.game.botMinMoveMs)
+      clearTimeout(this.resignBotTimers[team])
+      this.resignBotTimers[team] = setTimeout(() => {
+        this.resignBotTimers[team] = undefined
+        this.botRespondTeamResign(partner, team, id)
+      }, delay)
+    }
+  }
+
+  /** A bot teammate answers proposal `id` of `team` (if it still stands). */
+  private botRespondTeamResign(seat: SeatNum, team: 0 | 1, id: number) {
+    const s = this.state
+    if (s.phase !== 'in_game' || !this.game) return
+    this.settleFallenFlag(monoNow())
+    const game = this.game
+    if (s.phase !== 'in_game' || !game) return
+    if ((s.teamResignSeat[team] ?? -1) === -1 || this.resignProposalIds[team] !== id) return
+    try {
+      this.respondTeamResign(seat, botAcceptsTeamResign(game.snapshot(), seat), true)
+    } catch (err) {
+      if (!(err instanceof GameError)) {
+        this.svc.logger.error(
+          { room: this.roomId, err: (err as Error).message },
+          'bot resign answer failed',
+        )
+      }
+    }
+  }
+
+  /**
+   * The teammate answers its partner's pending proposal: agreeing resigns the whole team
+   * (the game ends, the other team wins); declining ends the proposal and both play on.
+   */
+  private respondTeamResign(seat: SeatNum, accept: boolean, bot = false) {
+    const s = this.state
+    if (s.mode !== 'teams') throw new GameError('no_resign_proposal')
+    const team = teamOf(seat)
+    const proposer = s.teamResignSeat[team] ?? -1
+    if (proposer === -1) throw new GameError('no_resign_proposal')
+    if (proposer === seat) throw new GameError('already_responded')
+    if (!this.takesTurns(seat)) throw new GameError('not_playing')
+    const from = proposer as SeatNum
+    this.record(
+      seat,
+      'resign_response',
+      { actionSeq: s.actionSeq, proposer: from, accept, ...(bot ? { bot: true } : {}) },
+      null,
+    )
+    if (!accept) {
+      this.endTeamResign(team)
+      this.broadcast('resignEvent', { type: 'declined', seat, team })
+      return
+    }
+    this.clearTeamResign(team)
+    this.broadcast('resignEvent', { type: 'accepted', seat, team })
+    this.runAction('resign', from, null, monoNow(), { team: true, acceptedBy: seat })
+  }
+
+  /**
+   * Resignation bookkeeping after a game action: a turn played (a move or an automatic pass)
+   * counts down its seat's cooldown; a
+   * pending proposal lapses when the proposer or its teammate stopped taking turns or the
+   * turn came back round to the proposer; a finished game drops it silently.
+   */
+  private resignAfterAction(kind: GameAction, seat: SeatNum, events: readonly GameEvent[]) {
+    const s = this.state
+    const game = this.game
+    for (const i of turnsPlayed(kind, seat, events)) {
+      if ((s.teamResignCooldowns[i] ?? 0) > 0) {
+        s.teamResignCooldowns[i] = (s.teamResignCooldowns[i] ?? 1) - 1
+      }
+    }
+    if (!game) return
+    for (const team of [0, 1] as const) {
+      const proposer = s.teamResignSeat[team] ?? -1
+      if (proposer === -1) continue
+      const taken = this.resignTurnsTaken[team] as Set<number>
+      // The proposer's own moves don't count (its turn coming back is the round's end); its
+      // automatic passes do.
+      if (kind === 'move' && seat !== proposer) taken.add(seat)
+      for (const e of events) if (e.type === 'pass') taken.add(seatIndex(e.seat))
+      if (game.snapshot().isOver) {
+        this.clearTeamResign(team)
+        continue
+      }
+      const reason = resignLapseReason(proposer, game.drawVoters(), s.seatToMove, taken)
+      if (reason) this.lapseTeamResign(team, reason)
+    }
+  }
+
+  private lapseTeamResign(team: 0 | 1, reason: ResignLapseReason) {
+    const proposer = this.state.teamResignSeat[team] as SeatNum
+    const outSeat =
+      reason === 'voters_changed'
+        ? [proposer, teammateOf(proposer)].find((i) => !this.takesTurns(i as SeatNum))
+        : undefined
+    this.endTeamResign(team)
+    this.broadcast('resignEvent', {
+      type: 'lapsed',
+      seat: proposer,
+      team,
+      reason,
+      ...(outSeat === undefined ? {} : { outSeat }),
+    })
+  }
+
+  /** Ends `team`'s proposal unanswered or declined: the proposer waits before proposing again. */
+  private endTeamResign(team: 0 | 1) {
+    const proposer = this.state.teamResignSeat[team] ?? -1
+    if (proposer === -1) return
+    this.state.teamResignCooldowns[proposer] = TEAM_RESIGN_COOLDOWN_MOVES
+    this.clearTeamResign(team)
+  }
+
+  /** Drops `team`'s pending proposal and a bot's pending answer (no cooldown, no message). */
+  private clearTeamResign(team: 0 | 1) {
+    clearTimeout(this.resignBotTimers[team])
+    this.resignBotTimers[team] = undefined
+    this.resignTurnsTaken[team] = new Set()
+    this.resignProposalIds[team] = 0
+    if ((this.state.teamResignSeat[team] ?? -1) !== -1) this.state.teamResignSeat[team] = -1
+  }
+
   private async finishGame(outcome: Outcome, endReason: string, now: number) {
     const s = this.state
     s.phase = 'finished'
     this.clearTimers()
     this.cancelBotTurn()
     this.clearDrawOffer()
+    this.clearTeamResign(0)
+    this.clearTeamResign(1)
     const game = this.game
     const recorder = this.recorder
     s.result.type = outcome.result.type
@@ -1602,6 +1818,8 @@ export class MatchRoom
   private clearTimers() {
     for (const t of this.drawBotTimers) clearTimeout(t)
     this.drawBotTimers = []
+    for (const t of this.resignBotTimers) clearTimeout(t)
+    this.resignBotTimers = [undefined, undefined]
     clearTimeout(this.countdownTimer)
     clearTimeout(this.flagTimer)
     clearInterval(this.syncTimer)
@@ -1620,6 +1838,7 @@ export function endReasonOf(outcome: Outcome): string {
     case 'ffa_winner':
       return 'last_standing'
     case 'teams_winner':
+      // (A Teams resignation is reported as 'team_resigned' by runAction.)
       return 'team_eliminated'
     case 'ffa_agreed_draw':
     case 'teams_agreed_draw':

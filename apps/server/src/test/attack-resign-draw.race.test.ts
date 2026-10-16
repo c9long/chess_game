@@ -165,11 +165,15 @@ describe('integrity', () => {
     const players = await startGame([a, b, c, d] as Browser[], { mode: 'teams' })
     const south = at(players, 0)
     const west = at(players, 1)
-    // West resigns (frozen in Teams): no longer a voter.
-    west.send('resign')
+    // West runs out of time (frozen in Teams, still in the room): no longer a voter.
+    await moveOnce(players) // South; West to move
+    roomOf(south.room.roomId).runAction('timeout', 1, null)
     await south.waitState((s) => s.seats[1]?.status === 'frozen')
     expect((await west.expectError('offerDraw')).code).toBe('not_playing')
     expect((await west.expectError('resign')).code).toBe('not_playing')
+    expect((await west.expectError('respondResign', { accept: true })).code).toBe(
+      'no_resign_proposal',
+    )
     south.send('offerDraw')
     await south.waitState((s) => s.drawOfferSeat === 0)
     expect(south.state.drawVotes).toEqual([1, -1, 0, 0])
@@ -193,7 +197,7 @@ describe('integrity', () => {
       'wrong_phase',
     )
 
-    // Persisted and re-simulated: the frozen resign, then the agreed draw.
+    // Persisted and re-simulated: the timeout, then the agreed draw.
     const matchId = south.state.matchId
     const finalPosition = south.state.positionString
     let m: typeof matches.$inferSelect | undefined

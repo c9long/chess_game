@@ -180,6 +180,8 @@ describe('solo rooms', () => {
     const reply = await p.waitMessage('events', (e) => e.seq === 4)
     expect(reply.clock.runningSeat).toBe(-1)
     expect(p.of('events').every((e) => e.action === 'move')).toBe(true)
+    // The state patch can trail the `events` message under load.
+    await p.waitState((s) => s.actionSeq === 4)
     expect(p.state.seatToMove).toBe(0)
     // bot-service gets a generous virtual clock so every level thinks for its usual time.
     const asked = bots.requests.slice(before, before + 3)

@@ -31,6 +31,8 @@ export type MatchEventType =
   | 'resign'
   | 'draw_offer'
   | 'draw_response'
+  | 'resign_proposal'
+  | 'resign_response'
 
 /**
  * Event types that are game actions; replaying them in seq order rebuilds the game. An
@@ -38,6 +40,9 @@ export type MatchEventType =
  * `game_end` row is derived from the action before it.
  */
 export const ACTION_EVENT_TYPES = ['move', 'promotion', 'timeout', 'abandon', 'resign'] as const
+// A Teams resignation is one `resign` action (seat: the proposer) replayed as
+// `Game.applyResign`, which resigns the whole team; the vote rows before it
+// (`resign_proposal`, `resign_response`) are not actions.
 
 export interface EventRow {
   seat: number | null

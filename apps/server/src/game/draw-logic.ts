@@ -3,8 +3,14 @@
  * a bot answers one. Every rules fact (statuses, voters, material on the board) comes from
  * the rules engine's snapshot; nothing here decides a game rule.
  */
-import { DRAW_VOTE, type DrawLapseReason } from '@game/protocol'
-import type { PieceKind, SeatTuple, Snapshot } from '@game/rules'
+import { DRAW_VOTE, type DrawLapseReason, type GameAction } from '@game/protocol'
+import {
+  type GameEvent,
+  type PieceKind,
+  type SeatTuple,
+  type Snapshot,
+  seatIndex,
+} from '@game/rules'
 
 /** Conventional piece values for the bots' "am I clearly losing?" check (leader excluded). */
 export const MATERIAL_VALUE: Record<PieceKind, number> = {
@@ -14,6 +20,21 @@ export const MATERIAL_VALUE: Record<PieceKind, number> = {
   rook: 5,
   queen: 9,
   king: 0,
+}
+
+/**
+ * The seats that played a turn in one game action, for the offer/proposal cooldowns: the
+ * mover of a `move`, plus every seat that passed automatically (no legal move). A seat that
+ * can only pass still works off its cooldown, one pass per turn.
+ */
+export function turnsPlayed(
+  kind: GameAction,
+  seat: number,
+  events: readonly GameEvent[],
+): number[] {
+  const out = kind === 'move' ? [seat] : []
+  for (const e of events) if (e.type === 'pass') out.push(seatIndex(e.seat))
+  return out
 }
 
 /** A bot accepts a draw when its side's material is at most this share of the strongest rival's. */

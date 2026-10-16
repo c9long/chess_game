@@ -7,6 +7,7 @@ import {
   initialVotes,
   lapseReason,
   materialBySeat,
+  turnsPlayed,
 } from './draw-logic.ts'
 
 beforeAll(() => {
@@ -102,7 +103,7 @@ describe('bot draw answers', () => {
 
   it('Teams: compares team totals, frozen pieces excluded', () => {
     const game = Game.create({ mode: 'teams' })
-    game.applyResign('north') // North freezes: its 39 points stay on the board but can't move.
+    game.applyAbandon('north') // North freezes: its 39 points stay on the board but can't move.
     const snap = game.snapshot()
     expect(snap.statuses).toEqual(['active', 'active', 'frozen', 'active'])
     // South alone (39) vs West + East (78): South accepts; West and East decline.
@@ -150,5 +151,22 @@ describe('offer bookkeeping', () => {
     expect(lapseReason([1, -1, 0, 0], [true, false, true, true], 0, 0, new Set([2, 3]))).toBe(
       'round',
     )
+  })
+})
+
+describe('turnsPlayed (cooldowns)', () => {
+  it('counts the mover of a move and every seat that passed automatically', () => {
+    expect(turnsPlayed('move', 1, [])).toEqual([1])
+    expect(
+      turnsPlayed('move', 1, [
+        { type: 'pass', seat: 'north' },
+        { type: 'pass', seat: 'south' },
+      ] as never),
+    ).toEqual([1, 2, 0])
+  })
+
+  it('counts no mover for other actions, only their passes', () => {
+    expect(turnsPlayed('timeout', 0, [])).toEqual([])
+    expect(turnsPlayed('resign', 3, [{ type: 'pass', seat: 'south' }] as never)).toEqual([0])
   })
 })

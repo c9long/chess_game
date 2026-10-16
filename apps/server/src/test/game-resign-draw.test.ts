@@ -1,5 +1,6 @@
 /**
- * Resignation and draw offers on the server: resign in each mode on and off turn, offers
+ * Resignation and draw offers on the server: resign in FFA on and off turn (Teams
+ * resignation votes are in game-team-resign.test.ts), offers
  * accepted by every voter (an agreed draw, persisted and re-simulated), declines, lapses
  * after a round or when the voters change, the anti-spam cooldown, bot voters and solo games.
  */
@@ -158,42 +159,6 @@ describe('resign', () => {
       .where(eq(matchPlayers.matchId, matchId))
       .orderBy(asc(matchPlayers.seat))
     expect(mp.map((p) => p.defeatReason)).toEqual(['resign', 'resign', 'resign', null])
-    await south.waitState((s) => s.phase === 'finished')
-    expect(await resimulate(h.server.ctx.db, matchId)).toBe(south.state.positionString)
-    await leaveAll(players)
-  })
-
-  it('Teams: a resign freezes only that seat; the partner plays on until the team is out', async () => {
-    const players = await startGame(await Promise.all([guest(h), guest(h), guest(h), guest(h)]), {
-      mode: 'teams',
-    })
-    const south = at(players, 0)
-    const matchId = south.state.matchId
-    await moveOnce(players) // South moves; West to move.
-
-    // East resigns off turn: frozen, pieces stay; West keeps the move.
-    at(players, 3).send('resign')
-    const ev = await south.waitMessage('events', (e) => e.action === 'resign')
-    expect(ev.events).toEqual([
-      { type: 'defeat', seat: 'east', reason: 'resign' },
-      { type: 'frozen', seat: 'east' },
-    ])
-    expect(ev.seatToMove).toBe(1)
-    await south.waitState((s) => s.seats[3]?.status === 'frozen')
-    const game = Game.fromPosition(south.state.positionString)
-    expect(game.snapshot().board.filter((p) => p?.owner === 'east')).toHaveLength(16)
-    game.free()
-
-    // West plays on, then resigns on its turn later: West–East has no active seat left.
-    await moveOnce(players) // West
-    await moveOnce(players) // North
-    await moveOnce(players) // South; East is frozen, so West is to move
-    expect(south.state.seatToMove).toBe(1)
-    at(players, 1).send('resign')
-    const over = await south.waitMessage('gameOver')
-    expect(over.result).toEqual({ type: 'teams_winner', team: 'south_north' })
-    expect(over.endReason).toBe('team_eliminated')
-    expect(over.placements).toEqual([1, 2, 1, 2])
     await south.waitState((s) => s.phase === 'finished')
     expect(await resimulate(h.server.ctx.db, matchId)).toBe(south.state.positionString)
     await leaveAll(players)
@@ -474,23 +439,6 @@ describe('solo (untimed) games', () => {
     } else {
       await p.waitState((s) => s.drawOfferSeat === -1)
     }
-    await p.leave()
-  })
-
-  it('a resign freezes the player in Teams; the bots finish and the result keeps their seat', async () => {
-    const p = await createSolo(await guest(h), { mode: 'teams' })
-    await p.waitState((s) => s.phase === 'in_game', 5_000, 'in game')
-    p.send('resign')
-    const ev = await p.waitMessage('events', (e) => e.action === 'resign')
-    expect(ev.seat).toBe(0)
-    expect(ev.events.map((e) => e.type)).toEqual(['defeat', 'frozen'])
-    // Still in the room, watching the bots finish.
-    const over = await p.waitMessage('gameOver', () => true, 30_000)
-    await p.waitState((s) => s.phase === 'finished')
-    expect(over.rated).toBe(false)
-    expect(['teams_winner', 'teams_draw']).toContain(over.result.type)
-    expect(p.state.seats[0]).toMatchObject({ status: 'frozen', connected: true })
-    expect(over.placements[0]).toBe(over.placements[2])
     await p.leave()
   })
 

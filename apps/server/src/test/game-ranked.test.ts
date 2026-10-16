@@ -174,12 +174,15 @@ describe('Elo', () => {
     const host = at(players, 0)
     expect(host.state.rated).toBe(true)
     const matchId = host.state.matchId
-    // West and East resign: South+North (team mean 1200) beat West+East (mean 1800).
+    // West proposes resigning and East agrees: South+North (team mean 1200) beat West+East
+    // (mean 1800); the team resignation is a loss for both West and East.
     at(players, 1).send('resign')
-    await host.waitState((s) => s.seats[1]?.status === 'frozen' || s.phase === 'finished')
-    at(players, 3).send('resign')
+    await host.waitState((s) => s.teamResignSeat[1] === 1)
+    at(players, 3).send('respondResign', { accept: true })
     const over = await host.waitMessage('gameOver')
     expect(over.result.type).toBe('teams_winner')
+    expect(over.endReason).toBe('team_resigned')
+    expect(over.placements).toEqual([1, 2, 1, 2])
     expect(over.rated).toBe(true)
     // Golden values (elo.test.ts): +19, -19, +39 (K 40), -10 (K 10: peak 2450).
     expect(over.ratings).toEqual([
