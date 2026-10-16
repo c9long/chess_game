@@ -42,6 +42,8 @@ export function Dialog({
   trigger,
   returnFocusTo,
   onClosed,
+  testId,
+  className,
 }: {
   open?: boolean
   onOpenChange?: (open: boolean) => void
@@ -59,6 +61,10 @@ export function Dialog({
   returnFocusTo?: RefObject<HTMLElement | null>
   /** Runs once the dialog has fully closed (after its exit animation). */
   onClosed?: () => void
+  /** `data-testid` on the dialog content. */
+  testId?: string
+  /** Extra classes on the dialog content (e.g. a tinted border). */
+  className?: string
 }) {
   return (
     <RadixDialog.Root
@@ -69,7 +75,8 @@ export function Dialog({
       <RadixDialog.Portal>
         <RadixDialog.Overlay className={overlayClass} />
         <RadixDialog.Content
-          className={contentClass}
+          className={cx(contentClass, className)}
+          data-testid={testId}
           {...(description ? {} : { 'aria-describedby': undefined })}
           onCloseAutoFocus={(e) => {
             const target = returnFocusTo?.current
@@ -126,6 +133,10 @@ export function ConfirmDialog({
   busy = false,
   onConfirm,
   trigger,
+  returnFocusTo,
+  onClosed,
+  testId,
+  confirmTestId,
 }: {
   open?: boolean
   onOpenChange?: (open: boolean) => void
@@ -137,6 +148,13 @@ export function ConfirmDialog({
   busy?: boolean
   onConfirm: () => void
   trigger?: ReactElement
+  /** Where focus goes on close when the dialog opened without `trigger`. */
+  returnFocusTo?: RefObject<HTMLElement | null>
+  /** Runs once the dialog has fully closed (after its exit animation). */
+  onClosed?: () => void
+  /** `data-testid` on the dialog content and on the confirm button. */
+  testId?: string
+  confirmTestId?: string
 }) {
   return (
     <AlertDialog.Root
@@ -148,7 +166,16 @@ export function ConfirmDialog({
         <AlertDialog.Overlay className={overlayClass} />
         <AlertDialog.Content
           className={contentClass}
+          data-testid={testId}
           {...(description ? {} : { 'aria-describedby': undefined })}
+          onCloseAutoFocus={(e) => {
+            const target = returnFocusTo?.current
+            if (target?.isConnected) {
+              e.preventDefault()
+              target.focus()
+            }
+            onClosed?.()
+          }}
         >
           <AlertDialog.Title className="font-display text-xl font-semibold tracking-tight">
             {title}
@@ -166,6 +193,7 @@ export function ConfirmDialog({
               variant={tone === 'danger' ? 'danger' : 'primary'}
               busy={busy}
               onClick={onConfirm}
+              data-testid={confirmTestId}
             >
               {confirmLabel}
             </Button>

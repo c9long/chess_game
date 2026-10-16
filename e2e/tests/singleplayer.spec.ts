@@ -102,8 +102,8 @@ test('guest plays an untimed game against three bots', async ({ page }) => {
   await expect(page.getByTestId('turn-banner')).toHaveText('Your move', { timeout: 30_000 })
 
   // Leaving ends the player's part; the bots finish and the game shows up in the history.
-  page.once('dialog', (d) => d.accept())
   await page.getByRole('button', { name: 'Leave game' }).click()
+  await page.getByTestId('leave-confirm').click()
   await expect(page.getByTestId('vs-bots')).toBeVisible()
   await expect(async () => {
     await page.goto('/history')
@@ -125,8 +125,18 @@ test('after leaving a solo game the player can start another', async ({ page }) 
   await panel.getByTestId('start-solo').click()
   await expect(page.getByTestId('turn-banner')).toHaveText('Your move', { timeout: 20_000 })
 
-  page.once('dialog', (d) => d.accept())
-  await page.getByRole('button', { name: 'Leave game' }).click()
+  // The leave confirmation is a modal: Escape cancels and focus goes back to the button.
+  const leaveButton = page.getByRole('button', { name: 'Leave game' })
+  await leaveButton.click()
+  const leaveDialog = page.getByTestId('leave-dialog')
+  await expect(leaveDialog).toBeVisible()
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/leave-dialog.png` })
+  await expect(leaveDialog.getByRole('button', { name: 'Keep playing' })).toBeFocused()
+  await page.keyboard.press('Escape')
+  await expect(leaveDialog).toHaveCount(0)
+  await expect(leaveButton).toBeFocused()
+  await leaveButton.click()
+  await page.getByTestId('leave-confirm').click()
   panel = page.getByTestId('vs-bots')
   await expect(panel).toBeVisible()
   await page.waitForTimeout(2000)

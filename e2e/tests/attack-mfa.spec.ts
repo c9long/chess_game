@@ -160,21 +160,24 @@ test('passkey: add, cancel, remove, sign-in after removal, stale session add', a
       : '',
   )
 
-  // Remove (is there a confirmation?)
-  let dialog = false
-  page.once('dialog', async (d) => {
-    dialog = true
-    await d.accept()
-  })
-  await section.getByRole('button', { name: 'Remove' }).first().click()
-  await page.waitForTimeout(1500)
-  log(
-    'remove confirmation dialog shown:',
-    dialog,
-    'rows now:',
-    await section.getByTestId('passkey-row').count(),
-  )
-  expect(dialog).toBe(true)
+  // Remove asks for confirmation in an in-page dialog (not a native one): Cancel keeps the
+  // key and returns focus to Remove; confirming deletes it.
+  const rowsBefore = await section.getByTestId('passkey-row').count()
+  const removeButton = section.getByRole('button', { name: 'Remove' }).first()
+  await removeButton.click()
+  const confirmDialog = page.getByTestId('passkey-remove-dialog')
+  await expect(confirmDialog).toBeVisible()
+  await expect(confirmDialog).toHaveAttribute('role', 'alertdialog')
+  await expect(confirmDialog.getByRole('button', { name: 'Cancel' })).toBeFocused()
+  await page.keyboard.press('Escape')
+  await expect(confirmDialog).toHaveCount(0)
+  await expect(removeButton).toBeFocused()
+  await expect(section.getByTestId('passkey-row')).toHaveCount(rowsBefore)
+  await removeButton.click()
+  await page.getByTestId('passkey-remove-confirm').click()
+  await expect(confirmDialog).toHaveCount(0)
+  await expect(section.getByTestId('passkey-row')).toHaveCount(rowsBefore - 1)
+  log('remove confirmation dialog shown: true', 'rows now:', rowsBefore - 1)
   const remaining = await section.getByTestId('passkey-row').count()
 
   if (remaining === 0) {

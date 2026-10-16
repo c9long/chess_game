@@ -12,7 +12,7 @@ import {
 } from 'lucide-react'
 import { QRCodeSVG } from 'qrcode.react'
 import { lazy, type ReactNode, Suspense, useCallback, useEffect, useRef, useState } from 'react'
-import { Link, useNavigate } from 'react-router'
+import { Link } from 'react-router'
 import { Alert, Button, cx, Field, linkButtonClass, Pill } from '../components/ui.tsx'
 import { ApiError, api, authErrorMessage, type OAuthProvider } from '../lib/api.ts'
 import { displayName, isGuest, useAppState } from '../lib/app-state.tsx'
@@ -20,8 +20,9 @@ import { API_ORIGIN, authClient } from '../lib/auth-client.ts'
 import { normalizeTotpUri, totpSecret } from '../lib/totp.ts'
 import { PROVIDER_LABELS } from './SignIn.tsx'
 
-// This page is in the entry chunk; the rename dialog (and the dialog library) load on demand.
+// This page is in the entry chunk; the passkey dialogs (and the dialog library) load on demand.
 const PasskeyRenameDialog = lazy(() => import('../components/PasskeyRenameDialog.tsx'))
+const PasskeyRemoveDialog = lazy(() => import('../components/PasskeyRemoveDialog.tsx'))
 
 interface LinkedAccount {
   id: string
@@ -420,6 +421,8 @@ function Passkeys() {
   const [renaming, setRenaming] = useState<PasskeyRow | null>(null)
   /** The Rename button that opened the dialog, to get focus back when it closes. */
   const renameOpener = useRef<HTMLButtonElement | null>(null)
+  const [removing, setRemoving] = useState<PasskeyRow | null>(null)
+  const removeOpener = useRef<HTMLButtonElement | null>(null)
 
   const load = useCallback(async () => {
     const { data } = await authClient.passkey.listUserPasskeys()
@@ -448,16 +451,7 @@ function Passkeys() {
     await load()
   }
 
-  // Still a native confirm: e2e/tests/attack-mfa.spec.ts expects a browser dialog here
-  // (see docs/ui-libraries.md before switching to ConfirmDialog).
   async function remove(k: PasskeyRow) {
-    if (
-      !window.confirm(
-        `Remove the passkey “${k.name || 'Passkey'}”? You won’t be able to sign in with it any more.`,
-      )
-    ) {
-      return
-    }
     setError(undefined)
     const { error: err } = await authClient.passkey.deletePasskey({ id: k.id })
     if (err) setError(authErrorMessage(err))
@@ -520,7 +514,10 @@ function Passkeys() {
                     variant="ghost"
                     size="sm"
                     className="enabled:hover:text-seat-south-light"
-                    onClick={() => remove(k)}
+                    onClick={(e) => {
+                      removeOpener.current = e.currentTarget
+                      setRemoving(k)
+                    }}
                   >
                     Remove
                   </Button>
@@ -542,6 +539,16 @@ function Passkeys() {
             onSave={(name) => rename(renaming, name)}
             onClose={() => setRenaming(null)}
             returnFocusTo={renameOpener}
+          />
+        </Suspense>
+      ) : null}
+      {removing ? (
+        <Suspense fallback={null}>
+          <PasskeyRemoveDialog
+            name={removing.name || 'Passkey'}
+            onRemove={() => remove(removing)}
+            onClose={() => setRemoving(null)}
+            returnFocusTo={removeOpener}
           />
         </Suspense>
       ) : null}
@@ -909,8 +916,7 @@ function DataExport() {
 }
 
 function DeleteAccount({ guest, hasPassword }: { guest: boolean; hasPassword: boolean }) {
-  const { refreshSession } = useAppState()
-  const navigate = useNavigate()
+  const { refreshSession, leaveSession } = useAppState()
   const [open, setOpen] = useState(false)
   const [typed, setTyped] = useState('')
   const [password, setPassword] = useState('')
@@ -926,8 +932,7 @@ function DeleteAccount({ guest, hasPassword }: { guest: boolean; hasPassword: bo
         method: 'DELETE',
         body: needPassword ? { confirm: 'DELETE', password } : { confirm: 'DELETE' },
       })
-      await refreshSession()
-      navigate('/', { replace: true, state: { deleted: true } })
+      await leaveSession(refreshSession, { deleted: true })
     } catch (err) {
       if (err instanceof ApiError && err.code === 'SESSION_NOT_FRESH' && hasPassword) {
         setNeedPassword(true)

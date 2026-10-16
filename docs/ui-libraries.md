@@ -78,22 +78,24 @@ The rules: `components/ui.tsx` keeps every existing export and prop and never im
 
 - Installed, exact pins: `radix-ui` 1.6.7, `lucide-react` 1.49.0, and two self-hosted variable fonts, `@fontsource-variable/fraunces` 5.3.0 (display) and `@fontsource-variable/inter` 5.3.0 (body). Only the weight axis is loaded; the browser downloads just the latin subsets it needs (about 37 kB and 48 kB), with `font-display: swap`.
 - `components/overlay.tsx`: `Dialog`, `DialogClose`, `ConfirmDialog` (`tone="danger"`), `Tooltip`, `TooltipProvider`, `ToastViewport` and `useToast`. Enter and exit animations are CSS keyframes on `data-state` (`animate-pop-in`, `animate-overlay-in` and friends in `index.css`).
-- First consumer: `components/PasskeyRenameDialog.tsx`, loaded with `React.lazy` from Account, replaces the `window.prompt` rename. Passkey removal keeps `window.confirm` (see above). A dialog opened without a Radix `Trigger` has nothing to return focus to, so `Dialog` takes `returnFocusTo` (a ref to the opening button) and `onClosed` (runs after the exit animation, so the parent can unmount it then).
+- First consumer: `components/PasskeyRenameDialog.tsx`, loaded with `React.lazy` from Account, replaces the `window.prompt` rename. Passkey removal moved to `ConfirmDialog` in round 3 (below). A dialog opened without a Radix `Trigger` has nothing to return focus to, so `Dialog` takes `returnFocusTo` (a ref to the opening button) and `onClosed` (runs after the exit animation, so the parent can unmount it then).
 - `components/ui.tsx` (same exports and props, plus optional additions): `Field` gets a show/hide toggle for `type="password"` and an optional `valid` check mark; `PageTitle` gets an optional `align="center"`; new exports `cx`, `buttonBase`, `buttonSizes`, `buttonVariants`, `linkButtonClass(variant, className, size)` (for router links styled as buttons) and `Pill`. `Button` takes an optional `size` (`'sm'` = `h-9 px-3`, default `'md'` = `h-11 px-5`): use it rather than `h-*`/`px-*` in `className` to make a button smaller, because without a class merger a smaller utility in `className` loses to the size classes by CSS order. Buttons have 150 ms transitions, a 1 px press and a neutral disabled style; `Alert` has an icon.
 - Global (`index.css`): `color-scheme: dark`, a gold `::selection`, one focus ring for everything (`:focus-visible`, 2 px gold, 2 px offset, in `@layer base` so `outline-none` utilities still win), a fluid `text-display` / `text-title` scale, balanced headings, `.checkbox` and `.select` restyles of the native controls, and a page background that scrolls with the page instead of `background-attachment: fixed`.
 - Measured after the round (`vite build`, 2026-10-16): the entry `index-*.js` is 125.7 kB gzipped. That includes the other team's work in progress and about 25 lucide icons (roughly 7 kB). Radix, PixiJS and the emblem art are not in it: the rename dialog chunk (with Radix Dialog) is 13.8 kB, and the landing demo board chunk is 1.9 kB on top of the PixiJS chunks the match screen already uses.
+
+**Done in round 3 (2026-10-16):**
+
+- These dialogs moved to `overlay.tsx` (focus trap, Escape, focus back on the opening button through `returnFocusTo`): the Play page's private-lobby password prompt (`Dialog`, test ids `join-password` / `join-submit` kept), the resign dialog (`Dialog`, test ids `resign-dialog` / `resign-confirm` kept), "Leave this game?" (`ConfirmDialog`, `leave-dialog` / `leave-confirm`) and passkey removal (`ConfirmDialog` in the lazily loaded `PasskeyRemoveDialog.tsx`, `passkey-remove-dialog` / `passkey-remove-confirm`; `attack-mfa.spec.ts` now checks the in-page dialog). `Dialog` and `ConfirmDialog` take `testId`; `ConfirmDialog` also takes `returnFocusTo`, `onClosed` and `confirmTestId`. The game-over result dialog is still hand-rolled (see Later).
+- The Resign and Offer draw hints are `Tooltip`s. A disabled button gets no pointer or focus events, so the wrapper is the trigger and is focusable while the button is disabled; the visible `draw-hint` line stays.
+- `CivPicker` has a roving `tabIndex`: arrows (wrapping, Up/Down by row), Home and End move focus, Space or Enter picks (`lib/grid-nav.ts`).
 
 **Later (other teams' files, once they choose to):**
 
 | Where | Today | Replace with |
 |---|---|---|
-| `pages/Play.tsx` create-lobby modal (`role="dialog"`, hand-rolled) | Manual focus and Escape handling | `Dialog` |
-| `components/match/GameActions.tsx` resign and draw dialogs | Hand-rolled `role="dialog"` | `ConfirmDialog` (keep the `resign-dialog` and `resign-confirm` test ids) |
-| `components/match/GameRoom.tsx` `window.confirm` | Native confirm | `ConfirmDialog`. `singleplayer.spec.ts` listens for a native `dialog` event and must be updated in the same commit. |
-| `pages/Match.tsx` toasts (`data-testid="toast"`) | Custom list | `ToastViewport` (keep the test id on each toast root) |
-| `title=` hints ("Draft mode… coming soon", `RankedBadge`, private-lobby lock) | Native `title`, which keyboard and touch users can't reach | `Tooltip`, plus visible text on touch |
-| `components/Shell.tsx` header on phones | The title truncates to "Li…" and the nav overflows | A compact brand mark below `sm`, with a Radix `DropdownMenu` for History, Leaderboard, Account and Sign out. Keep `nav-account` and the "Sign out" button name reachable. |
-| `components/CivPicker.tsx` | `role="radiogroup"` without arrow-key navigation | Radix `RadioGroup`, or a roving `tabIndex` (keep roles and names) |
+| `components/match/GameOver.tsx` result dialog (`role="dialog"`, hand-rolled) | Local `useDialogFocus`: manual Tab trap and Escape handling | `Dialog` (keep its test ids and the board-visible layout) |
+| `pages/Match.tsx` toasts (`data-testid="toast"`) | Custom list, bottom-left over the board in a game and click-through (`pointer-events-none`) so a toast never blocks a move | `ToastViewport` once it supports that placement and click-through (keep the test id on each toast root) |
+| Other `title=` hints ("Draft mode… coming soon", `RankedBadge`, private-lobby lock, lobby card civ emblems) | Native `title`, which keyboard and touch users can't reach | `Tooltip`, plus visible text on touch |
 
 ## Constraints the e2e specs impose
 

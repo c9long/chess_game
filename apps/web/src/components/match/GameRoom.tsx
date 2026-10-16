@@ -14,6 +14,7 @@ import { GameButton } from '../game/GameButton.tsx'
 import { ExitIcon, GearIcon } from '../game/icons.tsx'
 import { PlayerCard } from '../game/PlayerCard.tsx'
 import { TurnBanner } from '../game/TurnBanner.tsx'
+import { ConfirmDialog } from '../overlay.tsx'
 import { Alert, Spinner } from '../ui.tsx'
 import { DrawOfferCard, GameActions } from './GameActions.tsx'
 import { GameOver } from './GameOver.tsx'
@@ -267,6 +268,8 @@ export function GameRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) {
   const reduceMotion = Boolean(systemReduced) || prefs.reducedMotion
   const [showResult, setShowResult] = useState(true)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [confirmLeave, setConfirmLeave] = useState(false)
+  const leaveButton = useRef<HTMLButtonElement>(null)
   const settingsId = useId()
   const { state, mySeat } = feed
   const finished = state.phase === 'finished'
@@ -285,17 +288,15 @@ export function GameRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) {
     window.scrollTo(0, 0)
   }, [])
 
-  async function leave() {
-    if (!finished && stillPlaying) {
-      const sure = window.confirm(
-        untimed
-          ? 'Leave this game? Your army will be eliminated and the bots will finish without you.'
-          : 'Leave this game? Your seat will be eliminated (as if your time ran out).',
-      )
-      if (!sure) return
-    }
+  async function leaveNow() {
     navigate('/play')
     await leaveMatch()
+  }
+
+  /** Leaving a game you are still playing knocks your seat out: confirm that first. */
+  function leave() {
+    if (!finished && stillPlaying) setConfirmLeave(true)
+    else void leaveNow()
   }
 
   if (error) {
@@ -312,6 +313,7 @@ export function GameRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) {
     <div className="contents lg:col-span-2 lg:flex lg:gap-2">
       <GameButton
         variant="ghost"
+        ref={leaveButton}
         className="w-full lg:flex-1"
         onClick={leave}
         aria-label={leaveLabel}
@@ -464,6 +466,27 @@ export function GameRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) {
           onLeave={leave}
         />
       ) : null}
+
+      <ConfirmDialog
+        open={confirmLeave}
+        onOpenChange={setConfirmLeave}
+        title="Leave this game?"
+        description={
+          untimed
+            ? 'Your army will be eliminated and the bots will finish without you.'
+            : 'Your seat will be eliminated (as if your time ran out).'
+        }
+        confirmLabel="Leave game"
+        cancelLabel="Keep playing"
+        tone="danger"
+        returnFocusTo={leaveButton}
+        testId="leave-dialog"
+        confirmTestId="leave-confirm"
+        onConfirm={() => {
+          setConfirmLeave(false)
+          void leaveNow()
+        }}
+      />
     </div>
   )
 }

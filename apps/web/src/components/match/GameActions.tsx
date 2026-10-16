@@ -1,10 +1,18 @@
 import { DRAW_VOTE, isUntimed } from '@game/protocol'
 import type { MatchStateJson, SeatStateJson } from '@game/protocol/state'
-import { type ReactNode, useEffect, useRef, useState } from 'react'
+import {
+  type ReactElement,
+  type ReactNode,
+  type RefObject,
+  useEffect,
+  useRef,
+  useState,
+} from 'react'
 import { type MatchRoom, matchApi } from '../../lib/match.ts'
 import type { MatchFeed } from '../../pages/Match.tsx'
 import { GameButton } from '../game/GameButton.tsx'
 import { FlagIcon } from '../game/icons.tsx'
+import { Dialog, DialogClose, Tooltip, TooltipProvider } from '../overlay.tsx'
 import { Button } from '../ui.tsx'
 import { RankedBadge } from './RankedBadge.tsx'
 import { SEAT_LABEL, seatHex, seatName } from './seats.ts'
@@ -27,6 +35,33 @@ function who(state: MatchStateJson, seat: number, mySeat: number): string {
 // ---------------------------------------------------------------------------
 
 /**
+ * A tooltip with what a game button does, or why it is disabled. A disabled button gets no
+ * pointer or focus events, so the wrapper is the trigger, and it becomes focusable while the
+ * button is disabled so keyboard users can read the reason too.
+ */
+function HintWrap({
+  hint,
+  disabled,
+  children,
+}: {
+  hint: string
+  disabled: boolean
+  children: ReactElement
+}) {
+  return (
+    <Tooltip content={hint}>
+      <span
+        className="flex min-w-0 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold"
+        {...(disabled ? { tabIndex: 0 } : {})}
+        data-hint={hint}
+      >
+        {children}
+      </span>
+    </Tooltip>
+  )
+}
+
+/**
  * Resign and Offer draw. `voters` comes from the rules engine (`Game.drawVoters()`); a
  * seat that is not a voter no longer takes turns, so it can't resign or offer either.
  */
@@ -47,6 +82,7 @@ export function GameActions({
 }) {
   const { state, mySeat } = feed
   const [confirming, setConfirming] = useState(false)
+  const resignButton = useRef<HTMLButtonElement>(null)
   const inGame = state.phase === 'in_game'
   const playing = inGame && mySeat >= 0 && voters?.[mySeat] === true
   const cooldown = mySeat >= 0 ? (state.drawCooldowns?.[mySeat] ?? 0) : 0
@@ -73,7 +109,7 @@ export function GameActions({
   const mine = mySeat >= 0 ? state.seats[mySeat] : undefined
   const imOut = inGame && (mine?.status === 'removed' || mine?.status === 'frozen')
   return (
-    <>
+    <TooltipProvider>
       {imOut ? (
         <p
           className="mb-3 rounded-lg border border-parchment/10 bg-ink/45 px-3 py-2 text-xs leading-relaxed text-parchment/70"
@@ -84,8 +120,12 @@ export function GameActions({
         </p>
       ) : null}
       <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto] gap-2 lg:grid-cols-2">
-        <span title={resignWhy || 'Give up your seat in this game'} className="flex min-w-0">
+        <HintWrap
+          hint={resignWhy || 'Give up your seat in this game'}
+          disabled={Boolean(resignWhy)}
+        >
           <GameButton
+            ref={resignButton}
             className="w-full hover:!border-seat-south-light/70 hover:!text-seat-south-light disabled:pointer-events-none"
             disabled={Boolean(resignWhy)}
             onClick={() => setConfirming(true)}
@@ -93,10 +133,10 @@ export function GameActions({
           >
             <FlagIcon /> Resign
           </GameButton>
-        </span>
-        <span
-          title={drawWhy || 'Offer a draw to every player still in the game'}
-          className="flex min-w-0"
+        </HintWrap>
+        <HintWrap
+          hint={drawWhy || 'Offer a draw to every player still in the game'}
+          disabled={Boolean(drawWhy)}
         >
           <GameButton
             className="w-full disabled:pointer-events-none"
@@ -111,7 +151,7 @@ export function GameActions({
             <span className="sm:hidden">Draw</span>
             <span className="hidden sm:inline">Offer draw</span>
           </GameButton>
-        </span>
+        </HintWrap>
         {children}
       </div>
       {playing && cooldown > 0 && !pending ? (
@@ -119,96 +159,91 @@ export function GameActions({
           {drawWhy}.
         </p>
       ) : null}
-      {confirming ? (
-        <ResignDialog
-          state={state}
-          onCancel={() => setConfirming(false)}
-          onConfirm={() => {
-            setConfirming(false)
-            send('resign', {})
-          }}
-        />
-      ) : null}
-    </>
+      <ResignDialog
+        state={state}
+        open={confirming}
+        onOpenChange={setConfirming}
+        returnFocusTo={resignButton}
+        onConfirm={() => {
+          setConfirming(false)
+          send('resign', {})
+        }}
+      />
+    </TooltipProvider>
   )
 }
 
 /** Confirms a resignation and says what it means in this mode. */
 function ResignDialog({
   state,
-  onCancel,
+  open,
+  onOpenChange,
   onConfirm,
+  returnFocusTo,
 }: {
   state: MatchStateJson
-  onCancel: () => void
+  open: boolean
+  onOpenChange: (open: boolean) => void
   onConfirm: () => void
+  returnFocusTo: RefObject<HTMLElement | null>
 }) {
   const teams = state.mode === 'teams'
   const solo = isUntimed(state.timeControl)
   const ranked = Boolean(state.ranked)
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onCancel()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onCancel])
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 px-4 backdrop-blur-sm"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="resign-title"
-      data-testid="resign-dialog"
-    >
-      <section className="w-full max-w-md rounded-2xl border border-seat-south/40 bg-panel p-6 shadow-2xl shadow-black/60 sm:p-7">
-        <p className="flex items-center gap-3 text-xs font-semibold uppercase tracking-[0.3em] text-seat-south-light/90">
-          {teams ? 'Teams 2v2' : 'Free-for-all'}
-          {ranked ? <RankedBadge /> : null}
-        </p>
-        <h2 id="resign-title" className="mt-1 font-display text-3xl font-semibold">
-          Resign this game?
-        </h2>
-        <ul className="mt-4 flex flex-col gap-2 text-sm text-parchment/75">
-          {teams ? (
-            <>
-              <li>
-                Only you resign: your pieces <strong className="text-parchment">freeze</strong> in
-                place. They still block squares and can be captured.
-              </li>
-              <li>Your partner plays on alone. If your partner is already out, your team loses.</li>
-            </>
-          ) : (
-            <>
-              <li>
-                Your army is <strong className="text-parchment">removed from the board</strong> and
-                you are out of the game.
-              </li>
-              <li>You finish in the place of a player knocked out now.</li>
-            </>
-          )}
-          {ranked ? (
-            <li data-testid="resign-ranked-note">
-              This is a ranked game: your <strong className="text-parchment">Elo</strong> changes by
-              the place you finish in.
-            </li>
-          ) : null}
-          <li>
-            {solo
-              ? 'You can stay and watch the bots finish, or leave at any time.'
-              : 'You can stay and watch the rest of the game, or leave at any time.'}
-          </li>
-        </ul>
-        <div className="mt-6 flex flex-wrap justify-end gap-2">
-          <Button variant="ghost" onClick={onCancel} autoFocus>
-            Keep playing
-          </Button>
+    <Dialog
+      open={open}
+      onOpenChange={onOpenChange}
+      returnFocusTo={returnFocusTo}
+      title="Resign this game?"
+      testId="resign-dialog"
+      className="border-seat-south/40"
+      actions={
+        <>
+          <DialogClose>
+            <Button variant="ghost">Keep playing</Button>
+          </DialogClose>
           <Button variant="danger" onClick={onConfirm} data-testid="resign-confirm">
             Resign
           </Button>
-        </div>
-      </section>
-    </div>
+        </>
+      }
+    >
+      <p className="flex items-center gap-3 text-xs font-semibold uppercase tracking-[0.3em] text-seat-south-light/90">
+        {teams ? 'Teams 2v2' : 'Free-for-all'}
+        {ranked ? <RankedBadge /> : null}
+      </p>
+      <ul className="mt-3 flex flex-col gap-2 text-sm text-parchment/75">
+        {teams ? (
+          <>
+            <li>
+              Only you resign: your pieces <strong className="text-parchment">freeze</strong> in
+              place. They still block squares and can be captured.
+            </li>
+            <li>Your partner plays on alone. If your partner is already out, your team loses.</li>
+          </>
+        ) : (
+          <>
+            <li>
+              Your army is <strong className="text-parchment">removed from the board</strong> and
+              you are out of the game.
+            </li>
+            <li>You finish in the place of a player knocked out now.</li>
+          </>
+        )}
+        {ranked ? (
+          <li data-testid="resign-ranked-note">
+            This is a ranked game: your <strong className="text-parchment">Elo</strong> changes by
+            the place you finish in.
+          </li>
+        ) : null}
+        <li>
+          {solo
+            ? 'You can stay and watch the bots finish, or leave at any time.'
+            : 'You can stay and watch the rest of the game, or leave at any time.'}
+        </li>
+      </ul>
+    </Dialog>
   )
 }
 
