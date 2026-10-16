@@ -1,5 +1,5 @@
 import type { Room } from '@colyseus/sdk'
-import { TIME_CONTROLS } from '@game/config'
+import { CIVILIZATIONS, TIME_CONTROLS } from '@game/config'
 import {
   BOT_LEVEL_LABELS,
   checkLobbyNameFormat,
@@ -10,12 +10,22 @@ import {
   UNTIMED,
 } from '@game/protocol'
 import { AnimatePresence, motion } from 'motion/react'
-import { type FormEvent, type ReactNode, useEffect, useId, useState } from 'react'
+import {
+  type FormEvent,
+  type ReactNode,
+  type RefObject,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router'
+import { CivEmblem, civName } from '../components/CivEmblem.tsx'
 import { CivPicker } from '../components/CivPicker.tsx'
 import { ClockIcon, LockIcon } from '../components/game/icons.tsx'
 import { RankedBadge } from '../components/match/RankedBadge.tsx'
-import { seatHex } from '../components/match/seats.ts'
+import { SEAT_LABEL, seatHex, seatName } from '../components/match/seats.ts'
+import { Dialog, DialogClose } from '../components/overlay.tsx'
 import { Alert, Button, Card, Field, Spinner } from '../components/ui.tsx'
 import { displayName, isGuest, useAppState } from '../lib/app-state.tsx'
 import {
@@ -401,8 +411,17 @@ function RankedToggle({
   )
 }
 
-function JoinPasswordDialog({ listing, onClose }: { listing: Listing; onClose: () => void }) {
+function JoinPasswordDialog({
+  listing,
+  onClose,
+  returnFocusTo,
+}: {
+  listing: Listing
+  onClose: () => void
+  returnFocusTo: RefObject<HTMLElement | null>
+}) {
   const navigate = useNavigate()
+  const [open, setOpen] = useState(true)
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string>()
@@ -422,60 +441,104 @@ function JoinPasswordDialog({ listing, onClose }: { listing: Listing; onClose: (
     }
   }
 
+  // Opens on mount; closing plays the exit animation, returns focus to the Join button and
+  // then unmounts through `onClose`.
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="join-title"
+    <Dialog
+      open={open}
+      onOpenChange={setOpen}
+      onClosed={onClose}
+      returnFocusTo={returnFocusTo}
+      title="Private lobby"
+      description={<>“{listing.metadata.name}” needs a password.</>}
+      testId="join-password-dialog"
     >
-      <Card className="max-w-sm">
-        <h2 id="join-title" className="mb-1 font-display text-xl font-semibold">
-          Private lobby
-        </h2>
-        <p className="mb-5 text-sm text-parchment/65">
-          “{listing.metadata.name}” needs a password.
-        </p>
-        <form className="flex flex-col gap-4" onSubmit={submit}>
-          <Field
-            label="Password"
-            type="password"
-            autoComplete="off"
-            autoFocus
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            data-testid="join-password"
-          />
-          {error ? <Alert>{error}</Alert> : null}
-          <div className="flex justify-end gap-2">
-            <Button variant="ghost" onClick={onClose}>
-              Cancel
-            </Button>
-            <Button type="submit" busy={busy} disabled={!password} data-testid="join-submit">
-              Join
-            </Button>
-          </div>
-        </form>
-      </Card>
-    </div>
+      <form className="flex flex-col gap-4" onSubmit={submit}>
+        <Field
+          label="Password"
+          type="password"
+          autoComplete="off"
+          autoFocus
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          data-testid="join-password"
+        />
+        {error ? <Alert>{error}</Alert> : null}
+        <div className="mt-2 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <DialogClose>
+            <Button variant="ghost">Cancel</Button>
+          </DialogClose>
+          <Button type="submit" busy={busy} disabled={!password} data-testid="join-submit">
+            Join
+          </Button>
+        </div>
+      </form>
+    </Dialog>
   )
 }
 
-function SeatPips({ filled }: { filled: number }) {
+/**
+ * One pip per seat (South, West, North, East), in that seat's colour when taken, so the pips
+ * line up with the seat-tinted civ emblems beside them. Falls back to filling in seat order
+ * when the listing has no `occupied` array.
+ */
+function SeatPips({
+  filled,
+  occupied,
+}: {
+  filled: number
+  occupied: readonly boolean[] | undefined
+}) {
+  const taken = (i: number) => (occupied ? Boolean(occupied[i]) : i < filled)
   return (
     <span className="flex items-center gap-2">
       <span className="flex gap-1" role="img" aria-label={`${filled} of 4 seats filled`}>
         {[0, 1, 2, 3].map((i) => (
           <span
             key={i}
-            className={`h-2.5 w-2.5 rounded-full transition-colors ${i < filled ? '' : 'border border-parchment/30'}`}
-            style={i < filled ? { backgroundColor: seatHex(i) } : undefined}
+            className={`h-2.5 w-2.5 rounded-full transition-colors ${taken(i) ? '' : 'border border-parchment/30'}`}
+            style={taken(i) ? { backgroundColor: seatHex(i) } : undefined}
+            data-seat-taken={taken(i) ? 'true' : 'false'}
           />
         ))}
       </span>
       <span aria-hidden="true" className="text-xs font-semibold tabular-nums text-parchment/60">
         {filled}/4
       </span>
+    </span>
+  )
+}
+
+/**
+ * The civs already chosen at a table, as small emblems tinted with their seat's colour, in seat
+ * order. Open seats and seats still choosing are left out.
+ */
+function SeatedCivs({ civs }: { civs: readonly string[] | undefined }) {
+  const seated = (civs ?? [])
+    .map((civ, seat) => ({ civ, seat }))
+    .filter((c) => CIVILIZATIONS.some((x) => x.slug === c.civ))
+  if (seated.length === 0) return null
+  const label = `Civilizations: ${seated
+    .map((c) => `${civName(c.civ)} (${SEAT_LABEL[seatName(c.seat)]})`)
+    .join(', ')}`
+  return (
+    <span
+      className="flex items-center gap-1"
+      role="img"
+      aria-label={label}
+      data-testid="seated-civs"
+    >
+      {seated.map((c) => (
+        <span
+          key={c.seat}
+          className="grid h-6 w-6 place-items-center rounded-md border bg-ink/50"
+          style={{ borderColor: `${seatHex(c.seat)}99`, color: seatHex(c.seat) }}
+          title={`${civName(c.civ)} (${SEAT_LABEL[seatName(c.seat)]})`}
+          data-civ={c.civ}
+        >
+          <CivEmblem civ={c.civ} className="h-4 w-4" title="" />
+        </span>
+      ))}
     </span>
   )
 }
@@ -534,6 +597,8 @@ export function Play() {
   const { rooms, status } = useLobbyList()
   const [joining, setJoining] = useState<string>()
   const [passwordFor, setPasswordFor] = useState<Listing>()
+  /** The Join button that opened the password dialog, for focus to return to. */
+  const passwordOpener = useRef<HTMLElement | null>(null)
   const [error, setError] = useState<string>()
   // The lobby filter lives in the URL (?lobbies=ranked), so links can open it pre-filtered.
   const [params, setParams] = useSearchParams()
@@ -552,8 +617,9 @@ export function Play() {
   const { session } = useAppState()
   const guest = isGuest(session?.user)
 
-  async function join(listing: Listing) {
+  async function join(listing: Listing, opener?: HTMLElement) {
     if (listing.metadata.locked) {
+      passwordOpener.current = opener ?? null
       setPasswordFor(listing)
       return
     }
@@ -744,7 +810,13 @@ export function Play() {
                         </div>
                       </div>
                       <div className="flex items-center justify-between gap-3 sm:contents">
-                        <SeatPips filled={r.metadata.seatsFilled} />
+                        <span className="flex items-center gap-3">
+                          <SeatedCivs civs={r.metadata.civs} />
+                          <SeatPips
+                            filled={r.metadata.seatsFilled}
+                            occupied={r.metadata.occupied}
+                          />
+                        </span>
                         {r.metadata.ranked && guest && !full ? (
                           <Link
                             to="/sign-up"
@@ -760,7 +832,7 @@ export function Play() {
                             className="h-10 min-w-20"
                             busy={joining === r.roomId}
                             disabled={full || Boolean(current) || (r.metadata.ranked && guest)}
-                            onClick={() => join(r)}
+                            onClick={(e) => join(r, e.currentTarget)}
                             data-testid="join-lobby"
                           >
                             {full ? 'Full' : 'Join'}
@@ -777,7 +849,11 @@ export function Play() {
         {current ? null : <CreateLobby />}
       </div>
       {passwordFor ? (
-        <JoinPasswordDialog listing={passwordFor} onClose={() => setPasswordFor(undefined)} />
+        <JoinPasswordDialog
+          listing={passwordFor}
+          onClose={() => setPasswordFor(undefined)}
+          returnFocusTo={passwordOpener}
+        />
       ) : null}
     </div>
   )

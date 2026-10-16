@@ -574,6 +574,7 @@ export class MatchRoom
       this.requireLobby()
       if (!civs.includes(civ)) throw new GameError('civ_unavailable')
       ;(this.state.seats[seat] as SeatState).civ = civ
+      this.updateListing()
     })
     this.handle('setReady', (client, { ready }) => {
       const seat = this.requireSeat(client)
@@ -614,6 +615,7 @@ export class MatchRoom
       const s = this.state.seats[seat] as SeatState
       if (!s.isBot) throw new GameError('not_a_bot')
       s.civ = civ
+      this.updateListing()
     })
     this.handle('kick', (client, { seat }) => {
       const hostSeat = this.requireHost(client)
@@ -817,6 +819,11 @@ export class MatchRoom
       phase: s.phase,
       pickMode: s.pickMode as LobbyMetadata['pickMode'],
       ranked: s.ranked,
+      civs: [0, 1, 2, 3].map((i) => {
+        const seat = s.seats[i] as SeatState | undefined
+        return seat?.occupied ? seat.civ : ''
+      }),
+      occupied: [0, 1, 2, 3].map((i) => Boolean((s.seats[i] as SeatState | undefined)?.occupied)),
     }
   }
 

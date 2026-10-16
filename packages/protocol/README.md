@@ -30,7 +30,10 @@ accepted the current Terms/Privacy versions and (registered accounts) chosen a u
 | any | `reconnect(room.reconnectionToken)` | within the reconnect grace (60 s) |
 
 Listing metadata (`listing.metadata`): `{ name, mode, timeControl, seatsFilled, locked, phase,
-pickMode, ranked }` (`locked` = password-protected). Only lobbies are listed: a room leaves the list
+pickMode, ranked, civs, occupied }` (`locked` = password-protected; `civs` = the civ slug of each
+seat in seat order South, West, North, East, `''` for an open seat or a civ not chosen yet;
+`occupied` = whether each seat, in the same order, is taken by a human or a bot; both updated
+whenever a seat or civ changes). Only lobbies are listed: a room leaves the list
 (`-` roomId) when its game starts, and seated players rejoin it by id.
 
 Ranked lobbies (`ranked: true`, default false): Elo-rated (see REST below). Guests can't

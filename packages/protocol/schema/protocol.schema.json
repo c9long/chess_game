@@ -206,6 +206,22 @@
       },
       "ranked": {
         "type": "boolean"
+      },
+      "civs": {
+        "minItems": 4,
+        "maxItems": 4,
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "occupied": {
+        "minItems": 4,
+        "maxItems": 4,
+        "type": "array",
+        "items": {
+          "type": "boolean"
+        }
       }
     },
     "required": [
@@ -216,7 +232,9 @@
       "locked",
       "phase",
       "pickMode",
-      "ranked"
+      "ranked",
+      "civs",
+      "occupied"
     ],
     "additionalProperties": false
   },

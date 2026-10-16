@@ -94,6 +94,16 @@ export const lobbyMetadataSchema = z.object({
   pickMode: z.enum(PICK_MODES),
   /** Ranked lobby (Elo-rated, registered accounts only, no bots). */
   ranked: z.boolean(),
+  /**
+   * Civ slug per seat (South, West, North, East), '' for an open seat or one whose civ isn't
+   * chosen yet. An additive field within protocol v1.
+   */
+  civs: z.array(z.string()).length(4),
+  /**
+   * Whether each seat (South, West, North, East) is taken by a human or a bot, so the lobby
+   * browser can show which seats are free. An additive field within protocol v1.
+   */
+  occupied: z.array(z.boolean()).length(4),
 })
 export type LobbyMetadata = z.infer<typeof lobbyMetadataSchema>
 

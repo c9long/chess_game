@@ -66,8 +66,8 @@ test('guest creates a lobby, fills it with bots, plays and sees the result', asy
   expect(await clock.textContent()).not.toBe(before)
 
   // Leaving mid-game eliminates the seat; the bots finish and the result appears.
-  page.once('dialog', (d) => d.accept())
   await page.getByRole('button', { name: 'Leave game' }).click()
+  await page.getByTestId('leave-confirm').click()
   await expect(page.getByRole('heading', { name: 'Lobbies' })).toBeVisible()
 })
 
@@ -89,6 +89,15 @@ test('a private lobby asks for its password', async ({ browser }) => {
   const row = guest.getByTestId('lobby-list').locator('li', { hasText: "Bob's secret table" })
   await expect(row).toBeVisible()
   await expect(row.getByTitle('Private: password required')).toBeVisible()
+  await row.getByTestId('join-lobby').click()
+  // A modal dialog: the password field has focus, Escape closes it, focus returns to Join.
+  const dialog = guest.getByRole('dialog', { name: 'Private lobby' })
+  await expect(dialog).toBeVisible()
+  await expect(guest.getByTestId('join-password')).toBeFocused()
+  if (SHOTS) await guest.screenshot({ path: `${SHOTS}/join-password-dialog.png` })
+  await guest.keyboard.press('Escape')
+  await expect(dialog).toHaveCount(0)
+  await expect(row.getByTestId('join-lobby')).toBeFocused()
   await row.getByTestId('join-lobby').click()
   await guest.getByTestId('join-password').fill('wrong-password')
   await guest.getByTestId('join-submit').click()

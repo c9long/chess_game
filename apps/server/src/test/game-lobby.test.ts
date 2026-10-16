@@ -120,6 +120,8 @@ describe('lobby browser and lobbies', () => {
       phase: 'waiting',
       pickMode: 'blind',
       ranked: false,
+      civs: ['', '', '', ''],
+      occupied: [true, false, false, false],
     })
     const other = await joinLobby(await guest(h), host.room.roomId)
     await waitFor(
@@ -127,7 +129,20 @@ describe('lobby browser and lobbies', () => {
       5_000,
       'seatsFilled 2',
     )
+    // The seated civs follow civ picks, and an emptied seat clears its civ.
+    const civsOf = () => listings[host.room.roomId]?.metadata.civs as string[] | undefined
+    host.send('setCiv', { civ: 'mali' })
+    await waitFor(() => civsOf()?.[0] === 'mali', 5_000, 'host civ in listing')
+    expect(civsOf()).toEqual(['mali', '', '', ''])
+    other.send('setCiv', { civ: 'japan' })
+    await waitFor(() => civsOf()?.[1] === 'japan', 5_000, 'second civ in listing')
+    expect(civsOf()).toEqual(['mali', 'japan', '', ''])
+    host.send('setCiv', { civ: 'france' })
+    await waitFor(() => civsOf()?.[0] === 'france', 5_000, 'changed civ in listing')
     await other.leave()
+    await waitFor(() => civsOf()?.[1] === '', 5_000, 'left seat cleared in listing')
+    expect(civsOf()).toEqual(['france', '', '', ''])
+    expect(listings[host.room.roomId]?.metadata.occupied).toEqual([true, false, false, false])
     await host.leave()
     await lobby.leave()
   })
