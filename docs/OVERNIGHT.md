@@ -199,7 +199,7 @@ all fixed):
 - New test `e2e/tests/ui-a11y.spec.ts` fails if any serious or critical issue returns.
 - Fixed a lint failure introduced by the new tab icon.
 - Not covered: text on cards that have their own gradient backgrounds (axe can't measure it).
-- Verified: the full browser suite again (54 tests including the new one), web and board
+- Verified: the full browser suite again (56 tests including the new one), web and board
   unit tests, lint, typecheck.
 
 ## Final verification (on `main`)
@@ -215,7 +215,7 @@ Run at 7:07 AM on the final code, everything green:
 | Board renderer | 57 passed |
 | Web app | 22 passed |
 | Server (real Postgres) | 258 passed, 2 skipped (need a running bot-service) |
-| Browser end-to-end (Playwright) | 53 passed (54 after the accessibility item, rerun at 7:37) |
+| Browser end-to-end (Playwright) | 53 passed (56 after the last items, rerun at 7:36) |
 
 Everything is committed and pushed to `main` in small, described commits.
 
