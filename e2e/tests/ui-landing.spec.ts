@@ -136,3 +136,13 @@ test('landing (signed in): play tiles, links, and a phone layout without overflo
   await page.getByTestId('play-vs-bots').click()
   await expect(page).toHaveURL(/\/play$/)
 })
+
+test('pages have their own browser-tab titles and the app has an icon', async ({ page }) => {
+  await page.goto('/terms')
+  await expect(page).toHaveTitle(/^Terms of Service · /)
+  await page.goto('/privacy')
+  await expect(page).toHaveTitle(/^Privacy Policy · /)
+  await expect(page.locator('link[rel="icon"]')).toHaveAttribute('href', '/favicon.svg')
+  const icon = await page.request.get('/favicon.svg')
+  expect(icon.ok()).toBe(true)
+})

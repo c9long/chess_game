@@ -1,3 +1,4 @@
+import { APP_NAME } from '@game/config'
 import { lazy, useEffect } from 'react'
 import { Link, Route, Routes, useLocation, useNavigate } from 'react-router'
 import { AcceptanceGate, AgeGate, RequireAuth, UsernameGate } from './components/Gates.tsx'
@@ -51,6 +52,35 @@ function ScrollToTop() {
   return null
 }
 
+/** Browser-tab titles per page ("Lobbies · <APP_NAME>"), so tabs and history read clearly. */
+const PAGE_TITLES: [prefix: string, title: string][] = [
+  ['/play', 'Lobbies'],
+  ['/match/', 'Game'],
+  ['/history', 'Match history'],
+  ['/leaderboard', 'Leaderboard'],
+  ['/account', 'Account'],
+  ['/sign-in', 'Sign in'],
+  ['/sign-up', 'Create account'],
+  ['/guest', 'Play as guest'],
+  ['/forgot-password', 'Reset your password'],
+  ['/reset-password', 'Choose a new password'],
+  ['/check-email', 'Check your email'],
+  ['/verify-email', 'Verify your email'],
+  ['/two-factor', 'Two-step verification'],
+  ['/terms', 'Terms of Service'],
+  ['/privacy', 'Privacy Policy'],
+  ['/dev/mail', 'Dev mailbox'],
+]
+
+function DocumentTitle() {
+  const { pathname } = useLocation()
+  useEffect(() => {
+    const page = PAGE_TITLES.find(([prefix]) => pathname.startsWith(prefix))?.[1]
+    document.title = page ? `${page} · ${APP_NAME}` : APP_NAME
+  }, [pathname])
+  return null
+}
+
 function TwoFactorRedirect() {
   const navigate = useNavigate()
   useEffect(() => setTwoFactorHandler(() => navigate('/two-factor')), [navigate])
@@ -62,6 +92,7 @@ export function App() {
     <AppStateProvider>
       <TwoFactorRedirect />
       <ScrollToTop />
+      <DocumentTitle />
       <Routes>
         <Route element={<Shell />}>
           {/* Always reachable: legal documents and links that arrive by email. */}
