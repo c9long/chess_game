@@ -67,6 +67,27 @@ verified, and any decision taken on your behalf. Rule questions are listed in
   1 partly fixed (an idle singleplayer tab keeps its game open: no hidden timeout, because you
   asked for no timers), 1 rejected as stale.
 
+### 3. Board animation polish (commit 3b6fe9b)
+
+An art director recorded slow-motion frame captures of every kind of move, an implementer
+reworked the animations, an independent reviewer checked visuals and frame rate (3 findings,
+all fixed):
+
+- **Moves** lift, arc and land with a small springy settle: sliders glide (230–360 ms by
+  distance), knights hop.
+- **Castling:** the king moves first, then the rook hops beside it so they never overlap.
+- **Promotion:** the new piece pops in with a short flourish.
+- **Captures:** the captured piece is knocked along the attacker's path, tilts and fades
+  with chips in its seat colour, with a brief hit-stop.
+- **Leader capture:** a stronger moment, then the army burns away outward from its leader
+  (FFA) or frosts grey in a sweep (Teams).
+- **Feedback:** the turn indicator hands over as a move lands, the last-move highlight follows
+  the piece, movable pieces lift on hover, legal-move hints ripple in, illegal drops ease back.
+- **Back-to-back moves** never teleport: a running animation finishes quickly, then the next
+  plays.
+- **Reduced motion** uses short cross-fades instead.
+- Verified: 57 board unit tests, 45 board browser specs, frame strips reviewed by eye.
+
 ## Not done / left for you
 
 _(Filled in at the end.)_
