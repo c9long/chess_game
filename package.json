@@ -7,6 +7,7 @@
     "node": ">=24"
   },
   "scripts": {
+    "dev": "node scripts/dev.mjs",
     "lint": "biome check .",
     "format": "biome check --write .",
     "build:wasm": "pnpm --filter @game/rules build",

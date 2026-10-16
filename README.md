@@ -38,6 +38,21 @@ pnpm build:wasm   # only rebuild the rules engine for @game/rules (packages/rule
 
 ## Running locally
 
+One command sets up and starts everything (local Postgres database, rules-engine build,
+bot-service, game server and web app):
+
+```sh
+pnpm install
+pnpm dev          # then open http://localhost:5173
+```
+
+`pnpm dev` creates `apps/server/.env` from the example if needed, runs `infra/dev-db.sh`,
+migrates and seeds the database, builds the WebAssembly rules engine on first run, then starts
+bot-service on :7700, the API on :3000 and the web app on :5173. Ctrl-C stops all three.
+`DEV_CLOCK_BASE_MS=15000 pnpm dev` shortens every clock for quick end-to-end checks.
+
+The individual steps, if you want to run them separately:
+
 ```sh
 infra/dev-db.sh                         # role + game_dev database
 DB_NAME=game_test infra/dev-db.sh       # database for server integration tests
