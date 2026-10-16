@@ -12,6 +12,7 @@ import {
   matches,
   matchPlayers,
 } from '@game/db'
+import { isUntimed } from '@game/protocol'
 import { type CivId, Game, type GameConfigInput, type Outcome } from '@game/rules'
 import { and, asc, eq, inArray, sql } from 'drizzle-orm'
 import type { Logger } from '../logger.ts'
@@ -285,8 +286,10 @@ export class MatchRecorder {
             ratingChanges: [],
           }
         }
+        // Untimed (solo) games touch no rating at all, public or shadow.
         const changes =
-          this.input.rated || input.ratingSeats.some((s) => s.botLevel)
+          !isUntimed(this.input.timeControl) &&
+          (this.input.rated || input.ratingSeats.some((s) => s.botLevel))
             ? await applyRatings(
                 tx,
                 { mode: this.input.mode, timeControl: this.input.timeControl },

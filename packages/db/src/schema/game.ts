@@ -56,7 +56,7 @@ export const matches = pgTable(
     id: uuid('id').primaryKey().defaultRandom(),
     status: matchStatus('status').notNull().default('in_progress'),
     mode: matchMode('mode').notNull(),
-    /** '10+0' | '3+2' (TIME_CONTROLS in @game/config). */
+    /** '10+0' | '3+2' (TIME_CONTROLS in @game/config), or 'untimed' (solo games, never rated). */
     timeControl: text('time_control').notNull(),
     rated: boolean('rated').notNull().default(false),
     rulesVersion: integer('rules_version').notNull(),

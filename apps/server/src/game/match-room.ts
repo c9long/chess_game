@@ -18,10 +18,12 @@ import {
   createOptionsSchema,
   type ErrorCode,
   isReservedMessageType,
+  isUntimed,
   joinOptionsSchema,
   type LobbyMetadata,
   PROTOCOL_VERSION,
   type ServerMessages,
+  SOLO_DEFAULT_NAME,
 } from '@game/protocol'
 import { createMatchState, EventState, type MatchState, type SeatState } from '@game/protocol/state'
 import {
@@ -87,15 +89,49 @@ interface BotTurn {
   seat: number
   /** Position the request was made for. */
   position: string
-  /** No human takes turns any more: quick local moves only, no bot-service. */
+  /** No human takes turns or watches any more: quick local moves only, no bot-service. */
   local: boolean
   ctrl: AbortController
   timer: NodeJS.Timeout | undefined
+  /** The computed move (undefined: local fallback), once it waits on the pacing timer. */
+  pending?: { move: string | undefined }
 }
 
 /** Time a bot keeps back from its clock for the local fallback move and the round trip. */
 function botSafetyMarginMs(remainingMs: number): number {
   return Math.min(300, Math.max(50, remainingMs * 0.2))
+}
+
+/**
+ * The clock bot-service is told about in untimed games: generous, so every level searches
+ * for its normal target time.
+ */
+const UNTIMED_BOT_CLOCK_MS = 600_000
+
+/** Bot pacing: a bot with less than this on its clock moves without waiting. */
+const BOT_PACE_MIN_CLOCK_MS = 10_000
+/** Bot pacing never waits for more than this share of the bot's remaining time. */
+const BOT_PACE_MAX_CLOCK_SHARE = 0.25
+/** Bot pacing after an action that defeated, froze or removed an army (longer animations). */
+const BOT_PACE_DEFEAT_FACTOR = 2.2
+
+/** Picks `count` distinct civs from `pool` (not in `exclude`), at random; repeats only if short. */
+export function pickBotCivs(pool: readonly string[], exclude: string, count: number): string[] {
+  const shuffled = (list: string[]) => {
+    const a = [...list]
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1))
+      ;[a[i], a[j]] = [a[j] as string, a[i] as string]
+    }
+    return a
+  }
+  const fresh = shuffled(pool.filter((c) => c !== exclude))
+  const out = fresh.slice(0, count)
+  const fallback = fresh.length > 0 ? fresh : [...pool]
+  while (out.length < count && fallback.length > 0) {
+    out.push(fallback[Math.floor(Math.random() * fallback.length)] as string)
+  }
+  return out
 }
 
 export class MatchRoom
@@ -133,6 +169,14 @@ export class MatchRoom
   private closeTimer: NodeJS.Timeout | undefined
   private hostGraceTimer: NodeJS.Timeout | undefined
   private botTurn: BotTurn | null = null
+  /** Singleplayer room (`kind: 'solo'`): the creator's civ. Null for multiplayer lobbies. */
+  private solo: { civ: string } | null = null
+  /** Untimed game: no clock ever runs (solo rooms). */
+  private untimed = false
+  /** Bot pacing: monotonic time of the latest game action (or the game start). */
+  private lastActionAt = 0
+  /** Bot pacing: how long after `lastActionAt` a bot's move may be applied. */
+  private paceGapMs = 0
 
   // -------------------------------------------------------------------------
   // Authentication (matchmaking request: cookie or bearer token)
@@ -156,8 +200,15 @@ export class MatchRoom
       }
       const parsed = createOptionsSchema.safeParse(options)
       if (!parsed.success) throw joinError('invalid_options')
-      if (parsed.data.pickMode === 'draft') throw joinError('not_implemented')
-      if (!svc.namePolicy.checkLobbyName(parsed.data.name).ok) throw joinError('invalid_options')
+      const opts = parsed.data
+      if (opts.kind === 'lobby' && opts.pickMode === 'draft') throw joinError('not_implemented')
+      if (opts.name !== undefined && !svc.namePolicy.checkLobbyName(opts.name).ok) {
+        throw joinError('invalid_options')
+      }
+      if (opts.kind === 'solo') {
+        const civs = svc.civs.enabledSlugsCached() ?? (await svc.civs.enabledSlugs())
+        if (!civs.includes(opts.civ)) throw joinError('invalid_options')
+      }
       if (svc.seats.has(player.userId)) throw joinError('already_in_room')
       // Synchronous from the last check on: concurrent creates can't both claim the seat.
       const sessionId = svc.claimSeat(player.userId, '', CLAIM_TTL_MS)
@@ -224,6 +275,8 @@ export class MatchRoom
   /** Seat rules for a newcomer, checked at matchmaking (admit) and again on connect (onJoin). */
   private newSeatChecks(player: PlayerAuth) {
     const svc = this.svc
+    // A solo room seats its creator only (who rejoins through isRejoin).
+    if (this.solo && player.userId !== this.hostUserId) throw joinError('room_not_joinable')
     if (this.kicked.has(player.userId)) throw joinError('kicked')
     const elsewhere = svc.seats.get(player.userId)
     if (elsewhere && elsewhere !== this.roomId) throw joinError('already_in_room')
@@ -253,7 +306,10 @@ export class MatchRoom
     const creator = this.svc.takeCreatorTicket(options.creatorTicket)
     const { creatorTicket: _ignored, ...rest } = options
     const parsed = createOptionsSchema.parse(rest)
-    const name = this.svc.namePolicy.checkLobbyName(parsed.name)
+    const name =
+      parsed.name === undefined
+        ? { ok: true as const, name: SOLO_DEFAULT_NAME }
+        : this.svc.namePolicy.checkLobbyName(parsed.name)
     if (!creator || !name.ok) throw joinError('unauthorized')
     this.hostUserId = creator.player.userId
     // The creator's reservation now belongs to this room (unless a newer claim replaced it).
@@ -261,18 +317,35 @@ export class MatchRoom
     if (claim && claim.roomId === '' && claim.sessionIds.has(creator.sessionId)) {
       claim.roomId = this.roomId
     }
-    if (parsed.password) this.passwordHash = await hash(parsed.password, ARGON2)
+    if (parsed.kind === 'lobby' && parsed.password) {
+      this.passwordHash = await hash(parsed.password, ARGON2)
+    }
 
     const s = this.state
     s.protocolVersion = PROTOCOL_VERSION
     s.name = name.name
     s.mode = parsed.mode
     s.timeControl = parsed.timeControl
-    s.pickMode = parsed.pickMode
+    s.pickMode = parsed.kind === 'lobby' ? parsed.pickMode : 'blind'
     s.hasPassword = Boolean(this.passwordHash)
     s.phase = 'waiting'
     s.reconnectGraceMs = this.svc.config.game.reconnectGraceMs
-    s.clock.incrementMs = TIME_CONTROLS[parsed.timeControl as TimeControlId].incrementMs
+    this.untimed = isUntimed(parsed.timeControl)
+    s.clock.incrementMs = this.untimed
+      ? 0
+      : TIME_CONTROLS[parsed.timeControl as TimeControlId].incrementMs
+    if (parsed.kind === 'solo') {
+      // Singleplayer: never in the lobby browser; three bots at West, North and East with
+      // random civs (distinct from each other and from the player's), at the chosen level.
+      this.solo = { civ: parsed.civ }
+      void this.setPrivate(true).catch(() => {})
+      const civs = await this.enabledCivs()
+      const botCivs = pickBotCivs(civs, parsed.civ, 3)
+      for (const seat of [1, 2, 3] as const) {
+        seatBot(s, seat, parsed.botLevel, botCivs[seat - 1] ?? parsed.civ)
+      }
+      refreshLobbyPhase(s)
+    }
     this.metadata = this.listing()
     this.svc.rooms.add(this)
     this.registerHandlers()
@@ -311,6 +384,11 @@ export class MatchRoom
       sessionId: client.sessionId,
     }
     seatHuman(this.state, seat, { ...player, sessionId: client.sessionId })
+    if (this.solo) {
+      const mine = this.state.seats[seat] as SeatState
+      mine.civ = this.solo.civ
+      mine.ready = true
+    }
     this.svc.seats.set(player.userId, this.roomId)
     if (!this.hostUserId || (!this.hostSeated() && !this.hostClaimPending())) {
       this.hostUserId = player.userId
@@ -378,6 +456,7 @@ export class MatchRoom
     s.graceDeadline = 0
     if (this.state.phase === 'in_game') this.record(seat, 'reconnect', {}, null)
     this.updateListing()
+    this.maybeAutoStart()
     this.welcome(client)
   }
 
@@ -431,6 +510,10 @@ export class MatchRoom
 
   isGameRunning(): boolean {
     return this.state.phase === 'in_game' || this.starting
+  }
+
+  abortsOnDrain(): boolean {
+    return this.untimed && this.state.phase === 'in_game'
   }
 
   async closeLobby(reason: string) {
@@ -629,6 +712,8 @@ export class MatchRoom
 
   private requireLobby() {
     if (!isLobbyPhase(this.state.phase) || this.starting) throw new GameError('wrong_phase')
+    // A solo room's seats, civs and bots are fixed at create; it starts by itself.
+    if (this.solo) throw new GameError('wrong_phase', 'solo games start by themselves')
   }
 
   private hostSeated(): boolean {
@@ -683,6 +768,14 @@ export class MatchRoom
     const host = this.hostUserId ? seatOfUser(this.bindings, this.hostUserId) : -1
     this.state.hostSeat = host
     this.updateListing()
+    this.maybeAutoStart()
+  }
+
+  /** A solo room starts (countdown) as soon as its player is seated and connected. */
+  private maybeAutoStart() {
+    if (!this.solo || this.starting || this.svc.maintenance) return
+    if (this.state.phase !== 'civ_select' || startBlocker(this.state)) return
+    this.startCountdown()
   }
 
   private startCountdown() {
@@ -751,7 +844,8 @@ export class MatchRoom
         }),
       )
       if (players.some((p) => !p.userId && !p.botLevel)) throw new GameError('not_ready')
-      const rated = s.seats.every((seat) => !seat.isBot && !seat.isGuest)
+      // Untimed (solo) games are never rated, publicly or in the shadow pool.
+      const rated = !this.untimed && s.seats.every((seat) => !seat.isBot && !seat.isGuest)
       recorder = await MatchRecorder.start(
         svc.db,
         svc.logger,
@@ -772,11 +866,12 @@ export class MatchRoom
       ) {
         throw new GameError('not_ready')
       }
-      const tc = TIME_CONTROLS[s.timeControl as TimeControlId]
-      const base = svc.config.game.devClockBaseMs ?? tc.baseMs
+      // Untimed: the clock object exists for bookkeeping but is never started.
+      const tc = this.untimed ? null : TIME_CONTROLS[s.timeControl as TimeControlId]
+      const base = tc ? (svc.config.game.devClockBaseMs ?? tc.baseMs) : 0
       this.game = game
       this.recorder = recorder
-      this.gameClock = new GameClock(base, tc.incrementMs)
+      this.gameClock = new GameClock(base, tc?.incrementMs ?? 0)
       game = null
       recorder = null
       s.matchId = this.recorder.matchId
@@ -791,18 +886,22 @@ export class MatchRoom
       s.positionString = this.game.positionString()
       s.actionSeq = 0
       const now = monoNow()
-      this.gameClock.startTurn(seatIndex(snap.seatToMove) as SeatNum, now)
+      if (!this.untimed) this.gameClock.startTurn(seatIndex(snap.seatToMove) as SeatNum, now)
       s.seatToMove = seatIndex(snap.seatToMove)
       this.syncClockState(now)
       this.updateListing()
       this.broadcast('clock', this.clockSync(now))
-      this.syncTimer = setInterval(() => {
-        if (this.gameClock && this.state.phase === 'in_game') {
-          const t = monoNow()
-          this.syncClockState(t)
-          this.broadcast('clock', this.clockSync(t))
-        }
-      }, svc.config.game.clockSyncIntervalMs)
+      if (!this.untimed) {
+        this.syncTimer = setInterval(() => {
+          if (this.gameClock && this.state.phase === 'in_game') {
+            const t = monoNow()
+            this.syncClockState(t)
+            this.broadcast('clock', this.clockSync(t))
+          }
+        }, svc.config.game.clockSyncIntervalMs)
+      }
+      this.lastActionAt = now
+      this.paceGapMs = svc.config.game.botMinMoveMs
       this.armFlagTimer()
       this.maybeBotTurn()
     } catch (err) {
@@ -860,7 +959,7 @@ export class MatchRoom
       const next = seatIndex(snap.seatToMove) as SeatNum
       if (kind !== 'abandon' || wasRunning === seat || clock.running !== next) {
         clock.endTurn(now, { increment: false })
-        clock.startTurn(next, now)
+        if (!this.untimed) clock.startTurn(next, now)
       }
     }
 
@@ -875,7 +974,11 @@ export class MatchRoom
     // Persist: one row for the action, plus derived rows (passes, defeats, game end).
     const promotion = events.some((e) => e.type === 'promotion')
     const actionType: MatchEventType = kind === 'move' ? (promotion ? 'promotion' : 'move') : kind
-    const remaining = kind === 'abandon' ? clock.remainingAt(seat, now) : clock.remaining[seat]
+    const remaining = this.untimed
+      ? null
+      : kind === 'abandon'
+        ? clock.remainingAt(seat, now)
+        : clock.remaining[seat]
     this.record(seat, actionType, { actionSeq: s.actionSeq, notation, events }, remaining)
     let endReason = ''
     for (const e of events) {
@@ -885,7 +988,7 @@ export class MatchRoom
           p,
           'pass',
           { actionSeq: s.actionSeq, derived: true },
-          clock.remaining[p as SeatNum],
+          this.untimed ? null : clock.remaining[p as SeatNum],
         )
       } else if (e.type === 'defeat') {
         const d = seatIndex(e.seat)
@@ -917,6 +1020,13 @@ export class MatchRoom
       void this.finishGame(snap.outcome, endReason || endReasonOf(snap.outcome), now)
       return
     }
+    // Bot pacing: the next bot move waits for this action's animation (a defeat's longer).
+    const minGap = this.svc.config.game.botMinMoveMs
+    const heavy = events.some(
+      (e) => e.type === 'defeat' || e.type === 'frozen' || e.type === 'army_removed',
+    )
+    this.lastActionAt = monoNow()
+    this.paceGapMs = heavy ? Math.round(minGap * BOT_PACE_DEFEAT_FACTOR) : minGap
     this.armFlagTimer()
     this.maybeBotTurn()
   }
@@ -982,11 +1092,16 @@ export class MatchRoom
     this.runAction('timeout', clock.running, null, now)
   }
 
-  /** Whether any human seat still takes turns (bots alone finish with local moves). */
+  /** Whether any human seat still takes turns. */
   private humansStillPlaying(): boolean {
     return this.state.seats.some(
       (s) => s.occupied && !s.isBot && (s.status === 'active' || s.status === 'defeated'),
     )
+  }
+
+  /** Whether a seated human is still connected (e.g. eliminated but watching the end). */
+  private humanWatching(): boolean {
+    return this.state.seats.some((s) => s.occupied && !s.isBot && s.connected)
   }
 
   private cancelBotTurn() {
@@ -1000,8 +1115,10 @@ export class MatchRoom
   /**
    * A bot seat's turn: ask bot-service, with a deadline taken from the bot's own clock; if
    * it fails or the deadline passes, play a quick local move instead, so a slow or hung
-   * bot-service never makes a bot lose on time. Once no human takes turns, bots play local
-   * moves only (no bot-service capacity spent on a game nobody plays in).
+   * bot-service never makes a bot lose on time. While a human still takes turns or watches,
+   * bots play at their level with pacing (an eliminated solo player watches the bots finish,
+   * and in Teams their partner's result is still theirs). Once nobody is left, bots play
+   * quick local moves only (no bot-service capacity or waiting spent on a game nobody sees).
    */
   private maybeBotTurn() {
     const seat = this.state.seatToMove
@@ -1016,11 +1133,16 @@ export class MatchRoom
       this.cancelBotTurn()
       return
     }
-    const local = !this.humansStillPlaying()
+    const local = !this.humansStillPlaying() && !this.humanWatching()
     const current = this.botTurn
     // Same bot still to move (an off-turn abandon or reconnect): keep its request. Its turn
-    // and clock kept running, so a new request would pay for the same think twice.
-    if (current && current.seat === seat && current.local === local) return
+    // and clock kept running, so a new request would pay for the same think twice. A move
+    // already waiting on its pacing timer is paced again from this action (e.g. an army
+    // removed off-turn gets its longer animation).
+    if (current && current.seat === seat && current.local === local) {
+      if (current.pending) this.deliverBotMove(current, current.pending.move)
+      return
+    }
     this.cancelBotTurn()
     const turn: BotTurn = {
       seat,
@@ -1035,7 +1157,9 @@ export class MatchRoom
       setImmediate(() => this.playBotMove(turn, undefined))
       return
     }
-    const remaining = clock.remainingAt(seat as SeatNum, monoNow())
+    const remaining = this.untimed
+      ? UNTIMED_BOT_CLOCK_MS
+      : clock.remainingAt(seat as SeatNum, monoNow())
     const budget = Math.max(
       0,
       Math.min(this.svc.config.game.botRequestTimeoutMs, remaining - botSafetyMarginMs(remaining)),
@@ -1046,7 +1170,8 @@ export class MatchRoom
         { room: this.roomId, seat, level: s.botLevel, budgetMs: Math.round(budget) },
         'bot-service missed the deadline: playing a local fallback move',
       )
-      this.playBotMove(turn, undefined)
+      this.deliverBotMove(turn, undefined)
+      turn.ctrl.abort()
     }, budget)
     this.svc.botClient
       .requestMove(
@@ -1054,7 +1179,7 @@ export class MatchRoom
           position: turn.position,
           level: s.botLevel,
           clockMs: Math.floor(remaining),
-          incrementMs: clock.incrementMs,
+          incrementMs: this.untimed ? 0 : clock.incrementMs,
         },
         turn.ctrl.signal,
       )
@@ -1071,9 +1196,42 @@ export class MatchRoom
         },
       )
       .then((move) => {
-        if (move === null) return
-        setImmediate(() => this.playBotMove(turn, move))
+        // null: the turn moved on; pending: the deadline already chose the fallback.
+        if (move === null || turn.pending) return
+        this.deliverBotMove(turn, move)
       })
+  }
+
+  /**
+   * Bot pacing (BOT_MIN_MOVE_MS): applies `turn`'s move (or its local fallback) no earlier
+   * than the pacing gap after the previous action, so clients play each move's animation
+   * and several bots in a row don't land at once. The bot's think time already spent
+   * counts toward the gap. In timed games the wait runs on the bot's own clock, so it is
+   * skipped when the bot is low on time and never takes more than a share of its clock.
+   */
+  private deliverBotMove(turn: BotTurn, move: string | undefined) {
+    if (this.botTurn !== turn) return
+    const wait = this.botPaceWaitMs(turn.seat)
+    clearTimeout(turn.timer)
+    turn.pending = { move }
+    if (wait <= 0) {
+      turn.timer = undefined
+      setImmediate(() => this.playBotMove(turn, move))
+      return
+    }
+    turn.timer = setTimeout(() => this.playBotMove(turn, move), wait)
+  }
+
+  /** How much longer `seat`'s bot move must wait for the pacing gap (0 = none). */
+  private botPaceWaitMs(seat: number): number {
+    if (this.paceGapMs <= 0) return 0
+    const now = monoNow()
+    const wait = this.lastActionAt + this.paceGapMs - now
+    if (wait <= 0) return 0
+    if (this.untimed || !this.gameClock) return wait
+    const remaining = this.gameClock.remainingAt(seat as SeatNum, now)
+    if (remaining < BOT_PACE_MIN_CLOCK_MS) return 0
+    return Math.min(wait, remaining * BOT_PACE_MAX_CLOCK_SHARE)
   }
 
   /** Plays `turn`'s move (or a local fallback move when `move` is missing or illegal). */

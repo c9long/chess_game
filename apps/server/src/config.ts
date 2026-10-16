@@ -63,6 +63,11 @@ const envSchema = z.object({
   /** bot-service base URL (e.g. http://127.0.0.1:7700). Unset: bots play quick local moves. */
   BOT_SERVICE_URL: z.preprocess((v) => (v === '' ? undefined : v), url.optional()),
   BOT_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(4_000),
+  /**
+   * Bot pacing: a bot's move is applied no earlier than this long after the previous game
+   * action (longer after a defeat), so clients can play each move's animation. 0 = off.
+   */
+  BOT_MIN_MOVE_MS: z.coerce.number().int().nonnegative().max(10_000).default(700),
   /** Reconnect grace for disconnected players, in game and in lobbies (PLAN §2: 60 s). */
   RECONNECT_GRACE_SECONDS: z.coerce.number().positive().default(60),
   /** Pre-game countdown after the host starts. */
@@ -118,6 +123,8 @@ export interface AppConfig {
 export interface GameConfig {
   botServiceUrl: string | undefined
   botRequestTimeoutMs: number
+  /** Bot pacing (see BOT_MIN_MOVE_MS). */
+  botMinMoveMs: number
   reconnectGraceMs: number
   countdownMs: number
   shutdownDrainMaxMs: number
@@ -258,6 +265,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     game: {
       botServiceUrl: e.BOT_SERVICE_URL?.replace(/\/$/, ''),
       botRequestTimeoutMs: e.BOT_REQUEST_TIMEOUT_MS,
+      botMinMoveMs: e.BOT_MIN_MOVE_MS,
       reconnectGraceMs: Math.round(e.RECONNECT_GRACE_SECONDS * 1000),
       countdownMs: e.COUNTDOWN_MS,
       shutdownDrainMaxMs: Math.round(e.SHUTDOWN_DRAIN_MAX_SECONDS * 1000),

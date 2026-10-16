@@ -8,7 +8,8 @@ import { Client, type Room } from '@colyseus/sdk'
 import { LEGAL_VERSIONS } from '@game/config'
 import {
   COLYSEUS_PATH,
-  type CreateOptions,
+  type CreateLobbyOptions,
+  type CreateSoloOptions,
   PROTOCOL_VERSION,
   ROOM_NAMES,
   type ServerMessages,
@@ -52,6 +53,8 @@ export async function startGameHarness(
     TURNSTILE_SITEVERIFY_URL: stub.url,
     COUNTDOWN_MS: '50',
     EVENT_FLUSH_INTERVAL_MS: '20',
+    // Bots move at once in tests; the pacing tests set their own value.
+    BOT_MIN_MOVE_MS: '0',
     ...env,
   })
   const mailbox = new MemoryEmailSender()
@@ -186,7 +189,8 @@ export async function registered(h: GameHarness): Promise<Browser> {
 
 /** A connected match-room client that records every server message. */
 export class Player {
-  readonly messages: { type: string; payload: unknown }[] = []
+  /** Every server message, with its arrival time (performance.now()). */
+  readonly messages: { type: string; payload: unknown; at: number }[] = []
 
   readonly browser: Browser
   room: Room
@@ -199,7 +203,7 @@ export class Player {
 
   listen() {
     this.room.onMessage('*', (type, payload) => {
-      this.messages.push({ type: String(type), payload })
+      this.messages.push({ type: String(type), payload, at: performance.now() })
     })
   }
 
@@ -284,7 +288,7 @@ export async function waitFor(cond: () => boolean, timeoutMs = 5_000, what = 'co
 
 export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
-export function createOptions(over: Partial<CreateOptions> = {}): CreateOptions {
+export function createOptions(over: Partial<CreateLobbyOptions> = {}): CreateLobbyOptions {
   return {
     protocolVersion: PROTOCOL_VERSION,
     name: 'Test lobby',
@@ -294,8 +298,34 @@ export function createOptions(over: Partial<CreateOptions> = {}): CreateOptions 
   }
 }
 
-export async function createLobby(b: Browser, over: Partial<CreateOptions> = {}): Promise<Player> {
+export async function createLobby(
+  b: Browser,
+  over: Partial<CreateLobbyOptions> = {},
+): Promise<Player> {
   const room = await b.sdk().create(ROOM_NAMES.match, createOptions(over))
+  const p = new Player(b, room)
+  await p.waitMessage('welcome')
+  return p
+}
+
+export function soloOptions(over: Partial<CreateSoloOptions> = {}): CreateSoloOptions {
+  return {
+    protocolVersion: PROTOCOL_VERSION,
+    kind: 'solo',
+    mode: 'ffa',
+    timeControl: 'untimed',
+    civ: 'mali',
+    botLevel: '1200',
+    ...over,
+  }
+}
+
+/** Creates a singleplayer room (South vs three bots) and waits for the welcome. */
+export async function createSolo(
+  b: Browser,
+  over: Partial<CreateSoloOptions> = {},
+): Promise<Player> {
+  const room = await b.sdk().create(ROOM_NAMES.match, soloOptions(over))
   const p = new Player(b, room)
   await p.waitMessage('welcome')
   return p

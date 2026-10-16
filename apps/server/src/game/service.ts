@@ -68,6 +68,11 @@ export interface ManagedRoom {
   readonly roomId: string
   /** True while a game is running (counts for draining). */
   isGameRunning(): boolean
+  /**
+   * A running game with nothing at stake that never ends by itself (untimed, unrated
+   * solo): a drain aborts it at once instead of waiting for it.
+   */
+  abortsOnDrain(): boolean
   /** Closes a pre-game lobby (maintenance). */
   closeLobby(reason: string): Promise<void>
   /** Aborts a running game (shutdown cap reached). */
@@ -205,11 +210,25 @@ export class GameService {
     for (const r of [...this.rooms]) {
       if (!r.isGameRunning()) await r.closeLobby('maintenance').catch(() => {})
     }
+    let aborted = 0
+    // Untimed solo games may never end on their own: abort them now (each poll catches one
+    // that was still starting).
+    const abortUnstaked = async () => {
+      for (const r of [...this.rooms]) {
+        if (r.isGameRunning() && r.abortsOnDrain()) {
+          aborted++
+          await r.abortGame('server_shutdown').catch((err: unknown) => {
+            this.logger.error({ room: r.roomId, err: (err as Error).message }, 'abort failed')
+          })
+        }
+      }
+    }
+    await abortUnstaked()
     const deadline = Date.now() + maxMs
     while (this.runningGames() > 0 && Date.now() < deadline) {
       await new Promise((resolve) => setTimeout(resolve, Math.min(pollMs, maxMs)))
+      await abortUnstaked()
     }
-    let aborted = 0
     for (const r of [...this.rooms]) {
       if (r.isGameRunning()) {
         aborted++
