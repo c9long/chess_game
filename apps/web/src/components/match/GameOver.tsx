@@ -1,6 +1,11 @@
 import { isUntimed } from '@game/protocol'
+import { animate, motion } from 'motion/react'
+import { type RefObject, useEffect, useRef, useState } from 'react'
 import type { MatchFeed } from '../../pages/Match.tsx'
 import { CivEmblem, civName } from '../CivEmblem.tsx'
+import { Confetti } from '../game/Confetti.tsx'
+import { Medal } from '../game/Medal.tsx'
+import { botLevelText } from '../game/PlayerCard.tsx'
 import { Button } from '../ui.tsx'
 import { EloDelta } from './RankedBadge.tsx'
 import {
@@ -13,15 +18,83 @@ import {
   teamLabel,
 } from './seats.ts'
 
+/** A number that counts from `from` to `to` (once, on mount). */
+function CountUp({ from, to, reduceMotion }: { from: number; to: number; reduceMotion: boolean }) {
+  const [value, setValue] = useState(reduceMotion ? to : from)
+  useEffect(() => {
+    if (reduceMotion) {
+      setValue(to)
+      return
+    }
+    const controls = animate(from, to, {
+      duration: 0.6,
+      delay: 0.35,
+      ease: 'easeOut',
+      onUpdate: (v) => setValue(Math.round(v)),
+    })
+    return () => controls.stop()
+  }, [from, to, reduceMotion])
+  return <>{value}</>
+}
+
+const FOCUSABLE = 'button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])'
+
+/**
+ * Modal focus handling: focus the heading on open, keep Tab inside the dialog, close on
+ * Escape, and give focus back to where it was (the board) on close.
+ */
+function useDialogFocus(panel: RefObject<HTMLElement | null>, onClose: () => void) {
+  const close = useRef(onClose)
+  useEffect(() => {
+    close.current = onClose
+  })
+  useEffect(() => {
+    const before = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    panel.current?.querySelector<HTMLElement>('h2')?.focus({ preventScroll: true })
+    const onKey = (e: KeyboardEvent) => {
+      const root = panel.current
+      if (!root) return
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        close.current()
+        return
+      }
+      if (e.key !== 'Tab') return
+      const items = [...root.querySelectorAll<HTMLElement>(FOCUSABLE)]
+      const first = items[0]
+      const last = items[items.length - 1]
+      if (!first || !last) return
+      const active = document.activeElement
+      if (!root.contains(active) || active === root.querySelector('h2')) {
+        e.preventDefault()
+        ;(e.shiftKey ? last : first).focus()
+      } else if (e.shiftKey && active === first) {
+        e.preventDefault()
+        last.focus()
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault()
+        first.focus()
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      if (before?.isConnected) before.focus({ preventScroll: true })
+    }
+  }, [panel])
+}
+
 export function GameOver({
   feed,
   defeatReasons,
+  reduceMotion = false,
   onClose,
   onLeave,
 }: {
   feed: MatchFeed
   /** Per seat: how it was knocked out (rules defeat reason), or null. */
   defeatReasons: (string | null)[] | null
+  reduceMotion?: boolean
   onClose: () => void
   onLeave: () => void
 }) {
@@ -38,6 +111,8 @@ export function GameOver({
   const agreedDraw = result.type === 'ffa_agreed_draw' || result.type === 'teams_agreed_draw'
   // A player knocked out before an agreed draw didn't share it: they see their own place.
   const inDraw = agreedDraw && (myPlace === undefined || myPlace === 1)
+  const isDraw = inDraw || result.type === 'teams_draw'
+  const won = !aborted && !isDraw && myPlace === 1
   let headline = 'Game over'
   if (aborted) headline = 'Game cancelled'
   else if (inDraw) headline = 'Draw agreed'
@@ -50,82 +125,174 @@ export function GameOver({
   if (inDraw && myPlace === 1 && placements.filter((p) => p === 1).length > 1) {
     parts.push('You share 1st place')
   }
-  if (result.type === 'teams_winner')
-    parts[0] = `${teamLabel(result.winnerTeam === 'south_north' ? 0 : 1)} wins`
+  if (result.type === 'teams_winner') {
+    parts[0] = won
+      ? 'Your team wins'
+      : `${teamLabel(result.winnerTeam === 'south_north' ? 0 : 1)} wins`
+  }
   if (result.type === 'ffa_winner' && result.winnerSeat >= 0) {
     const w = state.seats[result.winnerSeat]
-    parts[0] = `${w?.isBot ? `Bot ${w.botLevel}` : w?.displayName} (${civName(w?.civ ?? '')}) is the last civilization standing`
+    parts[0] =
+      result.winnerSeat === mySeat
+        ? 'You are the last civilization standing'
+        : `${w?.isBot ? `The ${civName(w.civ)} bot` : `${w?.displayName} (${civName(w?.civ ?? '')})`} is the last civilization standing`
   }
   // Each part reads as a sentence, so the line is punctuated the same however it's built.
   const subline = parts
     .filter(Boolean)
     .map((t) => (/[.!?]$/.test(t) ? t : `${t}.`))
     .join(' ')
+  const mine = mySeat >= 0 ? state.seats[mySeat] : undefined
+  const myColor = mySeat >= 0 ? seatHex(mySeat) : '#d4a017'
+  const delta = myRating ? myRating.after - myRating.before : 0
+  const panel = useRef<HTMLElement>(null)
+  useDialogFocus(panel, onClose)
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 px-4 backdrop-blur-sm"
+    <motion.div
+      className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/65 px-4 py-6 backdrop-blur-sm"
       role="dialog"
       aria-modal="true"
       aria-labelledby="game-over-title"
       data-testid="game-over"
+      initial={reduceMotion ? false : { opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.2 }}
     >
-      <section className="w-full max-w-lg rounded-2xl border border-gold/30 bg-panel p-6 shadow-2xl shadow-black/60 sm:p-8">
-        <p className="flex items-center gap-3 text-xs font-semibold uppercase tracking-[0.3em] text-gold/80">
-          {isUntimed(state.timeControl)
-            ? 'Untimed game vs bots'
-            : state.ranked
-              ? rated
-                ? 'Ranked game'
-                : 'Ranked game · not rated'
-              : 'Casual game'}
-        </p>
-        <h2 id="game-over-title" className="mt-1 font-display text-4xl font-semibold">
-          {headline}
-        </h2>
-        {subline ? <p className="mt-2 text-sm text-parchment/65">{subline}</p> : null}
+      <motion.section
+        ref={panel}
+        className={`relative my-auto w-full max-w-lg overflow-hidden rounded-2xl border bg-panel p-5 shadow-2xl shadow-black/60 sm:p-8 ${
+          won ? 'border-gold/50' : 'border-parchment/15'
+        }`}
+        initial={reduceMotion ? false : { opacity: 0, scale: 0.96 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ duration: 0.2, ease: 'easeOut' }}
+      >
+        {won ? (
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-x-0 top-0 h-48 bg-[radial-gradient(ellipse_at_top,rgba(212,160,23,0.22),transparent_70%)]"
+          />
+        ) : null}
+        {won && !reduceMotion ? (
+          <Confetti
+            colors={[seatHex(0), seatHex(1), seatHex(2), seatHex(3), '#f4efe6', '#d4a017']}
+          />
+        ) : null}
+
+        <div className="relative flex items-start gap-4">
+          {won && mine ? (
+            <span
+              className="mt-1 flex h-12 w-12 shrink-0 items-center justify-center rounded-full border"
+              style={{
+                borderColor: `${myColor}99`,
+                backgroundColor: `${myColor}26`,
+                color: myColor,
+              }}
+            >
+              <CivEmblem civ={mine.civ} className="h-8 w-8" />
+            </span>
+          ) : null}
+          <div className="min-w-0">
+            <p className="flex items-center gap-3 text-xs font-semibold tracking-[0.3em] text-gold/80 uppercase">
+              {isUntimed(state.timeControl)
+                ? 'Untimed game vs bots'
+                : state.ranked
+                  ? rated
+                    ? 'Ranked game'
+                    : 'Ranked game · not rated'
+                  : 'Casual game'}
+            </p>
+            <h2
+              id="game-over-title"
+              tabIndex={-1}
+              className={`mt-1 font-display text-4xl font-semibold outline-none ${won ? 'text-gold' : ''}`}
+            >
+              {headline}
+            </h2>
+            {subline ? <p className="mt-2 text-sm text-parchment/65">{subline}</p> : null}
+          </div>
+        </div>
+
         {myRating ? (
-          <p
-            className="mt-4 inline-flex items-center gap-2 rounded-lg border border-gold/30 bg-gold/[0.07] px-3 py-1.5 text-sm tabular-nums"
+          <div
+            className="relative mt-5 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-parchment/10 bg-ink/40 px-4 py-3"
             data-testid="my-elo-change"
           >
-            <span className="text-parchment/65">
-              {state.timeControl} {state.mode === 'ffa' ? 'Free-for-all' : 'Teams'} Elo
-            </span>
-            <span className="font-semibold">
-              {myRating.before} → {myRating.after}
-            </span>
-            <EloDelta delta={myRating.after - myRating.before} className="font-semibold" />
-          </p>
+            <div className="min-w-0">
+              <p className="text-xs text-parchment/55">
+                {state.timeControl} {state.mode === 'ffa' ? 'Free-for-all' : 'Teams'} Elo
+              </p>
+              <p className="text-xs text-parchment/45 tabular-nums">
+                {myRating.before} → {myRating.after}
+              </p>
+            </div>
+            <p className="ml-auto flex items-center gap-3">
+              <span
+                className="font-display text-[28px] leading-none font-semibold tabular-nums"
+                aria-hidden="true"
+              >
+                <CountUp from={myRating.before} to={myRating.after} reduceMotion={reduceMotion} />
+              </span>
+              <span
+                className={`rounded-full px-2.5 py-1 text-sm font-semibold tabular-nums ${
+                  delta > 0 ? 'bg-[#7fd8b7]/15' : delta < 0 ? 'bg-seat-south/20' : 'bg-parchment/10'
+                }`}
+              >
+                <EloDelta delta={delta} />
+              </span>
+            </p>
+          </div>
         ) : null}
 
         {aborted ? null : (
-          <ol className="mt-6 flex flex-col gap-2">
-            {order.map((i) => {
+          <ol className="relative mt-5 flex flex-col gap-2">
+            {order.map((i, idx) => {
               const seat = state.seats[i]
               if (!seat) return null
               const rating = gameOver?.ratings[i]
               const reason = defeatReasons?.[i] ?? null
-              const delta = rating ? rating.after - rating.before : null
+              const d = rating ? rating.after - rating.before : null
+              const place = placements[i] ?? null
+              const first = place === 1 && !isDraw
               return (
-                <li
+                <motion.li
                   key={i}
                   data-testid={`placement-${seatName(i)}`}
                   className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 ${
-                    i === mySeat ? 'border-gold/50 bg-gold/5' : 'border-parchment/10'
+                    first
+                      ? 'border-gold/60 bg-gradient-to-r from-gold/10 to-transparent'
+                      : i === mySeat
+                        ? 'border-parchment/25 bg-parchment/[0.04]'
+                        : 'border-parchment/10'
                   }`}
+                  initial={reduceMotion ? false : { opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{
+                    duration: 0.24,
+                    ease: 'easeOut',
+                    delay: 0.15 + (order.length - 1 - idx) * 0.12,
+                  }}
                 >
-                  <span className="w-10 text-center font-display text-lg font-semibold text-parchment/80">
-                    {placements[i] ? ordinal(placements[i]) : '—'}
-                  </span>
-                  <span style={{ color: seatHex(i) }}>
-                    <CivEmblem civ={seat.civ} className="h-7 w-7" />
+                  <Medal place={place} label={place ? ordinal(place) : undefined} />
+                  <span
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
+                    style={{ backgroundColor: `${seatHex(i)}26`, color: seatHex(i) }}
+                  >
+                    <CivEmblem civ={seat.civ} className="h-6 w-6" />
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate font-semibold">
-                      {seat.isBot ? `Bot · ${seat.botLevel}` : seat.displayName}
+                    <span className="flex items-center gap-1.5 font-semibold">
+                      <span className="truncate">
+                        {seat.isBot ? `Bot · ${botLevelText(seat.botLevel)}` : seat.displayName}
+                      </span>
+                      {i === mySeat ? (
+                        <span className="shrink-0 rounded border border-gold/50 bg-gold/15 px-1 text-[10px] leading-4 font-bold tracking-wider text-gold uppercase">
+                          You
+                        </span>
+                      ) : null}
                     </span>
-                    <span className="block text-xs text-parchment/50">
+                    <span className="block truncate text-xs text-parchment/50">
                       {civName(seat.civ)} · {SEAT_LABEL[seatName(i)]}
                       {reason ? (
                         <span
@@ -138,9 +305,9 @@ export function GameOver({
                       ) : null}
                     </span>
                   </span>
-                  {rating && delta !== null ? (
+                  {rating && d !== null ? (
                     <span
-                      className="text-right text-sm tabular-nums"
+                      className="shrink-0 text-right text-sm tabular-nums"
                       data-testid={`elo-${seatName(i)}`}
                       title={`Elo ${rating.before} → ${rating.after}`}
                     >
@@ -148,16 +315,16 @@ export function GameOver({
                         {rating.after}
                         <span className="ml-1 text-[11px] font-medium text-parchment/45">Elo</span>
                       </span>
-                      <EloDelta delta={delta} className="block text-xs font-semibold" />
+                      <EloDelta delta={d} className="block text-xs font-semibold" />
                     </span>
                   ) : null}
-                </li>
+                </motion.li>
               )
             })}
           </ol>
         )}
 
-        <div className="mt-7 flex flex-wrap justify-end gap-2">
+        <div className="relative mt-6 flex flex-wrap justify-end gap-2">
           <Button variant="ghost" onClick={onClose}>
             View board
           </Button>
@@ -165,7 +332,7 @@ export function GameOver({
             {isUntimed(state.timeControl) ? 'Back to Play' : 'Back to lobbies'}
           </Button>
         </div>
-      </section>
-    </div>
+      </motion.section>
+    </motion.div>
   )
 }

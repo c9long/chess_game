@@ -60,3 +60,19 @@ export const DEFEAT_REASON_LABEL: Record<string, string> = {
   abandon: 'Left the game',
   resign: 'Resigned',
 }
+
+/** Medal colours for 1st, 2nd and 3rd (gold, silver, bronze). */
+export const PODIUM = ['#d4a017', '#c9ccd1', '#c7834a'] as const
+
+/** "just now", "5 min ago", "2 h ago", "3 days ago", else a short date. */
+export function relativeTime(iso: string, now = Date.now()): string {
+  const diff = Math.max(0, now - new Date(iso).getTime())
+  const min = Math.round(diff / 60_000)
+  if (min < 1) return 'just now'
+  if (min < 60) return `${min} min ago`
+  const h = Math.round(min / 60)
+  if (h < 24) return `${h} h ago`
+  const d = Math.round(h / 24)
+  if (d < 7) return d === 1 ? 'yesterday' : `${d} days ago`
+  return new Date(iso).toLocaleDateString(undefined, { dateStyle: 'medium' })
+}

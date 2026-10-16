@@ -1,8 +1,10 @@
 import { DRAW_VOTE, isUntimed } from '@game/protocol'
 import type { MatchStateJson, SeatStateJson } from '@game/protocol/state'
-import { useEffect, useRef, useState } from 'react'
+import { type ReactNode, useEffect, useRef, useState } from 'react'
 import { type MatchRoom, matchApi } from '../../lib/match.ts'
 import type { MatchFeed } from '../../pages/Match.tsx'
+import { GameButton } from '../game/GameButton.tsx'
+import { FlagIcon } from '../game/icons.tsx'
 import { Button } from '../ui.tsx'
 import { RankedBadge } from './RankedBadge.tsx'
 import { SEAT_LABEL, seatHex, seatName } from './seats.ts'
@@ -33,12 +35,15 @@ export function GameActions({
   feed,
   voters,
   myDefeatReason = null,
+  children,
 }: {
   room: MatchRoom
   feed: MatchFeed
   voters: readonly boolean[] | null
   /** How the viewer's own seat was knocked out (rules defeat reason), if it was. */
   myDefeatReason?: string | null
+  /** More buttons for the same row (Leave, settings). */
+  children?: ReactNode
 }) {
   const { state, mySeat } = feed
   const [confirming, setConfirming] = useState(false)
@@ -78,22 +83,23 @@ export function GameActions({
           watching or leave.
         </p>
       ) : null}
-      <div className="grid grid-cols-2 gap-2">
-        <span title={resignWhy || 'Give up your seat in this game'} className="flex">
-          <Button
-            variant="secondary"
-            className="h-10 w-full px-3 whitespace-nowrap hover:!border-seat-south-light/70 hover:!text-seat-south-light disabled:pointer-events-none"
+      <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto] gap-2 lg:grid-cols-2">
+        <span title={resignWhy || 'Give up your seat in this game'} className="flex min-w-0">
+          <GameButton
+            className="w-full hover:!border-seat-south-light/70 hover:!text-seat-south-light disabled:pointer-events-none"
             disabled={Boolean(resignWhy)}
             onClick={() => setConfirming(true)}
             data-testid="resign"
           >
             <FlagIcon /> Resign
-          </Button>
+          </GameButton>
         </span>
-        <span title={drawWhy || 'Offer a draw to every player still in the game'} className="flex">
-          <Button
-            variant="secondary"
-            className="h-10 w-full px-3 whitespace-nowrap disabled:pointer-events-none"
+        <span
+          title={drawWhy || 'Offer a draw to every player still in the game'}
+          className="flex min-w-0"
+        >
+          <GameButton
+            className="w-full disabled:pointer-events-none"
             disabled={Boolean(drawWhy)}
             aria-describedby={drawWhy && playing ? 'draw-why' : undefined}
             onClick={() => send('offerDraw', {})}
@@ -102,9 +108,11 @@ export function GameActions({
             <span aria-hidden="true" className="font-display text-base leading-none">
               ½
             </span>
-            Offer draw
-          </Button>
+            <span className="sm:hidden">Draw</span>
+            <span className="hidden sm:inline">Offer draw</span>
+          </GameButton>
         </span>
+        {children}
       </div>
       {playing && cooldown > 0 && !pending ? (
         <p id="draw-why" className="mt-2 text-xs text-parchment/50" data-testid="draw-hint">
@@ -122,14 +130,6 @@ export function GameActions({
         />
       ) : null}
     </>
-  )
-}
-
-function FlagIcon() {
-  return (
-    <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" aria-hidden="true" fill="currentColor">
-      <path d="M3 1.5a.75.75 0 0 1 .75.75v.32l1.06-.27a6 6 0 0 1 3.6.2l.4.15a4.5 4.5 0 0 0 2.92.1l1.07-.33a.75.75 0 0 1 .97.72v6.5a.75.75 0 0 1-.53.72l-1.07.33a6 6 0 0 1-3.9-.13l-.4-.15a4.5 4.5 0 0 0-2.7-.15l-1.42.36v4.63a.75.75 0 0 1-1.5 0V2.25A.75.75 0 0 1 3 1.5Z" />
-    </svg>
   )
 }
 

@@ -7,7 +7,11 @@ import { useEffect, useRef, useState } from 'react'
  * server time keeps the smallest value seen (least network delay), as the protocol
  * recommends.
  */
-export function useClocks(sync: ClockSync | null): [number, number, number, number] {
+export function useClocks(
+  sync: ClockSync | null,
+  /** Tick only while this seat's clock runs (the others don't change between syncs). */
+  tickSeat?: number,
+): [number, number, number, number] {
   const offset = useRef<number | null>(null)
   const [now, setNow] = useState(() => Date.now())
 
@@ -19,9 +23,10 @@ export function useClocks(sync: ClockSync | null): [number, number, number, numb
 
   useEffect(() => {
     if (!sync || sync.runningSeat < 0) return
+    if (tickSeat !== undefined && sync.runningSeat !== tickSeat) return
     const id = window.setInterval(() => setNow(Date.now()), 100)
     return () => window.clearInterval(id)
-  }, [sync])
+  }, [sync, tickSeat])
 
   if (!sync) return [0, 0, 0, 0]
   return remainingNow(sync, now, offset.current ?? 0)
