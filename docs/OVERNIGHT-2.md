@@ -135,6 +135,24 @@ Apple $99/year (the only subscription; there is no way to ship on iPhone without
 **One decision for you:** on iOS, hide the Google/Discord/GitHub/Microsoft buttons or add
 Sign in with Apple (Apple requires one or the other). Commit `b2a56d0`.
 
+Then the safe parts of that plan were built (commits `8a24cab`…`293bdb8`):
+- **Phones:** content clears notches and home indicators; a phone held sideways gets the
+  board beside the side panel; the reconnecting bar no longer pushes the game down.
+- **Installable:** a web manifest and icons generated from `APP_NAME` (no offline mode yet).
+  `APP_SHORT_NAME` exists for a shorter home-screen label; pick one when you have a name.
+- **Feel:** vibration on your moves, captures involving you, check, your turn and game end
+  (a "Vibration" setting on touch devices); the screen stays awake during a game.
+- **Coming back to the app:** the game reconnects as soon as you return, and the seat can be
+  rejoined even after the browser killed the tab. A hint on phones says leaving for more than
+  the grace period forfeits.
+- **For the apps:** the server accepts the app origins (`NATIVE_ORIGINS`, empty by default)
+  and a mobile device-flow client; the web build has a token (no-cookie) mode used only inside
+  the apps, and `build:native`.
+- A review found 13 problems, all fixed. The serious one: a leftover reconnect token could
+  let a different account take over a seat; now the server checks who is reconnecting and
+  sign-out forgets saved seats.
+- The full check passed on these commits on their own (server 352 tests, web 89).
+
 ## Not done / left for you
 
 _(Filled in at the end.)_
