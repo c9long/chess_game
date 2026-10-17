@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { E2E_WEB_ORIGIN } from '../env.ts'
 import { passAgeScreen } from './helpers.ts'
 
 const log = (...a: unknown[]) => console.log('[attack-age]', ...a)
@@ -84,7 +85,7 @@ test('under-13 then retry: blocked across routes and direct API retry', async ({
   // Direct API retry with an adult DOB while blocked.
   const res = await page.request.post('/api/legal/age-confirmation', {
     data: { dateOfBirth: '1990-01-01' },
-    headers: { origin: 'http://localhost:5174' },
+    headers: { origin: E2E_WEB_ORIGIN },
   })
   log('API retry while blocked:', res.status(), await res.text())
   expect(res.status()).toBe(403)

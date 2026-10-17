@@ -1,4 +1,5 @@
 import { expect, type Page, test } from '@playwright/test'
+import { E2E_WEB_ORIGIN } from '../env.ts'
 import {
   latestMailLink,
   passAgeScreen,
@@ -263,7 +264,7 @@ test('oauth buttons hidden when unconfigured', async ({ page }) => {
   // Direct social sign-in call
   const r = await page.request.post('/api/auth/sign-in/social', {
     data: { provider: 'google', callbackURL: '/' },
-    headers: { origin: 'http://localhost:5174' },
+    headers: { origin: E2E_WEB_ORIGIN },
   })
   log('social sign-in w/o provider config:', r.status(), (await r.text()).slice(0, 200))
 })

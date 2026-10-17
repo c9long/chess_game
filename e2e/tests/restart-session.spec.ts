@@ -1,7 +1,7 @@
 import { type ChildProcess, spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { type Browser, expect, type Page, test } from '@playwright/test'
-import { E2E_DATABASE_URL } from '../env.ts'
+import { E2E_AUX_API_PORT, E2E_AUX_WEB_PORT, E2E_DATABASE_URL } from '../env.ts'
 import { latestMailLink, passAgeScreen, signInWithPassword, uniqueUser } from './helpers.ts'
 
 /**
@@ -11,8 +11,8 @@ import { latestMailLink, passAgeScreen, signInWithPassword, uniqueUser } from '.
  * `node --watch` do.
  */
 
-const API_PORT = 3102
-const WEB_PORT = 5175
+const API_PORT = E2E_AUX_API_PORT
+const WEB_PORT = E2E_AUX_WEB_PORT
 const WEB = `http://localhost:${WEB_PORT}`
 const e2eDir = fileURLToPath(new URL('..', import.meta.url))
 const repoRoot = fileURLToPath(new URL('../..', import.meta.url))
