@@ -5,6 +5,12 @@
  * seat-coloured band along each home edge.
  */
 
+import { BOARD_SIZE } from './geometry.ts'
+
+/** Board size and half size as GLSL float literals. */
+const N = BOARD_SIZE.toFixed(1)
+const HALF = (BOARD_SIZE / 2).toFixed(1)
+
 const NOISE = /* glsl */ `
 float hash12(vec2 p) {
   vec3 p3 = fract(vec3(p.xyx) * 0.1031);
@@ -97,12 +103,12 @@ float band(float x, float a, float b, float aa) {
 void main() {
   vec2 p = vUV * uSize;
   float fw = uFrame / uSq;
-  vec2 q = (p - uFrame) / uSq;   // field is [0, 12]^2, y down (rank 12 at the top)
+  vec2 q = (p - uFrame) / uSq;   // field is [0, N]^2 (N = board size), y down (rank N at the top)
   float aa = uPx;
   vec3 col;
 
-  float ox = max(-q.x, q.x - 12.0);
-  float oy = max(-q.y, q.y - 12.0);
+  float ox = max(-q.x, q.x - ${N});
+  float oy = max(-q.y, q.y - ${N});
   float outside = max(ox, oy);
 
   if (outside <= 0.0) {
@@ -110,7 +116,7 @@ void main() {
     vec2 cell = floor(q);
     vec2 f = q - cell;
     float file = cell.x;
-    float rank = 11.0 - cell.y;
+    float rank = ${N} - 1.0 - cell.y;
     bool dark = mod(file + rank, 2.0) < 0.5;
     float sid = hash12(cell + uSeed * 13.0);
     vec2 w = dark ? vec2(q.y, q.x) : q;
@@ -121,14 +127,14 @@ void main() {
     col *= mix(0.78, 1.0, smoothstep(0.0, 1.4 * aa, d));
     col *= 1.0 + 0.035 * (1.0 - smoothstep(1.4 * aa, 5.0 * aa, d));
     // Ambient occlusion where the field meets the raised frame.
-    float e = min(min(q.x, 12.0 - q.x), min(q.y, 12.0 - q.y));
+    float e = min(min(q.x, ${N} - q.x), min(q.y, ${N} - q.y));
     col *= mix(0.72, 1.0, smoothstep(0.0, 0.2, e));
   } else {
     // ---- frame (mitred corners, grain along each edge) ------------------
     float t = outside / fw;     // 0 at the field, 1 at the outer edge
     int side;                   // 0 S (bottom), 1 W (left), 2 N (top), 3 E (right)
     if (ox > oy) side = q.x < 0.0 ? 1 : 3;
-    else side = q.y > 12.0 ? 0 : 2;
+    else side = q.y > ${N} ? 0 : 2;
     bool horiz = side == 0 || side == 2;
     float along = horiz ? q.x : q.y;
     vec2 w = horiz ? q : q.yx;
@@ -148,7 +154,7 @@ void main() {
     float t0 = 0.5;
     float t1 = 0.76;
     float endA = 0.18;
-    float endB = 11.82;
+    float endB = ${N} - 0.18;
     float inBand = band(t, t0, t1, aa / fw) * band(along, endA, endB, aa);
     float lum = dot(col, vec3(0.299, 0.587, 0.114)) / max(0.001, dot(uWood, vec3(0.299, 0.587, 0.114)));
     vec3 dyed = mix(col, seat * (0.42 + 0.42 * lum) * gain, 0.72 + 0.18 * clamp(gain - 1.0, 0.0, 1.0));
@@ -170,7 +176,7 @@ void main() {
   }
 
   // Outer silhouette: rounded corners, anti-aliased.
-  float sd = sdRoundBox(q - 6.0, vec2(6.0 + fw), 0.16);
+  float sd = sdRoundBox(q - ${HALF}, vec2(${HALF} + fw), 0.16);
   float alpha = 1.0 - smoothstep(-aa, aa, sd);
   finalColor = vec4(col * alpha, alpha);
 }

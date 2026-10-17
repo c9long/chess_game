@@ -79,9 +79,9 @@ export async function renderedBoard(page: Page): Promise<RenderedPiece[]> {
     }
     const names: string[] = []
     const centres: { x: number; y: number }[] = []
-    for (let r = 0; r < 12; r++) {
-      for (let f = 0; f < 12; f++) {
-        const n = `${'abcdefghijkl'[f]}${r + 1}`
+    for (let r = 0; r < 16; r++) {
+      for (let f = 0; f < 16; f++) {
+        const n = `${'abcdefghijklmnop'[f]}${r + 1}`
         names.push(n)
         centres.push(view.squareToClient(n) as { x: number; y: number })
       }
@@ -158,7 +158,7 @@ export async function engineBoard(page: Page) {
     const pieces: Record<string, string> = {}
     s.board.forEach((p, i) => {
       if (!p) return
-      pieces[`${'abcdefghijkl'[i % 12]}${Math.floor(i / 12) + 1}`] = `${p.owner} ${p.kind}`
+      pieces[`${'abcdefghijklmnop'[i % 16]}${Math.floor(i / 16) + 1}`] = `${p.owner} ${p.kind}`
     })
     return { pieces, statuses: s.statuses, seatToMove: s.seatToMove, isOver: s.isOver }
   })
@@ -308,11 +308,11 @@ const KIND_LETTER: Record<string, string> = {
  */
 export function buildPosition(mode: 'ffa' | 'teams', pieces: Record<string, string>, rest: string) {
   const ranks: string[] = []
-  for (let r = 11; r >= 0; r--) {
+  for (let r = 15; r >= 0; r--) {
     let line = ''
     let empty = 0
-    for (let f = 0; f < 12; f++) {
-      const sq = `${'abcdefghijkl'[f]}${r + 1}`
+    for (let f = 0; f < 16; f++) {
+      const sq = `${'abcdefghijklmnop'[f]}${r + 1}`
       const p = pieces[sq]
       if (!p) {
         empty++

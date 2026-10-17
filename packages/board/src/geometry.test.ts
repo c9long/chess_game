@@ -1,6 +1,8 @@
 import type { Seat } from '@game/rules'
+import { BOARD_SIZE as RULES_BOARD_SIZE, NUM_SQUARES as RULES_NUM_SQUARES } from '@game/rules'
 import { describe, expect, it } from 'vitest'
 import {
+  BOARD_SIZE,
   type BoardLayout,
   hopOffset,
   indexOf,
@@ -21,37 +23,43 @@ const SEATS: Seat[] = ['south', 'west', 'north', 'east']
 const sq = (n: string) => indexOf(n)
 
 describe('perspective transforms', () => {
+  it('match the rules package board size (16×16)', () => {
+    expect(BOARD_SIZE).toBe(16)
+    expect(BOARD_SIZE).toBe(RULES_BOARD_SIZE)
+    expect(BOARD_SIZE * BOARD_SIZE).toBe(RULES_NUM_SQUARES)
+  })
+
   it('put each seat’s king on the bottom row of its own view', () => {
-    const kings: Record<Seat, string> = { south: 'g1', west: 'a7', north: 'g12', east: 'l7' }
+    const kings: Record<Seat, string> = { south: 'i1', west: 'a9', north: 'i16', east: 'p9' }
     for (const seat of SEATS) {
-      expect(squareToView(sq(kings[seat]), seat).row).toBe(11)
+      expect(squareToView(sq(kings[seat]), seat).row).toBe(15)
     }
   })
 
   it('map corners as the viewer sees them', () => {
-    expect(squareToView(sq('a1'), 'south')).toEqual({ col: 0, row: 11 })
-    expect(squareToView(sq('l12'), 'south')).toEqual({ col: 11, row: 0 })
-    expect(squareToView(sq('l12'), 'north')).toEqual({ col: 0, row: 11 })
-    // West looks east: north (rank 12) is on their left, file l is at the top.
-    expect(squareToView(sq('a12'), 'west')).toEqual({ col: 0, row: 11 })
-    expect(squareToView(sq('l1'), 'west')).toEqual({ col: 11, row: 0 })
+    expect(squareToView(sq('a1'), 'south')).toEqual({ col: 0, row: 15 })
+    expect(squareToView(sq('p16'), 'south')).toEqual({ col: 15, row: 0 })
+    expect(squareToView(sq('p16'), 'north')).toEqual({ col: 0, row: 15 })
+    // West looks east: north (rank 16) is on their left, file p is at the top.
+    expect(squareToView(sq('a16'), 'west')).toEqual({ col: 0, row: 15 })
+    expect(squareToView(sq('p1'), 'west')).toEqual({ col: 15, row: 0 })
     // East looks west: south (rank 1) is on their left, file a is at the top.
-    expect(squareToView(sq('l1'), 'east')).toEqual({ col: 0, row: 11 })
-    expect(squareToView(sq('a12'), 'east')).toEqual({ col: 11, row: 0 })
+    expect(squareToView(sq('p1'), 'east')).toEqual({ col: 0, row: 15 })
+    expect(squareToView(sq('a16'), 'east')).toEqual({ col: 15, row: 0 })
   })
 
   it('are inverted by viewToSquare for every square and seat', () => {
     for (const seat of SEATS) {
       const seen = new Set<number>()
-      for (let i = 0; i < 144; i++) {
+      for (let i = 0; i < 256; i++) {
         const v = squareToView(i, seat)
         expect(viewToSquare(v.col, v.row, seat)).toBe(i)
-        seen.add(v.row * 12 + v.col)
+        seen.add(v.row * 16 + v.col)
       }
-      expect(seen.size).toBe(144)
+      expect(seen.size).toBe(256)
     }
     expect(viewToSquare(-1, 0, 'south')).toBe(-1)
-    expect(viewToSquare(0, 12, 'east')).toBe(-1)
+    expect(viewToSquare(0, 16, 'east')).toBe(-1)
   })
 
   it('agree with rotating the south-frame board by the perspective angle', () => {
@@ -59,12 +67,12 @@ describe('perspective transforms', () => {
     const p = { x: 0, y: 0 }
     const r = { x: 0, y: 0 }
     for (const seat of SEATS) {
-      for (let i = 0; i < 144; i++) {
+      for (let i = 0; i < 256; i++) {
         squareCenter(i, layout, p)
         rotateVector(p.x, p.y, perspectiveAngle(seat), r)
         const v = squareToView(i, seat)
-        expect(r.x).toBeCloseTo((v.col + 0.5) * 10 - 60, 6)
-        expect(r.y).toBeCloseTo((v.row + 0.5) * 10 - 60, 6)
+        expect(r.x).toBeCloseTo((v.col + 0.5) * 10 - 80, 6)
+        expect(r.y).toBeCloseTo((v.row + 0.5) * 10 - 80, 6)
       }
     }
   })
@@ -72,7 +80,13 @@ describe('perspective transforms', () => {
   it('keep a1 dark from every side', () => {
     expect(isDarkSquare(sq('a1'))).toBe(true)
     expect(isDarkSquare(sq('b1'))).toBe(false)
-    expect(isDarkSquare(sq('l12'))).toBe(true)
+    expect(isDarkSquare(sq('p16'))).toBe(true)
+    expect(isDarkSquare(sq('p1'))).toBe(false)
+    // Queens on their own colour: S h1 and W a8 light, N h16 and E p8 dark.
+    expect(isDarkSquare(sq('h1'))).toBe(false)
+    expect(isDarkSquare(sq('a8'))).toBe(false)
+    expect(isDarkSquare(sq('h16'))).toBe(true)
+    expect(isDarkSquare(sq('p8'))).toBe(true)
   })
 })
 
@@ -105,13 +119,13 @@ describe('hit testing and cursor', () => {
 
   it('maps square centres back to their squares', () => {
     const p = { x: 0, y: 0 }
-    for (let i = 0; i < 144; i++) {
+    for (let i = 0; i < 256; i++) {
       squareCenter(i, layout, p)
       expect(pointToSquare(p.x, p.y, layout)).toBe(i)
       expect(pointToSquare(p.x + 24, p.y - 24, layout)).toBe(i)
     }
-    expect(pointToSquare(-301, 0, layout)).toBe(-1)
-    expect(pointToSquare(0, 300.5, layout)).toBe(-1)
+    expect(pointToSquare(-401, 0, layout)).toBe(-1)
+    expect(pointToSquare(0, 400.5, layout)).toBe(-1)
   })
 
   it('moves the keyboard cursor in screen directions', () => {
@@ -124,10 +138,11 @@ describe('hit testing and cursor', () => {
 
   it('names squares', () => {
     expect(nameOf(0)).toBe('a1')
-    expect(nameOf(143)).toBe('l12')
-    expect(indexOf('l12')).toBe(143)
-    expect(indexOf('m1')).toBe(-1)
-    expect(indexOf('a13')).toBe(-1)
+    expect(nameOf(255)).toBe('p16')
+    expect(indexOf('p16')).toBe(255)
+    expect(indexOf('l12')).toBe(187)
+    expect(indexOf('q1')).toBe(-1)
+    expect(indexOf('a17')).toBe(-1)
   })
 })
 

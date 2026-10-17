@@ -160,8 +160,10 @@ test.describe('reduced motion', () => {
   test('capture with reduced motion: no particles', async ({ page }) => {
     await openSandbox(page)
     await sb(page, 'setOptions', { reducedMotion: true })
-    // South c2xb3 captures West's corner pawn on move 1.
-    await sb(page, 'play', 'c2b3')
+    // South's rook slides into the a1 corner; West's a5 rook takes it.
+    await sb(page, 'play', 'e1a1')
+    await settle(page)
+    await sb(page, 'play', 'a5a1')
     const particles = await page.evaluate(() => {
       type N = { children: unknown[]; label?: string; visible?: boolean }
       const root = (
@@ -266,12 +268,12 @@ test.describe('resize', () => {
     await sb(
       page,
       'loadPosition',
-      'ffa 6nK5/12/12/12/12/wK10eK/5sP6/12/12/12/12/6sK5 S AAAA - - 0 0',
+      'ffa 8nK7/16/16/16/16/16/16/wK14eK/7sP8/16/16/16/16/16/16/8sK7 S AAAA - - 0 0',
       false,
     )
     await settle(page)
-    await clickSquare(page, 'f6')
-    await clickSquare(page, 'f7')
+    await clickSquare(page, 'h8')
+    await clickSquare(page, 'h9')
     await settle(page)
     await page.setViewportSize({ width: 1100, height: 760 })
     await page.waitForTimeout(400)

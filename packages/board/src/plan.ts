@@ -1,5 +1,5 @@
 import type { GameEvent, Piece, PieceKind, Seat, SeatStatus, Snapshot } from '@game/rules'
-import { indexOf, seatOrder } from './geometry.ts'
+import { BOARD_SIZE, indexOf, NUM_SQUARES, seatOrder } from './geometry.ts'
 
 /**
  * Snapshot diff -> animation plan. Pure: the renderer turns the plan into
@@ -58,8 +58,8 @@ function samePiece(a: Piece | null | undefined, b: Piece | null | undefined): bo
 }
 
 function distance(a: number, b: number): number {
-  const dx = (a % 12) - (b % 12)
-  const dy = Math.floor(a / 12) - Math.floor(b / 12)
+  const dx = (a % BOARD_SIZE) - (b % BOARD_SIZE)
+  const dy = Math.floor(a / BOARD_SIZE) - Math.floor(b / BOARD_SIZE)
   return Math.hypot(dx, dy)
 }
 
@@ -71,7 +71,7 @@ export function planTransition(
 ): AnimationPlan {
   const vanished = new Map<number, Piece>()
   const appeared = new Map<number, Piece>()
-  for (let i = 0; i < 144; i++) {
+  for (let i = 0; i < NUM_SQUARES; i++) {
     const a = prev.board[i]
     const b = next.board[i]
     if (samePiece(a, b)) continue

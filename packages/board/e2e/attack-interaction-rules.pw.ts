@@ -20,20 +20,20 @@ test.beforeEach(async ({ page }) => {
 })
 
 const CASTLE_PIECES = {
-  g1: 'south king',
-  c1: 'south rook',
-  j1: 'south rook',
-  a7: 'west king',
-  a3: 'west rook',
-  a10: 'west rook',
-  g12: 'north king',
-  c12: 'north rook',
-  j12: 'north rook',
-  l7: 'east king',
-  l3: 'east rook',
-  l10: 'east rook',
+  i1: 'south king',
+  e1: 'south rook',
+  l1: 'south rook',
+  a9: 'west king',
+  a5: 'west rook',
+  a12: 'west rook',
+  i16: 'north king',
+  e16: 'north rook',
+  l16: 'north rook',
+  p9: 'east king',
+  p5: 'east rook',
+  p12: 'east rook',
 }
-const CASTLE_REST = 'S AAAA Sc1,Sj1,Wa3,Wa10,Nc12,Nj12,El3,El10 - 0 0'
+const CASTLE_REST = 'S AAAA Se1,Sl1,Wa5,Wa12,Ne16,Nl16,Ep5,Ep12 - 0 0'
 
 async function setTimeScale(page: Page, v: number) {
   await page.evaluate((v) => {
@@ -44,10 +44,10 @@ async function setTimeScale(page: Page, v: number) {
 }
 
 const CASTLES: [Seat, string, string, string, string][] = [
-  ['south', 'g1', 'i1', 'j1', 'h1'],
-  ['west', 'a7', 'a5', 'a3', 'a6'],
-  ['north', 'g12', 'e12', 'c12', 'f12'],
-  ['east', 'l7', 'l9', 'l10', 'l8'],
+  ['south', 'i1', 'k1', 'l1', 'j1'],
+  ['west', 'a9', 'a7', 'a5', 'a8'],
+  ['north', 'i16', 'g16', 'e16', 'h16'],
+  ['east', 'p9', 'p11', 'p12', 'p10'],
 ]
 
 test('castling (click) for every seat: final state matches engine', async ({ page }) => {
@@ -89,8 +89,8 @@ async function sampleMotion(page: Page, squares: { kFrom: string; rFrom: string;
 test('castling via API animates both king and rook', async ({ page }) => {
   await load(page, buildPosition('ffa', CASTLE_PIECES, CASTLE_REST))
   await setTimeScale(page, 0.05)
-  await sb(page, 'play', 'g1i1')
-  const samples = await sampleMotion(page, { kFrom: 'g1', rFrom: 'j1', kTo: 'i1' })
+  await sb(page, 'play', 'i1k1')
+  const samples = await sampleMotion(page, { kFrom: 'i1', rFrom: 'l1', kTo: 'k1' })
   await setTimeScale(page, 1)
   console.log('API castle samples', JSON.stringify(samples))
   expect(samples.some((s) => s.kingLayer === 'moving' && s.kingOff > 0.2)).toBe(true)
@@ -103,9 +103,9 @@ test('castling via API animates both king and rook', async ({ page }) => {
 test('castling via click-to-move animates the king (does not teleport)', async ({ page }) => {
   await load(page, buildPosition('ffa', CASTLE_PIECES, CASTLE_REST))
   await setTimeScale(page, 0.05)
-  await clickSquare(page, 'g1')
   await clickSquare(page, 'i1')
-  const samples = await sampleMotion(page, { kFrom: 'g1', rFrom: 'j1', kTo: 'i1' })
+  await clickSquare(page, 'k1')
+  const samples = await sampleMotion(page, { kFrom: 'i1', rFrom: 'l1', kTo: 'k1' })
   await setTimeScale(page, 1)
   console.log('click castle samples', JSON.stringify(samples))
   // While slowed 20x the 180 ms king slide takes 3.6 s: the king must be seen between squares.
@@ -139,14 +139,14 @@ test('en passant removes the double-stepped pawn (South pawn, West captures)', a
   const pos = buildPosition(
     'ffa',
     {
-      g1: 'south king',
+      i1: 'south king',
       e2: 'south pawn',
       f2: 'south pawn',
-      a7: 'west king',
+      a9: 'west king',
       d4: 'west pawn',
-      g12: 'north king',
-      l7: 'east king',
-      h5: 'east pawn',
+      i16: 'north king',
+      p9: 'east king',
+      l5: 'east pawn',
     },
     'S AAAA - - 0 0',
   )
@@ -162,7 +162,7 @@ test('en passant removes the double-stepped pawn (South pawn, West captures)', a
   const eng = await engineBoard(page)
   expect(eng.pieces.e4).toBeUndefined()
   expect(eng.pieces.e3).toBe('west pawn')
-  expect(eng.pieces.h5).toBe('east pawn')
+  expect(eng.pieces.l5).toBe('east pawn')
   expect(eng.pieces.f2).toBe('south pawn')
   await expectBoardMatchesEngine(page, 'after en passant')
 })
@@ -171,53 +171,53 @@ test('en passant: North double-step, East captures', async ({ page }) => {
   const pos = buildPosition(
     'ffa',
     {
-      g1: 'south king',
-      a7: 'west king',
-      g12: 'north king',
-      h11: 'north pawn',
-      l7: 'east king',
-      i9: 'east pawn',
-      e9: 'south rook',
+      i1: 'south king',
+      a9: 'west king',
+      i16: 'north king',
+      l15: 'north pawn',
+      p9: 'east king',
+      m13: 'east pawn',
+      e13: 'south rook',
     },
     'N AAAA - - 0 0',
   )
   await load(page, pos)
   await setPerspective(page, 'north')
-  await clickSquare(page, 'h11')
-  await clickSquare(page, 'h9')
+  await clickSquare(page, 'l15')
+  await clickSquare(page, 'l13')
   await settle(page)
   await setPerspective(page, 'east')
   const legal = await sb<string[]>(page, 'legal')
-  expect(legal).toContain('i9h10')
-  await clickSquare(page, 'i9')
-  await clickSquare(page, 'h10')
+  expect(legal).toContain('m13l14')
+  await clickSquare(page, 'm13')
+  await clickSquare(page, 'l14')
   await settle(page)
   const eng = await engineBoard(page)
-  expect(eng.pieces.h9).toBeUndefined()
-  expect(eng.pieces.h10).toBe('east pawn')
-  expect(eng.pieces.e9).toBe('south rook')
+  expect(eng.pieces.l13).toBeUndefined()
+  expect(eng.pieces.l14).toBe('east pawn')
+  expect(eng.pieces.e13).toBe('south rook')
   await expectBoardMatchesEngine(page, 'after N/E en passant')
 })
 
-test('en passant that also promotes (East g9xf10 e.p. onto file f)', async ({ page }) => {
+test('en passant that also promotes (East i13xh14 e.p. onto file h)', async ({ page }) => {
   const pos = buildPosition(
     'ffa',
     {
-      g1: 'south king',
-      a7: 'west king',
-      g12: 'north king',
-      f11: 'north pawn',
-      l7: 'east king',
-      g9: 'east pawn',
+      i1: 'south king',
+      a9: 'west king',
+      i16: 'north king',
+      h15: 'north pawn',
+      p9: 'east king',
+      i13: 'east pawn',
     },
     'N AAAA - - 0 0',
   )
   await load(page, pos)
-  await sb(page, 'play', 'f11f9')
+  await sb(page, 'play', 'h15h13')
   await settle(page)
   await setPerspective(page, 'east')
-  await clickSquare(page, 'g9')
-  await clickSquare(page, 'f10')
+  await clickSquare(page, 'i13')
+  await clickSquare(page, 'h14')
   await settle(page)
   const picker = await promoPicker(page)
   expect(picker?.map((t) => t.kind).sort()).toEqual(['bishop', 'knight', 'queen', 'rook'])
@@ -225,16 +225,16 @@ test('en passant that also promotes (East g9xf10 e.p. onto file f)', async ({ pa
   await page.mouse.click(r?.x ?? 0, r?.y ?? 0)
   await settle(page)
   const eng = await engineBoard(page)
-  expect(eng.pieces.f9).toBeUndefined()
-  expect(eng.pieces.f10).toBe('east rook')
+  expect(eng.pieces.h13).toBeUndefined()
+  expect(eng.pieces.h14).toBe('east rook')
   await expectBoardMatchesEngine(page, 'ep promotion')
 })
 
 const PROMOS: { seat: Seat; from: string; to: string; toMove: string }[] = [
-  { seat: 'south', from: 'f6', to: 'f7', toMove: 'S' },
-  { seat: 'west', from: 'f5', to: 'g5', toMove: 'W' },
-  { seat: 'north', from: 'h7', to: 'h6', toMove: 'N' },
-  { seat: 'east', from: 'g8', to: 'f8', toMove: 'E' },
+  { seat: 'south', from: 'h8', to: 'h9', toMove: 'S' },
+  { seat: 'west', from: 'h7', to: 'i7', toMove: 'W' },
+  { seat: 'north', from: 'j9', to: 'j8', toMove: 'N' },
+  { seat: 'east', from: 'i10', to: 'h10', toMove: 'E' },
 ]
 const CHOOSE = ['knight', 'bishop', 'rook', 'queen']
 
@@ -243,10 +243,10 @@ for (const [i, p] of PROMOS.entries()) {
     page,
   }) => {
     const pieces: Record<string, string> = {
-      g1: 'south king',
-      a7: 'west king',
-      g12: 'north king',
-      l7: 'east king',
+      i1: 'south king',
+      a9: 'west king',
+      i16: 'north king',
+      p9: 'east king',
       [p.from]: `${p.seat} pawn`,
     }
     await load(page, buildPosition('ffa', pieces, `${p.toMove} AAAA - - 0 0`))
@@ -264,7 +264,7 @@ for (const [i, p] of PROMOS.entries()) {
     expect(new Set(kinds)).toEqual(new Set(['queen', 'rook', 'bishop', 'knight']))
     expect((picker ?? []).every((t) => t.variant === p.seat)).toBe(true)
     await page.screenshot({
-      path: `/tmp/claude-1000/-home-c9long-chess-game/bb6dac1d-5690-4e27-9699-e9c91353b39a/scratchpad/m2/attack-int-promo-${p.seat}.png`,
+      path: `/tmp/claude-1000/-home-e11long-chess-game/bb6dac1d-5690-4e27-9699-g11c91353b39a/scratchpad/m2/attack-int-promo-${p.seat}.png`,
     })
     const choose = CHOOSE[i] as string
     const tile = (picker ?? []).find((t) => t.kind === choose)
@@ -283,45 +283,45 @@ test('promotion picker: Escape cancels and the pawn returns', async ({ page }) =
     page,
     buildPosition(
       'ffa',
-      { g1: 'south king', a7: 'west king', g12: 'north king', l7: 'east king', f6: 'south pawn' },
+      { i1: 'south king', a9: 'west king', i16: 'north king', p9: 'east king', h8: 'south pawn' },
       'S AAAA - - 0 0',
     ),
   )
-  await dragSquare(page, 'f6', 'f7')
+  await dragSquare(page, 'h8', 'h9')
   await settle(page)
   expect(await promoPicker(page)).not.toBeNull()
   await page.keyboard.press('Escape')
   await settle(page)
   expect(await promoPicker(page)).toBeNull()
-  expect((await engineBoard(page)).pieces.f6).toBe('south pawn')
+  expect((await engineBoard(page)).pieces.h8).toBe('south pawn')
   await expectBoardMatchesEngine(page, 'promo cancelled')
 })
 
-test('promotion by capture onto the promotion line (South f6xg7)', async ({ page }) => {
+test('promotion by capture onto the promotion line (South h8xi9)', async ({ page }) => {
   await load(
     page,
     buildPosition(
       'ffa',
       {
-        g1: 'south king',
-        a7: 'west king',
-        g12: 'north king',
-        l7: 'east king',
-        f6: 'south pawn',
-        g7: 'north knight',
+        i1: 'south king',
+        a9: 'west king',
+        i16: 'north king',
+        p9: 'east king',
+        h8: 'south pawn',
+        i9: 'north knight',
       },
       'S AAAA - - 0 0',
     ),
   )
-  await clickSquare(page, 'f6')
-  await clickSquare(page, 'g7')
+  await clickSquare(page, 'h8')
+  await clickSquare(page, 'i9')
   await settle(page)
   const picker = await promoPicker(page)
   expect(picker?.length).toBe(4)
   const q = picker?.find((t) => t.kind === 'queen')
   await page.mouse.click(q?.x ?? 0, q?.y ?? 0)
   await settle(page)
-  expect((await engineBoard(page)).pieces.g7).toBe('south queen')
+  expect((await engineBoard(page)).pieces.i9).toBe('south queen')
   await expectBoardMatchesEngine(page, 'capture-promotion')
 })
 
@@ -329,13 +329,13 @@ test('undo after castle / en passant / promotion re-renders the engine position'
   page,
 }) => {
   await load(page, buildPosition('ffa', CASTLE_PIECES, CASTLE_REST))
-  await sb(page, 'play', 'g1i1')
+  await sb(page, 'play', 'i1k1')
   await settle(page)
   await page.getByRole('button', { name: 'Undo' }).click()
   await settle(page)
   await expectBoardMatchesEngine(page, 'undo castle')
-  await sb(page, 'play', 'g1e1')
-  await sb(page, 'play', 'a7a9')
+  await sb(page, 'play', 'i1g1')
+  await sb(page, 'play', 'a9a11')
   await settle(page)
   await page.getByRole('button', { name: 'Undo' }).click()
   await page.getByRole('button', { name: 'Undo' }).click()

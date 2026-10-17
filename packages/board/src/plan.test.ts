@@ -2,7 +2,7 @@ import { Game, type GameEvent, initRules, type Snapshot } from '@game/rules'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { indexOf } from './geometry.ts'
 import { type AnimationPlan, planTransition, soundCues } from './plan.ts'
-import { CASTLE_READY, KING_HUNT, TO_EN_PASSANT, TO_PROMOTION } from './test/positions.ts'
+import { CASTLE_READY, EN_PASSANT_READY, KING_HUNT, TO_PROMOTION } from './test/positions.ts'
 
 beforeAll(async () => {
   await initRules()
@@ -53,13 +53,14 @@ describe('planTransition', () => {
 
   it('captures on the destination', () => {
     const g = Game.create({ mode: 'ffa' })
-    const { withEvents, diffOnly } = step(g, (x) => x.applyMove('c2b3'))
+    g.applyMove('e1a1') // South's rook into the corner
+    const { withEvents, diffOnly } = step(g, (x) => x.applyMove('a5a1'))
     for (const p of [withEvents, diffOnly]) {
       expect(moves(p)).toEqual([
-        { from: indexOf('c2'), to: indexOf('b3'), kind: 'pawn', promoteTo: null, rook: false },
+        { from: indexOf('a5'), to: indexOf('a1'), kind: 'rook', promoteTo: null, rook: false },
       ])
       expect(p.captures).toEqual([
-        { square: indexOf('b3'), piece: { kind: 'pawn', owner: 'west' }, onDestination: true },
+        { square: indexOf('a1'), piece: { kind: 'rook', owner: 'south' }, onDestination: true },
       ])
       expect(soundCues(p)[0]).toBe('capture')
     }
@@ -68,11 +69,11 @@ describe('planTransition', () => {
 
   it('moves both pieces of a castle, leader first', () => {
     const g = Game.fromPosition(CASTLE_READY)
-    const { withEvents, diffOnly } = step(g, (x) => x.applyMove('g1i1'))
+    const { withEvents, diffOnly } = step(g, (x) => x.applyMove('i1k1'))
     for (const p of [withEvents, diffOnly]) {
       expect(moves(p)).toEqual([
-        { from: indexOf('g1'), to: indexOf('i1'), kind: 'king', promoteTo: null, rook: false },
-        { from: indexOf('j1'), to: indexOf('h1'), kind: 'rook', promoteTo: null, rook: true },
+        { from: indexOf('i1'), to: indexOf('k1'), kind: 'king', promoteTo: null, rook: false },
+        { from: indexOf('l1'), to: indexOf('j1'), kind: 'rook', promoteTo: null, rook: true },
       ])
       expect(p.captures).toEqual([])
       expect(p.incremental).toBe(true)
@@ -82,15 +83,15 @@ describe('planTransition', () => {
   })
 
   it('removes the right pawn en passant', () => {
-    const g = Game.create({ mode: 'ffa' })
-    for (const m of TO_EN_PASSANT) g.applyMove(m)
-    const { withEvents, diffOnly } = step(g, (x) => x.applyMove('d5c6'))
+    const g = Game.fromPosition(EN_PASSANT_READY)
+    g.applyMove('e2e4')
+    const { withEvents, diffOnly } = step(g, (x) => x.applyMove('d4e3'))
     for (const p of [withEvents, diffOnly]) {
       expect(moves(p)).toEqual([
-        { from: indexOf('d5'), to: indexOf('c6'), kind: 'pawn', promoteTo: null, rook: false },
+        { from: indexOf('d4'), to: indexOf('e3'), kind: 'pawn', promoteTo: null, rook: false },
       ])
       expect(p.captures).toEqual([
-        { square: indexOf('d6'), piece: { kind: 'pawn', owner: 'west' }, onDestination: false },
+        { square: indexOf('e4'), piece: { kind: 'pawn', owner: 'south' }, onDestination: false },
       ])
     }
     g.free()
@@ -99,10 +100,10 @@ describe('planTransition', () => {
   it('promotes the moving pawn', () => {
     const g = Game.create({ mode: 'ffa' })
     for (const m of TO_PROMOTION) g.applyMove(m)
-    const { withEvents, diffOnly } = step(g, (x) => x.applyMove('e6e7q'))
+    const { withEvents, diffOnly } = step(g, (x) => x.applyMove('e8e9q'))
     for (const p of [withEvents, diffOnly]) {
       expect(moves(p)).toEqual([
-        { from: indexOf('e6'), to: indexOf('e7'), kind: 'pawn', promoteTo: 'queen', rook: false },
+        { from: indexOf('e8'), to: indexOf('e9'), kind: 'pawn', promoteTo: 'queen', rook: false },
       ])
       expect(soundCues(p)).toEqual(['move', 'promotion'])
     }
@@ -125,16 +126,16 @@ describe('planTransition', () => {
 
   it('captures a leader and dissolves the rest of that army (FFA)', () => {
     const g = Game.fromPosition(KING_HUNT)
-    const { withEvents, diffOnly } = step(g, (x) => x.applyMove('g1g12'))
+    const { withEvents, diffOnly } = step(g, (x) => x.applyMove('i1i16'))
     for (const p of [withEvents, diffOnly]) {
       expect(moves(p)).toEqual([
-        { from: indexOf('g1'), to: indexOf('g12'), kind: 'queen', promoteTo: null, rook: false },
+        { from: indexOf('i1'), to: indexOf('i16'), kind: 'queen', promoteTo: null, rook: false },
       ])
       expect(p.captures).toEqual([
-        { square: indexOf('g12'), piece: { kind: 'king', owner: 'north' }, onDestination: true },
+        { square: indexOf('i16'), piece: { kind: 'king', owner: 'north' }, onDestination: true },
       ])
       expect(p.dissolves).toEqual([
-        { square: indexOf('c11'), piece: { kind: 'pawn', owner: 'north' } },
+        { square: indexOf('e15'), piece: { kind: 'pawn', owner: 'north' } },
       ])
       expect(p.statusChanges).toEqual([{ seat: 'north', status: 'removed' }])
       expect(soundCues(p)).toEqual(['capture', 'defeat'])

@@ -116,18 +116,18 @@ test('Teams defeated seat (king captured) keeps its pieces and keeps taking turn
   const pos = buildPosition(
     'teams',
     {
-      g1: 'south king',
-      a7: 'west king',
-      a3: 'west rook',
-      b6: 'west pawn',
-      g12: 'north king',
-      l7: 'east king',
-      f7: 'south queen',
+      i1: 'south king',
+      a9: 'west king',
+      a5: 'west rook',
+      b8: 'west pawn',
+      i16: 'north king',
+      p9: 'east king',
+      h9: 'south queen',
     },
     'S AAAA - - 0 0',
   )
   await load(page, pos)
-  await sb(page, 'play', 'f7a7')
+  await sb(page, 'play', 'h9a9')
   await settle(page)
   const eng = await engineBoard(page)
   expect(eng.statuses[1]).toBe('defeated')
@@ -139,18 +139,18 @@ test('FFA king capture: army dissolves, next seat to move indicated', async ({ p
   const pos = buildPosition(
     'ffa',
     {
-      g1: 'south king',
-      a7: 'west king',
-      a3: 'west rook',
-      b6: 'west pawn',
-      g12: 'north king',
-      l7: 'east king',
-      f7: 'south queen',
+      i1: 'south king',
+      a9: 'west king',
+      a5: 'west rook',
+      b8: 'west pawn',
+      i16: 'north king',
+      p9: 'east king',
+      h9: 'south queen',
     },
     'S AAAA - - 0 0',
   )
   await load(page, pos)
-  await sb(page, 'play', 'f7a7')
+  await sb(page, 'play', 'h9a9')
   await settle(page)
   const eng = await engineBoard(page)
   expect(eng.statuses[1]).toBe('removed')

@@ -66,6 +66,6 @@ cd packages/assets
 node scripts/render-pieces.mjs /tmp/pieces.png /tmp/pieces-board.png
 ```
 
-The first sheet shows every piece tinted by string replacement and rasterised through `<img>`, the same way the game does it. It covers the four seat colours plus frozen grey, on light and dark squares, at 40, 80 and 256 px. The second sheet is the 12×12 starting position with 40 px squares, with the North and East knights mirrored.
+The first sheet shows every piece tinted by string replacement and rasterised through `<img>`, the same way the game does it. It covers the four seat colours plus frozen grey, on light and dark squares, at 40, 80 and 256 px. The second sheet is the 16×16 starting position with 40 px squares, with the North and East knights mirrored.
 
 Don't use `scripts/render-svg.mjs` to review pieces. That sheet is built for single-colour emblems: it puts the near-black outline on near-black backgrounds, so it can't show the two-tone result.

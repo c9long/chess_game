@@ -1,4 +1,5 @@
 import type { PieceKind } from '@game/rules'
+import { BOARD_SIZE } from './geometry.ts'
 import { type Easing, ease } from './tween.ts'
 
 /**
@@ -178,14 +179,16 @@ export function blendPolicy(runningRemainingMs: number, pliesBehind: number): Bl
   return { mode: 'chain', hurryMs: Math.max(0, Math.min(runningRemainingMs, HURRY_MS)) }
 }
 
-/** Chebyshev (king-step) distance between two square indices on the 12x12 grid. */
+/** Chebyshev (king-step) distance between two square indices on the board grid. */
 export function chebyshev(a: number, b: number): number {
-  return Math.max(Math.abs((a % 12) - (b % 12)), Math.abs(Math.floor(a / 12) - Math.floor(b / 12)))
+  const n = BOARD_SIZE
+  return Math.max(Math.abs((a % n) - (b % n)), Math.abs(Math.floor(a / n) - Math.floor(b / n)))
 }
 
 /** Euclidean distance in squares between two square indices. */
 export function squareDistance(a: number, b: number): number {
-  return Math.hypot((a % 12) - (b % 12), Math.floor(a / 12) - Math.floor(b / 12))
+  const n = BOARD_SIZE
+  return Math.hypot((a % n) - (b % n), Math.floor(a / n) - Math.floor(b / n))
 }
 
 /** Move hints appear in a ripple from the selected piece: 10 ms per king step. */

@@ -20,9 +20,9 @@ test('keyboard move for West (arrows are relative to the viewer) is animated', a
   await settle(page)
   await setPerspective(page, 'west')
   await page.locator('canvas').focus()
-  // First arrow shows the cursor on West's king (a7). In West's view, "up" is toward file l.
-  await page.keyboard.press('ArrowUp') // cursor appears on a7
-  // Move cursor to b7 (one step "up" for West = +1 file), select the pawn, then up twice -> d7.
+  // First arrow shows the cursor on West's king (a9). In West's view, "up" is toward file p.
+  await page.keyboard.press('ArrowUp') // cursor appears on a9
+  // Move cursor to b9 (one step "up" for West = +1 file), select the pawn, then up twice -> d9.
   await page.keyboard.press('ArrowUp')
   await page.keyboard.press('Enter')
   await page.keyboard.press('ArrowUp')
@@ -38,7 +38,7 @@ test('keyboard move for West (arrows are relative to the viewer) is animated', a
     (r) =>
       r.variant === 'west' &&
       r.kind === 'pawn' &&
-      (r.square === 'd7' || r.square === 'c7' || r.square === 'b7'),
+      (r.square === 'd9' || r.square === 'c9' || r.square === 'b9'),
   )
   console.log('west pawn right after keyboard commit (slowed 20x):', pawn)
   await page.evaluate(() => {
@@ -48,9 +48,9 @@ test('keyboard move for West (arrows are relative to the viewer) is animated', a
   })
   await settle(page)
   const eng = await engineBoard(page)
-  expect(eng.pieces.d7).toBe('west pawn')
+  expect(eng.pieces.d9).toBe('west pawn')
   await expectBoardMatchesEngine(page, 'keyboard west')
-  expect(pawn?.square === 'd7' && (pawn?.off ?? 0) < 0.02, 'keyboard move teleported').toBe(false)
+  expect(pawn?.square === 'd9' && (pawn?.off ?? 0) < 0.02, 'keyboard move teleported').toBe(false)
 })
 
 test('check indicator only for ACTIVE seats (frozen Teams king not highlighted)', async ({
@@ -59,12 +59,12 @@ test('check indicator only for ACTIVE seats (frozen Teams king not highlighted)'
   const pos = buildPosition(
     'teams',
     {
-      g1: 'south king',
-      a7: 'west king',
-      a3: 'west rook',
-      g12: 'north king',
-      l8: 'east king',
-      f7: 'south queen',
+      i1: 'south king',
+      a9: 'west king',
+      a5: 'west rook',
+      i16: 'north king',
+      p10: 'east king',
+      h9: 'south queen',
     },
     'W AAAA - - 0 0',
   )

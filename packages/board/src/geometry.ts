@@ -4,7 +4,7 @@ import type { Seat } from '@game/rules'
  * Board geometry for the renderer: pure coordinate math, no rules.
  *
  * Three frames are used:
- * - **board**: `index = rank * 12 + file` (a1 = 0), as in snapshots;
+ * - **board**: `index = rank * 16 + file` (a1 = 0), as in snapshots;
  * - **south frame**: the board as South sees it (file a on the left, rank 1 at
  *   the bottom). The renderer draws everything in this frame and rotates the
  *   whole board container to show another seat's perspective;
@@ -12,8 +12,9 @@ import type { Seat } from '@game/rules'
  *   with the perspective seat's home edge at the bottom.
  */
 
-export const BOARD_SIZE = 12
-export const NUM_SQUARES = 144
+/** Squares per side (16×16 board, rules version 2; same as `BOARD_SIZE` in @game/rules). */
+export const BOARD_SIZE = 16
+export const NUM_SQUARES = BOARD_SIZE * BOARD_SIZE
 
 const SEAT_ORDER: readonly Seat[] = ['south', 'west', 'north', 'east']
 
@@ -124,11 +125,11 @@ export function isDarkSquare(index: number): boolean {
 export interface BoardLayout {
   /** Side of one square, CSS px. */
   readonly square: number
-  /** Width of the frame around the 12x12 field, CSS px. */
+  /** Width of the frame around the field, CSS px. */
   readonly frame: number
 }
 
-/** Field size (12 squares) plus the frame on both sides. */
+/** Field size (`BOARD_SIZE` squares) plus the frame on both sides. */
 export function boardExtent(layout: BoardLayout): number {
   return layout.square * BOARD_SIZE + layout.frame * 2
 }
@@ -181,9 +182,9 @@ export function stepCursor(index: number, dx: number, dy: number, perspective: S
   return viewToSquare(col, row, perspective)
 }
 
-const FILE_LETTERS = 'abcdefghijkl'
+const FILE_LETTERS = 'abcdefghijklmnop'
 
-/** Square name ('a1'..'l12') of an index. */
+/** Square name ('a1'..'p16') of an index. */
 export function nameOf(index: number): string {
   return `${FILE_LETTERS[index % BOARD_SIZE]}${Math.floor(index / BOARD_SIZE) + 1}`
 }
@@ -196,7 +197,7 @@ export function indexOf(name: string): number {
   return rank * BOARD_SIZE + file
 }
 
-/** File letter of a file index 0..11. */
+/** File letter of a file index 0..15. */
 export function fileLetter(file: number): string {
   return FILE_LETTERS[file] ?? '?'
 }

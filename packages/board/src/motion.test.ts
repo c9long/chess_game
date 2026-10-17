@@ -168,10 +168,10 @@ describe('blendPolicy', () => {
 
 describe('grid helpers', () => {
   it('measure distances and ripple delays', () => {
-    expect(chebyshev(0, 13)).toBe(1)
-    expect(chebyshev(0, 143)).toBe(11)
+    expect(chebyshev(0, 17)).toBe(1) // a1 -> b2
+    expect(chebyshev(0, 255)).toBe(15) // a1 -> p16
     expect(squareDistance(0, 2)).toBe(2)
-    expect(hintDelay(0, 26)).toBe(20)
+    expect(hintDelay(0, 34)).toBe(20) // a1 -> c3
   })
 })
 

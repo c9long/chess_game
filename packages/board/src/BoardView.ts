@@ -26,6 +26,7 @@ import {
   fileLetter,
   hopOffset,
   indexOf,
+  NUM_SQUARES,
   nameOf,
   nearestAngle,
   perspectiveAngle,
@@ -107,10 +108,14 @@ export interface BoardViewInit extends Partial<BoardOptions> {
 
 const SEATS: readonly Seat[] = ['south', 'west', 'north', 'east']
 
-/** Frame width, medallion size and outer margin, in squares. */
+/**
+ * Frame width, medallion size and outer margin, in squares. The margin only has to clear the
+ * medallions, which overhang the frame by about 0.42 squares (kept tight: on the 16×16 board
+ * every pixel of a phone's width goes to the squares).
+ */
 const FRAME = 0.8
 const MEDALLION = 1.08
-const MARGIN = 0.72
+const MARGIN = 0.5
 /** Medallion centre, as a fraction of the frame width out from the field edge. */
 const MEDALLION_AT = 0.85
 /** Scale of the medallion of the seat to move. */
@@ -241,7 +246,7 @@ function defaultReducedMotion(): boolean {
  * `setSnapshot` again with the current snapshot and the piece slides back.
  */
 export class BoardView {
-  /** A legal move chosen by the user (engine notation, e.g. 'c2c4', 'e6e7q'). */
+  /** A legal move chosen by the user (engine notation, e.g. 'e2e4', 'e8e9q'). */
   onMoveIntent: ((move: string) => void) | null
   /** The square under the pointer changed (`null` when off the field). */
   onSquareHover: ((square: Square | null) => void) | null
@@ -361,7 +366,7 @@ export class BoardView {
   /** Animation clock when the last snapshot was applied (to time the check after its move). */
   #snapshotClock = 0
 
-  readonly #pieces: (PieceNode | null)[] = new Array(144).fill(null)
+  readonly #pieces: (PieceNode | null)[] = new Array(NUM_SQUARES).fill(null)
   readonly #anim = new Animator()
   readonly #sound = new SoundEngine()
 
@@ -1226,7 +1231,7 @@ export class BoardView {
     const d = half + frame * 0.63
     const color = bandColor(SEATS[i] as Seat)
     g.tint = hexToNumber(mixHex(color, '#ffffff', 0.08))
-    g.width = sq * 12.2
+    g.width = sq * (BOARD_SIZE + 0.2)
     g.height = frame * 0.62
     g.rotation = i === 1 || i === 3 ? Math.PI / 2 : 0
     if (i === 0) g.position.set(0, d)
@@ -1428,7 +1433,7 @@ export class BoardView {
       -this.#angle,
       this.#shadowLocal,
     )
-    for (let i = 0; i < 144; i++) {
+    for (let i = 0; i < NUM_SQUARES; i++) {
       const n = this.#pieces[i]
       if (!n) continue
       squareCenter(i, this.#layout, this.#tmpVec)
@@ -1448,7 +1453,7 @@ export class BoardView {
     this.#dissolveLayer.removeChildren().forEach((c) => {
       c.destroy({ children: true })
     })
-    for (let i = 0; i < 144; i++) {
+    for (let i = 0; i < NUM_SQUARES; i++) {
       const want = snap.board[i] ?? null
       const have = this.#pieces[i] ?? null
       if (have && want && have.kind === want.kind && have.owner === want.owner) {
@@ -1505,7 +1510,7 @@ export class BoardView {
   /** Brings every displaced piece back to its square (rejected intent / resync). */
   #settleAll(): void {
     const reduced = this.#options.reducedMotion
-    for (let i = 0; i < 144; i++) {
+    for (let i = 0; i < NUM_SQUARES; i++) {
       const n = this.#pieces[i]
       if (!n) continue
       squareCenter(i, this.#layout, this.#tmpVec)
@@ -1857,8 +1862,8 @@ export class BoardView {
       const at = c.onDest && attacker ? attacker.contact : main ? main.land : start
       let dir: { x: number; y: number } | null = null
       if (attacker) {
-        const ax = (attacker.to % 12) - (attacker.from % 12)
-        const ay = Math.floor(attacker.from / 12) - Math.floor(attacker.to / 12)
+        const ax = (attacker.to % BOARD_SIZE) - (attacker.from % BOARD_SIZE)
+        const ay = Math.floor(attacker.from / BOARD_SIZE) - Math.floor(attacker.to / BOARD_SIZE)
         const len = Math.hypot(ax, ay)
         if (len > 0) dir = { x: ax / len, y: ay / len }
       }
@@ -1898,7 +1903,7 @@ export class BoardView {
     for (const ch of plan.statusChanges) {
       if (ch.status !== 'frozen') continue
       let lead = -1
-      for (let i = 0; i < 144; i++) {
+      for (let i = 0; i < NUM_SQUARES; i++) {
         const p = next.board[i]
         if (p && p.owner === ch.seat && p.kind === 'king') lead = i
       }
@@ -1926,7 +1931,7 @@ export class BoardView {
     }
 
     // Safety net: anything still out of sync with the snapshot is fixed instantly.
-    for (let i = 0; i < 144; i++) {
+    for (let i = 0; i < NUM_SQUARES; i++) {
       const want = next.board[i] ?? null
       const have = this.#pieces[i] ?? null
       if (have && want && have.owner === want.owner && have.kind === want.kind) continue
@@ -2254,7 +2259,7 @@ export class BoardView {
 
   #freezeSeat(seat: Seat, delay: number, leader: number): void {
     const reduced = this.#options.reducedMotion
-    for (let i = 0; i < 144; i++) {
+    for (let i = 0; i < NUM_SQUARES; i++) {
       const n = this.#pieces[i]
       if (!n || n.owner !== seat || n.variant === 'frozen') continue
       const atlas = this.#atlas
@@ -2780,7 +2785,7 @@ export class BoardView {
     this.#squareOrigin(i, this.#tmpVec)
     const x = this.#tmpVec.x
     const y = this.#tmpVec.y
-    const dark = ((i % 12) + Math.floor(i / 12)) % 2 === 0
+    const dark = ((i % BOARD_SIZE) + Math.floor(i / BOARD_SIZE)) % 2 === 0
     const fill = dest ? (dark ? 0.46 : 0.3) : dark ? 0.27 : 0.17
     const w = Math.max(1.5, sq * 0.05)
     const inset = w / 2 + sq * 0.035
@@ -3670,11 +3675,11 @@ export class BoardView {
     const s = this.#snapshot
     const seat = this.#interactive ?? this.#perspective
     if (s) {
-      for (let i = 0; i < 144; i++) {
+      for (let i = 0; i < NUM_SQUARES; i++) {
         const p = s.board[i]
         if (p && p.owner === seat && p.kind === 'king') return i
       }
     }
-    return 6 * BOARD_SIZE + 6
+    return (BOARD_SIZE / 2) * BOARD_SIZE + BOARD_SIZE / 2
   }
 }

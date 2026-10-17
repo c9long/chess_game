@@ -1,5 +1,5 @@
 /**
- * @game/board: the PixiJS board renderer for the 4-player 12x12 game.
+ * @game/board: the PixiJS board renderer for the 4-player 16x16 game.
  *
  * ```ts
  * import { BoardView } from '@game/board'

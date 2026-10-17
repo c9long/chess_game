@@ -28,14 +28,14 @@ test('initial render equals engine snapshot', async ({ page }) => {
 const CLICK_ROUND: [Seat, string, string][] = [
   ['south', 'e2', 'e4'],
   ['west', 'b5', 'd5'],
-  ['north', 'e11', 'e9'],
-  ['east', 'k6', 'i6'],
+  ['north', 'e15', 'e13'],
+  ['east', 'o6', 'm6'],
 ]
 const DRAG_ROUND: [Seat, string, string][] = [
   ['south', 'h2', 'h4'],
   ['west', 'b8', 'd8'],
-  ['north', 'h11', 'h9'],
-  ['east', 'k9', 'i9'],
+  ['north', 'h15', 'h13'],
+  ['east', 'o9', 'm9'],
 ]
 
 test('click-to-move for each seat with that seat at the bottom', async ({ page }) => {
@@ -68,8 +68,8 @@ test('illegal drops snap back for each seat and change nothing', async ({ page }
   for (const [seat, from] of CLICK_ROUND) {
     await setPerspective(page, seat)
     const before = await position(page)
-    // A pawn three squares forward is never legal; also try dropping off-board.
-    const illegal: Record<Seat, string> = { south: 'e6', west: 'f5', north: 'e7', east: 'g6' }
+    // A pawn four squares forward is never legal; also try dropping off-board.
+    const illegal: Record<Seat, string> = { south: 'e6', west: 'f5', north: 'e11', east: 'k6' }
     await dragSquare(page, from, illegal[seat])
     await settle(page)
     expect(await position(page)).toBe(before)
@@ -93,12 +93,12 @@ test('illegal drops snap back for each seat and change nothing', async ({ page }
 })
 
 test('drop on an opponent piece that is not a legal target snaps back', async ({ page }) => {
-  // South rook c1 onto West pawn b3 (blocked / not a rook move).
+  // South rook e1 onto West pawn b5 (not a rook move).
   const before = await position(page)
-  await dragSquare(page, 'c1', 'b3')
+  await dragSquare(page, 'e1', 'b5')
   await settle(page)
   expect(await position(page)).toBe(before)
-  await expectBoardMatchesEngine(page, 'rook drop on b3')
+  await expectBoardMatchesEngine(page, 'rook drop on b5')
 })
 
 test('clicking a piece of a seat that is not to move does nothing', async ({ page }) => {
@@ -107,7 +107,7 @@ test('clicking a piece of a seat that is not to move does nothing', async ({ pag
   await clickSquare(page, 'd5')
   await settle(page)
   expect(await position(page)).toBe(before)
-  await dragSquare(page, 'e11', 'e9')
+  await dragSquare(page, 'e15', 'e13')
   await settle(page)
   expect(await position(page)).toBe(before)
   await expectBoardMatchesEngine(page, 'off-turn input')
@@ -121,7 +121,7 @@ test('click-to-move works after window resize (hit area grows with the canvas)',
   await page.setViewportSize({ width: 1900, height: 1100 })
   await page.waitForTimeout(300)
   await settle(page)
-  // South h2h4: h2 is right of centre; at the larger size it lies outside the original canvas box.
+  // South j2j4: j2 is right of centre; at the larger size it lies outside the original canvas box.
   const p = await squarePoint(page, 'j2')
   expect(p.x).toBeGreaterThan(900 - 320)
   await clickSquare(page, 'j2')

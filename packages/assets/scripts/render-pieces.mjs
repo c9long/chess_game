@@ -1,7 +1,7 @@
 // Renders the piece set into PNG review sheets. Each piece is tinted by string
 // replacement (the same way the game recolours it) and rasterised through an
 // <img>, in the four seat colours plus frozen grey, on light and dark squares,
-// at 40, 80 and 256 px. The optional second sheet is a 12x12 starting position
+// at 40, 80 and 256 px. The optional second sheet is a 16x16 starting position
 // with 40 px squares.
 // Usage: node scripts/render-pieces.mjs out.png [board.png] [piecesDir]
 import { readFileSync } from 'node:fs'
@@ -58,28 +58,30 @@ await page.screenshot({ path: out, fullPage: true })
 console.log('wrote', out)
 
 if (boardOut) {
-  // 12x12 board at 40px with the starting position (South red, West blue, North gold, East green)
+  // 16x16 board at 40px with the starting position (South red, West blue, North gold, East green)
   const S = 40
+  const N = 16 // board size (rules version 2)
+  const M = 4 // empty squares either side of each army
   const back = ['rook', 'knight', 'bishop', 'queen', 'king', 'bishop', 'knight', 'rook']
   const at = {}
   back.forEach((p, i) => {
-    at[`${2 + i},0`] = [p, COLORS[0]]
-    at[`${2 + i},1`] = ['pawn', COLORS[0]]
-    at[`${2 + i},11`] = [p, COLORS[2]]
-    at[`${2 + i},10`] = ['pawn', COLORS[2]]
-    at[`0,${2 + i}`] = [p, COLORS[1]]
-    at[`1,${2 + i}`] = ['pawn', COLORS[1]]
-    at[`11,${2 + i}`] = [p, COLORS[3]]
-    at[`10,${2 + i}`] = ['pawn', COLORS[3]]
+    at[`${M + i},0`] = [p, COLORS[0]]
+    at[`${M + i},1`] = ['pawn', COLORS[0]]
+    at[`${M + i},${N - 1}`] = [p, COLORS[2]]
+    at[`${M + i},${N - 2}`] = ['pawn', COLORS[2]]
+    at[`0,${M + i}`] = [p, COLORS[1]]
+    at[`1,${M + i}`] = ['pawn', COLORS[1]]
+    at[`${N - 1},${M + i}`] = [p, COLORS[3]]
+    at[`${N - 2},${M + i}`] = ['pawn', COLORS[3]]
   })
   // a couple of frozen pieces in the middle
-  at['5,5'] = ['queen', COLORS[4]]
-  at['6,6'] = ['knight', COLORS[4]]
-  at['6,5'] = ['knight', COLORS[0]]
-  at['5,6'] = ['bishop', COLORS[3]]
-  let b = `<div style="display:grid;grid-template-columns:repeat(12,${S}px)">`
-  for (let r = 11; r >= 0; r--)
-    for (let f = 0; f < 12; f++) {
+  at['7,7'] = ['queen', COLORS[4]]
+  at['8,8'] = ['knight', COLORS[4]]
+  at['8,7'] = ['knight', COLORS[0]]
+  at['7,8'] = ['bishop', COLORS[3]]
+  let b = `<div style="display:grid;grid-template-columns:repeat(${N},${S}px)">`
+  for (let r = N - 1; r >= 0; r--)
+    for (let f = 0; f < N; f++) {
       const bg = (f + r) % 2 === 0 ? DARK : LIGHT
       const p = at[`${f},${r}`]
       b += p
@@ -87,7 +89,7 @@ if (boardOut) {
         : `<div style="background:${bg};width:${S}px;height:${S}px"></div>`
     }
   b += '</div>'
-  await page.setViewportSize({ width: 12 * S + 24, height: 12 * S + 24 })
+  await page.setViewportSize({ width: N * S + 24, height: N * S + 24 })
   await page.setContent(`<body style="margin:12px;background:#2b2724">${b}</body>`)
   await page.waitForTimeout(300)
   await page.screenshot({ path: boardOut })

@@ -1,6 +1,6 @@
 # @game/board
 
-The PixiJS 8 board renderer for the 4-player 12×12 game (M2), plus a dev-only hot-seat sandbox.
+The PixiJS 8 board renderer for the 4-player 16×16 game (M2), plus a dev-only hot-seat sandbox.
 
 The renderer is framework-agnostic and never decides legality. It shows engine snapshots and legal moves from `@game/rules`, and reports the move the user picked. The host (the sandbox, the web app, or the server through the web app) applies that move and sends the resulting snapshot back.
 
@@ -10,7 +10,7 @@ The renderer is framework-agnostic and never decides legality. It shows engine s
 import { BoardView } from '@game/board'
 
 const view = new BoardView({
-  onMoveIntent: (move) => send(move), // engine notation: 'c2c4', 'e6e7q', 'g1i1'
+  onMoveIntent: (move) => send(move), // engine notation: 'e2e4', 'e8e9q', 'i1k1'
   onSquareHover: (square) => {},      // 'e4' | null
   reducedMotion: false,               // these three can also be changed later with setOptions();
                                       // defaults to prefers-reduced-motion
