@@ -9,6 +9,8 @@
 #   app/              the game server with its production node_modules and the rules engine
 #                     (WebAssembly), exactly as in the server Docker image
 #   bin/bot-service   the bot engine (a Linux x86_64 program)
+#   web/              the built web app (apps/web/dist), served by the game server itself
+#                     when game.env has SERVE_WEB_APP=true (otherwise Cloudflare Pages does)
 #   scripts/          setup.sh, install.sh, ... (this folder)
 #   VERSION, NODE_VERSION
 #
@@ -53,6 +55,7 @@ find "$work/src/crates" -type f -exec touch {} +
 
 server_img="game-release-server:$sha"
 bot_img="game-release-bot-service:$sha"
+web_img="game-release-web:$sha"
 echo "› building the bot-service image (first time: ~5 min)"
 # --no-cache-filter: the Rust stages always run (the cargo cache keeps that incremental).
 # Docker's layer cache alone has handed out stale engines: it can reuse a Rust build made
@@ -62,6 +65,13 @@ docker build -q --no-cache-filter build -f "$work/src/crates/bot-service/Dockerf
 echo "› building the server image (first time: ~10 min)"
 docker build -q --no-cache-filter wasm -f "$work/src/apps/server/Dockerfile" \
   -t "$server_img" "$work/src" >/dev/null
+# The web app's Dockerfile lives in this folder; commits that predate it use today's copy.
+web_dockerfile="$work/src/infra/csclub/web.Dockerfile"
+[ -f "$web_dockerfile" ] || web_dockerfile="$repo/infra/csclub/web.Dockerfile"
+echo "› building the web app (first time: ~5 min)"
+# No VITE_API_URL: the app calls the origin it is loaded from (the single-origin option).
+docker build -q --no-cache-filter wasm -f "$web_dockerfile" \
+  -t "$web_img" "$work/src" >/dev/null
 
 name="game-release-$sha"
 out="$work/out/$name"
@@ -75,6 +85,9 @@ docker run --rm --entrypoint node "$server_img" -p 'process.versions.node' >"$ou
 cid="$(docker create "$bot_img")"
 cids+=("$cid")
 docker cp "$cid:/usr/local/bin/bot-service" "$out/bin/bot-service"
+cid="$(docker create "$web_img")"
+cids+=("$cid")
+docker cp "$cid:/web" "$out/web"
 echo "$sha" >"$out/VERSION"
 
 # The deploy scripts of that commit; older commits that predate them get today's copy.
@@ -87,8 +100,9 @@ fi
 cp "$scripts"/*.sh "$scripts"/*.example "$out/scripts/"
 chmod 755 "$out"/scripts/*.sh "$out/bin/bot-service"
 chmod 644 "$out/scripts/lib.sh"
+chmod -R u=rwX,go=rX "$out/web"
 
-for f in app/apps/server/src/main.ts app/packages/rules/wasm app/node_modules bin/bot-service; do
+for f in app/apps/server/src/main.ts app/packages/rules/wasm app/node_modules bin/bot-service web/index.html; do
   [ -e "$out/$f" ] || die "the build is missing $f"
 done
 
@@ -100,7 +114,7 @@ mv "$tarball.partial" "$tarball"
 # The images were only a means to an end; the build cache keeps the next build fast.
 for c in "${cids[@]}"; do docker rm -f "$c" >/dev/null 2>&1 || true; done
 cids=()
-docker rmi "$server_img" "$bot_img" >/dev/null 2>&1 || true
+docker rmi "$server_img" "$bot_img" "$web_img" >/dev/null 2>&1 || true
 
 echo
 echo "Release ready: $tarball ($(du -h "$tarball" | cut -f1); Node.js $(cat "$out/NODE_VERSION"))"

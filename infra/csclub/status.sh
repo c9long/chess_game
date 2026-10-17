@@ -28,6 +28,11 @@ for p in bot-service server cloudflared; do
   elif [ "$p" = cloudflared ] && [ -z "${CLOUDFLARE_TUNNEL_TOKEN:-}" ]; then row "$p" "off (no CLOUDFLARE_TUNNEL_TOKEN)"
   else row "$p" "NOT running"; fi
 done
+if serve_web_app; then
+  echo "web app:   served by this server (SERVE_WEB_APP=true; ${WEB_ORIGIN:-WEB_ORIGIN not set})"
+else
+  echo "web app:   elsewhere, e.g. Cloudflare Pages (SERVE_WEB_APP=false; ${WEB_ORIGIN:-WEB_ORIGIN not set})"
+fi
 if [ -L "$CURRENT" ] && server_healthy; then echo "health:    ok"; else echo "health:    FAILING (see $LOGS/server.log)"; fi
 echo "disk:      $(df -h "$GAME_HOME" | awk 'NR==2 { print $4 " free" }'); game uses $(du -sh "$GAME_HOME" 2>/dev/null | cut -f1)"
 latest="$(find "$BACKUPS" -maxdepth 1 -name 'game-*.sql.gz.age' -printf '%f\n' 2>/dev/null | sort | tail -n 1)"

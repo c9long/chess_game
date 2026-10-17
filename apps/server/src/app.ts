@@ -23,6 +23,7 @@ import { devMailRouter } from './http/dev-routes.ts'
 
 import { requestLogger } from './http/request-log.ts'
 import { requireTrustedOrigin, securityHeaders } from './http/security.ts'
+import { webAppHandler } from './http/static-web.ts'
 import { legalRouter } from './legal/routes.ts'
 import { createLogger, type Logger } from './logger.ts'
 import { moderationRouter } from './moderation/routes.ts'
@@ -159,6 +160,10 @@ export function createApp(config: AppConfig, overrides: AppOverrides = {}) {
   app.use('/api', (_req, res) => {
     res.status(404).json({ error: 'NOT_FOUND' })
   })
+  // Optional single-origin deploy (WEB_DIST_DIR): the web app, after every API route.
+  if (config.webDistDir) {
+    app.use(webAppHandler(config.webDistDir, { apiPublicUrl: config.apiPublicUrl }))
+  }
   app.use(
     (
       err: Error & { status?: number; type?: string },

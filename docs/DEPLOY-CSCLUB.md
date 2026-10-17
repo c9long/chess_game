@@ -86,6 +86,14 @@ keeps the database next to the server, makes the nightly backup yours, and lets
                                        cron: @reboot start.sh · every minute watchdog.sh · 03:15 backup.sh
 ```
 
+Or, with one hostname and no Pages (`SERVE_WEB_APP=true`, see [step 7](#step-7-the-web-app)),
+the server also hands out the web app:
+
+```
+ Player's browser ── https://play.yourdomain.com ──► Cloudflare ◄──tunnel── your CSC VM
+                       (web app + /api on one address)                     └── server 127.0.0.1:39300 (also serves the web app)
+```
+
 - **Nothing listens on the internet.** All three programs listen on `127.0.0.1` only.
   `cloudflared` connects out to Cloudflare, and Cloudflare forwards `api.yourdomain.com` back
   through that connection, WebSockets included. This also gets past the VM's NAT.
@@ -111,7 +119,7 @@ uses one CPU core while it thinks, at lower priority (`nice`), so it never slows
 | ---------------------------------------------------------------------- | ------------------------------------------ |
 | Domain name (e.g. Cloudflare Registrar, which sells at cost)           | ≈ $10–15 per year                          |
 | CSC membership                                                         | $2 per term                                |
-| Cloudflare: DNS, Tunnel, Pages, Turnstile                              | Free                                       |
+| Cloudflare: DNS, Tunnel, Pages (optional), Turnstile                   | Free                                       |
 | Resend (verification and password-reset emails)                       | Free: 100 emails/day, 3,000/month          |
 | Off-site backups (pick one, see step 8)                                | Free (within each provider's free storage) |
 | CSC VM, Node.js, PostgreSQL, cloudflared, age, rclone                  | Free                                       |
@@ -145,7 +153,9 @@ Do steps 1 and 2 of [DEPLOY.md](DEPLOY.md), with these differences:
 - **Skip OVHcloud.** The CSC VM replaces it.
 - **Tunnel public hostname:** when you add `api.yourdomain.com` to the tunnel, set the
   service to **`HTTP`** and **`127.0.0.1:39300`** (not `server:3000`, which is the Docker
-  name). If you change `SERVER_PORT` later, change it here too.
+  name). If you change `SERVER_PORT` later, change it here too. (With the one-hostname
+  option of [step 7](#step-7-the-web-app), add `play.yourdomain.com` instead, with the same
+  service, and skip Cloudflare Pages.)
 - **Skip the random secrets.** `setup.sh` creates them for you.
 
 ## Step 2: Build a release on your computer (about 15 minutes the first time)
@@ -158,7 +168,9 @@ infra/csclub/package.sh
 ```
 
 It prints the path of the release file, e.g.
-`dist/csclub/game-release-1a2b3c4d5e6f.tar.gz` (about 20 MB). Later builds take 2–3 minutes.
+`dist/csclub/game-release-1a2b3c4d5e6f.tar.gz` (about 20 MB). It holds the server, the bot
+engine and the built web app (used only with the one-hostname option of step 7). Later builds
+take 2–3 minutes.
 Only committed code goes into a release, so local edits you haven't committed can't
 reach players.
 
@@ -200,9 +212,10 @@ nano ~/game/game.env          # Ctrl-O to save, Ctrl-X to exit
 ```
 
 Set `API_PUBLIC_URL`, `WEB_ORIGIN`, `PASSKEY_RP_ID`, `CLOUDFLARE_TUNNEL_TOKEN`, the two
-Turnstile keys, `RESEND_API_KEY` and `EMAIL_FROM`. Leave the three generated secrets as they
-are. Then **copy the whole file into your password manager**: it's the only copy of the
-secrets.
+Turnstile keys, `RESEND_API_KEY` and `EMAIL_FROM`. If you want one hostname without Cloudflare
+Pages, also read [step 7](#step-7-the-web-app) now: it changes the first two settings. Leave
+the three generated secrets as they are. Then **copy the whole file into your password
+manager**: it's the only copy of the secrets.
 
 ## Step 5: Install and start (about 2 minutes)
 
@@ -213,7 +226,8 @@ game-release-*/scripts/install.sh
 
 `install.sh` applies the database migrations, starts everything and waits for the server's
 health check. `status.sh` should show every process as running and `health: ok`. Within a
-minute, `https://api.yourdomain.com/api/health` should answer `{"status":"ok","db":"ok"}`.
+minute, `https://api.yourdomain.com/api/health` (or `https://play.yourdomain.com/api/health`
+with one hostname) should answer `{"status":"ok","db":"ok"}`.
 
 If the server refuses to start, `install.sh` prints the last lines of its log. The first
 error line names the missing or unsafe setting. Fix it in `game.env` and run
@@ -253,11 +267,52 @@ upload) for 2 days. Alerts always go to `~/game/logs/watchdog.log`. To have them
   outside check: an uptime monitor such as UptimeRobot (free plan, checks every 5 minutes and
   emails you) pointed at `https://api.yourdomain.com/api/health`.
 
-## Step 7: The web app on Cloudflare Pages
+## Step 7: The web app
 
-This is exactly step 5 of [DEPLOY.md](DEPLOY.md), and it stays free: GitHub builds the web app
-and uploads it to Cloudflare Pages on every push to `main`. Then open
+Pick one. Both are free; you can switch later by changing `game.env` and the tunnel.
+
+**Option A: Cloudflare Pages (the default).** This is exactly step 5 of [DEPLOY.md](DEPLOY.md):
+GitHub builds the web app and uploads it to Cloudflare Pages on every push to `main`. Pages
+serves it from data centres worldwide, and it still loads while your VM is down. Then open
 `https://play.yourdomain.com`.
+
+**Option B: one hostname, served by your VM (no Pages, no GitHub settings).** The game server
+also serves the web app that every release already contains, so `play.yourdomain.com` carries
+both the pages and the API. Web app updates then arrive with each `install.sh`, together with
+the server, so the two always match.
+
+1. In the tunnel (Zero Trust → Networks → Tunnels → your tunnel → Public hostnames), add
+   `play.yourdomain.com` → **`HTTP`** → **`127.0.0.1:39300`** (your `SERVER_PORT`). If
+   `play.yourdomain.com` is already a custom domain of a Pages project, remove it there first
+   (Workers & Pages → the project → Custom domains), or the DNS record conflicts. You can
+   delete the `api.yourdomain.com` route, or keep it during the switch.
+2. In `~/game/game.env`, use the same address for both settings and turn the option on:
+
+   ```sh
+   API_PUBLIC_URL=https://play.yourdomain.com
+   WEB_ORIGIN=https://play.yourdomain.com
+   PASSKEY_RP_ID=yourdomain.com      # or play.yourdomain.com; must be that host or a parent
+   SERVE_WEB_APP=true
+   ```
+
+3. Apply it: `~/game/current/scripts/stop.sh --now && ~/game/current/scripts/start.sh`
+   (or let your next `install.sh` pick it up). `status.sh` then says
+   `web app: served by this server`.
+4. If you use sign-in providers (Google, Discord, ...), their redirect address becomes
+   `https://play.yourdomain.com/api/auth/callback/<provider>`; add it in each provider's
+   console. A mobile app build would use `VITE_API_URL=https://play.yourdomain.com`. If you
+   set up an uptime monitor (step 6), point it at `https://play.yourdomain.com/api/health`.
+
+Open `https://play.yourdomain.com`. You should see the date-of-birth screen. Sign-in cookies,
+the cross-site request check and the game's WebSocket all work unchanged on one origin. What
+the server does (`WEB_DIST_DIR`, set by the scripts to the release's `web/` folder): file
+names with a content hash under `/assets/` are cached for a year, everything else is checked
+for changes on each load, any other page address gets `index.html` (so links such as
+`/match/<id>` work), and nothing under `/api/` is ever answered by the web app. The pages
+carry a Content-Security-Policy that allows only the game's own scripts (including the code
+the board renderer generates), the rules engine (WebAssembly) and Cloudflare Turnstile.
+Releases made before this option existed have no web app, and the scripts refuse
+`SERVE_WEB_APP=true` with them.
 
 ## Step 8: Backups (about 20 minutes)
 
@@ -348,9 +403,9 @@ are rotated automatically, and the last three are kept.
 - **Something keeps crashing:** after 5 starts in 15 minutes, the watchdog retries only every
   10 minutes and sends one alert. Read `~/game/logs/<name>.log`, fix it, then run `start.sh`,
   which also resets the back-off.
-- **While the VM is down:** the web app still loads (it's on Cloudflare Pages), but it can't
-  connect, and the API shows Cloudflare error 1033 (tunnel offline). Nothing to do but wait,
-  or move.
+- **While the VM is down:** with Cloudflare Pages the web app still loads, but it can't
+  connect, and the API shows Cloudflare error 1033 (tunnel offline). With one hostname
+  (`SERVE_WEB_APP=true`) the whole site shows error 1033. Nothing to do but wait, or move.
 - **The VM is gone for good** (deleted, the migration went wrong, membership lapsed): set up
   any Linux machine, CSC or not, with steps 3–6, then restore the newest off-site backup
   (below). Expect about 30–60 minutes. **Before step 4, put your saved `game.env` back**
@@ -423,6 +478,9 @@ these first and raise them in your email:
 | Bots play weak, random-looking moves           | `tail ~/game/logs/bot-service.log`. If bot-service is down, the server falls back to simple moves.                                                                                                                                                 |
 | `status.sh` says STOPPED                       | Someone ran `stop.sh`. Run `start.sh`.                                                                                                                                                                                                         |
 | Disk nearly full                               | `du -sh ~/game/*`. Old releases are pruned automatically; old backups after 7 days. The watchdog warns once a day below 1 GB free.                                                                                                              |
+| One hostname: the page loads but signing in fails (403 or "origin not allowed") | `API_PUBLIC_URL` and `WEB_ORIGIN` must both be exactly `https://play.yourdomain.com` (no trailing path), and `PASSKEY_RP_ID` that host or its parent domain. Restart with `stop.sh --now && start.sh`. |
+| "SERVE_WEB_APP=true, but release ... has no web app" | That release was packaged before the option existed. Build a new one with `package.sh`, or set `SERVE_WEB_APP=false`. |
+| One hostname: the tunnel won't take `play.yourdomain.com` ("record already exists") | It is still a Pages custom domain. Remove it there (Workers & Pages → the project → Custom domains), then add the tunnel route again. |
 
 ## CSC VM vs the OVH VPS plan
 
@@ -450,11 +508,6 @@ These are follow-ups, not done yet:
 - **Privacy policy:** [privacy-policy.md](legal/privacy-policy.md) names OVHcloud as the server
   host. It must name the actual host (the University of Waterloo Computer Science Club) before
   real players' data goes there. The incident-response contacts need the same change.
-- **Optional, a single-origin deploy:** today the web app lives on Cloudflare Pages and the
-  API on `api.<domain>`. A small server change could serve the built web app from the same
-  origin: static files plus a fallback to `index.html`, behind a setting such as
-  `WEB_DIST_DIR`. Then one hostname and one tunnel route would serve both, and Pages would
-  be optional. It isn't needed, since Pages is free.
 - **Optional, release builds on GitHub Actions:** a workflow could run `package.sh` and attach
   the release file to each commit, so you wouldn't need Docker at home.
 - **Optional, running behind CSC's own reverse proxy** (a `*.csclub.cloud` vhost) instead of
@@ -465,12 +518,13 @@ These are follow-ups, not done yet:
 
 | File               | Runs on   | Does                                                                                                                              |
 | ------------------ | --------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `package.sh`       | your PC   | Builds `dist/csclub/game-release-<commit>.tar.gz` from a commit, with the same Dockerfiles as the Docker deploy                    |
+| `package.sh`       | your PC   | Builds `dist/csclub/game-release-<commit>.tar.gz` from a commit, with the same Dockerfiles as the Docker deploy, plus the web app  |
+| `web.Dockerfile`   | your PC   | How `package.sh` builds the web app (`web/` in the release, served when `SERVE_WEB_APP=true`)                                     |
 | `setup.sh`         | VM, once  | Creates `~/game`, the settings file with secrets, downloads the tools, creates the database                                       |
 | `install.sh`       | VM        | Installs a release: migrations, draining restart, health check; `--rollback`; `--now`                                             |
 | `start.sh`         | VM        | Starts whatever isn't running (also used by `@reboot`)                                                                            |
 | `stop.sh`          | VM        | Stops the game (`--now`, `--all`) and pauses the watchdog                                                                         |
-| `status.sh`        | VM        | Shows what runs, health, disk and the latest backup                                                                               |
+| `status.sh`        | VM        | Shows what runs, where the web app comes from, health, disk and the latest backup                                                 |
 | `watchdog.sh`      | VM, cron  | Restarts dead or unhealthy processes, backs off on crash loops, rotates logs, warns on low disk and missing backups (optional push alerts) |
 | `backup.sh`        | VM, cron  | Encrypted dump; keeps 7 days locally; optional off-site upload with 30-day retention                                              |
 | `restore.sh`       | VM        | Restores a backup and re-applies account deletions                                                                                |

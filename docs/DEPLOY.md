@@ -132,6 +132,13 @@ Check: `https://api.yourdomain.com/api/health` should answer with `"status":"ok"
 
 Open `https://play.yourdomain.com`. You should see the date-of-birth screen.
 
+> **Alternative: one hostname, no Pages.** The server can also serve the built web app itself
+> when `WEB_DIST_DIR` points at a web build (made with `pnpm --filter @game/web build` and no
+> `VITE_API_URL`); then `API_PUBLIC_URL` and `WEB_ORIGIN` are the same address and one tunnel
+> route serves both (see `apps/server/.env.example`). The Docker image doesn't include the web
+> build, so here Pages stays the simple way. The [CSC guide](DEPLOY-CSCLUB.md#step-7-the-web-app)
+> has it built in: its releases carry the web app, and `SERVE_WEB_APP=true` turns it on.
+
 ## Step 6: Nightly backups (about 15 minutes)
 
 On the VPS:

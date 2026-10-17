@@ -1,5 +1,6 @@
 import { fileURLToPath } from 'node:url'
 import { z } from 'zod'
+import { resolveWebDistDir } from './http/static-web.ts'
 
 /** Cloudflare's documented always-pass Turnstile test keys (dev/test only). */
 export const TURNSTILE_TEST_SITE_KEY = '1x00000000000000000000AA'
@@ -98,6 +99,8 @@ const envSchema = z.object({
   DEV_CLOCK_BASE_MS: z.coerce.number().int().positive().optional(),
   /** User ids allowed to use the moderation review queue, comma-separated ('' = nobody). */
   ADMIN_USER_IDS: z.string().default(''),
+  /** Optional single-origin deploy: the built web app to serve (apps/web/dist). Empty = off. */
+  WEB_DIST_DIR: optionalString,
 })
 
 export type OAuthProviderId = 'google' | 'discord' | 'github' | 'microsoft'
@@ -140,6 +143,8 @@ export interface AppConfig {
   game: GameConfig
   /** Moderation admins (ADMIN_USER_IDS); empty = nobody can open the review queue. */
   adminUserIds: string[]
+  /** Absolute path of the web build the server also serves (WEB_DIST_DIR); unset = off. */
+  webDistDir?: string
 }
 
 export interface GameConfig {
@@ -296,6 +301,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       problems.push(`ADMIN_USER_IDS entry "${id}" is not a user id`)
     }
   }
+  const webDist = e.WEB_DIST_DIR ? resolveWebDistDir(e.WEB_DIST_DIR) : undefined
+  if (webDist && 'problem' in webDist) problems.push(webDist.problem)
+  // The served pages call their own origin, so it must be both the API and the web origin.
+  if (webDist && isProduction && e.API_PUBLIC_URL && e.WEB_ORIGIN) {
+    if (new URL(e.API_PUBLIC_URL).origin !== new URL(e.WEB_ORIGIN).origin) {
+      problems.push('WEB_DIST_DIR needs API_PUBLIC_URL and WEB_ORIGIN to be the same origin')
+    }
+  }
   if (problems.length > 0 || !authSecret || !turnstileSecret || !turnstileSite) {
     throw new ConfigError(`invalid configuration:\n  ${problems.join('\n  ')}`)
   }
@@ -360,5 +373,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       devClockBaseMs: isProduction ? undefined : e.DEV_CLOCK_BASE_MS,
     },
     adminUserIds,
+    ...(webDist && 'dir' in webDist ? { webDistDir: webDist.dir } : {}),
   }
 }

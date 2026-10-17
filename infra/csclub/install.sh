@@ -92,6 +92,7 @@ if [ "$mode" = rollback ]; then
   target="$(readlink -f "$PREVIOUS")"
   [ -d "$target" ] || die "the previous release $target no longer exists"
   say "rolling back to release $(cat "$target/VERSION") (database migrations are not undone)"
+  check_web_app "$target"
   ensure_node "$(cat "$target/NODE_VERSION")"
   switch_to "$target"
   exit 0
@@ -133,6 +134,8 @@ if [ "$src" != "$target" ]; then
 fi
 
 # --- prepare ----------------------------------------------------------------------------
+# Before anything changes: with SERVE_WEB_APP=true the release must carry the web app.
+check_web_app "$target"
 ensure_node "$(cat "$target/NODE_VERSION")"
 node="$(node_bin "$(cat "$target/NODE_VERSION")")"
 start_postgres

@@ -240,7 +240,23 @@ clean_env() {
 # The server's settings: every name in game.env except the ones meant for other processes.
 server_env_names() {
   grep -oE '^[A-Za-z_][A-Za-z0-9_]*=' "$ENV_FILE" | tr -d = |
-    grep -vxE 'CLOUDFLARE_TUNNEL_TOKEN|BACKUP_[A-Z_]*|ALERT_[A-Z_]*|DB_PASSWORD|DB_USER|DB_NAME|PG_[A-Z_]*|SERVER_PORT|BOT_PORT|BOT_WORKERS|LOG_MAX_MB|COMPOSE_PROFILES' || true
+    grep -vxE 'CLOUDFLARE_TUNNEL_TOKEN|BACKUP_[A-Z_]*|ALERT_[A-Z_]*|DB_PASSWORD|DB_USER|DB_NAME|PG_[A-Z_]*|SERVER_PORT|BOT_PORT|BOT_WORKERS|LOG_MAX_MB|COMPOSE_PROFILES|SERVE_WEB_APP' || true
+}
+
+# SERVE_WEB_APP=true: the server also serves the release's built web app (web/), so one
+# hostname carries both the web app and the API (no Cloudflare Pages needed).
+serve_web_app() {
+  case "${SERVE_WEB_APP:-false}" in
+    true | 1 | yes) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# check_web_app RELEASE_DIR: with SERVE_WEB_APP=true, fail unless that release has a web app.
+check_web_app() {
+  serve_web_app || return 0
+  [ -f "$1/web/index.html" ] ||
+    die "SERVE_WEB_APP=true, but release $(cat "$1/VERSION" 2>/dev/null || echo "$1") has no web app (web/index.html). Install a release made by a newer package.sh, or set SERVE_WEB_APP=false in $ENV_FILE"
 }
 
 # launch NAME LOGFILE CMD...: start CMD detached from the terminal (it survives logout and
@@ -325,14 +341,18 @@ start_server() {
   node="$(node_bin "$(cat "$rel/NODE_VERSION")")"
   [ -x "$node" ] || die "Node.js $(cat "$rel/NODE_VERSION") is missing; run install.sh again"
   url="$(db_url)"
+  check_web_app "$rel"
   say "starting server on 127.0.0.1:$SERVER_PORT (release $(cat "$rel/VERSION"))"
   (
     cd "$rel/app"
-    local port="$SERVER_PORT" bot_url="http://127.0.0.1:$BOT_PORT"
+    local port="$SERVER_PORT" bot_url="http://127.0.0.1:$BOT_PORT" web=""
+    if serve_web_app; then web="$rel/web"; fi
     # shellcheck disable=SC2046 # one variable name per word
     clean_env $(server_env_names)
     export NODE_ENV=production HOST=127.0.0.1 PORT="$port" DATABASE_URL="$url" \
       BOT_SERVICE_URL="$bot_url" TRUST_CLOUDFLARE=true RATE_LIMIT_ENABLED=true
+    # The single-origin option: the server serves this release's web app (WEB_DIST_DIR).
+    if [ -n "$web" ]; then export WEB_DIST_DIR="$web"; fi
     launch server "$LOGS/server.log" "$node" "$rel/app/apps/server/src/main.ts"
   )
 }
