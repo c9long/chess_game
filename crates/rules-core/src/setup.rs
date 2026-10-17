@@ -11,11 +11,17 @@
 //! | West  | a5 R, a6 N, a7 B, a8 Q, a9 K, a10 B, a11 N, a12 R         | b5–b12   |
 //! | North | e16 R, f16 N, g16 B, h16 Q, i16 K, j16 B, k16 N, l16 R    | e15–l15  |
 //! | East  | p5 R, p6 N, p7 B, p8 Q, p9 K, p10 B, p11 N, p12 R         | o5–o12   |
+//!
+//! That is the standard back line. A civ with a special army changes the
+//! *kinds* on those same eight squares ([`crate::civ::Roster::back_line`]); for
+//! England v2 the K, Q and both N squares hold Prime Ministers
+//! (`R M B M M B M R`). Pawns are always the standard eight.
 
+use crate::config::GameConfig;
 use crate::geometry::{BOARD_SIZE, NUM_SQUARES, Seat, Square};
 use crate::piece::{Piece, PieceKind};
 
-/// Back-line piece kinds, indexed from the long-rook end.
+/// Standard back-line piece kinds, indexed from the long-rook end.
 pub const BACK_LINE_KINDS: [PieceKind; 8] = [
     PieceKind::Rook,
     PieceKind::Knight,
@@ -85,11 +91,22 @@ pub const fn leader_home(seat: Seat) -> Square {
     back_line(seat)[LEADER_HOME_INDEX]
 }
 
-/// The standard starting board (rules version 2).
+/// The standard starting board (rules version 2, every seat with the
+/// standard army).
 pub fn start_board() -> [Option<Piece>; NUM_SQUARES] {
+    start_board_with(|_| BACK_LINE_KINDS)
+}
+
+/// The starting board for `config`: each seat's back line comes from its
+/// civ's roster (e.g. England v2's Prime Ministers), pawns are standard.
+pub fn start_board_for(config: &GameConfig) -> [Option<Piece>; NUM_SQUARES] {
+    start_board_with(|seat| config.civ(seat).roster.back_line())
+}
+
+fn start_board_with(line_of: impl Fn(Seat) -> [PieceKind; 8]) -> [Option<Piece>; NUM_SQUARES] {
     let mut board = [None; NUM_SQUARES];
     for seat in Seat::ALL {
-        for (sq, kind) in back_line(seat).into_iter().zip(BACK_LINE_KINDS) {
+        for (sq, kind) in back_line(seat).into_iter().zip(line_of(seat)) {
             board[sq.index()] = Some(Piece::new(kind, seat));
         }
         for sq in pawn_line(seat) {
@@ -238,6 +255,50 @@ mod tests {
         // Opposing queens face each other.
         assert_eq!(sq("h1").file(), sq("h16").file());
         assert_eq!(sq("a8").rank(), sq("p8").rank());
+    }
+
+    #[test]
+    fn england_back_line_uses_the_same_squares() {
+        use crate::civ::CivId;
+        use crate::config::GameMode;
+        let config = GameConfig::new(GameMode::Ffa).with_civs([
+            CivId::England,
+            CivId::Canada,
+            CivId::Canada,
+            CivId::England,
+        ]);
+        let b = start_board_for(&config);
+        let pm = |seat| Some(Piece::new(PieceKind::PrimeMinister, seat));
+        // South: f1, h1, i1, k1 (the N, Q, K, N squares).
+        for s in ["f1", "h1", "i1", "k1"] {
+            assert_eq!(b[sq(s).index()], pm(Seat::South), "{s}");
+        }
+        for s in ["e1", "l1"] {
+            assert_eq!(b[sq(s).index()].map(|p| p.kind), Some(PieceKind::Rook));
+        }
+        for s in ["g1", "j1"] {
+            assert_eq!(b[sq(s).index()].map(|p| p.kind), Some(PieceKind::Bishop));
+        }
+        // East: p6, p8, p9, p11.
+        for s in ["p6", "p8", "p9", "p11"] {
+            assert_eq!(b[sq(s).index()], pm(Seat::East), "{s}");
+        }
+        // West and North keep the standard army.
+        assert_eq!(
+            b[sq("a9").index()],
+            Some(Piece::new(PieceKind::King, Seat::West))
+        );
+        assert_eq!(
+            b[sq("h16").index()],
+            Some(Piece::new(PieceKind::Queen, Seat::North))
+        );
+        assert_eq!(b.iter().flatten().count(), 64);
+        // Occupied squares are the same as the standard setup.
+        let std = start_board();
+        for i in 0..NUM_SQUARES {
+            assert_eq!(b[i].is_some(), std[i].is_some());
+        }
+        assert_eq!(start_board_for(&GameConfig::new(GameMode::Ffa)), std);
     }
 
     #[test]

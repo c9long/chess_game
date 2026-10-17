@@ -350,6 +350,72 @@ describe('Game', () => {
     expect(() => Game.fromPosition('ffa nonsense')).toThrow(/^invalid position: /)
   })
 
+  it('plays England (civ v2) with four Prime Ministers', () => {
+    const game = Game.create({ mode: 'ffa', civs: ['england', 'canada', 'canada', 'canada'] })
+    const s = snap(game)
+    expect(s.config.civs[0]).toEqual({ id: 'england', version: 2 })
+    expect(s.config.civs[1]).toEqual({ id: 'canada', version: 1 })
+    for (const sq of ['f1', 'h1', 'i1', 'k1'] as const) {
+      expect(s.board[squareIndex(sq)]).toEqual({ kind: 'prime_minister', owner: 'south' })
+    }
+    expect(s.leaderSquares[0]).toEqual(['f1', 'h1', 'i1', 'k1'])
+    expect(s.attackedLeaderSquares).toEqual([[], [], [], []])
+    expect(s.castling[0]).toEqual({ long: false, short: false })
+    // 34 opening moves: 30 minus the knights' 6 plus the Prime Ministers' 10.
+    const moves = game.legalMoves()
+    expect(moves).toHaveLength(34)
+    const pmMoves = moves.filter((m) => m.piece === 'prime_minister').map((m) => m.notation)
+    expect(pmMoves.sort()).toEqual([
+      'f1d2',
+      'f1e3',
+      'f1g3',
+      'h1g3',
+      'h1i3',
+      'i1h3',
+      'i1j3',
+      'k1j3',
+      'k1l3',
+      'k1m2',
+    ])
+    const events = game.applyMove('f1e3')
+    expect(events[0]).toMatchObject({ type: 'move_made', piece: 'prime_minister' })
+    expect(game.positionString()).toContain('civ=england.2,canada.1,canada.1,canada.1')
+    const copy = Game.fromPosition(game.positionString())
+    expect(copy.snapshot()).toEqual(game.snapshot())
+    copy.free()
+    game.free()
+  })
+
+  it('England pawns promote to Q, R, B or N, never to a Prime Minister', () => {
+    const game = Game.fromPosition(
+      'ffa wK14nK/16/16/16/16/16/16/16/7sP8/16/16/16/16/16/16/sM14eK S AAAA - - 0 0 civ=england.2,canada.1,canada.1,canada.1',
+    )
+    const promos = game
+      .legalMoves()
+      .filter((m) => m.from === 'h8')
+      .map((m) => m.promotion)
+    expect(promos.sort()).toEqual(['bishop', 'knight', 'queen', 'rook'])
+    expect(() => game.applyMove('h8h9m')).toThrow('illegal move')
+    game.free()
+  })
+
+  it('rings only the attacked Prime Minister and defeats England on the last one', () => {
+    // West's rook on m3 attacks the Prime Minister on c3, not those on f1 and k1.
+    const game = Game.fromPosition(
+      'ffa wK14nK/16/16/16/16/16/16/16/16/16/16/16/16/2sM9wR3/16/5sM4sM4eK W AAAA - - 0 0 civ=england.2,canada.1,canada.1,canada.1',
+    )
+    let s = snap(game)
+    expect(s.leaderUnderAttack).toEqual([true, false, false, false])
+    expect(s.attackedLeaderSquares).toEqual([['c3'], [], [], []])
+    expect(s.leaderSquares[0]).toEqual(['f1', 'k1', 'c3'])
+    const events = game.applyMove('m3c3')
+    expect(events.some((e) => e.type === 'defeat')).toBe(false)
+    s = snap(game)
+    expect(s.statuses[0]).toBe('active')
+    expect(s.leaderSquares[0]).toEqual(['f1', 'k1'])
+    game.free()
+  })
+
   it('accepts its own snapshot config as input', () => {
     const game = Game.create({
       mode: 'teams',

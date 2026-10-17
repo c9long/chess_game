@@ -53,7 +53,7 @@ const fn build_keys() -> Keys {
     let mut seat = 0;
     while seat < Seat::COUNT {
         let mut k = 0;
-        while k < PieceKind::COUNT {
+        while k < STANDARD_KINDS {
             let mut sq = 0;
             while sq < NUM_SQUARES {
                 keys.piece[seat][k][sq] = splitmix(&mut s);
@@ -77,8 +77,26 @@ const fn build_keys() -> Keys {
         seat += 1;
     }
     keys.game_over = splitmix(&mut s);
+    // Kinds added after the standard six draw their keys after every original
+    // key, so adding a kind never changes the hash of an existing position.
+    let mut k = STANDARD_KINDS;
+    while k < PieceKind::COUNT {
+        let mut seat = 0;
+        while seat < Seat::COUNT {
+            let mut sq = 0;
+            while sq < NUM_SQUARES {
+                keys.piece[seat][k][sq] = splitmix(&mut s);
+                sq += 1;
+            }
+            seat += 1;
+        }
+        k += 1;
+    }
     keys
 }
+
+/// The six standard kinds (P N B R Q K), whose keys come first.
+const STANDARD_KINDS: usize = 6;
 
 pub(crate) static KEYS: Keys = build_keys();
 
@@ -113,4 +131,32 @@ pub fn compute_hash(state: &GameState) -> u64 {
         h ^= KEYS.game_over;
     }
     h
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{GameConfig, GameMode, GameState};
+
+    #[test]
+    fn standard_start_hash_is_stable() {
+        // Pinned so that adding piece kinds never changes existing hashes
+        // (bot-service caches and logs compare them across versions).
+        let s = GameState::new(GameConfig::new(GameMode::Ffa)).unwrap();
+        assert_eq!(compute_hash(&s), PINNED_START_HASH);
+    }
+
+    #[test]
+    fn keys_are_distinct() {
+        let mut seen = std::collections::HashSet::new();
+        for seat in &KEYS.piece {
+            for kind in seat {
+                for &k in kind {
+                    assert!(seen.insert(k));
+                }
+            }
+        }
+    }
+
+    const PINNED_START_HASH: u64 = 10_609_043_706_628_585_025;
 }

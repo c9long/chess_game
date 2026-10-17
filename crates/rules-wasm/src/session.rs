@@ -242,6 +242,7 @@ mod tests {
         assert_eq!(
             keys(&snap),
             [
+                "attackedLeaderSquares",
                 "board",
                 "castling",
                 "config",
@@ -293,6 +294,7 @@ mod tests {
             snap["leaderSquares"],
             json!([["i1"], ["a9"], ["i16"], ["p9"]])
         );
+        assert_eq!(snap["attackedLeaderSquares"], json!([[], [], [], []]));
         assert_eq!(s.leader_squares("east").unwrap(), ["p9"]);
         assert_eq!(s.leader_squares("up").unwrap_err(), "invalid seat \"up\"");
         let hash = snap["hash"].as_str().unwrap();
@@ -551,6 +553,71 @@ mod tests {
         assert_eq!(Session::from_position(&text).unwrap().state(), s.state());
         assert_eq!(s.perft(3).unwrap(), 27_000);
         assert!(s.perft(7).is_err());
+    }
+
+    #[test]
+    fn england_prime_ministers_on_the_wire() {
+        // A slug means the latest version: England v2 with four Prime Ministers.
+        let mut s = Session::from_config_json(
+            r#"{"mode":"ffa","civs":["england","canada","canada","canada"]}"#,
+        )
+        .unwrap();
+        let snap = parse(&s.snapshot_json());
+        assert_eq!(
+            snap["config"]["civs"][0],
+            json!({"id": "england", "version": 2})
+        );
+        assert_eq!(
+            snap["config"]["civs"][1],
+            json!({"id": "canada", "version": 1})
+        );
+        let board = snap["board"].as_array().unwrap();
+        for i in [5, 7, 8, 10] {
+            assert_eq!(
+                board[i],
+                json!({"kind": "prime_minister", "owner": "south"})
+            );
+        }
+        assert_eq!(snap["leaderSquares"][0], json!(["f1", "h1", "i1", "k1"]));
+        assert_eq!(snap["castling"][0], json!({"long": false, "short": false}));
+        let moves = s.legal_moves();
+        assert_eq!(moves.len(), 34);
+        let pm: Vec<&MoveView> = moves
+            .iter()
+            .filter(|m| m.piece == rules_core::PieceKind::PrimeMinister)
+            .collect();
+        assert_eq!(pm.len(), 10);
+        let json = s.legal_moves_json();
+        assert!(json.contains(r#""piece":"prime_minister""#), "{json}");
+        let ev = parse(&s.apply_move("f1e3").unwrap());
+        assert_eq!(ev[0]["piece"], "prime_minister");
+        assert!(s.position_string().contains("sM"));
+        assert!(s.position_string().contains("civ=england.2,"));
+        // An exact old version still works (replays of England v1 games).
+        let old = Session::from_config_json(
+            r#"{"mode":"ffa","civs":[{"id":"england","version":1},"canada","canada","canada"]}"#,
+        )
+        .unwrap();
+        let snap = parse(&old.snapshot_json());
+        assert_eq!(snap["board"][8], json!({"kind": "king", "owner": "south"}));
+        assert_eq!(
+            snap["config"]["civs"][0],
+            json!({"id": "england", "version": 1})
+        );
+        assert!(Session::from_config_json(
+            r#"{"mode":"ffa","civs":[{"id":"england","version":3},"canada","canada","canada"]}"#,
+        )
+        .is_err());
+        // Only the attacked Prime Minister is listed: West's rook on rank 3.
+        let pos = "ffa wK14nK/16/16/16/16/16/16/16/16/16/16/16/16/2sM9wR3/16/5sM4sM4eK W AAAA - - 0 0 civ=england.2,canada.1,canada.1,canada.1";
+        let s = Session::from_position(pos).unwrap();
+        let snap = parse(&s.snapshot_json());
+        assert_eq!(
+            snap["leaderUnderAttack"],
+            json!([true, false, false, false])
+        );
+        assert_eq!(snap["attackedLeaderSquares"], json!([["c3"], [], [], []]));
+        assert_eq!(snap["leaderSquares"][0], json!(["f1", "k1", "c3"]));
     }
 
     #[test]

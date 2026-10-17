@@ -62,8 +62,9 @@ pub use config::{CivSpec, GameConfig, GameMode};
 pub use error::{ConfigError, NotationError, PositionError, RulesError};
 pub use geometry::{Seat, Square, Team};
 pub use movegen::{
-    Move, MoveFlag, find_legal_move, generate_legal_moves, generate_moves_for_seat, has_legal_move,
-    is_square_attacked_by, leader_under_attack, legal_moves,
+    Move, MoveFlag, attacked_leader_squares, find_legal_move, generate_legal_moves,
+    generate_moves_for_seat, has_legal_move, is_square_attacked_by, leader_under_attack,
+    legal_moves,
 };
 pub use notation::{format_move, parse_move};
 pub use outcome::{GameResult, Outcome};

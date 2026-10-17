@@ -121,6 +121,7 @@ export function validateSnapshot(v: unknown): asserts v is Snapshot {
       'hash',
       'leaderUnderAttack',
       'leaderSquares',
+      'attackedLeaderSquares',
     ],
     'snapshot',
   )
@@ -181,6 +182,37 @@ export function validateSnapshot(v: unknown): asserts v is Snapshot {
       square(sq, `${p}[${i}]`)
     })
   })
+  tuple4(s.attackedLeaderSquares, 'attackedLeaderSquares', (x, p) => {
+    if (!Array.isArray(x)) fail(p, 'expected array', x)
+    x.forEach((sq, i) => {
+      square(sq, `${p}[${i}]`)
+    })
+  })
+  // Attacked leaders are a subset of the leaders, and set exactly when the flag is.
+  const attackedAll = s.attackedLeaderSquares as readonly (readonly string[])[]
+  const leadersAll = s.leaderSquares as readonly (readonly string[])[]
+  const flags = s.leaderUnderAttack as readonly boolean[]
+  SEATS.forEach((_, k) => {
+    const attacked = attackedAll[k] ?? []
+    const leaders = leadersAll[k] ?? []
+    if (!attacked.every((sq) => leaders.includes(sq))) {
+      fail(`attackedLeaderSquares[${k}]`, 'not a subset of leaderSquares', attacked)
+    }
+    if (attacked.length > 0 !== flags[k]) {
+      fail(`attackedLeaderSquares[${k}]`, 'disagrees with leaderUnderAttack', attacked)
+    }
+  })
+}
+
+/** Promotion letter of a piece kind in move notation. */
+const PROMOTION_LETTER: Readonly<Record<string, string>> = {
+  knight: 'n',
+  bishop: 'b',
+  rook: 'r',
+  queen: 'q',
+  king: 'k',
+  pawn: 'p',
+  prime_minister: 'm',
 }
 
 export function validateMove(v: unknown, path = 'move'): asserts v is MoveView {
@@ -194,7 +226,7 @@ export function validateMove(v: unknown, path = 'move'): asserts v is MoveView {
   oneOf(m.flag, MOVE_FLAGS, `${path}.flag`)
   oneOf(m.piece, PIECE_KINDS, `${path}.piece`)
   bool(m.capture, `${path}.capture`)
-  const promo = m.promotion === null ? '' : m.promotion === 'knight' ? 'n' : String(m.promotion)[0]
+  const promo = m.promotion === null ? '' : PROMOTION_LETTER[String(m.promotion)]
   if (m.notation !== `${m.from}${m.to}${promo}`) fail(path, 'notation mismatch', m)
 }
 

@@ -44,6 +44,18 @@ const NATIVE: Record<GameMode, number[]> = {
   teams: [1, 30, 900, 27_000, 810_000],
 }
 
+describe('perft with England (civ v2)', () => {
+  it('matches the native counts: 34 opening moves for England, 30 for the others', () => {
+    const game = Game.create({ mode: 'ffa', civs: ['england', 'canada', 'canada', 'canada'] })
+    // crates/rules-core/tests/england.rs counts depth 1 by hand.
+    expect(perft(game, 1)).toBe(34)
+    expect(perft(game, 2)).toBe(34 * 30)
+    expect(perftStructured(game, 2)).toBe(34 * 30)
+    expect(game.perft(3)).toBe(34 * 30 * 30)
+    game.free()
+  })
+})
+
 describe.each(['ffa', 'teams'] as const)('perft %s', (mode) => {
   it('matches native counts to depth 3', () => {
     const game = Game.create({ mode })

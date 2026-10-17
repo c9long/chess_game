@@ -7,7 +7,7 @@
 //! * Object keys are **camelCase**.
 //! * Enum values are **snake_case** strings, identical to `rules-core`'s
 //!   serde output: seats `"south" | "west" | "north" | "east"`, piece kinds
-//!   `"pawn" | "knight" | ...`, statuses, defeat reasons, move flags, civ
+//!   `"pawn" | "knight" | ... | "prime_minister"`, statuses, defeat reasons, move flags, civ
 //!   slugs, teams (`"south_north" | "west_east"`) and event / result tags.
 //! * Squares are names (`"a1"` .. `"p16"`; files `a`..`p`, ranks `1`..`16`).
 //! * Per-seat arrays have four entries in turn order South, West, North, East.
@@ -17,7 +17,7 @@
 use rules_core::{
     CivId, CivSpec, DefeatReason, GameConfig, GameEvent, GameMode, GameResult, GameState, Move,
     MoveFlag, Outcome, PASS_NOTATION, Piece, PieceKind, RULES_VERSION, Seat, SeatStatus, Square,
-    Team, leader_under_attack,
+    Team, attacked_leader_squares,
 };
 use serde::{Deserialize, Serialize};
 
@@ -273,14 +273,19 @@ pub struct SnapshotView {
     /// Zobrist hash, 16 lowercase hex digits.
     pub hash: String,
     /// Per seat: an ACTIVE seat's leader is attacked (information only).
+    /// With several leader pieces (England's Prime Ministers): any of them.
     pub leader_under_attack: [bool; 4],
     /// Per seat: squares of its leader pieces (its civ's leader role), in
     /// square order; empty once it holds none.
     pub leader_squares: [Vec<Square>; 4],
+    /// Per seat: the subset of `leader_squares` that is attacked (ACTIVE
+    /// seats only), in square order. The check ring goes on these.
+    pub attacked_leader_squares: [Vec<Square>; 4],
 }
 
 impl From<&GameState> for SnapshotView {
     fn from(s: &GameState) -> Self {
+        let attacked = Seat::ALL.map(|seat| attacked_leader_squares(s, seat));
         SnapshotView {
             rules_version: RULES_VERSION,
             config: s.config().into(),
@@ -314,8 +319,9 @@ impl From<&GameState> for SnapshotView {
             outcome: s.outcome().map(OutcomeView::from),
             is_over: s.is_over(),
             hash: format!("{:016x}", s.hash()),
-            leader_under_attack: Seat::ALL.map(|seat| leader_under_attack(s, seat)),
+            leader_under_attack: attacked.each_ref().map(|a| !a.is_empty()),
             leader_squares: Seat::ALL.map(|seat| s.leader_squares(seat).collect()),
+            attacked_leader_squares: attacked,
         }
     }
 }

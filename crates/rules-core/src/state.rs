@@ -255,13 +255,13 @@ impl GameState {
     pub fn new(config: GameConfig) -> Result<GameState, RulesError> {
         config.validate()?;
         let mut s = GameState::empty(config);
-        for (i, p) in setup::start_board().into_iter().enumerate() {
+        for (i, p) in setup::start_board_for(&config).into_iter().enumerate() {
             if let Some(p) = p {
                 s.put(Square::from_index(i), p);
             }
         }
         for seat in Seat::ALL {
-            if s.civ(seat).roster.single_leader().is_some() {
+            if s.civ(seat).roster.castling_leader().is_some() {
                 s.set_castling(seat, CastlingRights::BOTH);
             }
         }
@@ -607,19 +607,20 @@ impl GameState {
             }
         }
 
-        // Castling: only ACTIVE single-leader seats.
+        // Castling: only ACTIVE seats of civs that may castle (exactly one
+        // leader piece at the start).
         for seat in Seat::ALL {
             let cr = p.castling[seat.index()];
             if !cr.is_empty()
                 && (s.status(seat) != SeatStatus::Active
-                    || s.roster(seat).single_leader().is_none())
+                    || s.roster(seat).castling_leader().is_none())
             {
                 return Err(err(
                     "castling",
                     format!("{seat} cannot hold castling rights"),
                 ));
             }
-            if let Some(leader) = s.roster(seat).single_leader() {
+            if let Some(leader) = s.roster(seat).castling_leader() {
                 for side in CastleSide::ALL {
                     if !cr.get(side) {
                         continue;

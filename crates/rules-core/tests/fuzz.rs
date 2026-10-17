@@ -514,26 +514,31 @@ fn reference_moves(s: &GameState) -> Vec<String> {
                     tr += dr;
                 }
             }
+            // England's Prime Minister: knight leaps plus king steps.
+            let leaps = matches!(p.kind, PieceKind::Knight | PieceKind::PrimeMinister);
+            let steps = matches!(p.kind, PieceKind::King | PieceKind::PrimeMinister);
             match p.kind {
-                PieceKind::Knight => {
-                    for (df, dr) in [
-                        (1, 2),
-                        (2, 1),
-                        (2, -1),
-                        (1, -2),
-                        (-1, -2),
-                        (-2, -1),
-                        (-2, 1),
-                        (-1, 2),
-                    ] {
-                        add(f + df, r + dr, &mut out);
+                _ if leaps || steps => {
+                    if leaps {
+                        for (df, dr) in [
+                            (1, 2),
+                            (2, 1),
+                            (2, -1),
+                            (1, -2),
+                            (-1, -2),
+                            (-2, -1),
+                            (-2, 1),
+                            (-1, 2),
+                        ] {
+                            add(f + df, r + dr, &mut out);
+                        }
                     }
-                }
-                PieceKind::King => {
-                    for df in -1..=1 {
-                        for dr in -1..=1 {
-                            if (df, dr) != (0, 0) {
-                                add(f + df, r + dr, &mut out);
+                    if steps {
+                        for df in -1..=1 {
+                            for dr in -1..=1 {
+                                if (df, dr) != (0, 0) {
+                                    add(f + df, r + dr, &mut out);
+                                }
                             }
                         }
                     }

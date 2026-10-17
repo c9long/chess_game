@@ -23,7 +23,19 @@ export type Team = (typeof TEAMS)[number]
 export const GAME_MODES = ['ffa', 'teams'] as const
 export type GameMode = (typeof GAME_MODES)[number]
 
-export const PIECE_KINDS = ['pawn', 'knight', 'bishop', 'rook', 'queen', 'king'] as const
+/**
+ * Piece kinds. 'prime_minister' (letter M in position strings) is England's special piece
+ * (civ version 2): it moves like a knight or a king, and all four are leaders.
+ */
+export const PIECE_KINDS = [
+  'pawn',
+  'knight',
+  'bishop',
+  'rook',
+  'queen',
+  'king',
+  'prime_minister',
+] as const
 export type PieceKind = (typeof PIECE_KINDS)[number]
 
 export const SEAT_STATUSES = ['active', 'defeated', 'frozen', 'removed'] as const
@@ -217,13 +229,21 @@ export interface Snapshot {
   readonly isOver: boolean
   /** Zobrist hash: 16 lowercase hex digits. */
   readonly hash: string
-  /** Per seat: an ACTIVE seat's leader is attacked (information only). */
+  /**
+   * Per seat: an ACTIVE seat's leader is attacked (information only). With several leader
+   * pieces (England's Prime Ministers): any of them.
+   */
   readonly leaderUnderAttack: SeatTuple<boolean>
   /**
    * Per seat: squares of its leader pieces (the kinds its civ's roster gives the leader role,
    * not necessarily a king), in square order; empty once it holds none. Any status.
    */
   readonly leaderSquares: SeatTuple<readonly Square[]>
+  /**
+   * Per seat: the attacked subset of `leaderSquares` (ACTIVE seats only), in square order.
+   * The check ring goes on these squares only.
+   */
+  readonly attackedLeaderSquares: SeatTuple<readonly Square[]>
 }
 
 // ---------------------------------------------------------------------------

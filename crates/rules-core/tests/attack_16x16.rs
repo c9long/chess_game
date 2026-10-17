@@ -61,6 +61,25 @@ const KING: [(i32, i32); 8] = [
     (-1, 0),
     (-1, 1),
 ];
+/// Prime Minister: knight leaps plus king steps.
+const PRIME_MINISTER: [(i32, i32); 16] = [
+    (1, 2),
+    (2, 1),
+    (2, -1),
+    (1, -2),
+    (-1, -2),
+    (-2, -1),
+    (-2, 1),
+    (-1, 2),
+    (0, 1),
+    (1, 1),
+    (1, 0),
+    (1, -1),
+    (0, -1),
+    (-1, -1),
+    (-1, 0),
+    (-1, 1),
+];
 const ORTHO: [(i32, i32); 4] = [(0, 1), (1, 0), (0, -1), (-1, 0)];
 const DIAG: [(i32, i32); 4] = [(1, 1), (1, -1), (-1, -1), (-1, 1)];
 
@@ -89,6 +108,7 @@ fn geometric_targets(s: &GameState, seat: Seat, kind: PieceKind, f: i32, r: i32)
     let (steps, rays): (Offsets, Offsets) = match kind {
         PieceKind::Knight => (&KNIGHT, &[]),
         PieceKind::King => (&KING, &[]),
+        PieceKind::PrimeMinister => (&PRIME_MINISTER, &[]),
         PieceKind::Bishop => (&[], &DIAG),
         PieceKind::Rook => (&[], &ORTHO),
         PieceKind::Queen => (&[], &KING),
@@ -132,11 +152,11 @@ fn geometric_attacks(
                 }
             }
         }
-        PieceKind::Knight | PieceKind::King => {
-            let steps: &[(i32, i32)] = if kind == PieceKind::Knight {
-                &KNIGHT
-            } else {
-                &KING
+        PieceKind::Knight | PieceKind::King | PieceKind::PrimeMinister => {
+            let steps: &[(i32, i32)] = match kind {
+                PieceKind::Knight => &KNIGHT,
+                PieceKind::King => &KING,
+                _ => &PRIME_MINISTER,
             };
             for &(df, dr) in steps {
                 if on(f + df, r + dr) {

@@ -1227,11 +1227,14 @@ fn invalid_configs_are_errors_not_panics() {
     let mut c = GameConfig::new(GameMode::Teams);
     c.civs[3].version = u32::MAX;
     assert!(matches!(GameState::new(c), Err(RulesError::Config(_))));
-    // Every civ's latest version is valid and plays the standard roster (v1).
+    // Every civ's latest version is valid. All play the standard roster (30
+    // opening moves) except England v2, whose Prime Ministers give 34
+    // (tests/england.rs counts them by hand).
     for id in CivId::ALL {
         let c = GameConfig::new(GameMode::Ffa).with_civs([id; 4]);
         let s = GameState::new(c).unwrap();
-        assert_eq!(legal_moves(&s).len(), 30, "{id:?}");
+        let want = if id == CivId::England { 34 } else { 30 };
+        assert_eq!(legal_moves(&s).len(), want, "{id:?}");
         assert!(civ_definition(id, 0).is_none());
         assert!(civ_definition(id, u32::MAX).is_none());
     }

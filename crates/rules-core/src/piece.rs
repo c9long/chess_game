@@ -8,7 +8,8 @@ use core::fmt;
 
 use crate::geometry::Seat;
 
-/// A piece type. v1 has the six standard chess kinds; future civs may add more.
+/// A piece type: the six standard chess kinds plus the civ-specific kinds.
+/// Which kinds a seat fields is civ data ([`crate::civ::Roster`]).
 #[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
@@ -24,21 +25,25 @@ pub enum PieceKind {
     Rook = 3,
     /// Slides in all eight directions.
     Queen = 4,
-    /// Steps one square in any direction. The v1 leader.
+    /// Steps one square in any direction. The standard leader.
     King = 5,
+    /// England (civ version 2): moves like a knight **or** a king (the union
+    /// of both move sets; never castles, never double-steps). Letter `M`.
+    PrimeMinister = 6,
 }
 
 impl PieceKind {
     /// Number of piece kinds.
-    pub const COUNT: usize = 6;
+    pub const COUNT: usize = 7;
     /// All kinds in index order.
-    pub const ALL: [PieceKind; 6] = [
+    pub const ALL: [PieceKind; 7] = [
         PieceKind::Pawn,
         PieceKind::Knight,
         PieceKind::Bishop,
         PieceKind::Rook,
         PieceKind::Queen,
         PieceKind::King,
+        PieceKind::PrimeMinister,
     ];
 
     /// Index `0..COUNT`.
@@ -46,7 +51,7 @@ impl PieceKind {
         self as usize
     }
 
-    /// Uppercase letter: `P N B R Q K`.
+    /// Uppercase letter: `P N B R Q K M` (`M` = Prime Minister).
     pub const fn letter(self) -> char {
         match self {
             PieceKind::Pawn => 'P',
@@ -55,6 +60,7 @@ impl PieceKind {
             PieceKind::Rook => 'R',
             PieceKind::Queen => 'Q',
             PieceKind::King => 'K',
+            PieceKind::PrimeMinister => 'M',
         }
     }
 
@@ -67,11 +73,12 @@ impl PieceKind {
             'R' | 'r' => Some(PieceKind::Rook),
             'Q' | 'q' => Some(PieceKind::Queen),
             'K' | 'k' => Some(PieceKind::King),
+            'M' | 'm' => Some(PieceKind::PrimeMinister),
             _ => None,
         }
     }
 
-    /// Lowercase name (`"pawn"`, ...).
+    /// Lowercase name (`"pawn"`, ..., `"prime minister"`).
     pub const fn name(self) -> &'static str {
         match self {
             PieceKind::Pawn => "pawn",
@@ -80,6 +87,7 @@ impl PieceKind {
             PieceKind::Rook => "rook",
             PieceKind::Queen => "queen",
             PieceKind::King => "king",
+            PieceKind::PrimeMinister => "prime minister",
         }
     }
 }
@@ -183,6 +191,14 @@ mod tests {
             );
         }
         assert_eq!(PieceKind::from_letter('x'), None);
+        assert_eq!(PieceKind::from_letter('M'), Some(PieceKind::PrimeMinister));
+        assert_eq!(PieceKind::PrimeMinister.letter(), 'M');
+        assert_eq!(PieceKind::PrimeMinister.to_string(), "prime minister");
+        // Every kind fits the u8 bit set.
+        const _: () = assert!(PieceKind::COUNT <= 8);
+        let all = KindSet::of(&PieceKind::ALL);
+        assert_eq!(all.len(), PieceKind::COUNT);
+        assert!(all.contains(PieceKind::PrimeMinister));
     }
 
     #[test]

@@ -8,11 +8,15 @@
 //! * Pieces of the mover's own seat and (in Teams) of the partner block and
 //!   cannot be captured. Every other piece — including FROZEN pieces — can be
 //!   captured.
-//! * Castling: only for ACTIVE seats whose civ has exactly one leader kind,
-//!   with both pieces on their home squares, the right still held and the
-//!   squares between empty. No attack restrictions.
+//! * Castling: only for ACTIVE seats whose civ starts with exactly one leader
+//!   piece ([`crate::civ::Roster::castling_leader`]), with both pieces on their
+//!   home squares, the right still held and the squares between empty. No
+//!   attack restrictions. Civs with several leader pieces (England v2) never
+//!   castle.
 //! * Promotion: a pawn reaching its promotion line must promote; one move is
-//!   generated per roster promotion choice (v1: N, B, R, Q).
+//!   generated per roster promotion choice (every civ so far: N, B, R, Q).
+//! * Prime Minister (England v2): the union of the knight's and the king's
+//!   moves (no castling).
 //! * En passant (when enabled): see [`crate::state::EpTarget`] and PLAN §2.
 
 use core::fmt;
@@ -221,15 +225,16 @@ pub fn is_square_attacked_by(state: &GameState, sq: Square, by: Seat) -> bool {
         return false;
     }
     let owned = |s: Square, kind: PieceKind| state.piece_at(s) == Some(Piece::new(kind, by));
+    // Prime Ministers attack like knights and like kings.
     if KNIGHT_STEPS[sq.index()]
         .iter()
-        .any(|s| owned(s, PieceKind::Knight))
+        .any(|s| owned(s, PieceKind::Knight) || owned(s, PieceKind::PrimeMinister))
     {
         return true;
     }
     if KING_STEPS[sq.index()]
         .iter()
-        .any(|s| owned(s, PieceKind::King))
+        .any(|s| owned(s, PieceKind::King) || owned(s, PieceKind::PrimeMinister))
     {
         return true;
     }
@@ -268,20 +273,34 @@ pub fn is_square_attacked_by(state: &GameState, sq: Square, by: Seat) -> bool {
 /// Whether any leader of `seat` is attacked by an opponent that takes turns.
 ///
 /// Drives the optional, information-only "under attack" glow. Always `false`
-/// for a seat that is not ACTIVE: per rules v1, a non-ACTIVE seat's leaders
-/// are ordinary pieces (capturing them has no effect), so there is no leader
-/// to warn about.
+/// for a seat that is not ACTIVE: a non-ACTIVE seat's leaders are ordinary
+/// pieces (capturing them has no effect), so there is no leader to warn
+/// about. With several leader pieces (England v2) it is `true` when **any**
+/// of them is attacked; [`attacked_leader_squares`] says which.
 pub fn leader_under_attack(state: &GameState, seat: Seat) -> bool {
-    if state.status(seat) != SeatStatus::Active {
-        return false;
-    }
+    attacked_leaders(state, seat).next().is_some()
+}
+
+/// Squares of `seat`'s leader pieces that are attacked by an opponent that
+/// takes turns, in square order (the check ring goes on these only). Empty
+/// for a seat that is not ACTIVE, like [`leader_under_attack`].
+pub fn attacked_leader_squares(state: &GameState, seat: Seat) -> Vec<Square> {
+    attacked_leaders(state, seat).collect()
+}
+
+fn attacked_leaders(state: &GameState, seat: Seat) -> impl Iterator<Item = Square> + '_ {
+    let active = state.status(seat) == SeatStatus::Active;
     let roster = state.roster(seat);
-    state.pieces_of(seat).any(|(sq, p)| {
-        roster.is_leader(p.kind)
-            && Seat::ALL
-                .into_iter()
-                .any(|by| state.is_opponent(by, seat) && is_square_attacked_by(state, sq, by))
-    })
+    state
+        .pieces_of(seat)
+        .filter(move |&(sq, p)| {
+            active
+                && roster.is_leader(p.kind)
+                && Seat::ALL
+                    .into_iter()
+                    .any(|by| state.is_opponent(by, seat) && is_square_attacked_by(state, sq, by))
+        })
+        .map(|(sq, _)| sq)
 }
 
 // ---------------------------------------------------------------------------
@@ -348,6 +367,15 @@ fn gen_piece<S: Sink>(state: &GameState, from: Square, piece: Piece, sink: &mut 
             }
         }
         PieceKind::King => {
+            for to in KING_STEPS[from.index()].iter() {
+                push_target(state, seat, from, to, sink);
+            }
+        }
+        PieceKind::PrimeMinister => {
+            // Knight leaps and king steps never share a destination.
+            for to in KNIGHT_STEPS[from.index()].iter() {
+                push_target(state, seat, from, to, sink);
+            }
             for to in KING_STEPS[from.index()].iter() {
                 push_target(state, seat, from, to, sink);
             }
@@ -487,7 +515,7 @@ fn gen_castles<S: Sink>(state: &GameState, seat: Seat, sink: &mut S) {
     if rights.is_empty() {
         return;
     }
-    let Some(leader) = state.roster(seat).single_leader() else {
+    let Some(leader) = state.roster(seat).castling_leader() else {
         return;
     };
     for side in CastleSide::ALL {
