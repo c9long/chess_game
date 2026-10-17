@@ -6,6 +6,7 @@ import { GameRoom } from '../components/match/GameRoom.tsx'
 import { LobbyRoom } from '../components/match/LobbyRoom.tsx'
 import { SoloStarting } from '../components/match/SoloStarting.tsx'
 import { Alert, Button, Card, CenteredPage, Field, Spinner } from '../components/ui.tsx'
+import { joinedFeed } from '../lib/live-move-log.ts'
 import {
   type CloseReason,
   checkConnection,
@@ -116,11 +117,15 @@ export interface MatchFeed {
 
 let noticeSeq = 0
 
-/** Subscribes to a room's state and messages. */
-function useMatchFeed(room: MatchRoom, onClosed: (reason: string) => void): MatchFeed | null {
+/** Subscribes to a room's state and messages (a seat's match room, or a watch room). */
+export function useMatchFeed(
+  room: MatchRoom,
+  onClosed: (reason: string) => void,
+): MatchFeed | null {
   const [state, setState] = useState<MatchStateJson | null>(() => stateJson(room))
   const [lastEvents, setLastEvents] = useState<ServerMessages['events'] | null>(null)
-  const [clock, setClock] = useState<ClockSync | null>(null)
+  // A clock sent before this page listened (right after joining) still counts.
+  const [clock, setClock] = useState<ClockSync | null>(() => joinedFeed(room).clock)
   const [gameOver, setGameOver] = useState<ServerMessages['gameOver'] | null>(null)
   const [lastDraw, setLastDraw] = useState<MatchFeed['lastDraw']>(null)
   const [lastResign, setLastResign] = useState<MatchFeed['lastResign']>(null)
@@ -321,37 +326,8 @@ function MatchView({ room }: { room: MatchRoom }) {
   const inGame = feed.state.phase === 'in_game' || feed.state.phase === 'finished'
   return (
     <>
-      {(feed.reconnecting && !closed) || rejoining ? (
-        <div
-          // Covers the header (same height, text clear of the notch) instead of taking space in
-          // the layout, so the game screen doesn't move while reconnecting.
-          className="fixed inset-x-0 top-0 z-50 flex min-h-[calc(4rem+var(--safe-top))] items-center justify-center bg-seat-north px-4 pt-[var(--safe-top)] text-center text-sm font-semibold text-ink shadow-lg shadow-black/30"
-          role="status"
-          data-testid="reconnecting"
-        >
-          Connection lost. Reconnecting…
-        </div>
-      ) : null}
-      {/* In a game, toasts sit bottom-left over the board's corner on wide screens, clear of the
-          side panel's buttons; on narrower screens they sit at the top, clear of the action row
-          and its hints below the board. They let clicks through so they never block a move. */}
-      <div
-        className={`pointer-events-none fixed right-[calc(1rem+var(--safe-right))] z-50 flex w-80 max-w-[calc(100vw-2rem-var(--safe-left)-var(--safe-right))] flex-col gap-2 ${
-          inGame
-            ? 'top-[calc(1rem+var(--safe-top))] lg:top-auto lg:right-auto lg:bottom-[calc(1rem+var(--safe-bottom))] lg:left-[calc(1rem+var(--safe-left))]'
-            : 'bottom-[calc(1rem+var(--safe-bottom))]'
-        }`}
-      >
-        {feed.notices.map((n) => (
-          <div
-            key={n.id}
-            className={`rounded-lg bg-panel shadow-lg shadow-black/40 ${inGame ? '' : 'pointer-events-auto'}`}
-            data-testid="toast"
-          >
-            <Alert tone={n.tone}>{n.text}</Alert>
-          </div>
-        ))}
-      </div>
+      {(feed.reconnecting && !closed) || rejoining ? <ReconnectingBanner /> : null}
+      <MatchToasts notices={feed.notices} inGame={inGame} />
       {inGame ? (
         <GameRoom room={room} feed={feed} />
       ) : isUntimed(feed.state.timeControl) ? (
@@ -364,12 +340,58 @@ function MatchView({ room }: { room: MatchRoom }) {
   )
 }
 
-function PasswordPrompt({
+/** "Connection lost. Reconnecting…" while the SDK reconnects (players and spectators). */
+export function ReconnectingBanner() {
+  return (
+    <div
+      // Covers the header (same height, text clear of the notch) instead of taking space in
+      // the layout, so the game screen doesn't move while reconnecting.
+      className="fixed inset-x-0 top-0 z-50 flex min-h-[calc(4rem+var(--safe-top))] items-center justify-center bg-seat-north px-4 pt-[var(--safe-top)] text-center text-sm font-semibold text-ink shadow-lg shadow-black/30"
+      role="status"
+      data-testid="reconnecting"
+    >
+      Connection lost. Reconnecting…
+    </div>
+  )
+}
+
+/**
+ * Toasts. In a game they sit bottom-left over the board's corner on wide screens, clear of the
+ * side panel's buttons; on narrower screens they sit at the top, clear of the action row and
+ * its hints below the board. They let clicks through so they never block a move, and sit above
+ * the result dialog (rematch notes arrive while it is open).
+ */
+export function MatchToasts({ notices, inGame }: { notices: Notice[]; inGame: boolean }) {
+  return (
+    <div
+      className={`pointer-events-none fixed right-[calc(1rem+var(--safe-right))] z-[60] flex w-80 max-w-[calc(100vw-2rem-var(--safe-left)-var(--safe-right))] flex-col gap-2 ${
+        inGame
+          ? 'top-[calc(1rem+var(--safe-top))] lg:top-auto lg:right-auto lg:bottom-[calc(1rem+var(--safe-bottom))] lg:left-[calc(1rem+var(--safe-left))]'
+          : 'bottom-[calc(1rem+var(--safe-bottom))]'
+      }`}
+    >
+      {notices.map((n) => (
+        <div
+          key={n.id}
+          className={`rounded-lg bg-panel shadow-lg shadow-black/40 ${inGame ? '' : 'pointer-events-auto'}`}
+          data-testid="toast"
+        >
+          <Alert tone={n.tone}>{n.text}</Alert>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+export function PasswordPrompt({
   error,
   onSubmit,
+  watching = false,
 }: {
   error?: string | undefined
   onSubmit: (password: string) => Promise<void>
+  /** Watching instead of joining (the button and heading say so). */
+  watching?: boolean
 }) {
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
@@ -382,8 +404,14 @@ function PasswordPrompt({
   return (
     <CenteredPage>
       <Card>
-        <h1 className="mb-1 font-display text-2xl font-semibold">Private lobby</h1>
-        <p className="mb-5 text-sm text-parchment/65">Enter the password the host shared.</p>
+        <h1 className="mb-1 font-display text-2xl font-semibold">
+          {watching ? 'Private game' : 'Private lobby'}
+        </h1>
+        <p className="mb-5 text-sm text-parchment/65">
+          {watching
+            ? 'Enter the password the host shared to watch.'
+            : 'Enter the password the host shared.'}
+        </p>
         <form className="flex flex-col gap-4" onSubmit={submit}>
           <Field
             label="Password"
@@ -396,7 +424,7 @@ function PasswordPrompt({
           />
           {error ? <Alert>{error}</Alert> : null}
           <Button type="submit" busy={busy} disabled={!password} data-testid="join-submit">
-            Join
+            {watching ? 'Watch' : 'Join'}
           </Button>
         </form>
       </Card>

@@ -23,8 +23,12 @@ import { VerifyEmail } from './pages/VerifyEmail.tsx'
 // Heavier pages load on demand: the game screen (PixiJS + rules engine), the lobby browser
 // (Colyseus client), history and the Markdown legal pages.
 const Match = lazy(() => import('./pages/Match.tsx').then((m) => ({ default: m.Match })))
+const Watch = lazy(() => import('./pages/Watch.tsx').then((m) => ({ default: m.Watch })))
 const Play = lazy(() => import('./pages/Play.tsx').then((m) => ({ default: m.Play })))
 const History = lazy(() => import('./pages/History.tsx').then((m) => ({ default: m.History })))
+const MatchReplay = lazy(() =>
+  import('./pages/MatchReplay.tsx').then((m) => ({ default: m.MatchReplay })),
+)
 const Friends = lazy(() => import('./pages/Friends.tsx').then((m) => ({ default: m.Friends })))
 const Profile = lazy(() => import('./pages/Profile.tsx').then((m) => ({ default: m.Profile })))
 // Moderators only (the server checks every call); never linked for other players.
@@ -92,6 +96,8 @@ function ScrollToTop() {
 const PAGE_TITLES: [prefix: string, title: string][] = [
   ['/play', 'Lobbies'],
   ['/match/', 'Game'],
+  ['/watch/', 'Watching'],
+  ['/history/', 'Replay'],
   ['/history', 'Match history'],
   ['/friends', 'Friends'],
   ['/u/', 'Player profile'],
@@ -189,10 +195,26 @@ export function App() {
                   }
                 />
                 <Route
+                  path="watch/:roomId"
+                  element={
+                    <RequireAuth>
+                      <Watch />
+                    </RequireAuth>
+                  }
+                />
+                <Route
                   path="history"
                   element={
                     <RequireAuth>
                       <History />
+                    </RequireAuth>
+                  }
+                />
+                <Route
+                  path="history/:matchId"
+                  element={
+                    <RequireAuth>
+                      <MatchReplay />
                     </RequireAuth>
                   }
                 />

@@ -19,6 +19,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router'
 import { MODE_LABEL, relativeTime } from '../components/match/labels.ts'
 import { ConfirmDialog, Dialog, DialogClose } from '../components/overlay.tsx'
 import { FindPlayers } from '../components/social/FindPlayers.tsx'
+import { FriendsPlaying } from '../components/social/FriendsPlaying.tsx'
 import { PlayerMenu } from '../components/social/PlayerMenu.tsx'
 import { Alert, Button, cx, linkButtonClass, Spinner } from '../components/ui.tsx'
 import { ApiError } from '../lib/api.ts'
@@ -745,6 +746,8 @@ export function Friends() {
               </ul>
             </Section>
           ) : null}
+
+          {list.length > 0 ? <FriendsPlaying /> : null}
 
           {friends.incoming.length > 0 || friends.outgoing.length > 0 ? (
             <Section

@@ -4,6 +4,8 @@ import {
   type MatchListResponse,
   type RatingsResponse,
 } from '@game/protocol'
+import { RULES_VERSION } from '@game/rules'
+import { Play } from 'lucide-react'
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
 import { CivEmblem, civName } from '../components/CivEmblem.tsx'
@@ -101,6 +103,22 @@ function MatchRow({ m, viewerRegistered }: { m: MatchListItem; viewerRegistered:
           </HistoryChip>
           {m.ranked ? <RankedBadge /> : untimed ? null : <HistoryChip>Casual</HistoryChip>}
           {m.ranked && !m.rated ? <HistoryChip>Not rated</HistoryChip> : null}
+          {m.status === 'finished' ? (
+            <Link
+              to={`/history/${m.id}`}
+              className="ml-auto inline-flex h-7 shrink-0 items-center gap-1 rounded-full border border-gold/40 px-2.5 text-xs font-semibold text-gold hover:bg-gold/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold"
+              data-testid="history-replay"
+            >
+              {m.rulesVersion === RULES_VERSION ? (
+                <>
+                  <Play className="h-3 w-3 fill-current" aria-hidden="true" />
+                  Replay
+                </>
+              ) : (
+                'Details'
+              )}
+            </Link>
+          ) : null}
         </div>
         <p className="mt-2 text-xs text-parchment/55">
           <time dateTime={m.startedAt} title={when(m.startedAt)}>

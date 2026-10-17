@@ -3,6 +3,7 @@ import { animate, motion } from 'motion/react'
 import { type ReactNode, type RefObject, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
 import { isGuest, useAppState } from '../../lib/app-state.tsx'
+import type { MatchRoom } from '../../lib/match.ts'
 import type { MatchFeed } from '../../pages/Match.tsx'
 import { CivEmblem, civName } from '../CivEmblem.tsx'
 import { Confetti } from '../game/Confetti.tsx'
@@ -10,6 +11,7 @@ import { Medal } from '../game/Medal.tsx'
 import { botLevelText } from '../game/PlayerCard.tsx'
 import { Button } from '../ui.tsx'
 import { EloDelta } from './RankedBadge.tsx'
+import { RematchPanel } from './Rematch.tsx'
 import {
   DEFEAT_REASON_LABEL,
   END_REASON_LABEL,
@@ -106,6 +108,8 @@ export function GameOver({
   onClose,
   onLeave,
   friendAction,
+  room,
+  spectator = false,
 }: {
   feed: MatchFeed
   /**
@@ -123,11 +127,16 @@ export function GameOver({
   onLeave: () => void
   /** Per seat: the "Add friend" button for another registered player, or null. */
   friendAction?: (seat: number) => ReactNode
+  /** The match room, for the rematch controls (players only). */
+  room?: MatchRoom | undefined
+  /** Watching: no rematch, and "Stop watching" to leave. */
+  spectator?: boolean
 }) {
   const { state, gameOver, mySeat } = feed
   const { session } = useAppState()
   // Guests who played with other people: say how to add them.
   const guestHint =
+    !spectator &&
     isGuest(session?.user) &&
     !isUntimed(state.timeControl) &&
     state.seats.some((s, i) => i !== mySeat && s.occupied && !s.isBot)
@@ -398,12 +407,19 @@ export function GameOver({
             to add the people you played with as friends.
           </p>
         ) : null}
+        {room && !spectator && mySeat >= 0 && !state.seats[mySeat]?.isBot ? (
+          <RematchPanel room={room} feed={feed} />
+        ) : null}
         <div className="relative mt-6 flex flex-wrap justify-end gap-2">
           <Button variant="ghost" onClick={onClose}>
             View board
           </Button>
           <Button onClick={onLeave} data-testid="back-to-lobbies">
-            {isUntimed(state.timeControl) ? 'Back to Play' : 'Back to lobbies'}
+            {spectator
+              ? 'Stop watching'
+              : isUntimed(state.timeControl)
+                ? 'Back to Play'
+                : 'Back to lobbies'}
           </Button>
         </div>
       </motion.section>

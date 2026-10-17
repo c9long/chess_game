@@ -9,6 +9,7 @@ import {
   ROOM_NAMES,
   UNTIMED,
 } from '@game/protocol'
+import { Eye } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import {
   type FormEvent,
@@ -25,6 +26,7 @@ import { CivSelect } from '../components/CivSelect.tsx'
 import { CivCard } from '../components/civ/CivCard.tsx'
 import { ClockIcon, LockIcon } from '../components/game/icons.tsx'
 import { RankedBadge } from '../components/match/RankedBadge.tsx'
+import { SpectatorCount } from '../components/match/Spectators.tsx'
 import { SEAT_LABEL, seatHex, seatName } from '../components/match/seats.ts'
 import { Dialog, DialogClose } from '../components/overlay.tsx'
 import { Alert, Button, Card, Field, Spinner } from '../components/ui.tsx'
@@ -46,6 +48,17 @@ interface Listing {
 }
 
 const MODE_LABEL = { ffa: 'Free-for-all', teams: 'Teams 2v2' } as const
+
+/** A running game (listed so people can watch it). */
+function isLive(r: Listing): boolean {
+  return r.metadata.phase === 'in_game'
+}
+
+/** Sort order of the lobby browser: open lobbies, running games, full lobbies. */
+function listingRank(r: Listing): number {
+  if (isLive(r)) return 1
+  return r.metadata.seatsFilled >= 4 ? 2 : 0
+}
 
 type LobbyFilter = 'all' | 'ranked' | 'casual'
 const FILTER_LABEL: Record<LobbyFilter, string> = {
@@ -650,9 +663,10 @@ export function Play() {
     .filter((r) =>
       filter === 'all' ? true : filter === 'ranked' ? r.metadata.ranked : !r.metadata.ranked,
     )
+    // Open lobbies first (fullest first), then running games to watch, then full lobbies.
     .sort(
       (a, b) =>
-        Number(a.metadata.seatsFilled >= 4) - Number(b.metadata.seatsFilled >= 4) ||
+        listingRank(a) - listingRank(b) ||
         b.metadata.seatsFilled - a.metadata.seatsFilled ||
         a.roomId.localeCompare(b.roomId),
     )
@@ -784,7 +798,9 @@ export function Play() {
             <ul className="flex flex-col gap-3" data-testid="lobby-list">
               <AnimatePresence initial={false} mode="popLayout">
                 {sorted.map((r) => {
-                  const full = r.metadata.seatsFilled >= 4
+                  const live = isLive(r)
+                  const full = !live && r.metadata.seatsFilled >= 4
+                  const mine = current?.roomId === r.roomId
                   return (
                     <motion.li
                       key={r.roomId}
@@ -818,6 +834,10 @@ export function Play() {
                           ) : r.metadata.phase === 'in_game' ? (
                             <Chip>In game</Chip>
                           ) : null}
+                          <SpectatorCount
+                            count={r.metadata.spectators ?? 0}
+                            className="ml-1 inline-flex"
+                          />
                         </div>
                       </div>
                       <div className="flex items-center justify-between gap-3 sm:contents">
@@ -828,26 +848,72 @@ export function Play() {
                             occupied={r.metadata.occupied}
                           />
                         </span>
-                        {r.metadata.ranked && guest && !full ? (
+                        {live ? (
+                          mine ? (
+                            <Link
+                              to={`/match/${r.roomId}`}
+                              className="inline-flex h-10 min-w-20 items-center justify-center rounded-lg border border-parchment/20 px-4 text-sm font-semibold whitespace-nowrap hover:border-parchment/40"
+                              data-testid="watch-game"
+                            >
+                              Your game
+                            </Link>
+                          ) : (
+                            <Link
+                              to={`/watch/${r.roomId}`}
+                              className="inline-flex h-10 min-w-20 items-center justify-center gap-1.5 rounded-lg border border-parchment/20 px-4 text-sm font-semibold whitespace-nowrap hover:border-gold/60 hover:text-gold"
+                              aria-label={`Watch ${r.metadata.name}`}
+                              data-testid="watch-game"
+                            >
+                              <Eye aria-hidden="true" className="h-4 w-4" />
+                              Watch
+                            </Link>
+                          )
+                        ) : full && !mine ? (
+                          // A full lobby can't be joined, but it can be watched until it starts.
                           <Link
-                            to="/sign-up"
-                            className="inline-flex h-10 items-center rounded-lg border border-gold/50 px-4 text-sm font-semibold whitespace-nowrap text-gold hover:border-gold hover:bg-gold/10"
-                            title="Ranked games are for players with an account"
-                            data-testid="join-lobby"
+                            to={`/watch/${r.roomId}`}
+                            className="inline-flex h-10 min-w-20 items-center justify-center gap-1.5 rounded-lg border border-parchment/20 px-4 text-sm font-semibold whitespace-nowrap hover:border-gold/60 hover:text-gold"
+                            aria-label={`Full. Watch ${r.metadata.name}`}
+                            data-testid="watch-lobby"
                           >
-                            Create account to join
+                            <Eye aria-hidden="true" className="h-4 w-4" />
+                            Watch
                           </Link>
                         ) : (
-                          <Button
-                            variant={full ? 'ghost' : 'secondary'}
-                            className="h-10 min-w-20"
-                            busy={joining === r.roomId}
-                            disabled={full || Boolean(current) || (r.metadata.ranked && guest)}
-                            onClick={(e) => join(r, e.currentTarget)}
-                            data-testid="join-lobby"
-                          >
-                            {full ? 'Full' : 'Join'}
-                          </Button>
+                          <span className="flex items-center gap-2">
+                            {mine ? null : (
+                              <Link
+                                to={`/watch/${r.roomId}`}
+                                className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-parchment/15 text-parchment/75 hover:border-gold/60 hover:text-gold"
+                                aria-label={`Watch ${r.metadata.name}`}
+                                title="Watch"
+                                data-testid="watch-lobby"
+                              >
+                                <Eye aria-hidden="true" className="h-4 w-4" />
+                              </Link>
+                            )}
+                            {r.metadata.ranked && guest && !full ? (
+                              <Link
+                                to="/sign-up"
+                                className="inline-flex h-10 items-center rounded-lg border border-gold/50 px-4 text-sm font-semibold whitespace-nowrap text-gold hover:border-gold hover:bg-gold/10"
+                                title="Ranked games are for players with an account"
+                                data-testid="join-lobby"
+                              >
+                                Create account to join
+                              </Link>
+                            ) : (
+                              <Button
+                                variant={full ? 'ghost' : 'secondary'}
+                                className="h-10 min-w-20"
+                                busy={joining === r.roomId}
+                                disabled={full || Boolean(current) || (r.metadata.ranked && guest)}
+                                onClick={(e) => join(r, e.currentTarget)}
+                                data-testid="join-lobby"
+                              >
+                                {full ? 'Full' : 'Join'}
+                              </Button>
+                            )}
+                          </span>
                         )}
                       </div>
                     </motion.li>

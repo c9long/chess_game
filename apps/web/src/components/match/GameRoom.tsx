@@ -1,5 +1,5 @@
 import { BoardView } from '@game/board'
-import { isUntimed } from '@game/protocol'
+import { isUntimed, REMATCH_VOTE } from '@game/protocol'
 import {
   Game,
   type GameConfig,
@@ -21,6 +21,7 @@ import {
   nextCheck,
 } from '../../lib/check-indicator.ts'
 import { type FeedbackEvent, feedback, feedbackFor } from '../../lib/feedback.ts'
+import { useLiveMoveLog } from '../../lib/live-move-log.ts'
 import { leaveMatch, type MatchRoom, matchApi, reconnectGraceMs } from '../../lib/match.ts'
 import { lostMaterial, type SeatMaterial } from '../../lib/material.ts'
 import { useMediaQuery } from '../../lib/media.ts'
@@ -31,7 +32,7 @@ import type { MatchFeed } from '../../pages/Match.tsx'
 import { BoardSettings, KeyboardHints } from '../game/BoardSettings.tsx'
 import { GameButton } from '../game/GameButton.tsx'
 import { ExitIcon, GearIcon } from '../game/icons.tsx'
-import { PlayerCard } from '../game/PlayerCard.tsx'
+import { PlayerCard, seatTitle } from '../game/PlayerCard.tsx'
 import { SELF_CHECK_TEXT, TurnBanner } from '../game/TurnBanner.tsx'
 import { ConfirmDialog } from '../overlay.tsx'
 import { useSeatFriendActions } from '../social/SeatFriendButton.tsx'
@@ -39,7 +40,10 @@ import { Alert, Spinner } from '../ui.tsx'
 import { DrawOfferCard, GameActions, TeamResignCard } from './GameActions.tsx'
 import { GameOver } from './GameOver.tsx'
 import { defeatReasonLabel } from './labels.ts'
+import { MoveLogPanel, useLiveLogItems } from './MoveLog.tsx'
 import { RankedBadge } from './RankedBadge.tsx'
+import { rematchNotice } from './Rematch.tsx'
+import { SpectatorCount } from './Spectators.tsx'
 import { MODE_LABEL, seatHex, seatName, teamLabel } from './seats.ts'
 
 interface Position {
@@ -451,8 +455,9 @@ function LeaveHint({ show, graceMs }: { show: boolean; graceMs: number }) {
   if (!show || !touch || dismissed) return null
   return (
     <div
-      className="order-7 flex items-center gap-2 rounded-lg border border-parchment/10 bg-ink/40 py-1.5 pr-1.5 pl-3 text-xs text-parchment/70 wide:order-none"
+      className="order-7 flex items-center gap-2 rounded-lg border border-parchment/10 bg-ink/40 py-1.5 pr-1.5 pl-3 text-xs text-parchment/70 wide:order-3"
       data-testid="leave-hint"
+      data-after-actions
     >
       <span className="min-w-0 flex-1">
         Leaving the app for more than {graceLabel(graceMs)} forfeits
@@ -495,7 +500,19 @@ function useTurnTitle(myTurn: boolean) {
   }, [myTurn])
 }
 
-export function GameRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) {
+export function GameRoom({
+  room,
+  feed,
+  spectator = false,
+  onLeave,
+}: {
+  room: MatchRoom
+  feed: MatchFeed
+  /** Watching (a watch room): read-only, no game actions, no rematch. */
+  spectator?: boolean
+  /** Spectators: what "Stop watching" does (the page leaves the watch room on unmount). */
+  onLeave?: () => void
+}) {
   const navigate = useNavigate()
   const { ready, error } = useRulesReady()
   const prefs = usePrefs()
@@ -521,7 +538,13 @@ export function GameRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) {
     [ready, state.positionString],
   )
   const stillPlaying = mySeat >= 0 && seatInfo?.voters[mySeat] === true
-  const friendAction = useSeatFriendActions(state, untimed)
+  // Spectators get no friend or report buttons (those are for people who played together).
+  const friendAction = useSeatFriendActions(state, untimed || spectator)
+  const logItems = useLiveLogItems(useLiveMoveLog(room), ready)
+  const logNames = useMemo(
+    () => state.seats.map((seat, i) => (i === mySeat ? 'You' : seatTitle(seat))),
+    [state.seats, mySeat],
+  )
   const { notice: check, detail: checkLeaders } = useCheckNotice(
     ready,
     shown.ps,
@@ -547,7 +570,31 @@ export function GameRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) {
     window.scrollTo(0, 0)
   }, [])
 
+  // Rematch: toasts for what happens, the result dialog back up when someone proposes, and
+  // off to the new lobby once it exists (for the players who accepted).
+  const notify = feed.notify
+  const seatsRef = useRef(state.seats)
+  seatsRef.current = state.seats
+  useEffect(() => {
+    if (spectator) return
+    return matchApi(room).on('rematchEvent', (e) => {
+      const text = rematchNotice(e, seatsRef.current, mySeat)
+      if (text) notify(text, e.type === 'cancelled' ? 'error' : 'info')
+      if (e.type === 'proposed' && e.seat !== mySeat) setShowResult(true)
+    })
+  }, [room, spectator, mySeat, notify])
+  const rematchRoomId = state.rematchRoomId
+  const iAccepted = mySeat >= 0 && state.rematchVotes?.[mySeat] === REMATCH_VOTE.accepted
+  useEffect(() => {
+    if (!spectator && rematchRoomId && iAccepted) navigate(`/match/${rematchRoomId}`)
+  }, [spectator, rematchRoomId, iAccepted, navigate])
+
   async function leaveNow() {
+    if (spectator) {
+      if (onLeave) onLeave()
+      else navigate('/play')
+      return
+    }
     navigate('/play')
     await leaveMatch()
   }
@@ -566,7 +613,13 @@ export function GameRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) {
     )
   }
 
-  const leaveLabel = finished ? (untimed ? 'Back to Play' : 'Back to lobbies') : 'Leave game'
+  const leaveLabel = spectator
+    ? 'Stop watching'
+    : finished
+      ? untimed
+        ? 'Back to Play'
+        : 'Back to lobbies'
+      : 'Leave game'
   const moreButtons = (
     // Phones and tablets: two more cells of the action row. Desktop: a row of its own.
     <div className="contents wide:col-span-2 wide:flex wide:gap-2">
@@ -579,7 +632,7 @@ export function GameRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) {
       >
         <ExitIcon className="h-4 w-4 shrink-0 opacity-70" />
         <span className="truncate">
-          {finished ? (
+          {finished || spectator ? (
             leaveLabel
           ) : (
             <>
@@ -631,7 +684,7 @@ export function GameRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) {
 
       <aside
         aria-label="Game"
-        className="contents wide:sticky wide:top-4 wide:flex wide:max-h-[calc(100dvh-96px)] wide:flex-col wide:gap-3 wide:overflow-y-auto wide:rounded-2xl wide:border wide:border-parchment/10 wide:bg-panel/85 wide:p-4"
+        className="contents wide:sticky wide:top-4 wide:flex wide:h-[max(var(--board),min(34rem,calc(100dvh-96px)))] wide:flex-col wide:gap-3 wide:overflow-y-auto wide:rounded-2xl wide:border wide:border-parchment/10 wide:bg-panel/85 wide:p-4"
       >
         <header className="order-1 flex min-w-0 items-center gap-x-3 gap-y-1 wide:order-none wide:flex-wrap wide:items-baseline wide:justify-between">
           <h1 className="min-w-0 truncate font-display text-base font-semibold wide:text-lg">
@@ -642,8 +695,30 @@ export function GameRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) {
             <span>
               {MODE_LABEL[state.mode]} · {untimed ? 'Untimed' : state.timeControl}
             </span>
+            <SpectatorCount
+              count={state.spectators ?? 0}
+              // Spectators on phones see it in their banner below instead.
+              className={spectator ? 'hidden wide:inline-flex' : 'inline-flex'}
+            />
           </span>
         </header>
+
+        {spectator ? (
+          <p
+            className="order-1 -mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-parchment/70 wide:order-none wide:mt-0"
+            data-testid="spectator-banner"
+          >
+            <span className="rounded border border-gold/40 bg-gold/10 px-1.5 py-px text-[10px] font-bold tracking-wider text-gold uppercase">
+              Watching
+            </span>
+            {state.delayRounds > 0 && inGame ? (
+              <span data-testid="spectator-delay">
+                Ranked game: shown {state.delayRounds} rounds behind
+              </span>
+            ) : null}
+            <SpectatorCount count={state.spectators ?? 0} className="inline-flex wide:hidden" />
+          </p>
+        ) : null}
 
         <div className="order-3 wide:order-none">
           <TurnBanner
@@ -709,9 +784,11 @@ export function GameRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) {
             vote or draw card above can't push Resign / Leave out of view. */}
         <section
           aria-label="Actions"
-          className="order-6 wide:sticky wide:-bottom-4 wide:z-10 wide:order-none wide:-mx-4 wide:mt-auto wide:rounded-b-2xl wide:last:-mb-4 wide:border-t wide:border-parchment/10 wide:bg-panel wide:px-4 wide:pt-3 wide:pb-4"
+          // Last on screen (nothing after it but the log, which sits above it): reaches the
+          // panel's bottom edge.
+          className="order-6 wide:sticky wide:-bottom-4 wide:z-10 wide:order-2 wide:-mx-4 wide:mt-auto wide:rounded-b-2xl wide:border-t wide:border-parchment/10 wide:bg-panel wide:px-4 wide:pt-3 wide:pb-4 wide:[&:not(:has(~[data-after-actions]))]:-mb-4"
         >
-          {finished ? (
+          {finished || spectator ? (
             <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">{moreButtons}</div>
           ) : (
             <GameActions
@@ -730,10 +807,21 @@ export function GameRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) {
         <LeaveHint show={inGame && stillPlaying} graceMs={reconnectGraceMs(state)} />
 
         {settingsOpen ? (
-          <div className="order-8 wide:order-none">
+          <div className="order-8 wide:order-3" data-after-actions>
             <BoardSettings id={settingsId} />
           </div>
         ) : null}
+
+        {/* Last in reading order on every screen. Wide screens: shown between the players and
+            the pinned actions (wide:order-1), filling the room left and shrinking before the
+            panel would scroll. Phones and tablets: a bar after the actions (and the settings)
+            that opens the log below, so nothing above it moves. */}
+        <MoveLogPanel
+          items={logItems}
+          names={logNames}
+          endReason={state.result.endReason}
+          className="order-9 wide:order-1 wide:min-h-0 wide:flex-1"
+        />
       </aside>
 
       {finished && showResult ? (
@@ -746,6 +834,8 @@ export function GameRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) {
           onClose={() => setShowResult(false)}
           onLeave={leave}
           friendAction={(i) => friendAction(i, false)}
+          room={spectator ? undefined : room}
+          spectator={spectator}
         />
       ) : null}
 

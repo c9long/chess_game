@@ -19,6 +19,7 @@ import { type MatchClient, matchClient, type RoomLike } from '@game/protocol/cli
 import type { MatchStateJson } from '@game/protocol/state'
 import { create } from 'zustand'
 import { API_ORIGIN } from './auth-client.ts'
+import { trackMoveLog } from './live-move-log.ts'
 import { activeBearerToken, bearerMode } from './native-auth.ts'
 import {
   clearAllReconnectTokens,
@@ -135,6 +136,8 @@ function tuneReconnection(room: MatchRoom, graceMs: number): void {
 
 function adopt(room: MatchRoom): MatchRoom {
   rememberRoom(room)
+  // Before any page listens: the game so far (`moveLog`) comes right after joining.
+  trackMoveLog(room)
   tuneReconnection(room, reconnectGraceMs(stateJson(room)))
   // The grace comes with the first full state: tune again then.
   let tuned = false
@@ -191,6 +194,21 @@ export async function reconnectMatch(roomId: string): Promise<MatchRoom | null> 
     if (!network) forgetRoom(roomId, token)
     return null
   }
+}
+
+/**
+ * Watches a game or lobby as a spectator (read-only). The server answers with a seat in the
+ * match's watch room, whose `roomId` differs from the match room's. The room is not adopted
+ * into the match store (a spectator holds no seat, and watching must not replace a lobby the
+ * player is seated in), and no reconnection token is saved: a reload simply watches again.
+ */
+export async function watchMatch(roomId: string, password?: string): Promise<MatchRoom> {
+  const options: JoinOptions = { protocolVersion: PROTOCOL_VERSION, spectate: true }
+  if (password) options.password = password
+  const room = (await gameClient().joinById(roomId, options)) as MatchRoom
+  // Before any page listens: the game so far (`moveLog`) comes right after joining.
+  trackMoveLog(room)
+  return room
 }
 
 /** Whether a saved token is still there for a room (a rejoin may still work). */
@@ -301,6 +319,10 @@ const ERROR_MESSAGES: Record<string, string> = {
     'Ranked games are for registered players. Create a free account (your guest games come with you) to play ranked.',
   ranked_no_bots: 'Bots can’t play in ranked games. Wait for players with an account to join.',
   not_invited: 'That lobby is a friends challenge: only invited players can join.',
+  spectating: 'You are watching this game, so you can’t play in it.',
+  spectators_full: 'Too many people are watching this game already. Try again later.',
+  rematch_pending: 'A rematch has already been proposed. Answer it instead.',
+  no_rematch: 'There is no rematch to answer any more.',
   not_your_turn: 'It is not your turn.',
   illegal_move: 'That move is not legal.',
   not_host: 'Only the host can do that.',
@@ -332,7 +354,11 @@ export function matchErrorMessage(err: unknown): string {
 }
 
 /** Codes whose server message carries live detail (e.g. moves left), so it beats a fixed text. */
-const SERVER_DETAIL_CODES = new Set(['draw_offer_cooldown', 'resign_proposal_cooldown'])
+const SERVER_DETAIL_CODES = new Set([
+  'draw_offer_cooldown',
+  'resign_proposal_cooldown',
+  'seat_occupied',
+])
 
 export function errorCodeMessage(code: string, fallback?: string): string {
   if (fallback && SERVER_DETAIL_CODES.has(code)) return fallback
