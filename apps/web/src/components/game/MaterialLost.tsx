@@ -1,25 +1,6 @@
-import bishop from '@game/assets/pieces/bishop.svg?raw'
-import knight from '@game/assets/pieces/knight.svg?raw'
-import pawn from '@game/assets/pieces/pawn.svg?raw'
-import primeMinister from '@game/assets/pieces/prime-minister.svg?raw'
-import queen from '@game/assets/pieces/queen.svg?raw'
-import rook from '@game/assets/pieces/rook.svg?raw'
 import { pieceName } from '../../lib/civ-info.ts'
-import { LOST_ORDER, type LostKind, type SeatMaterial } from '../../lib/material.ts'
-
-// Decorative copies of the piece art: no <title> (the row says it in words), and the
-// near-black outline is dropped so the small glyph reads as a clean silhouette on the panel.
-const strip = (svg: string) =>
-  svg.replace(/<title>[^<]*<\/title>/, '').replace(/<g id="detail"[\s\S]*?<\/g>/, '')
-
-const GLYPHS: Record<LostKind, string> = {
-  queen: strip(queen),
-  prime_minister: strip(primeMinister),
-  rook: strip(rook),
-  bishop: strip(bishop),
-  knight: strip(knight),
-  pawn: strip(pawn),
-}
+import { LOST_ORDER, type SeatMaterial } from '../../lib/material.ts'
+import { PIECE_SPRITES } from '../../lib/piece-sprites.ts'
 
 export function describeLost(m: SeatMaterial): string {
   const parts = LOST_ORDER.filter((k) => m.lost[k] > 0).map(
@@ -62,7 +43,7 @@ export function MaterialLost({
               aria-hidden="true"
               className="-mr-1 inline-block h-4 w-4 shrink-0 opacity-80 last:mr-0 [&>svg]:h-full [&>svg]:w-full"
               // biome-ignore lint/security/noDangerouslySetInnerHtml: trusted, bundled SVG assets
-              dangerouslySetInnerHTML={{ __html: GLYPHS[k] }}
+              dangerouslySetInnerHTML={{ __html: PIECE_SPRITES[k] }}
             />
           ))}
         </span>

@@ -1,14 +1,18 @@
-import { CIVILIZATIONS } from '@game/config'
+import { CIVILIZATIONS, type CivInfo, civInfo } from '@game/config'
 import { describe, expect, it } from 'vitest'
 import {
+  abilityNames,
   bestMatchIndex,
   buildSearchIndex,
   type CivOption,
+  civKeywords,
   filterCivs,
   foldName,
   isTypeaheadKey,
   listNavIndex,
+  matchRange,
   PAGE_STEP,
+  searchHit,
 } from './civ-select.ts'
 
 /** A synthetic roster of 120 civs (the real one will pass 100), some with accented names. */
@@ -74,13 +78,29 @@ describe('filterCivs', () => {
       { slug: 'canada', name: 'Canada' },
     ]
     const idx = buildSearchIndex(civs, (c) =>
-      c.slug === 'england' ? 'Special army Four Prime Ministers replace the king' : '',
+      c.slug === 'england' ? 'Magna Carta Four Prime Ministers replace the king' : '',
     )
     expect(filterCivs(idx, 'prime').map((c) => c.slug)).toEqual(['england'])
     expect(filterCivs(idx, 'Prime Minister').map((c) => c.slug)).toEqual(['england'])
-    expect(filterCivs(idx, 'special').map((c) => c.slug)).toEqual(['england'])
+    expect(filterCivs(idx, 'magna').map((c) => c.slug)).toEqual(['england'])
     expect(filterCivs(idx, 'pr')).toEqual([])
     expect(filterCivs(idx, 'can').map((c) => c.slug)).toEqual(['canada'])
+  })
+
+  it('finds civs by ability name, ability summary and emblem on the real roster', () => {
+    const real = buildSearchIndex(CIVILIZATIONS, (c) => civKeywords(civInfo(c.slug)))
+    expect(civKeywords(civInfo('england'))).toBe(
+      'Tudor rose | Magna Carta | Four Prime Ministers replace the king, queen and knights',
+    )
+    expect(civKeywords(civInfo('canada'))).toBe('Maple leaf')
+    expect(civKeywords(null)).toBe('')
+    expect(filterCivs(real, 'magna').map((c) => c.slug)).toEqual(['england'])
+    expect(filterCivs(real, 'MAGNA CARTA').map((c) => c.slug)).toEqual(['england'])
+    expect(filterCivs(real, 'eagle').map((c) => c.slug)).toEqual(['usa'])
+    expect(filterCivs(real, 'prime').map((c) => c.slug)).toEqual(['england'])
+    expect(filterCivs(real, 'fleur').map((c) => c.slug)).toEqual(['france'])
+    // Never across two fields ("…rose | Magna…").
+    expect(filterCivs(real, 'rose magna')).toEqual([])
   })
 
   it('stays fast with 120 civs (a keystroke is far under a frame)', () => {
@@ -91,6 +111,58 @@ describe('filterCivs', () => {
     }
     const perKeystroke = (performance.now() - start) / (200 * queries.length)
     expect(perKeystroke).toBeLessThan(2)
+  })
+})
+
+describe('matchRange', () => {
+  it('finds the query in the original text, ignoring case, accents and spaces', () => {
+    expect(matchRange('Magna Carta', 'magna')).toEqual([0, 5])
+    expect(matchRange('Magna Carta', 'CARTA')).toEqual([6, 11])
+    expect(matchRange("Côte d'Ivoire", 'cote')).toEqual([0, 4])
+    // A decomposed accent (e + combining acute) still spans both code units.
+    expect(matchRange('Re\u0301union', 'reu')).toEqual([0, 4])
+    expect(matchRange('São  Tomé', 'sao tome')).toEqual([0, 9])
+    expect(matchRange('  Maple leaf', 'leaf')).toEqual([8, 12])
+    expect(matchRange('Magna Carta', 'zz')).toBeNull()
+    expect(matchRange('Magna Carta', '  ')).toBeNull()
+  })
+})
+
+describe('searchHit', () => {
+  const england = civInfo('england')
+  it('reports which text matched, name first', () => {
+    expect(searchHit('England', england, 'eng')).toEqual({ field: 'name', range: [0, 3] })
+    expect(searchHit('England', england, 'magna')).toEqual({ field: 'ability', range: [0, 5] })
+    expect(searchHit('England', england, 'prime')).toEqual({
+      field: 'summary',
+      index: 0,
+      range: [5, 10],
+    })
+    expect(searchHit('England', england, 'tudor')).toEqual({ field: 'emblem', range: [0, 5] })
+    expect(searchHit('United States', civInfo('usa'), 'eagle')).toEqual({
+      field: 'emblem',
+      range: [5, 10],
+    })
+  })
+
+  it('needs three letters for anything but the name, and a civ with copy', () => {
+    expect(searchHit('England', england, 'ma')).toBeNull()
+    expect(searchHit('England', england, '')).toBeNull()
+    expect(searchHit('Atlantis', null, 'magna')).toBeNull()
+  })
+
+  it('joins several ability names on one line', () => {
+    const twin: CivInfo = {
+      emblem: 'Twin crowns',
+      identity: 'Two crowns.',
+      abilities: [
+        { id: 'a', name: 'First Rule', summary: 'One', details: 'One more.' },
+        { id: 'b', name: 'Second Rule', summary: 'Two', details: 'Two more.' },
+      ],
+    }
+    expect(abilityNames(twin)).toBe('First Rule · Second Rule')
+    expect(abilityNames(null)).toBe('')
+    expect(searchHit('Twin', twin, 'second')).toEqual({ field: 'ability', range: [13, 19] })
   })
 })
 

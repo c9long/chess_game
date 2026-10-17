@@ -1,7 +1,7 @@
 //! England civ version 2: four Prime Ministers (letter `M`) replace the king,
 //! queen and both knights. Expectations come from the rules text (docs/RULES.md
-//! "Civilizations with special armies") and plain geometry, not from the
-//! engine's own tables.
+//! "Civilization abilities", "England: Magna Carta") and plain geometry, not
+//! from the engine's own tables.
 
 mod common;
 

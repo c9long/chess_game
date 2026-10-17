@@ -1,6 +1,6 @@
 # Chess pieces
 
-One SVG per piece type: `king`, `queen`, `rook`, `bishop`, `knight`, `pawn`, plus `prime-minister` (England's special piece, civ version 2: the knight's head wearing the king's crown). The board renderer tints each piece with its seat colour (or the frozen grey) and adds its own lighting and shadow.
+One SVG per piece type: `king`, `queen`, `rook`, `bishop`, `knight`, `pawn`, plus `prime-minister` (England's own piece, civ version 2, ability Magna Carta: the knight's head wearing the king's crown). The board renderer tints each piece with its seat colour (or the frozen grey) and adds its own lighting and shadow.
 
 These are **original works** drawn for this project, in a classic Staunton-inspired style. They are not traced from or copied from any existing piece set.
 

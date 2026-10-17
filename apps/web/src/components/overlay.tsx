@@ -1,5 +1,6 @@
 /**
- * Accessible overlay primitives (dialogs, confirm dialogs, tooltips, toasts) built on Radix UI
+ * Accessible overlay primitives (dialogs, confirm dialogs, popovers, bottom sheets, tooltips,
+ * toasts) built on Radix UI
  * and styled with our tokens. See docs/ui-libraries.md.
  *
  * Bundle rule: import this module only from lazily loaded code (a lazy page, or a component
@@ -7,7 +8,13 @@
  * of the entry chunk.
  */
 import { X } from 'lucide-react'
-import { AlertDialog, Dialog as RadixDialog, Tooltip as RadixTooltip, Toast } from 'radix-ui'
+import {
+  AlertDialog,
+  Dialog as RadixDialog,
+  Popover as RadixPopover,
+  Tooltip as RadixTooltip,
+  Toast,
+} from 'radix-ui'
 import {
   createContext,
   type ReactElement,
@@ -205,6 +212,138 @@ export function ConfirmDialog({
     </AlertDialog.Root>
   )
 }
+
+const closeButtonClass =
+  'flex shrink-0 items-center justify-center rounded-md text-parchment/55 transition-colors hover:bg-parchment/5 hover:text-parchment focus-visible:outline-2 focus-visible:outline-gold'
+
+/**
+ * A non-modal popover anchored to its trigger (a dialog the size of a card): click or Enter
+ * opens it, Escape and an outside click close it, and focus goes back to the trigger. The
+ * trigger gets `aria-haspopup="dialog"` and `aria-expanded`. Name the content with
+ * `labelledBy`, the id of a heading inside it.
+ */
+export function Popover({
+  open,
+  onOpenChange,
+  trigger,
+  children,
+  labelledBy,
+  side = 'bottom',
+  align = 'start',
+  testId,
+  className,
+}: {
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+  trigger: ReactElement
+  children: ReactNode
+  labelledBy: string
+  side?: 'top' | 'right' | 'bottom' | 'left'
+  align?: 'start' | 'center' | 'end'
+  testId?: string
+  className?: string
+}) {
+  return (
+    <RadixPopover.Root
+      {...(open !== undefined ? { open } : {})}
+      {...(onOpenChange ? { onOpenChange } : {})}
+    >
+      <RadixPopover.Trigger asChild>{trigger}</RadixPopover.Trigger>
+      <RadixPopover.Portal>
+        <RadixPopover.Content
+          side={side}
+          align={align}
+          sideOffset={8}
+          collisionPadding={16}
+          aria-labelledby={labelledBy}
+          data-testid={testId}
+          className={cx(
+            // No overflow here: it would clip the arrow, which sits outside the box. The inner
+            // wrapper scrolls instead.
+            'relative z-50 w-[min(22rem,calc(100vw-2rem))] rounded-2xl border border-gold/25 bg-panel text-parchment shadow-2xl shadow-black/70 ring-1 ring-black/40',
+            'origin-(--radix-popover-content-transform-origin) focus:outline-none data-[state=closed]:animate-pop-out data-[state=open]:animate-pop-in',
+            className,
+          )}
+        >
+          <div className="max-h-(--radix-popover-content-available-height) overflow-y-auto overscroll-contain rounded-2xl p-4 [scrollbar-width:thin]">
+            {children}
+          </div>
+          <RadixPopover.Close
+            className={cx(closeButtonClass, 'absolute top-2.5 right-2.5 h-8 w-8')}
+            aria-label="Close"
+          >
+            <X aria-hidden="true" className="h-4 w-4" />
+          </RadixPopover.Close>
+          {/* The arrow ties a flipped or shifted popover to its trigger. Its two outer edges
+              carry the border colour; it overlaps the box by 1px to cover the border there. */}
+          <RadixPopover.Arrow asChild width={16} height={8}>
+            <svg aria-hidden="true" viewBox="0 0 16 8" className="-translate-y-px overflow-visible">
+              <path d="M0 0 L8 8 L16 0" className="fill-panel stroke-gold/25" strokeWidth={1} />
+            </svg>
+          </RadixPopover.Arrow>
+        </RadixPopover.Content>
+      </RadixPopover.Portal>
+    </RadixPopover.Root>
+  )
+}
+
+/**
+ * A modal sheet that slides up from the bottom of a phone screen: a scrim that closes it on a
+ * tap, a grab handle, a 44px close button, Escape, and focus trapped and returned to the
+ * trigger. Name it by rendering its visible heading as a `SheetTitle` inside `children`.
+ */
+export function BottomSheet({
+  open,
+  onOpenChange,
+  trigger,
+  children,
+  testId,
+  className,
+}: {
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+  trigger: ReactElement
+  /** Must contain a `SheetTitle`. */
+  children: ReactNode
+  testId?: string
+  className?: string
+}) {
+  return (
+    <RadixDialog.Root
+      {...(open !== undefined ? { open } : {})}
+      {...(onOpenChange ? { onOpenChange } : {})}
+    >
+      <RadixDialog.Trigger asChild>{trigger}</RadixDialog.Trigger>
+      <RadixDialog.Portal>
+        <RadixDialog.Overlay className={overlayClass} />
+        <RadixDialog.Content
+          aria-describedby={undefined}
+          data-testid={testId}
+          className={cx(
+            'fixed inset-x-0 bottom-0 z-50 max-h-[85dvh] overflow-y-auto rounded-t-2xl border border-b-0 border-gold/25 bg-panel px-4 pt-2 pb-[calc(1rem+var(--safe-bottom))] text-parchment shadow-2xl shadow-black/70',
+            'pr-[calc(1rem+var(--safe-right))] pl-[calc(1rem+var(--safe-left))] focus:outline-none data-[state=closed]:animate-sheet-out data-[state=open]:animate-sheet-in',
+            className,
+          )}
+        >
+          <span
+            aria-hidden="true"
+            className="mx-auto mb-2 block h-1 w-10 rounded-full bg-parchment/25"
+          />
+          {children}
+          <RadixDialog.Close
+            className={cx(closeButtonClass, 'absolute top-2 right-2 h-11 w-11')}
+            aria-label="Close"
+          >
+            <X aria-hidden="true" className="h-5 w-5" />
+          </RadixDialog.Close>
+        </RadixDialog.Content>
+      </RadixDialog.Portal>
+    </RadixDialog.Root>
+  )
+}
+
+/** The heading that names a `BottomSheet` (use `asChild` to keep your own heading element). */
+export const SheetTitle = RadixDialog.Title
 
 /** Put once around a subtree that uses `Tooltip` (shares the open delay). */
 export function TooltipProvider({ children }: { children: ReactNode }) {

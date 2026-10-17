@@ -46,7 +46,7 @@ export function seededRandom(seed: number): () => number {
  * randomness. Fixed, so every one of them is covered by demo-moves.test.ts (no army falls
  * early, the game ends). Only civs with the standard army appear: for them the civ is just an
  * emblem, so a seed replays the same game whatever civs it shows. (England, whose Prime
- * Ministers change the game, was swapped out when it got its special army.)
+ * Ministers change the game, was swapped out when it got its Magna Carta ability.)
  */
 export const DEMO_GAMES: readonly {
   readonly civs: readonly [CivId, CivId, CivId, CivId]

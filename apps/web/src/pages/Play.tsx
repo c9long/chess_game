@@ -1,5 +1,5 @@
 import type { Room } from '@colyseus/sdk'
-import { CIVILIZATIONS, TIME_CONTROLS } from '@game/config'
+import { CIVILIZATIONS, civInfo, TIME_CONTROLS } from '@game/config'
 import {
   BOT_LEVEL_LABELS,
   checkLobbyNameFormat,
@@ -20,9 +20,9 @@ import {
   useState,
 } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router'
-import { CivArmyNote } from '../components/CivArmyNote.tsx'
 import { CivEmblem, civName } from '../components/CivEmblem.tsx'
 import { CivSelect } from '../components/CivSelect.tsx'
+import { CivCard } from '../components/civ/CivCard.tsx'
 import { ClockIcon, LockIcon } from '../components/game/icons.tsx'
 import { RankedBadge } from '../components/match/RankedBadge.tsx'
 import { SEAT_LABEL, seatHex, seatName } from '../components/match/seats.ts'
@@ -154,8 +154,16 @@ function PlayVsBots({ blocked }: { blocked: boolean }) {
           <h3 id={civLabelId} className="mb-2 text-sm font-medium text-parchment/85">
             Your civilization
           </h3>
-          <CivSelect value={civ} onChange={setCiv} labelId={civLabelId} className="max-w-md" />
-          <CivArmyNote civ={civ} className="mt-2 max-w-md" />
+          <div className="max-w-md">
+            <CivSelect
+              value={civ}
+              onChange={setCiv}
+              labelId={civLabelId}
+              attached={civInfo(civ) !== null}
+              preview
+            />
+            {civ ? <CivCard civ={civ} variant="attached" fold="rest" headingLevel={4} /> : null}
+          </div>
         </div>
         <div className="flex flex-col gap-5 lg:pt-14">
           <div className="flex flex-col gap-1.5">

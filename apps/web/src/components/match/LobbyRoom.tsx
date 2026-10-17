@@ -1,5 +1,6 @@
-import { BOT_LEVELS } from '@game/config'
+import { BOT_LEVELS, civInfo } from '@game/config'
 import type { MatchStateJson, SeatStateJson } from '@game/protocol/state'
+import { Info } from 'lucide-react'
 import { AnimatePresence, motion, useAnimate, useReducedMotion } from 'motion/react'
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
@@ -7,9 +8,11 @@ import { leaveMatch, type MatchRoom, matchApi } from '../../lib/match.ts'
 import { useMediaQuery } from '../../lib/media.ts'
 import { usePrefs } from '../../lib/prefs.ts'
 import type { MatchFeed } from '../../pages/Match.tsx'
-import { CivArmyNote } from '../CivArmyNote.tsx'
 import { CivEmblem, civName } from '../CivEmblem.tsx'
 import { CIV_SELECT_CONTENT_ATTR, CivSelect } from '../CivSelect.tsx'
+import { CivAbilityLine } from '../civ/CivAbilityLine.tsx'
+import { CivCard } from '../civ/CivCard.tsx'
+import { CivInfoOverlay, civInfoLabel } from '../civ/CivInfoOverlay.tsx'
 import { CheckIcon, CopyIcon, CrownIcon, DotsIcon, PlusIcon } from '../game/icons.tsx'
 import { LobbyInvite } from '../social/LobbyInvite.tsx'
 import { Button } from '../ui.tsx'
@@ -177,6 +180,45 @@ function StrengthMeter({ level }: { level: string }) {
   )
 }
 
+/**
+ * The civ line on a seat card, as a button that opens the civ's details (popover, or a bottom
+ * sheet on phones). The hit area is 44px tall; negative margins keep the card's layout.
+ */
+function SeatCivButton({ index, seat, civ }: { index: number; seat: SeatStateJson; civ: string }) {
+  const who = seat.isBot ? `Bot · ${levelText(seat.botLevel)}` : seat.displayName
+  return (
+    <CivInfoOverlay
+      civ={civ}
+      kicker={{ seat: SEAT_LABEL[seatName(index)], who }}
+      kickerColor={seatTextHex(index)}
+      seatColor={seatTextHex(index)}
+      side="bottom"
+      trigger={
+        <button
+          type="button"
+          aria-label={civInfoLabel(civ)}
+          data-testid={`civ-info-${seatName(index)}`}
+          // The visible box hugs the text (so its focus ring does too); an invisible layer
+          // widens the hit area into the gaps around it without covering the name above or
+          // the badges below.
+          className="group/civinfo relative -mx-1 mt-0.5 flex w-fit max-w-[calc(100%+0.5rem)] min-w-0 flex-col items-start gap-0.5 rounded-md px-1 py-0.5 text-left before:absolute before:-inset-x-1 before:-top-0.5 before:-bottom-2 focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-gold"
+        >
+          <span className="flex max-w-full min-w-0 items-center gap-1 text-xs text-parchment/55 group-hover/civinfo:text-parchment/80">
+            <span className="truncate decoration-dotted underline-offset-2 group-hover/civinfo:underline group-focus-visible/civinfo:underline">
+              {civName(civ)}
+            </span>
+            <Info
+              aria-hidden="true"
+              className="h-3.5 w-3.5 shrink-0 text-parchment/45 group-hover/civinfo:text-gold"
+            />
+          </span>
+          <CivAbilityLine civ={civ} className="max-w-full" />
+        </button>
+      }
+    />
+  )
+}
+
 function SeatCard({
   index,
   seat,
@@ -268,9 +310,13 @@ function SeatCard({
                     </span>
                   ) : null}
                 </p>
-                <p className="mt-0.5 truncate text-xs text-parchment/55">
-                  {seat.civ ? civName(seat.civ) : 'Choosing a civilization…'}
-                </p>
+                {seat.civ ? (
+                  <SeatCivButton index={index} seat={seat} civ={seat.civ} />
+                ) : (
+                  <p className="mt-0.5 truncate text-xs text-parchment/55">
+                    Choosing a civilization…
+                  </p>
+                )}
                 <div className="mt-2 flex flex-wrap gap-1">
                   {me ? <Badge tone="gold">You</Badge> : null}
                   {seat.isBot ? <Badge>Bot</Badge> : null}
@@ -654,8 +700,11 @@ export function LobbyRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) 
               value={me.civ}
               onChange={(civ) => send('setCiv', { civ: civ as never })}
               labelId={civLabelId}
+              attached={civInfo(me.civ) !== null}
             />
-            <CivArmyNote civ={me.civ} className="mt-2" />
+            {me.civ ? (
+              <CivCard civ={me.civ} variant="attached" fold="all" seatColor={seatTextHex(mySeat)} />
+            ) : null}
             {/* Phones: a bar fixed to the bottom of the screen; larger screens: in the card. */}
             <div className="fixed inset-x-0 bottom-0 z-30 flex gap-2 border-t border-parchment/10 bg-ink/90 px-4 pt-2 pb-[max(0.5rem,var(--safe-bottom))] backdrop-blur sm:static sm:z-auto sm:mt-5 sm:border-0 sm:bg-transparent sm:p-0 sm:backdrop-blur-none">
               <Button

@@ -24,8 +24,8 @@ export const GAME_MODES = ['ffa', 'teams'] as const
 export type GameMode = (typeof GAME_MODES)[number]
 
 /**
- * Piece kinds. 'prime_minister' (letter M in position strings) is England's special piece
- * (civ version 2): it moves like a knight or a king, and all four are leaders.
+ * Piece kinds. 'prime_minister' (letter M in position strings) is England's own piece (civ
+ * version 2, ability "Magna Carta"): it moves like a knight or a king, and all four are leaders.
  */
 export const PIECE_KINDS = [
   'pawn',

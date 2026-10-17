@@ -48,6 +48,8 @@
   --animate-pop-in: pop-in 0.2s var(--ease-out-soft) both;
   --animate-pop-out: pop-out 0.14s ease-in both;
   --animate-toast-in: toast-in 0.25s var(--ease-out-soft) both;
+  --animate-sheet-in: sheet-in 0.28s var(--ease-out-soft) both;
+  --animate-sheet-out: sheet-out 0.18s ease-in both;
 
   @keyframes fade-in {
     from {
@@ -93,6 +95,22 @@
     to {
       opacity: 1;
       transform: none;
+    }
+  }
+  @keyframes sheet-in {
+    from {
+      transform: translateY(100%);
+    }
+    to {
+      transform: none;
+    }
+  }
+  @keyframes sheet-out {
+    from {
+      transform: none;
+    }
+    to {
+      transform: translateY(100%);
     }
   }
   @keyframes rise-in {

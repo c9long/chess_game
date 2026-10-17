@@ -14,7 +14,7 @@
 //! as the single leader, and has no hooks. Changing a civ's rules means adding
 //! a *new* version; old versions stay so replays re-simulate exactly.
 //!
-//! **England version 2** (the first civ with a special army): the king, queen
+//! **England version 2** (the first civ ability, "Magna Carta"): the king, queen
 //! and both knights are replaced by four **Prime Ministers**
 //! ([`PieceKind::PrimeMinister`], letter `M`) on those four squares. All four
 //! are leaders, so the default defeat condition ("holds no leader pieces")
@@ -332,9 +332,9 @@ pub struct CivDefinition {
 }
 
 impl CivDefinition {
-    /// Whether this definition differs from the standard rules (a special
-    /// roster or any hook).
-    pub fn is_special(&self) -> bool {
+    /// Whether this definition differs from the standard rules (a roster
+    /// other than the standard one, or any hook).
+    pub fn differs_from_standard(&self) -> bool {
         self.roster != Roster::STANDARD || !self.hooks.is_empty()
     }
 }
@@ -395,7 +395,7 @@ mod tests {
             assert_eq!(def.version, 1);
             assert_eq!(def.roster, Roster::STANDARD);
             assert!(def.hooks.is_empty());
-            assert!(!def.is_special());
+            assert!(!def.differs_from_standard());
             assert_eq!(CivId::from_slug(id.slug()), Some(id));
             // A civ with no leader would need a custom defeat condition.
             assert!(!def.roster.leaders().is_empty() || def.hooks.defeat_condition.is_some());
@@ -423,7 +423,7 @@ mod tests {
     #[test]
     fn england_v2_prime_ministers() {
         let def = civ_definition(CivId::England, 2).unwrap();
-        assert!(def.is_special());
+        assert!(def.differs_from_standard());
         assert!(def.hooks.is_empty(), "the default defeat condition applies");
         let r = def.roster;
         assert_eq!(r, Roster::ENGLAND_PRIME_MINISTERS);

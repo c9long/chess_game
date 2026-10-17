@@ -12,8 +12,8 @@
 //! | North | e16 R, f16 N, g16 B, h16 Q, i16 K, j16 B, k16 N, l16 R    | e15–l15  |
 //! | East  | p5 R, p6 N, p7 B, p8 Q, p9 K, p10 B, p11 N, p12 R         | o5–o12   |
 //!
-//! That is the standard back line. A civ with a special army changes the
-//! *kinds* on those same eight squares ([`crate::civ::Roster::back_line`]); for
+//! That is the standard back line. A civ whose ability changes its army swaps
+//! the *kinds* on those same eight squares ([`crate::civ::Roster::back_line`]); for
 //! England v2 the K, Q and both N squares hold Prime Ministers
 //! (`R M B M M B M R`). Pawns are always the standard eight.
 

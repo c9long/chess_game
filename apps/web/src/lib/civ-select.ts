@@ -1,8 +1,10 @@
 /**
- * Pure helpers behind `CivSelect` (the civilization dropdown): name matching for the search
- * box, list navigation for the keyboard, and the typeahead target. Kept free of React and the
- * DOM so they are unit-tested against long synthetic rosters (the roster will grow past 100).
+ * Pure helpers behind `CivSelect` (the civilization dropdown): name and ability matching for
+ * the search box, the matched text to highlight, list navigation for the keyboard, and the
+ * typeahead target. Kept free of React and the DOM so they are unit-tested against long
+ * synthetic rosters (the roster will grow past 100).
  */
+import type { CivInfo } from '@game/config'
 
 export interface CivOption {
   readonly slug: string
@@ -23,13 +25,14 @@ export function foldName(text: string): string {
 export interface CivSearchEntry<T extends CivOption = CivOption> {
   readonly civ: T
   readonly folded: string
-  /** Extra text the search also matches (e.g. a special army's tag and summary), folded. */
+  /** Extra text the search also matches (a civ's emblem, ability names and summaries), folded. */
   readonly keywords: string
 }
 
 /**
  * Fold every name once, so filtering on each keystroke is just substring checks. `keywords`
- * gives extra text a civ is also found by (England: "Special army", "Prime Ministers").
+ * gives extra text a civ is also found by (see `civKeywords`; England: "Tudor rose", "Magna
+ * Carta", "Four Prime Ministers replace…").
  */
 export function buildSearchIndex<T extends CivOption>(
   civs: readonly T[],
@@ -57,6 +60,99 @@ export function filterCivs<T extends CivOption>(
   const kw = q.length >= 3
   for (const e of index) if (e.folded.includes(q) || (kw && e.keywords.includes(q))) out.push(e.civ)
   return out
+}
+
+/** Between keyword fields, so a query never matches across the end of one field. */
+const FIELD_SEP = ' | '
+
+/** The extra search text for a civ: its emblem, ability names and ability summaries. */
+export function civKeywords(info: CivInfo | null): string {
+  if (!info) return ''
+  return [
+    info.emblem,
+    ...info.abilities.map((a) => a.name),
+    ...info.abilities.map((a) => a.summary),
+  ].join(FIELD_SEP)
+}
+
+/** Ability names on one line, as rows and seats show them ("Magna Carta · Other"). */
+export function abilityNames(info: CivInfo | null): string {
+  return info ? info.abilities.map((a) => a.name).join(' · ') : ''
+}
+
+/** A [start, end) range of UTF-16 offsets in the original text. */
+export type TextRange = readonly [number, number]
+
+/**
+ * Where the query first occurs in `text`, compared as `foldName` compares (case, accents and
+ * runs of spaces ignored), as offsets into the original text so the match can be highlighted.
+ * Null for an empty query or no match.
+ */
+export function matchRange(text: string, query: string): TextRange | null {
+  const q = foldName(query)
+  if (!q) return null
+  let folded = ''
+  // For each code unit of `folded`: where its source character starts and ends in `text`.
+  const starts: number[] = []
+  const ends: number[] = []
+  let lastSpace = true
+  for (let i = 0; i < text.length; ) {
+    const ch = String.fromCodePoint(text.codePointAt(i) ?? 0)
+    const end = i + ch.length
+    if (/\s/.test(ch)) {
+      if (!lastSpace) {
+        folded += ' '
+        starts.push(i)
+        ends.push(end)
+      }
+      lastSpace = true
+    } else {
+      const f = ch
+        .normalize('NFD')
+        .replace(/\p{M}+/gu, '')
+        .toLowerCase()
+      for (let k = 0; k < f.length; k++) {
+        starts.push(i)
+        ends.push(end)
+      }
+      folded += f
+      if (f) lastSpace = false
+    }
+    i = end
+  }
+  const at = folded.indexOf(q)
+  if (at < 0) return null
+  return [starts[at] ?? 0, ends[at + q.length - 1] ?? text.length]
+}
+
+/** Which of a civ's texts a search query matched, with the range to highlight in it. */
+export type SearchHit =
+  | { readonly field: 'name'; readonly range: TextRange }
+  /** In `abilityNames(info)`. */
+  | { readonly field: 'ability'; readonly range: TextRange }
+  /** In the summary of ability `index`. */
+  | { readonly field: 'summary'; readonly index: number; readonly range: TextRange }
+  | { readonly field: 'emblem'; readonly range: TextRange }
+
+/**
+ * What a search query matched for one civ, in the order `filterCivs` looks: the name, then
+ * (from three letters on) the ability names, the ability summaries and the emblem. Null when
+ * nothing matched or the query is blank.
+ */
+export function searchHit(name: string, info: CivInfo | null, query: string): SearchHit | null {
+  const q = foldName(query)
+  if (!q) return null
+  const inName = matchRange(name, q)
+  if (inName) return { field: 'name', range: inName }
+  if (q.length < 3 || !info) return null
+  const inAbility = matchRange(abilityNames(info), q)
+  if (inAbility) return { field: 'ability', range: inAbility }
+  for (const [index, a] of info.abilities.entries()) {
+    const r = matchRange(a.summary, q)
+    if (r) return { field: 'summary', index, range: r }
+  }
+  const inEmblem = matchRange(info.emblem, q)
+  return inEmblem ? { field: 'emblem', range: inEmblem } : null
 }
 
 /** True when the folded name, or one of its words, starts with the folded query. */

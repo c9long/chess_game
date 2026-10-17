@@ -1,11 +1,17 @@
+import { civInfo } from '@game/config'
 import type { ClockSync } from '@game/protocol'
 import type { SeatStateJson } from '@game/protocol/state'
 import { AnimatePresence, motion } from 'motion/react'
 import { memo, type ReactNode } from 'react'
 import { formatClock, useClocks } from '../../lib/clock.ts'
 import type { SeatMaterial } from '../../lib/material.ts'
+import { useMediaQuery } from '../../lib/media.ts'
 import { CivEmblem, civName } from '../CivEmblem.tsx'
+import { CivAbilityLine } from '../civ/CivAbilityLine.tsx'
+import { CivInfoOverlay, civInfoLabel } from '../civ/CivInfoOverlay.tsx'
+import { AbilityStar } from '../civ/marks.tsx'
 import { DEFEAT_REASON_LABEL, SEAT_LABEL, STATUS_LABEL, seatName } from '../match/labels.ts'
+import { seatTextHex } from '../match/seats.ts'
 import { MaterialLost } from './MaterialLost.tsx'
 
 /** Bot strength as shown on chips: "1500" or "Max". */
@@ -136,6 +142,8 @@ export const PlayerCard = memo(function PlayerCard({
   const out = seat.status === 'removed' || seat.status === 'frozen'
   const status = seatStatus(seat, defeatReason, inGame)
   const armyRemoved = seat.status === 'removed'
+  const hasAbility = (civInfo(seat.civ)?.abilities.length ?? 0) > 0
+  const sidebar = useMediaQuery('(min-width: 1024px)')
 
   return (
     <li
@@ -162,14 +170,40 @@ export const PlayerCard = memo(function PlayerCard({
         }`}
         style={{ backgroundColor: color }}
       />
-      <span
-        className={`row-span-2 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border transition-[filter,opacity] duration-300 lg:h-11 lg:w-11 ${
-          out ? 'opacity-50 grayscale' : ''
-        }`}
-        style={{ borderColor: `${color}66`, backgroundColor: `${color}26`, color }}
-      >
-        <CivEmblem civ={seat.civ} className="h-5 w-5 lg:h-7 lg:w-7" />
-      </span>
+      <CivInfoOverlay
+        civ={seat.civ}
+        kicker={{
+          seat: SEAT_LABEL[name],
+          who: seat.isBot ? `Bot · ${botLevelText(seat.botLevel)}` : seat.displayName,
+        }}
+        kickerColor={seatTextHex(index)}
+        seatColor={seatTextHex(index)}
+        // Wide screens: rows in a sidebar right of the board, so open towards the board.
+        // Narrower: chips in a strip under the board, so open upwards over the board.
+        side={sidebar ? 'left' : 'top'}
+        trigger={
+          // The emblem opens the civ's details; an invisible 44px hit area around the circle.
+          <button
+            type="button"
+            aria-label={civInfoLabel(seat.civ)}
+            data-testid={`civ-info-${name}`}
+            className={`relative row-span-2 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border transition-[filter,opacity] duration-300 before:absolute before:-inset-[6px] before:rounded-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold lg:h-11 lg:w-11 ${
+              out ? 'opacity-50 grayscale' : ''
+            }`}
+            style={{ borderColor: `${color}66`, backgroundColor: `${color}26`, color }}
+          >
+            <CivEmblem civ={seat.civ} title="" className="h-5 w-5 lg:h-7 lg:w-7" />
+            {hasAbility ? (
+              <span
+                aria-hidden="true"
+                className="absolute -right-1 -bottom-1 grid h-3.5 w-3.5 place-items-center rounded-full bg-ink ring-1 ring-gold/60"
+              >
+                <AbilityStar className="h-2 w-2 fill-gold" />
+              </span>
+            ) : null}
+          </button>
+        }
+      />
 
       <div className="contents lg:flex lg:min-w-0 lg:flex-1 lg:flex-col lg:justify-center lg:gap-0.5">
         <p className="col-span-2 flex min-w-0 items-center gap-1.5 leading-tight lg:col-span-1">
@@ -191,9 +225,21 @@ export const PlayerCard = memo(function PlayerCard({
             </span>
           ) : null}
         </p>
-        {/* Full rows: civ and seat (a bot's civ is already its name). */}
-        <p className="hidden truncate text-xs leading-tight text-parchment/65 lg:block">
-          {seat.isBot ? SEAT_LABEL[name] : `${civName(seat.civ)} · ${SEAT_LABEL[name]}`}
+        {/* Full rows: civ and seat (a bot's civ is already its name), then the civ's
+            abilities; the civ and seat give way first when the row is narrow. */}
+        <p className="hidden min-w-0 items-center gap-1.5 text-xs leading-tight text-parchment/65 lg:flex">
+          <span className="min-w-0 truncate">
+            {seat.isBot ? SEAT_LABEL[name] : `${civName(seat.civ)} · ${SEAT_LABEL[name]}`}
+          </span>
+          {hasAbility ? (
+            <>
+              <span aria-hidden="true">·</span>
+              {/* The cap sits on a wrapper: the line's own max-w-full would override it. */}
+              <span className="flex max-w-[60%] min-w-0 shrink-0">
+                <CivAbilityLine civ={seat.civ} className="max-w-full" />
+              </span>
+            </>
+          ) : null}
         </p>
         <div className="flex h-4 min-w-0 items-center gap-1.5 lg:gap-2">
           <AnimatePresence initial={false}>
