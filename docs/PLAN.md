@@ -112,7 +112,7 @@ chess_game/
 ### Movement
 - All v1 pieces move as in standard chess. "Forward" for a pawn is toward the opposite edge.
 - **No check restriction:** any move is legal even if it leaves your own leader attacked.
-- An **"under attack" glow** on attacked leaders is optional, information only. Its default and a per-lobby toggle are decided before M2 (TODO).
+- **Check indicator** (decided 2026-10-16, replaces the optional "under attack" glow): information only, never a restriction or an advance warning. Only for a player's own seat (other players and spectators see none): when their turn starts with their leader under attack ("Check! Your leader is under attack" in the turn banner), and right after their own move leaves their leader attacked ("Your leader is in check", shown until it is no longer attacked). A check that opponents create while it is not that player's turn is not shown until their turn starts. The board marks the leader's square(s) with a pulsing red ring (steady under reduced motion) and plays a short check sound. "Under attack" and the leader squares come from `rules-core`; the visibility rule is a pure client function (`apps/web/src/lib/check-indicator.ts`). Always on; no setting or lobby toggle.
 - **Pawn double-step** from its starting square.
 - **En passant** *(behind a rules-config flag until you confirm; see TODO)*:
   - Each seat holds at most one en passant target (skipped square + pawn square), created by its pawn's double-step.
@@ -182,7 +182,7 @@ An ACTIVE seat is **defeated** when:
    - the host can **fill any empty seat with a bot and pick its ELO**, kick players, and swap seats (choosing teams);
    - **a new bot gets a random civ**, which the host can change from the seat menu;
    - the game starts once all 4 seats are filled, all civs chosen and all humans ready.
-6. **Civ selection** (required before start, duplicates allowed) from Canada, USA, China, Japan, Germany, Russia, England, France, Mali.
+6. **Civ selection** (required before start, duplicates allowed) from Canada, USA, China, Japan, Germany, Russia, England, France, Mali. The picker is a searchable dropdown of thick emblem-and-name rows (not a grid), driven by the roster in `packages/config`, so it scales to 100+ civs; the same dropdown sets a bot's civ from the seat menu.
 7. **Live game:**
    - server-authoritative 4-player game with clocks;
    - the board auto-rotates so you are always at the bottom;
@@ -192,7 +192,7 @@ An ACTIVE seat is **defeated** when:
 8. **End screen** with placements. The **match is saved to history** with the full event log.
 9. **Ranked play and ratings:** a "Ranked" option when creating a lobby (registered accounts only, no bots); Elo per mode × time control, shown on the end screen, in history, and on a public leaderboard (see §5).
 10. **Bots** at selectable strength. They think quickly, but each bot move is paced (at least ~0.7 s after the previous move, longer after a defeat) so every move's animation plays smoothly and several bots in a row read naturally (changed from "as quickly as possible", 2026-10-16).
-11. **Singleplayer ("Play vs bots"):** pick a civ, a bot strength and FFA/Teams; you play South against three bots at West, North and East with random civs. Untimed (no clocks), unlisted and unrated (no public or shadow rating); saved to history.
+11. **Singleplayer ("Play vs bots"):** pick a civ, a bot strength and FFA/Teams; you play South against three bots at West, North and East with random civs. Untimed (no clocks), unlisted and unrated (no public or shadow rating); saved to history. In FFA the game ends as soon as you are out (leader captured, stalemated, resigned or left): it is not played out between the bots. It is finalized as an agreed draw in the rules core (the bots still in play share 1st, you keep your defeat-order place) and recorded with end reason `player_eliminated` (result screen and history: "You were eliminated"). Teams is unchanged: a team out already ends the game, and a DEFEATED player whose bot partner still has a leader plays on. *(User rule, 2026-10-16.)*
 
 ### Designed now, built later (each is tracked in `TODO.md`)
 | Feature | How it's accounted for |
@@ -469,7 +469,7 @@ If many players fill seats with strong bots, the next step is a bigger OVH tier 
   - confirm "Abandon = timeout" after the 60-second grace;
   - confirm that a stalemated or timed-out player's leader no longer keeps a Teams team alive;
   - ~~Teams resignation: player-only or whole team?~~ Whole team, by teammate vote (§2, decided 2026-10-16);
-  - attacked-leader glow: default on or off, and a per-lobby toggle? (decide before M2);
+  - ~~attacked-leader glow: default on or off, and a per-lobby toggle?~~ Replaced by the check indicator: always on, own seat only, no toggle (§2, decided 2026-10-16);
   - review corner-pawn opening balance (East is exposed on both corners) with bot-arena data.
 - **Before public release:**
   - moderation: profanity filter, reserved/impersonation names, report button + review queue, username change policy, and a process for deleting accounts found to belong to under-13s;
@@ -501,7 +501,7 @@ If many players fill seats with strong bots, the next step is a bigger OVH tier 
 |---|---|---|
 | M0 | **Foundation** | Monorepo, pnpm + Cargo workspaces, lint/format, GitHub Actions CI, Docker Compose dev stack (Postgres), `docs/PLAN.md`, **`TODO.md`**, **`CLAUDE.md`** (TODO convention), `packages/config` with `APP_NAME`. |
 | M1 | **Rules core (Rust)** | Board/setup; roster + leader roles; seat statuses; pseudo-legal move generation for 4 orientations (no self-check filtering); leader capture; stalemate-once then auto-pass; timeout/abandon hooks; FFA removal vs Teams defeated/frozen; single-leader castling without attack checks; en passant behind a flag; mid-board promotion to non-leaders; move-limit counter; notation; `rules_version`; empty civ hooks. WASM build. `docs/RULES.md`. |
-| M2 | **Board renderer (web)** | PixiJS board with original art; smooth animations (move, capture particles, FFA army dissolve, Teams grey/freeze); optional attacked-leader glow; move hints; drag/click; promotion picker; auto-rotation; sounds. **Hot-seat sandbox (all 4 sides on one screen) in dev/staging builds only, never in production.** Colorblind-safe palette, reduced motion. |
+| M2 | **Board renderer (web)** | PixiJS board with original art; smooth animations (move, capture particles, FFA army dissolve, Teams grey/freeze); check indicator on the leader's square (replaced the optional attacked-leader glow, 2026-10-16); move hints; drag/click; promotion picker; auto-rotation; sounds. **Hot-seat sandbox (all 4 sides on one screen) in dev/staging builds only, never in production.** Colorblind-safe palette, reduced motion. |
 | M3 | **Accounts + legal** | Better Auth: guest + history-preserving upgrade; email/password with argon2id via custom hash/verify, plus verification and reset (Resend); OAuth (Google, Discord, GitHub, Microsoft); passkeys; TOTP MFA + backup codes (`allowPasswordless`); Turnstile; rate limits; real-IP handling. Neutral DOB screen, versioned clickwrap, `docs/legal/` drafts at /terms and /privacy, account deletion + JSON export + `deletion_log`. |
 | M4 | **Lobbies** | Colyseus lobby list + lobby room: create (mode, time control, optional hashed password with attempt limits); join; seats/teams; blind civ pick with emblems beside names; host controls; bot seats with level picker and random-but-editable civ; ready/start; session-bound seats. |
 | M5 | **Live games** | Authoritative game room; server clocks (10+0, 3+2); 60 s reconnect grace + abandon; all defeat paths; end screen; **incremental event persistence + abort-on-restart**; re-simulation check; ratings (ranked lobbies with 4-player Elo + hidden OpenSkill shadow pool; changed from public OpenSkill, 2026-10-16). |

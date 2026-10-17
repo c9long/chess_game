@@ -41,11 +41,24 @@ As in normal chess, each queen starts on her own color, so opposite queens face 
 
 All pieces move exactly as in regular chess. "Forward" for a pawn means toward the far side of the board: up for South, down for North, right for West and left for East.
 
-### There is no check
+### Check never stops a move
 
-- **You may leave your king under attack, or even move it into danger.** Nothing stops you.
+- **You may leave your king under attack, or even move it into danger.** Nothing stops you, and the game never warns you before you move.
 - There is no checkmate. You lose your king when someone actually **captures** it.
-- The game may highlight a king that is under attack. That is just information. Only an **active** player's king is highlighted (see Player status below).
+
+### Check indicators
+
+The game tells you when **your own** king is under attack ("in check"), at two moments:
+
+- **When your turn starts** with your king under attack (someone else put you in check), the turn banner turns red and says **"Check! Your leader is under attack"**.
+- **Right after your own move** leaves your king under attack (you put yourself in check), you see **"Your leader is in check"**. It stays until your king is no longer attacked, and if your turn comes round with it still attacked, the turn banner says "Check!" as above.
+
+While the indicator is on, your king's square has a pulsing red ring (a steady one with reduced motion) and a short alert sound plays when it appears.
+
+- If an opponent attacks your king while it isn't your turn, you are **not** told until your turn starts (by then the danger may already be gone).
+- The indicator is only ever for you: you never see it for other players' kings, and spectators see none.
+- It is information only. It never stops a move, and only an **active** player's king can be in check (see Player status below).
+- "Leader" is the piece your army can't afford to lose. In this version every army's leader is its king.
 
 ### Pawns
 
