@@ -32,13 +32,13 @@ behind each choice are in [PLAN.md §9](PLAN.md).
 
 ## Step 1: Accounts to create (about 30 minutes)
 
-| Account | What it's for | Cost |
-|---|---|---|
-| Domain name (Cloudflare Registrar, or any registrar) | Your address, e.g. `yourdomain.com` | ≈ $10–15/year |
-| [Cloudflare](https://dash.cloudflare.com/sign-up) | DNS, web hosting (Pages), the tunnel, Turnstile CAPTCHA | Free |
-| [OVHcloud US](https://us.ovhcloud.com/vps/) | The VPS: choose 4 vCPU / 8 GB RAM, region US-East (Virginia), OS Ubuntu 24.04 | ≈ $9–15/month |
-| [Resend](https://resend.com) | Sends verification and password-reset emails | Free tier, Pro $20/mo before launch |
-| [Cloudflare R2](https://developers.cloudflare.com/r2/) or [Backblaze B2](https://www.backblaze.com/cloud-storage) | Off-site database backups | Free tier / ≈ $1/month |
+| Account                                                                                                           | What it's for                                                                 | Cost                                |
+| ----------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- | ----------------------------------- |
+| Domain name (Cloudflare Registrar, or any registrar)                                                              | Your address, e.g. `yourdomain.com`                                           | ≈ $10–15/year                       |
+| [Cloudflare](https://dash.cloudflare.com/sign-up)                                                                 | DNS, web hosting (Pages), the tunnel, Turnstile CAPTCHA                       | Free                                |
+| [OVHcloud US](https://us.ovhcloud.com/vps/)                                                                       | The VPS: choose 4 vCPU / 8 GB RAM, region US-East (Virginia), OS Ubuntu 24.04 | ≈ $9–15/month                       |
+| [Resend](https://resend.com)                                                                                      | Sends verification and password-reset emails                                  | Free tier, Pro $20/mo before launch |
+| [Cloudflare R2](https://developers.cloudflare.com/r2/) or [Backblaze B2](https://www.backblaze.com/cloud-storage) | Off-site database backups                                                     | Free tier / ≈ $1/month              |
 
 If you bought the domain elsewhere, add it to Cloudflare ("Add a site") and change the
 nameservers at your registrar to the two Cloudflare shows you. This hands the domain's
@@ -95,12 +95,18 @@ cp infra/.env.example infra/.env
 nano infra/.env           # paste the values from step 2; Ctrl-O to save, Ctrl-X to exit
 ```
 
+Leave the line `COMPOSE_PROFILES=tunnel` in place: it is what starts the Cloudflare Tunnel
+container. (Without it you get the server, bots and database but no public address, which is
+only useful for the local test below.)
+
 Then start everything. The first run builds the containers, which takes about 10 minutes:
 
 ```sh
 docker compose -f infra/docker-compose.yml --env-file infra/.env up -d --build
-docker compose -f infra/docker-compose.yml --env-file infra/.env ps     # all "running"?
+docker compose -f infra/docker-compose.yml --env-file infra/.env ps     # server "healthy"?
 ```
+
+`migrate` shows as "exited (0)": it applies database changes and stops, which is expected.
 
 The server refuses to start if a production setting is missing or unsafe, and the log says
 which one: `docker compose -f infra/docker-compose.yml logs server`.
@@ -138,8 +144,14 @@ age-keygen -o ~/backup-key.txt     # prints "Public key: age1..."
   decrypt them.
 - Run `rclone config` and create a remote named `r2` (or `b2`) with your storage credentials.
   Set `BACKUP_REMOTE` to `r2:<bucket-name>`.
-- Test it: `/opt/game/infra/backup.sh`. Then schedule it nightly with `crontab -e`:
+- Test the dump and your key first, without uploading anything:
+  `/opt/game/infra/backup.sh --dry-run` writes `game-<date>.sql.gz.age` to the current
+  folder. Delete that file afterwards.
+- Test the real thing: `/opt/game/infra/backup.sh`. Then schedule it nightly with
+  `crontab -e`:
   `15 3 * * * /opt/game/infra/backup.sh >> /home/ubuntu/backup.log 2>&1`
+- The nightly run deletes backups older than `BACKUP_RETENTION_DAYS` (30) from the remote. It
+  only touches its own `game-*.sql.gz.age` files.
 
 ## Updating the game
 
@@ -151,29 +163,63 @@ docker compose -f infra/docker-compose.yml --env-file infra/.env up -d --build
 The server stops opening new lobbies and lets running games finish (up to 45 minutes)
 before it restarts, so players don't lose games mid-match. Schedule updates for quiet hours.
 
+To roll back, check out the previous version (`git checkout <commit>`) and run the same
+`up -d --build`. The images always rebuild the rules engine and bots from the checked-out
+code, so an older checkout really gives you the older engine.
+
 ## Restoring a backup
 
 ```sh
 rclone copy r2:<bucket>/game-<date>.sql.gz.age .
 age -d -i backup-key.txt game-<date>.sql.gz.age | gunzip > restore.sql
 docker compose -f infra/docker-compose.yml --env-file infra/.env stop server
+# A dump restores into an EMPTY database: recreate it first (this deletes the current data).
 docker compose -f infra/docker-compose.yml --env-file infra/.env exec -T postgres \
-  psql -U game -d game < restore.sql
+  dropdb -U game --force game
+docker compose -f infra/docker-compose.yml --env-file infra/.env exec -T postgres \
+  createdb -U game game
+docker compose -f infra/docker-compose.yml --env-file infra/.env exec -T postgres \
+  psql -q -U game -d game -v ON_ERROR_STOP=1 < restore.sql
 docker compose -f infra/docker-compose.yml --env-file infra/.env run --rm --no-deps server \
   node apps/server/src/jobs/reapply-deletions-cli.ts
 docker compose -f infra/docker-compose.yml --env-file infra/.env start server
 ```
 
-The `reapply-deletions` step matters: it deletes again any account that was deleted after
+(`game` is the default `DB_USER` and `DB_NAME`; use yours if you changed them.) The
+`reapply-deletions` step matters: it deletes again any account that was deleted after
 the backup was taken (a privacy-law requirement). Practise a restore once before launch, as
 TODO.md asks. A backup you have never restored is a hope, not a backup.
 
+## Trying the stack locally (optional)
+
+You can run the production containers on your own computer (Docker required) before renting
+anything. It runs without the tunnel, under a separate project name (`gametest`), so it
+never touches other containers.
+
+```sh
+mkdir -p ~/gametest
+grep -v '^COMPOSE_PROFILES=' infra/.env.example > ~/gametest/test.env
+# In ~/gametest/test.env set: DB_PASSWORD, BETTER_AUTH_SECRET and IP_HASH_SECRET to
+# `openssl rand -hex 32` values; TURNSTILE_SITE_KEY, TURNSTILE_SECRET_KEY and RESEND_API_KEY
+# to any placeholder text. GAME_ENV_FILE tells the server container to read this file
+# instead of infra/.env.
+export GAME_ENV_FILE=~/gametest/test.env
+docker compose -p gametest -f infra/docker-compose.yml -f infra/docker-compose.local.yml \
+  --env-file "$GAME_ENV_FILE" up -d --build --wait
+curl http://127.0.0.1:3900/api/health          # {"status":"ok","db":"ok"}
+docker compose -p gametest -f infra/docker-compose.yml -f infra/docker-compose.local.yml \
+  --env-file "$GAME_ENV_FILE" down -v           # stop and delete the test data
+```
+
+The server runs in production mode, so signing in won't work with placeholder Turnstile
+keys; the point is to check that everything builds, migrates and starts.
+
 ## If something goes wrong
 
-| Symptom | Where to look |
-|---|---|
-| `api.yourdomain.com` doesn't answer | `docker compose ... ps` (all running?) and `docker compose ... logs cloudflared` |
-| Server keeps restarting | `docker compose ... logs server`: the first error line names the missing or unsafe setting |
-| No verification emails | Resend dashboard → Logs. Is the domain verified? The free tier allows 100 emails per day |
+| Symptom                                | Where to look                                                                                                                                                |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `api.yourdomain.com` doesn't answer    | `docker compose ... ps` (all running?) and `docker compose ... logs cloudflared`                                                                             |
+| Server keeps restarting                | `docker compose ... logs server`: the first error line names the missing or unsafe setting                                                                   |
+| No verification emails                 | Resend dashboard → Logs. Is the domain verified? The free tier allows 100 emails per day                                                                     |
 | Bots play weak or random-looking moves | `docker compose ... logs bot-service`: when it is down, the server falls back to simple moves (still paced by `BOT_MIN_MOVE_MS`, so they don't look instant) |
-| Signing in fails on the live site | `WEB_ORIGIN`, `API_PUBLIC_URL` and `PASSKEY_RP_ID` must match your real domains exactly |
+| Signing in fails on the live site      | `WEB_ORIGIN`, `API_PUBLIC_URL` and `PASSKEY_RP_ID` must match your real domains exactly                                                                      |

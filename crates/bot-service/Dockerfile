@@ -16,9 +16,14 @@ WORKDIR /src
 # purpose so the image's toolchain is used as is (no wasm target download).
 COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
+# The target dir is a build cache shared between builds. COPY keeps the files' original
+# mtimes, so building an OLDER checkout (a rollback) would look "up to date" to cargo and
+# reuse the newer binary. Touching our own crates forces them to rebuild; dependencies stay
+# cached.
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/src/target \
-    cargo build --release --locked -p bot-service --bin bot-service \
+    find crates -type f -exec touch {} + \
+ && cargo build --release --locked -p bot-service --bin bot-service \
  && install -D target/release/bot-service /out/bot-service
 
 # glibc + libgcc only, no shell; runs as uid 65532.

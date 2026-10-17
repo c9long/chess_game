@@ -16,7 +16,7 @@ Conventions (see [CLAUDE.md](CLAUDE.md)):
 - ~~`docs/PLAN.md`, `TODO.md`, `CLAUDE.md`~~ (done 2026-10-14)
 - ~~GitHub Actions CI (Rust fmt/clippy/test + TS lint/typecheck/test)~~ (done 2026-10-14)
 - ~~Dev database setup script for local PostgreSQL (`infra/dev-db.sh`)~~ (done 2026-10-14)
-- Docker Compose file for the dev/prod stack — `infra/docker-compose.yml` now holds the full production stack (see M7) but is untested: Docker isn't installed on the dev machine (needs sudo). Verify with `docker compose config` and a local `up` once Docker is available.
+- ~~Docker Compose file for the dev/prod stack — `infra/docker-compose.yml` now holds the full production stack (see M7) but is untested: Docker isn't installed on the dev machine (needs sudo). Verify with `docker compose config` and a local `up` once Docker is available.~~ (done 2026-10-17; both images built, a local tunnel-less stack migrated, served /api/health, played a full solo game against the containerized bot-service, and passed a backup dry run plus a restore drill. Fixes: root `.dockerignore`, stale-engine builds from the cargo cache on rollbacks, server image 663 → ~470 MB, server healthcheck, Cloudflare Tunnel behind the `tunnel` profile, `backup.sh --dry-run`, a restore procedure that works. Optional dev Postgres on :5433 in `infra/docker-compose.dev.yml`)
 
 ### M1 — Rules core (Rust) — §2
 - ~~Board geometry, coordinates, square colors, seats, turn order~~ (done 2026-10-15)

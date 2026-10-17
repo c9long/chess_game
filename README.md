@@ -67,6 +67,15 @@ migrates and seeds the database, builds the WebAssembly rules engine on first ru
 bot-service on :7700, the API on :3000 and the web app on :5173. Ctrl-C stops all three.
 `DEV_CLOCK_BASE_MS=15000 pnpm dev` shortens every clock for quick end-to-end checks.
 
+No local PostgreSQL? With Docker installed, start a throwaway one on port 5433 and point
+`pnpm dev` at it (setting `DATABASE_URL` skips `infra/dev-db.sh`):
+
+```sh
+docker compose -f infra/docker-compose.dev.yml up -d
+DATABASE_URL=postgres://game:game_dev_password@localhost:5433/game_dev pnpm dev
+docker compose -f infra/docker-compose.dev.yml down     # add -v to delete its data
+```
+
 The individual steps, if you want to run them separately:
 
 ```sh

@@ -1,0 +1,24 @@
+# Build context for apps/server/Dockerfile and crates/bot-service/Dockerfile (both build
+# from the repository root). Keep it small: the images copy only what they need, but
+# without this file Docker would upload node_modules and the Cargo target dir (GBs).
+**/node_modules
+target
+.git
+.github
+.claude
+**/dist
+**/build
+**/coverage
+**/*.tsbuildinfo
+**/test-results
+**/playwright-report
+**/blob-report
+
+# Secrets and local state never go into an image.
+**/.env
+**/.env.*
+!**/.env.example
+apps/server/.dev-mailbox.json
+
+# Built locally by `pnpm build:wasm`; the server image compiles its own copy.
+packages/rules/wasm

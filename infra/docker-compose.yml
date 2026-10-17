@@ -1,8 +1,14 @@
 # Production stack for one VPS (PLAN §9): Postgres, the game/API server, bot-service and a
-# Cloudflare Tunnel (public HTTPS for the API without opening any web ports). The web app is static and is served by Cloudflare Pages.
+# Cloudflare Tunnel (public HTTPS for the API without opening any web ports). The web app is
+# static and is served by Cloudflare Pages.
 #
 #   cp infra/.env.example infra/.env   # fill in every value
 #   docker compose -f infra/docker-compose.yml --env-file infra/.env up -d --build
+#
+# The tunnel is in the "tunnel" profile. infra/.env.example sets COMPOSE_PROFILES=tunnel, so
+# production starts it; a local test stack without a tunnel token leaves that line out.
+# The server reads its settings from infra/.env, or from the absolute path in GAME_ENV_FILE
+# (exported in the shell) for a test stack that keeps its settings elsewhere.
 #
 # See docs/DEPLOY.md for the full walkthrough.
 name: game
@@ -42,7 +48,7 @@ services:
     restart: unless-stopped
     # Running games finish before a restart (PLAN §5 draining deploys); cap matches the server.
     stop_grace_period: 45m
-    env_file: .env
+    env_file: ${GAME_ENV_FILE:-.env}
     environment:
       NODE_ENV: production
       HOST: 0.0.0.0
@@ -53,6 +59,18 @@ services:
       RATE_LIMIT_ENABLED: "true"
     expose:
       - "3000"
+    # /api/health also checks the database. The image has no curl; Node's fetch does the job.
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/api/health').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      start_interval: 2s
+      retries: 3
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -79,14 +97,21 @@ services:
   # and forwards to http://server:3000 (WebSockets included). The VPS opens no web ports,
   # needs no TLS certificates, and only Cloudflare can reach the server, so the
   # CF-Connecting-IP header the rate limits rely on can be trusted. Setup: docs/DEPLOY.md.
+  # Profile "tunnel" (on in production via COMPOSE_PROFILES=tunnel in infra/.env). Without a
+  # token cloudflared keeps restarting and its log says "cloudflared tunnel run" requires the
+  # ID or name of the tunnel.
   cloudflared:
     image: cloudflare/cloudflared:2026.9.0
+    profiles: [tunnel]
     restart: unless-stopped
     command: ["tunnel", "--no-autoupdate", "run"]
     environment:
-      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:?set CLOUDFLARE_TUNNEL_TOKEN}
+      # Not "${...:?}": Compose interpolates every service, including ones whose profile is
+      # off, so a required variable here would break tunnel-less stacks.
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
     depends_on:
-      - server
+      server:
+        condition: service_healthy
 
 volumes:
   pgdata:

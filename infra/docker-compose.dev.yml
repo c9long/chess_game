@@ -1,0 +1,32 @@
+# Optional development database for machines without a local PostgreSQL install.
+# `pnpm dev` uses your local Postgres on port 5432 by default; this file only gives you a
+# throwaway one on 127.0.0.1:5433 instead:
+#
+#   docker compose -f infra/docker-compose.dev.yml up -d
+#   DATABASE_URL=postgres://game:game_dev_password@localhost:5433/game_dev pnpm dev
+#
+# Setting DATABASE_URL makes `pnpm dev` skip infra/dev-db.sh (the local-role setup) and run
+# migrations and the seed against this container. Stop it with `... down`; add `-v` to also
+# delete its data. Development credentials only: the port is bound to 127.0.0.1.
+name: game-dev
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: game_dev
+      POSTGRES_USER: game
+      POSTGRES_PASSWORD: game_dev_password
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - pgdata-dev:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U game -d game_dev"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata-dev:

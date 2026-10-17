@@ -1,0 +1,12 @@
+# Overlay for trying the production stack on your own machine (docs/DEPLOY.md, "Trying the
+# stack locally"): publishes the server on localhost so you can reach it without a tunnel.
+#
+#   docker compose -p gametest -f infra/docker-compose.yml -f infra/docker-compose.local.yml \
+#     --env-file /path/to/test.env up -d --build --wait
+#
+# SERVER_PUBLISH picks the address (default 127.0.0.1:3900). Not for production: there the
+# tunnel is the only way in.
+services:
+  server:
+    ports:
+      - "${SERVER_PUBLISH:-127.0.0.1:3900}:3000"
