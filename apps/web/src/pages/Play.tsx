@@ -21,7 +21,7 @@ import {
 } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router'
 import { CivEmblem, civName } from '../components/CivEmblem.tsx'
-import { CivPicker } from '../components/CivPicker.tsx'
+import { CivSelect } from '../components/CivSelect.tsx'
 import { ClockIcon, LockIcon } from '../components/game/icons.tsx'
 import { RankedBadge } from '../components/match/RankedBadge.tsx'
 import { SEAT_LABEL, seatHex, seatName } from '../components/match/seats.ts'
@@ -103,6 +103,7 @@ function botLevelText(level: string): string {
 function PlayVsBots({ blocked }: { blocked: boolean }) {
   const navigate = useNavigate()
   const levelId = useId()
+  const civLabelId = useId()
   const [civ, setCiv] = useState('')
   const [level, setLevel] = useState('1200')
   const [mode, setMode] = useState<'ffa' | 'teams'>('ffa')
@@ -149,8 +150,13 @@ function PlayVsBots({ blocked }: { blocked: boolean }) {
             You play South. Three bots take West, North and East, each with a random civilization.
             No clocks: take as long as you like.
           </p>
-          <h3 className="mb-2 text-sm font-medium text-parchment/85">Your civilization</h3>
-          <CivPicker value={civ} onPick={setCiv} label="Your civilization" />
+          <h3 id={civLabelId} className="mb-2 text-sm font-medium text-parchment/85">
+            Your civilization
+          </h3>
+          <CivSelect value={civ} onChange={setCiv} labelId={civLabelId} className="max-w-md" />
+          <p className="mt-2 max-w-md text-xs text-parchment/55">
+            For now a civilization is your emblem; special abilities arrive in a later update.
+          </p>
         </div>
         <div className="flex flex-col gap-5 lg:pt-14">
           <div className="flex flex-col gap-1.5">

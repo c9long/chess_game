@@ -21,6 +21,11 @@ const EMBLEMS: Record<CivSlug, string> = {
   mali,
 }
 
+/** True when the civ has emblem art (a roster entry without art yet gets a monogram instead). */
+export function hasCivEmblem(slug: string): boolean {
+  return Object.hasOwn(EMBLEMS, slug)
+}
+
 export function civName(slug: string): string {
   return CIVILIZATIONS.find((c) => c.slug === slug)?.name ?? 'No civilization'
 }

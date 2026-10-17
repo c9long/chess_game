@@ -274,6 +274,35 @@
     color: var(--color-gold-bright);
   }
 
+  /* Smaller medallion (36-44px) for dropdown rows: the same brass rim, thinner rings. */
+  .medallion-sm {
+    box-shadow:
+      inset 0 0 0 1px rgb(201 165 90 / 0.6),
+      inset 0 0 0 3px rgb(29 27 25 / 0.9),
+      inset 0 0 0 4px rgb(201 165 90 / 0.24),
+      inset 0 1px 6px rgb(0 0 0 / 0.6),
+      0 0 0 1px rgb(0 0 0 / 0.45),
+      0 6px 14px -8px rgb(0 0 0 / 0.9);
+  }
+  /* CivSelect: the chosen civ's glyph is gold, and the medallion rim lights up on the
+     highlighted row and the open or hovered trigger. */
+  .civ-trigger[data-value] .medallion-glyph,
+  .civ-row[aria-selected="true"] .medallion-glyph,
+  .civ-row[data-active] .medallion-glyph {
+    color: var(--color-gold-bright);
+  }
+  .civ-row[data-active] .medallion-sm,
+  .civ-trigger[data-state="open"] .medallion-sm,
+  .civ-trigger:enabled:hover .medallion-sm {
+    box-shadow:
+      inset 0 0 0 1px rgb(230 180 42 / 0.9),
+      inset 0 0 0 3px rgb(29 27 25 / 0.9),
+      inset 0 0 0 4px rgb(230 180 42 / 0.38),
+      inset 0 1px 6px rgb(0 0 0 / 0.6),
+      0 0 0 1px rgb(0 0 0 / 0.45),
+      0 6px 16px -8px rgb(212 160 23 / 0.45);
+  }
+
   .select option {
     background-color: var(--color-panel);
     color: var(--color-parchment);

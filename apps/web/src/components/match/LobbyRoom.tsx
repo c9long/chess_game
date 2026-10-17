@@ -1,14 +1,14 @@
-import { BOT_LEVELS, CIVILIZATIONS } from '@game/config'
+import { BOT_LEVELS } from '@game/config'
 import type { MatchStateJson, SeatStateJson } from '@game/protocol/state'
 import { AnimatePresence, motion, useAnimate, useReducedMotion } from 'motion/react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { leaveMatch, type MatchRoom, matchApi } from '../../lib/match.ts'
 import { useMediaQuery } from '../../lib/media.ts'
 import { usePrefs } from '../../lib/prefs.ts'
 import type { MatchFeed } from '../../pages/Match.tsx'
 import { CivEmblem, civName } from '../CivEmblem.tsx'
-import { CivPicker } from '../CivPicker.tsx'
+import { CIV_SELECT_CONTENT_ATTR, CivSelect } from '../CivSelect.tsx'
 import { CheckIcon, CopyIcon, CrownIcon, DotsIcon, PlusIcon } from '../game/icons.tsx'
 import { Button } from '../ui.tsx'
 import { RankedBadge } from './RankedBadge.tsx'
@@ -66,11 +66,15 @@ function SeatMenu({
   send: ReturnType<typeof matchApi>['send']
 }) {
   const ref = useRef<HTMLDetailsElement>(null)
+  const civLabelId = useId()
   const others = [0, 1, 2, 3].filter((i) => i !== index)
   const close = () => ref.current?.removeAttribute('open')
   useEffect(() => {
     const onDown = (e: PointerEvent) => {
-      if (ref.current?.open && !ref.current.contains(e.target as Node)) {
+      const target = e.target as Element
+      // The bot's civ list opens in a popover outside the menu: a click there isn't "outside".
+      if (target.closest?.(`[${CIV_SELECT_CONTENT_ATTR}]`)) return
+      if (ref.current?.open && !ref.current.contains(target)) {
         ref.current.removeAttribute('open')
       }
     }
@@ -89,20 +93,16 @@ function SeatMenu({
       </summary>
       <div className="absolute top-9 right-0 z-30 flex w-56 flex-col gap-2 rounded-xl tracking-normal normal-case border border-parchment/15 bg-panel p-3 shadow-2xl shadow-black/60">
         {seat.isBot ? (
-          <label className="flex flex-col gap-1 text-xs text-parchment/60">
-            Civilization
-            <select
-              className={selectClass}
+          <div className="flex flex-col gap-1 text-xs text-parchment/60">
+            <span id={civLabelId}>Civilization</span>
+            <CivSelect
               value={seat.civ}
-              onChange={(e) => send('setBotCiv', { seat: s, civ: e.target.value as never })}
-            >
-              {CIVILIZATIONS.map((c) => (
-                <option key={c.slug} value={c.slug}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </label>
+              onChange={(civ) => send('setBotCiv', { seat: s, civ: civ as never })}
+              labelId={civLabelId}
+              size="md"
+              testId={`civ-select-${seatName(index)}`}
+            />
+          </div>
         ) : null}
         <label className="flex flex-col gap-1 text-xs text-parchment/60">
           Move to seat
@@ -515,6 +515,7 @@ export function LobbyRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) 
   const { state, mySeat } = feed
   const send = useMemo(() => matchApi(room).send, [room])
   const [copied, copy] = useCopy()
+  const civLabelId = useId()
   const [startScope, animateStart] = useAnimate<HTMLDivElement>()
   const systemReduced = useReducedMotion()
   const prefReduced = usePrefs((s) => s.reducedMotion)
@@ -627,14 +628,16 @@ export function LobbyRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) 
 
         {me ? (
           <section className="rounded-2xl border border-parchment/10 bg-panel/85 p-5 max-sm:order-first">
-            <h2 className="mb-1 font-display text-lg font-semibold">Your civilization</h2>
+            <h2 id={civLabelId} className="mb-1 font-display text-lg font-semibold">
+              Your civilization
+            </h2>
             <p className="mb-4 text-xs text-parchment/55">
               For now a civilization is your emblem; special abilities arrive in a later update.
             </p>
-            <CivPicker
+            <CivSelect
               value={me.civ}
-              disabled={false}
-              onPick={(civ) => send('setCiv', { civ: civ as never })}
+              onChange={(civ) => send('setCiv', { civ: civ as never })}
+              labelId={civLabelId}
             />
             {/* Phones: a bar fixed to the bottom of the screen; larger screens: in the card. */}
             <div className="fixed inset-x-0 bottom-0 z-30 flex gap-2 border-t border-parchment/10 bg-ink/90 px-4 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] backdrop-blur sm:static sm:z-auto sm:mt-5 sm:border-0 sm:bg-transparent sm:p-0 sm:backdrop-blur-none">
