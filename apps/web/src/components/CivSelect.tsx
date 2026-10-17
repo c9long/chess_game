@@ -6,8 +6,9 @@
  * Accessibility (WAI-ARIA 1.2 combobox): the trigger is a select-only `combobox` button; the open
  * popover holds a search `combobox` input that owns the `listbox` through
  * `aria-activedescendant`, so focus stays in the input while the arrow keys, Page Up/Down,
- * Home and End move the highlight. Enter (or a click) chooses, Escape and Tab close, and focus
- * goes back to the trigger. Typing on the closed trigger opens the list with that text in the
+ * Home and End move the highlight. Enter (or a click) chooses and Escape closes, with focus
+ * back on the trigger; Tab (Shift+Tab) closes and moves on to the next (previous) field after
+ * the trigger, as with a native select. Typing on the closed trigger opens the list with that text in the
  * search box (typeahead); the search is case- and accent-insensitive.
  *
  * Bundle rule: this imports Radix (Popover), so like `overlay.tsx` it may only be used from
@@ -35,6 +36,26 @@ import { cx } from './ui.tsx'
 export const CIV_SELECT_CONTENT_ATTR = 'data-civ-select-content'
 
 type Size = 'lg' | 'md'
+
+const TABBABLE =
+  'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), summary, [tabindex]'
+
+/**
+ * Focuses the next (or previous) tab stop after `from` in page order, outside any civ list (one
+ * may still be fading out), or `from` itself when there is none.
+ */
+function focusTabbableFrom(from: HTMLElement, dir: 'next' | 'prev') {
+  const stops = Array.from(document.querySelectorAll<HTMLElement>(TABBABLE)).filter(
+    (el) =>
+      el === from ||
+      (el.tabIndex >= 0 &&
+        el.getClientRects().length > 0 &&
+        !el.closest(`[${CIV_SELECT_CONTENT_ATTR}], [inert], [aria-hidden="true"]`)),
+  )
+  const at = stops.indexOf(from)
+  const target = at < 0 ? from : (stops[dir === 'next' ? at + 1 : at - 1] ?? from)
+  target.focus()
+}
 
 /** A civ's medallion: emblem art on brass-rimmed enamel, or a monogram for a civ without art yet. */
 function Medallion({ civ, size }: { civ: CivOption | undefined; size: Size }) {
@@ -98,6 +119,9 @@ export function CivSelect({
   const [active, setActive] = useState(-1)
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  /** Set by Tab in the open list: where focus goes once the list has closed. */
+  const tabOut = useRef<'next' | 'prev' | null>(null)
 
   const searchIndex = useMemo(() => buildSearchIndex(civs), [civs])
   const options = useMemo(() => filterCivs(searchIndex, query), [searchIndex, query])
@@ -179,9 +203,10 @@ export function CivSelect({
       e.preventDefault()
       choose(options[active])
     } else if (e.key === 'Tab') {
-      // Close and hand focus back to the trigger (the list is portalled to the end of the page,
-      // so the browser's next tab stop would be meaningless).
+      // Close and move on from the trigger (the list is portalled to the end of the page, so
+      // the browser's own next tab stop would be meaningless); see onCloseAutoFocus.
       e.preventDefault()
+      tabOut.current = e.shiftKey ? 'prev' : 'next'
       setOpen(false)
     } else if (!inInput && isTypeaheadKey(e)) {
       // Typing while the list itself has focus (touch devices start there) goes to the search.
@@ -208,6 +233,7 @@ export function CivSelect({
       )}
       <Popover.Trigger asChild>
         <button
+          ref={triggerRef}
           type="button"
           role="combobox"
           aria-haspopup="listbox"
@@ -257,6 +283,17 @@ export function CivSelect({
           sideOffset={6}
           collisionPadding={12}
           {...{ [CIV_SELECT_CONTENT_ATTR]: '' }}
+          // Radix gives the content role="dialog"; name it, so screen readers don't announce an
+          // unnamed dialog before the search box and the list.
+          aria-labelledby={nameId}
+          onCloseAutoFocus={(e) => {
+            const dir = tabOut.current
+            tabOut.current = null
+            const trigger = triggerRef.current
+            if (!dir || !trigger) return
+            e.preventDefault()
+            focusTabbableFrom(trigger, dir)
+          }}
           onOpenAutoFocus={(e) => {
             e.preventDefault()
             // Touch devices with an empty search start on the list, so the on-screen keyboard
@@ -300,7 +337,7 @@ export function CivSelect({
               value={query}
               onChange={(e) => onQuery(e.target.value)}
               data-testid={`${testId}-search`}
-              className="h-10 w-full rounded-lg border border-parchment/15 bg-ink/70 pr-3 pl-9 text-sm text-parchment outline-none transition placeholder:text-parchment/40 focus:border-gold/70 focus:ring-2 focus:ring-gold/25"
+              className="h-10 w-full rounded-lg border border-parchment/15 bg-ink/70 pr-3 pl-9 text-sm text-parchment outline-none transition placeholder:text-parchment/60 focus:border-gold/70 focus:ring-2 focus:ring-gold/25"
             />
           </div>
           <div

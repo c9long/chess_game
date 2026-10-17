@@ -30,6 +30,10 @@ const Leaderboard = lazy(() =>
 const DevMail = import.meta.env.DEV
   ? lazy(() => import('./pages/DevMail.tsx').then((m) => ({ default: m.DevMail })))
   : null
+// Development builds only: the civ dropdown with a 120-civ synthetic roster (browser tests).
+const DevCivSelect = import.meta.env.DEV
+  ? lazy(() => import('./pages/DevCivSelect.tsx').then((m) => ({ default: m.DevCivSelect })))
+  : null
 const LegalDoc = lazy(() => import('./pages/LegalDoc.tsx').then((m) => ({ default: m.LegalDoc })))
 
 function NotFound() {
@@ -118,6 +122,7 @@ export function App() {
         <Route element={<Shell />}>
           {/* Always reachable: legal documents and links that arrive by email. */}
           {DevMail ? <Route path="dev/mail" element={<DevMail />} /> : null}
+          {DevCivSelect ? <Route path="dev/civ-select" element={<DevCivSelect />} /> : null}
           <Route path="terms" element={<LegalDoc kind="terms" />} />
           <Route path="privacy" element={<LegalDoc kind="privacy" />} />
           <Route path="verify-email" element={<VerifyEmail />} />

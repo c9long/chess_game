@@ -94,7 +94,11 @@ function SeatMenu({
       <div className="absolute top-9 right-0 z-30 flex w-56 flex-col gap-2 rounded-xl tracking-normal normal-case border border-parchment/15 bg-panel p-3 shadow-2xl shadow-black/60">
         {seat.isBot ? (
           <div className="flex flex-col gap-1 text-xs text-parchment/60">
-            <span id={civLabelId}>Civilization</span>
+            <span id={civLabelId}>
+              {/* Screen readers hear which seat this changes ("West bot Civilization France"). */}
+              <span className="sr-only">{SEAT_LABEL[seatName(index)]} bot </span>
+              Civilization
+            </span>
             <CivSelect
               value={seat.civ}
               onChange={(civ) => send('setBotCiv', { seat: s, civ: civ as never })}
