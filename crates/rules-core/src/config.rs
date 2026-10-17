@@ -137,8 +137,11 @@ mod tests {
         assert!(c.validate().is_ok());
 
         let mut bad = c;
-        bad.rules_version = 2;
-        assert_eq!(bad.validate(), Err(ConfigError::UnsupportedRulesVersion(2)));
+        // Version 1 (the 12×12 board) is no longer playable by this engine.
+        bad.rules_version = 1;
+        assert_eq!(bad.validate(), Err(ConfigError::UnsupportedRulesVersion(1)));
+        bad.rules_version = 3;
+        assert_eq!(bad.validate(), Err(ConfigError::UnsupportedRulesVersion(3)));
         let mut bad = c;
         bad.move_limit_rounds = 0;
         assert_eq!(bad.validate(), Err(ConfigError::ZeroMoveLimit));

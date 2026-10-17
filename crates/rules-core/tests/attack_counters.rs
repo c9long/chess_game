@@ -1,4 +1,4 @@
-//! Adversarial tests derived from PLAN §2 ("rules_version 1"): turn order and
+//! Adversarial tests derived from PLAN §2 (rules version 2): turn order and
 //! skipping, Teams alternation, the no-progress counter and move limit,
 //! en passant expiry, Zobrist hashing, position-string round trips and move
 //! notation. Every scripted action is followed by a full state check
@@ -14,7 +14,7 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 // Helpers
 // ---------------------------------------------------------------------------
 
-const KINGS: [&str; 4] = ["sKg1", "wKa7", "nKg12", "eKl7"];
+const KINGS: [&str; 4] = ["sKi1", "wKa9", "nKi16", "eKp9"];
 
 fn sq(s: &str) -> Square {
     s.parse().unwrap()
@@ -150,7 +150,7 @@ fn field(s: &GameState, i: usize) -> String {
 }
 
 const KNIGHT_TOUR: [&str; 8] = [
-    "d1c3", "a4c5", "d12e10", "l4j5", "c3d1", "c5a4", "e10d12", "j5l4",
+    "f1e3", "a6c7", "f16e14", "p6n7", "e3f1", "c7a6", "e14f16", "n7p6",
 ];
 
 // ---------------------------------------------------------------------------
@@ -183,24 +183,24 @@ fn ffa_turns_go_clockwise_and_knight_tour_transposes_to_start_hash() {
 
 #[test]
 fn ffa_removed_seats_are_skipped() {
-    let mut s = pos("ffa", &["sKg1", "nKg12", "eKl7"], "S ARAA - - 0 0 def=Wl");
-    go(&mut s, "g1g2");
+    let mut s = pos("ffa", &["sKi1", "nKi16", "eKp9"], "S ARAA - - 0 0 def=Wl");
+    go(&mut s, "i1i2");
     assert_eq!(s.seat_to_move(), Seat::North);
-    go(&mut s, "g12g11");
+    go(&mut s, "i16i15");
     assert_eq!(s.seat_to_move(), Seat::East);
-    go(&mut s, "l7l6");
+    go(&mut s, "p9p8");
     assert_eq!(s.seat_to_move(), Seat::South);
 
-    let mut s = pos("ffa", &["sKg1", "eKl7"], "S ARRA - - 0 0 def=Wl,Nl");
-    go(&mut s, "g1g2");
+    let mut s = pos("ffa", &["sKi1", "eKp9"], "S ARRA - - 0 0 def=Wl,Nl");
+    go(&mut s, "i1i2");
     assert_eq!(s.seat_to_move(), Seat::East);
-    go(&mut s, "l7l6");
+    go(&mut s, "p9p8");
     assert_eq!(s.seat_to_move(), Seat::South);
 
-    let mut s = pos("ffa", &["wKa7", "eKl7"], "E RARA - - 0 0 def=Sl,Nl");
-    go(&mut s, "l7l6");
+    let mut s = pos("ffa", &["wKa9", "eKp9"], "E RARA - - 0 0 def=Sl,Nl");
+    go(&mut s, "p9p8");
     assert_eq!(s.seat_to_move(), Seat::West);
-    go(&mut s, "a7a6");
+    go(&mut s, "a9a8");
     assert_eq!(s.seat_to_move(), Seat::East);
 }
 
@@ -209,17 +209,17 @@ fn ffa_leader_capture_skips_the_newly_removed_next_seat() {
     // South takes West's king: West is next in order but is now REMOVED.
     let mut s = pos(
         "ffa",
-        &["sKg1", "sRa1", "wKa7", "wPc5", "nKg12", "eKl7"],
+        &["sKi1", "sRa1", "wKa9", "wPe7", "nKi16", "eKp9"],
         "S AAAA - - 42 0",
     );
-    let ev = go(&mut s, "a1a7");
+    let ev = go(&mut s, "a1a9");
     assert_eq!(
         defeats(&ev),
         vec![(Seat::West, DefeatReason::LeaderCaptured)]
     );
     assert!(ev.contains(&GameEvent::ArmyRemoved { seat: Seat::West }));
     assert_eq!(s.status(Seat::West), SeatStatus::Removed);
-    assert_eq!(s.piece_at(sq("c5")), None);
+    assert_eq!(s.piece_at(sq("e7")), None);
     assert_eq!(s.seat_to_move(), Seat::North);
     assert_eq!(s.no_progress(), 0);
     assert_eq!(s.move_limit(), 75);
@@ -227,10 +227,10 @@ fn ffa_leader_capture_skips_the_newly_removed_next_seat() {
     // East takes South's king: the next seat after East is West.
     let mut s = pos(
         "ffa",
-        &["sKg1", "wKa7", "nKg12", "eKl7", "eRg5"],
+        &["sKi1", "wKa9", "nKi16", "eKp9", "eRi7"],
         "E AAAA - - 0 0",
     );
-    go(&mut s, "g5g1");
+    go(&mut s, "i7i1");
     assert_eq!(s.status(Seat::South), SeatStatus::Removed);
     assert_eq!(s.seat_to_move(), Seat::West);
 }
@@ -240,37 +240,37 @@ fn teams_frozen_seat_gives_one_team_two_turns_in_a_row() {
     // West frozen: S, N (same team twice), E, S, ...
     let mut s = pos(
         "teams",
-        &["sKg1", "wKa7", "wRa3", "nKg12", "eKl7"],
+        &["sKi1", "wKa9", "wRa5", "nKi16", "eKp9"],
         "S AFAA - - 0 0 def=Wt",
     );
     assert_eq!(s.move_limit(), 75);
-    go(&mut s, "g1g2");
+    go(&mut s, "i1i2");
     assert_eq!(s.seat_to_move(), Seat::North);
-    go(&mut s, "g12g11");
+    go(&mut s, "i16i15");
     assert_eq!(s.seat_to_move(), Seat::East);
-    go(&mut s, "l7l6");
+    go(&mut s, "p9p8");
     assert_eq!(s.seat_to_move(), Seat::South);
     assert_eq!(
-        s.piece_at(sq("a3")),
+        s.piece_at(sq("a5")),
         Some(Piece::new(PieceKind::Rook, Seat::West))
     );
     assert_eq!(
-        s.piece_at(sq("a7")),
+        s.piece_at(sq("a9")),
         Some(Piece::new(PieceKind::King, Seat::West))
     );
 
     // East frozen: N then S back to back.
     let mut s = pos("teams", &KINGS, "N AAAF - - 0 0 def=Et");
-    go(&mut s, "g12g11");
+    go(&mut s, "i16i15");
     assert_eq!(s.seat_to_move(), Seat::South);
-    go(&mut s, "g1g2");
+    go(&mut s, "i1i2");
     assert_eq!(s.seat_to_move(), Seat::West);
 }
 
 #[test]
 fn teams_timeout_on_move_freezes_and_turn_skips_the_frozen_seat() {
     let mut s = start(GameMode::Teams);
-    go(&mut s, "d1c3");
+    go(&mut s, "f1e3");
     let ev = timeout(&mut s, Seat::West);
     assert_eq!(defeats(&ev), vec![(Seat::West, DefeatReason::Timeout)]);
     assert!(ev.contains(&GameEvent::Frozen { seat: Seat::West }));
@@ -282,11 +282,11 @@ fn teams_timeout_on_move_freezes_and_turn_skips_the_frozen_seat() {
     assert_eq!(s.seat_to_move(), Seat::North);
     assert_eq!(s.no_progress(), 0);
     assert_eq!(s.move_limit(), 75);
-    go(&mut s, "d12e10");
+    go(&mut s, "f16e14");
     assert_eq!(s.seat_to_move(), Seat::East);
-    go(&mut s, "l4j5");
+    go(&mut s, "p6n7");
     assert_eq!(s.seat_to_move(), Seat::South);
-    go(&mut s, "c3e4");
+    go(&mut s, "e3g4");
     assert_eq!(s.seat_to_move(), Seat::North, "frozen West must be skipped");
     assert_eq!(s.no_progress(), 3);
 }
@@ -295,10 +295,10 @@ fn teams_timeout_on_move_freezes_and_turn_skips_the_frozen_seat() {
 fn teams_defeated_seat_keeps_its_turn_slot() {
     let mut s = pos(
         "teams",
-        &["sKg1", "wKa7", "wRa3", "nKg12", "nQa12", "eKl7"],
+        &["sKi1", "wKa9", "wRa5", "nKi16", "nQa16", "eKp9"],
         "N AAAA - - 5 0",
     );
-    let ev = go(&mut s, "a12a7");
+    let ev = go(&mut s, "a16a9");
     assert_eq!(
         defeats(&ev),
         vec![(Seat::West, DefeatReason::LeaderCaptured)]
@@ -311,10 +311,10 @@ fn teams_defeated_seat_keeps_its_turn_slot() {
     assert_eq!(s.seat_to_move(), Seat::East);
     assert_eq!(s.no_progress(), 0);
     assert_eq!(s.move_limit(), 100);
-    go(&mut s, "l7l6");
-    go(&mut s, "g1g2");
+    go(&mut s, "p9p8");
+    go(&mut s, "i1i2");
     assert_eq!(s.seat_to_move(), Seat::West);
-    go(&mut s, "a3b3");
+    go(&mut s, "a5b5");
     assert_eq!(s.seat_to_move(), Seat::North);
     assert_eq!(s.no_progress(), 3);
 }
@@ -329,11 +329,11 @@ fn abandon_by_seat_not_on_move_keeps_turn_then_seat_is_skipped() {
     assert_eq!(s.seat_to_move(), Seat::South);
     assert_eq!(s.no_progress(), 0, "an abandon is a defeat: counter resets");
     assert_eq!(s.ply(), 7, "an abandon is not a turn");
-    go(&mut s, "g1g2");
+    go(&mut s, "i1i2");
     assert_eq!(s.seat_to_move(), Seat::West);
-    go(&mut s, "a7a6");
+    go(&mut s, "a9a8");
     assert_eq!(s.seat_to_move(), Seat::East);
-    go(&mut s, "l7l6");
+    go(&mut s, "p9p8");
     assert_eq!(s.seat_to_move(), Seat::South);
 }
 
@@ -350,7 +350,7 @@ fn abandon_by_seat_on_move_advances_the_turn() {
 
 #[test]
 fn clock_actions_on_wrong_seat_or_finished_game_are_rejected_without_change() {
-    let mut s = pos("ffa", &["sKg1", "nKg12", "eKl7"], "S ARAA - - 3 9 def=Wl");
+    let mut s = pos("ffa", &["sKi1", "nKi16", "eKp9"], "S ARAA - - 3 9 def=Wl");
     let before = s.clone();
     assert!(matches!(
         apply_timeout(&mut s, Seat::North),
@@ -368,7 +368,7 @@ fn clock_actions_on_wrong_seat_or_finished_game_are_rejected_without_change() {
     assert!(apply_timeout(&mut t, Seat::West).is_err());
     assert_eq!(t, before);
 
-    let mut over = pos("ffa", &["sKg1", "eKl7"], "S ARRA - - 0 0 def=Wl,Nl");
+    let mut over = pos("ffa", &["sKi1", "eKp9"], "S ARRA - - 0 0 def=Wl,Nl");
     abandon(&mut over, Seat::East);
     assert!(over.is_over());
     let before = over.clone();
@@ -380,16 +380,16 @@ fn clock_actions_on_wrong_seat_or_finished_game_are_rejected_without_change() {
         apply_abandon(&mut over, Seat::South),
         Err(RulesError::GameOver)
     );
-    assert_eq!(apply_move(&mut over, mv("g1g2")), Err(RulesError::GameOver));
+    assert_eq!(apply_move(&mut over, mv("i1i2")), Err(RulesError::GameOver));
     assert_eq!(over, before);
 }
 
 #[test]
 fn teams_two_automatic_passes_in_one_action() {
     // West and North are DEFEATED with no pieces: both pass every round.
-    let mut s = pos("teams", &["sKg1", "eKl7"], "S ADDA - - 10 20 def=Wl,Nl");
+    let mut s = pos("teams", &["sKi1", "eKp9"], "S ADDA - - 10 20 def=Wl,Nl");
     assert_eq!(s.move_limit(), 100);
-    let ev = go(&mut s, "g1g2");
+    let ev = go(&mut s, "i1i2");
     assert!(matches!(
         ev[0],
         GameEvent::MoveMade {
@@ -401,7 +401,7 @@ fn teams_two_automatic_passes_in_one_action() {
     assert_eq!(s.seat_to_move(), Seat::East);
     assert_eq!(s.ply(), 23);
     assert_eq!(s.no_progress(), 13);
-    let ev = go(&mut s, "l7l6");
+    let ev = go(&mut s, "p9p8");
     assert!(passes(&ev).is_empty());
     assert_eq!(s.seat_to_move(), Seat::South);
     assert_eq!(s.ply(), 24);
@@ -411,16 +411,16 @@ fn teams_two_automatic_passes_in_one_action() {
 #[test]
 fn teams_move_limit_reached_on_an_automatic_pass() {
     // 97 + move = 98, West's pass = 99, North's pass = 100: draw.
-    let mut s = pos("teams", &["sKg1", "eKl7"], "S ADDA - - 97 0 def=Wl,Nl");
-    let ev = go(&mut s, "g1g2");
+    let mut s = pos("teams", &["sKi1", "eKp9"], "S ADDA - - 97 0 def=Wl,Nl");
+    let ev = go(&mut s, "i1i2");
     assert_eq!(passes(&ev), vec![Seat::West, Seat::North]);
     assert_eq!(ended(&ev).unwrap().result, GameResult::TeamsDraw);
     assert!(matches!(ev.last(), Some(GameEvent::GameEnded { .. })));
     assert_eq!(s.no_progress(), 100);
 
     // 98 + move = 99, West's pass = 100: draw before North's pass.
-    let mut s = pos("teams", &["sKg1", "eKl7"], "S ADDA - - 98 0 def=Wl,Nl");
-    let ev = go(&mut s, "g1g2");
+    let mut s = pos("teams", &["sKi1", "eKp9"], "S ADDA - - 98 0 def=Wl,Nl");
+    let ev = go(&mut s, "i1i2");
     assert_eq!(passes(&ev), vec![Seat::West]);
     assert_eq!(ended(&ev).unwrap().result, GameResult::TeamsDraw);
 }
@@ -430,16 +430,16 @@ fn teams_frozen_and_passing_seats_of_one_team() {
     // West frozen, North DEFEATED with no pieces: S, (W skipped), N passes, E.
     let mut s = pos(
         "teams",
-        &["sKg1", "wKa7", "eKl7"],
+        &["sKi1", "wKa9", "eKp9"],
         "S AFDA - - 0 0 def=Wt,Nl",
     );
     assert_eq!(s.move_limit(), 75);
-    let ev = go(&mut s, "g1g2");
+    let ev = go(&mut s, "i1i2");
     assert_eq!(passes(&ev), vec![Seat::North]);
     assert_eq!(s.seat_to_move(), Seat::East);
     assert_eq!(s.no_progress(), 2);
     assert_eq!(s.ply(), 2);
-    let ev = go(&mut s, "l7l6");
+    let ev = go(&mut s, "p9p8");
     assert!(passes(&ev).is_empty());
     assert_eq!(s.seat_to_move(), Seat::South);
 }
@@ -471,9 +471,9 @@ fn move_limit_scales_with_configured_rounds() {
 
 #[test]
 fn ffa_move_limit_tie_with_two_removed_seats() {
-    let mut s = pos("ffa", &["sKg1", "eKl7"], "S ARRA - - 49 0 def=Wl,Nl");
+    let mut s = pos("ffa", &["sKi1", "eKp9"], "S ARRA - - 49 0 def=Wl,Nl");
     assert_eq!(s.move_limit(), 50);
-    let ev = go(&mut s, "g1g2");
+    let ev = go(&mut s, "i1i2");
     let o = ended(&ev).expect("limit reached");
     assert_eq!(
         o.result,
@@ -492,14 +492,14 @@ fn ffa_move_limit_tie_with_two_removed_seats() {
 fn castling_does_not_reset_the_counter() {
     let mut s = pos(
         "ffa",
-        &["sKg1", "sRj1", "wKa7", "nKg12", "eKl7"],
-        "S AAAA Sj1 - 10 0",
+        &["sKi1", "sRl1", "wKa9", "nKi16", "eKp9"],
+        "S AAAA Sl1 - 10 0",
     );
-    let ev = go(&mut s, "g1i1");
+    let ev = go(&mut s, "i1k1");
     assert!(ev.iter().any(|e| matches!(e, GameEvent::Castle { .. })));
     assert_eq!(s.no_progress(), 11);
     assert_eq!(
-        s.piece_at(sq("h1")),
+        s.piece_at(sq("j1")),
         Some(Piece::new(PieceKind::Rook, Seat::South))
     );
     assert_eq!(field(&s, 4), "-");
@@ -529,7 +529,7 @@ fn pawn_moves_and_captures_reset_the_counter() {
 fn ffa_timeout_resets_counter_and_lowers_limit() {
     let mut s = pos(
         "ffa",
-        &["sKg1", "sPd2", "wKa7", "nKg12", "eKl7"],
+        &["sKi1", "sPf2", "wKa9", "nKi16", "eKp9"],
         "S AAAA - - 60 3",
     );
     let ev = timeout(&mut s, Seat::South);
@@ -547,7 +547,7 @@ fn ffa_timeout_resets_counter_and_lowers_limit() {
 fn teams_defeated_seat_abandoning_lowers_limit_without_reset_or_early_end() {
     let mut s = pos(
         "teams",
-        &["sKg1", "wRa3", "nKg12", "eKl7"],
+        &["sKi1", "wRa5", "nKi16", "eKp9"],
         "S ADAA - - 73 0 def=Wl",
     );
     assert_eq!(s.move_limit(), 100);
@@ -566,10 +566,10 @@ fn teams_defeated_seat_abandoning_lowers_limit_without_reset_or_early_end() {
     );
     assert!(!s.is_over());
     assert_eq!(s.seat_to_move(), Seat::South);
-    go(&mut s, "g1g2");
+    go(&mut s, "i1i2");
     assert_eq!(s.seat_to_move(), Seat::North);
     assert!(!s.is_over());
-    let ev = go(&mut s, "g12g11");
+    let ev = go(&mut s, "i16i15");
     assert_eq!(ended(&ev).unwrap().result, GameResult::TeamsDraw);
 }
 
@@ -577,7 +577,7 @@ fn teams_defeated_seat_abandoning_lowers_limit_without_reset_or_early_end() {
 fn teams_last_active_seat_abandoning_ends_the_game() {
     let mut s = pos(
         "teams",
-        &["sKg1", "wRa3", "nKg12", "eKl7"],
+        &["sKi1", "wRa5", "nKi16", "eKp9"],
         "S ADAA - - 0 0 def=Wl",
     );
     let ev = abandon(&mut s, Seat::East);
@@ -605,7 +605,7 @@ fn teams_last_active_seat_abandoning_ends_the_game() {
 
 #[test]
 fn ffa_abandon_leaving_one_active_seat_ends_with_reverse_defeat_placements() {
-    let mut s = pos("ffa", &["sKg1", "eKl7"], "S ARRA - - 0 0 def=Wl,Nl");
+    let mut s = pos("ffa", &["sKi1", "eKp9"], "S ARRA - - 0 0 def=Wl,Nl");
     let ev = abandon(&mut s, Seat::East);
     let o = ended(&ev).unwrap();
     assert_eq!(o.result, GameResult::FfaWinner { seat: Seat::South });
@@ -619,7 +619,7 @@ fn ffa_abandon_leaving_one_active_seat_ends_with_reverse_defeat_placements() {
 fn ep_fixture() -> GameState {
     pos(
         "ffa",
-        &["sKg1", "sPd2", "wKa7", "wPc4", "nKg12", "eKl7"],
+        &["sKi1", "sPd2", "wKa9", "wPc4", "nKi16", "eKp9"],
         "S AAAA - - 5 0",
     )
 }
@@ -637,15 +637,15 @@ fn ep_target_lives_until_turn_order_returns_to_its_seat() {
     );
     assert_eq!(field(&s, 5), "Sd3");
     assert!(legal(&s, "c4d3"));
-    go(&mut s, "a7a6"); // West declines
+    go(&mut s, "a9a8"); // West declines
     assert!(s.ep_target(Seat::South).is_some());
-    go(&mut s, "g12g11");
+    go(&mut s, "i16i15");
     assert!(s.ep_target(Seat::South).is_some());
-    go(&mut s, "l7l6");
+    go(&mut s, "p9p8");
     assert_eq!(s.seat_to_move(), Seat::South);
     assert_eq!(s.ep_target(Seat::South), None);
     assert_eq!(field(&s, 5), "-");
-    go(&mut s, "g1g2");
+    go(&mut s, "i1i2");
     assert!(!legal(&s, "c4d3"));
 }
 
@@ -692,18 +692,18 @@ fn two_ep_targets_live_at_once_expire_independently() {
 fn ep_target_cleared_when_its_seat_abandons() {
     let mut s = pos(
         "teams",
-        &["sKg1", "sPd4", "wKa7", "wPb5", "nKg12", "eKl7"],
+        &["sKi1", "sPd4", "wKa9", "wPb7", "nKi16", "eKp9"],
         "W AAAA - - 0 0",
     );
-    go(&mut s, "b5d5");
+    go(&mut s, "b7d7");
     assert!(s.ep_target(Seat::West).is_some());
     abandon(&mut s, Seat::West);
     assert_eq!(s.status(Seat::West), SeatStatus::Frozen);
     assert_eq!(s.ep_target(Seat::West), None);
     assert_eq!(s.seat_to_move(), Seat::North);
-    go(&mut s, "g12g11");
-    go(&mut s, "l7l6");
-    assert!(!legal(&s, "d4c5"));
+    go(&mut s, "i16i15");
+    go(&mut s, "p9p8");
+    assert!(!legal(&s, "d4c7"));
 }
 
 #[test]
@@ -732,14 +732,14 @@ fn ep_target_cleared_when_turn_reaches_its_seat_as_a_pass() {
 
 #[test]
 fn off_move_abandon_that_kills_the_only_move_makes_defeated_seat_pass() {
-    // West (DEFEATED, on move) has one move: c9xd10 en passant of North's
+    // West (DEFEATED, on move) has one move: c13xd14 en passant of North's
     // double step. North abandons: its target is cleared ("when the seat
     // stops taking turns"), so West has no legal move and must pass rather
     // than leave the game stuck.
     let mut s = pos(
         "teams",
-        &["sKg1", "wPc9", "nKg12", "nPd9", "eKl7"],
-        "W ADAA - Nd10 12 30 def=Wl",
+        &["sKk1", "wPc13", "nKk16", "nPd13", "eKp11"],
+        "W ADAA - Nd14 12 30 def=Wl",
     );
     assert_eq!(legal_moves(&s).len(), 1);
     let ev = abandon(&mut s, Seat::North);
@@ -756,15 +756,15 @@ fn position_with_ep_target_for_the_seat_to_move_is_rejected_or_inert() {
     // The turn has already reached South, so its target cannot be live.
     let r = try_pos(
         "ffa",
-        &["sKg1", "sPd4", "wKa7", "wPc4", "nKg12", "eKl7"],
-        "S AAAA - Sd3 0 0",
+        &["sKi1", "sPf6", "wKa9", "wPe6", "nKi16", "eKp9"],
+        "S AAAA - Sf5 0 0",
     );
     if let Ok(mut s) = r {
         let accepted = s.ep_target(Seat::South);
-        apply_move(&mut s, mv("g1g2")).unwrap();
+        apply_move(&mut s, mv("i1i2")).unwrap();
         // After South's own turn the target must certainly be gone.
         assert!(
-            !legal(&s, "c4d3"),
+            !legal(&s, "e6f5"),
             "stale en passant allowed after the owner's turn: {s}"
         );
         assert_eq!(s.ep_target(Seat::South), None);
@@ -779,25 +779,25 @@ fn position_with_ep_target_for_the_seat_to_move_is_rejected_or_inert() {
 fn position_with_ep_target_for_a_frozen_seat_is_rejected_or_inert() {
     let r = try_pos(
         "teams",
-        &["sKg1", "sPd4", "wKa7", "wPd5", "nKg12", "eKl7"],
-        "S AFAA - Wc5 0 0 def=Wt",
+        &["sKi1", "sPf6", "wKa9", "wPf7", "nKi16", "eKp9"],
+        "S AFAA - We7 0 0 def=Wt",
     );
     if let Ok(s) = r {
         assert_eq!(s.ep_target(Seat::West), None);
-        assert!(!legal(&s, "d4c5"));
+        assert!(!legal(&s, "f6e7"));
     }
 }
 
 #[test]
 fn ep_capture_requires_the_double_stepped_pawn_on_its_square() {
-    // West to move with South's target d3 (pawn square d4) but no South pawn
-    // on d4: "provided ... the double-stepped pawn is still on its square".
-    for occupant in [None, Some("nNd4"), Some("sNd4"), Some("wNd4")] {
-        let mut pieces = vec!["sKg1", "wKa7", "wPc4", "nKg12", "eKl7"];
+    // West to move with South's target f5 (pawn square f6) but no South pawn
+    // on f6: "provided ... the double-stepped pawn is still on its square".
+    for occupant in [None, Some("nNf6"), Some("sNf6"), Some("wNf6")] {
+        let mut pieces = vec!["sKi1", "wKa9", "wPe6", "nKi16", "eKp9"];
         pieces.extend(occupant);
-        if let Ok(s) = try_pos("ffa", &pieces, "W AAAA - Sd3 0 0") {
+        if let Ok(s) = try_pos("ffa", &pieces, "W AAAA - Sf5 0 0") {
             assert!(
-                !legal(&s, "c4d3"),
+                !legal(&s, "e6f5"),
                 "en passant without the double-stepped pawn ({occupant:?}) in {s}"
             );
         }
@@ -807,14 +807,14 @@ fn ep_capture_requires_the_double_stepped_pawn_on_its_square() {
 #[test]
 fn ep_target_that_no_double_step_can_create_is_rejected_or_inert() {
     // South double-steps only from rank 2 to rank 4 (skipping rank 3), so
-    // "Sd5" (pawn on d6) can never exist; West's c4 pawn attacks d5.
+    // "Sf7" (pawn on f8) can never exist; West's e6 pawn attacks f7.
     if let Ok(s) = try_pos(
         "ffa",
-        &["sKg1", "sPd6", "wKa7", "wPc4", "nKg12", "eKl7"],
-        "W AAAA - Sd5 0 0",
+        &["sKi1", "sPf8", "wKa9", "wPe6", "nKi16", "eKp9"],
+        "W AAAA - Sf7 0 0",
     ) {
         assert!(
-            !legal(&s, "c4d5"),
+            !legal(&s, "e6f7"),
             "impossible ep target accepted and usable: {s}"
         );
     }
@@ -824,32 +824,32 @@ fn ep_target_that_no_double_step_can_create_is_rejected_or_inert() {
 fn north_and_west_ep_targets_round_trip_with_derived_pawn_squares() {
     let s = pos(
         "ffa",
-        &["sKg1", "wKa7", "wPd5", "nKg12", "nPd9", "eKl7"],
-        "E AAAA - Wc5,Nd10 0 9",
+        &["sKi1", "wKa9", "wPd7", "nKi16", "nPd13", "eKp9"],
+        "E AAAA - Wc7,Nd14 0 9",
     );
     assert_eq!(
         s.ep_target(Seat::North),
         Some(EpTarget {
-            skipped: sq("d10"),
-            pawn: sq("d9")
+            skipped: sq("d14"),
+            pawn: sq("d13")
         })
     );
     assert_eq!(
         s.ep_target(Seat::West),
         Some(EpTarget {
-            skipped: sq("c5"),
-            pawn: sq("d5")
+            skipped: sq("c7"),
+            pawn: sq("d7")
         })
     );
-    assert_eq!(field(&s, 5), "Wc5,Nd10");
+    assert_eq!(field(&s, 5), "Wc7,Nd14");
     // East moves; South's turn: both targets still live (W and N not reached).
     let mut s = s;
-    go(&mut s, "l7l6");
+    go(&mut s, "p9p8");
     assert!(s.ep_target(Seat::West).is_some() && s.ep_target(Seat::North).is_some());
-    go(&mut s, "g1g2"); // turn reaches West
+    go(&mut s, "i1i2"); // turn reaches West
     assert_eq!(s.ep_target(Seat::West), None);
     assert!(s.ep_target(Seat::North).is_some());
-    go(&mut s, "a7a6"); // turn reaches North
+    go(&mut s, "a9a8"); // turn reaches North
     assert_eq!(s.ep_target(Seat::North), None);
 }
 
@@ -864,7 +864,7 @@ fn counter_at_or_past_the_limit_in_a_position_string_is_a_finished_game() {
         }
     );
     let mut t = s.clone();
-    assert_eq!(apply_move(&mut t, mv("g1g2")), Err(RulesError::GameOver));
+    assert_eq!(apply_move(&mut t, mv("i1i2")), Err(RulesError::GameOver));
     let s = pos("teams", &KINGS, "S AFAA - - 75 0 def=Wt");
     assert_eq!(s.outcome().unwrap().result, GameResult::TeamsDraw);
     let s = pos("ffa", &KINGS, "S AAAA - - 99 0");
@@ -873,7 +873,7 @@ fn counter_at_or_past_the_limit_in_a_position_string_is_a_finished_game() {
 
 #[test]
 fn position_statuses_must_fit_the_mode_and_defeat_order() {
-    let k3 = ["sKg1", "nKg12", "eKl7"];
+    let k3 = ["sKi1", "nKi16", "eKp9"];
     let bad: [(&str, &[&str], &str); 8] = [
         // DEFEATED / FROZEN do not exist in FFA, REMOVED does not exist in Teams.
         ("ffa", &KINGS, "S ADAA - - 0 0 def=Wl"),
@@ -904,16 +904,16 @@ fn hash_distinguishes_side_to_move_status_castling_and_ep() {
     let base = start(GameMode::Ffa).to_string();
     let a = parse_position(&base).unwrap();
     let b = parse_position(&base.replacen(" S AAAA ", " W AAAA ", 1)).unwrap();
-    let c = parse_position(&base.replacen("Sc1,", "", 1)).unwrap();
+    let c = parse_position(&base.replacen("Se1,", "", 1)).unwrap();
     assert_ne!(a.hash(), b.hash(), "side to move");
     assert_ne!(a.hash(), c.hash(), "castling");
 
-    let pieces = ["sKg1", "sPd4", "wKa7", "wPc4", "nKg12", "eKl7"];
+    let pieces = ["sKi1", "sPd4", "wKa9", "wPc4", "nKi16", "eKp9"];
     let d = pos("ffa", &pieces, "W AAAA - Sd3 0 0");
     let e = pos("ffa", &pieces, "W AAAA - - 0 0");
     assert_ne!(d.hash(), e.hash(), "en passant target");
 
-    let pieces = ["sKg1", "wKa7", "wRa3", "nKg12", "eKl7"];
+    let pieces = ["sKi1", "wKa9", "wRa5", "nKi16", "eKp9"];
     let f = pos("teams", &pieces, "S AAAA - - 0 0");
     let g = pos("teams", &pieces, "S ADAA - - 0 0 def=Wl");
     let h = pos("teams", &pieces, "S AFAA - - 0 0 def=Wt");
@@ -929,18 +929,18 @@ fn hash_matches_recompute_through_promotion_castle_ep_and_defeats() {
     let mut s = pos(
         "ffa",
         &[
-            "sKg1", "sRj1", "sPd6", "wKa7", "wPf5", "nKg12", "nRe7", "eKl7", "eQl1",
+            "sKi1", "sRl1", "sPf8", "wKa9", "wPh7", "nKi16", "nRg9", "eKp9", "eQp1",
         ],
-        "S AAAA Sj1 - 0 0",
+        "S AAAA Sl1 - 0 0",
     );
-    go(&mut s, "d6e7q"); // capture + promotion
-    go(&mut s, "f5g5n"); // West promotes
-    go(&mut s, "g12g11");
-    go(&mut s, "l1k1"); // East queen
-    go(&mut s, "g1i1"); // castle
-    go(&mut s, "g5e6"); // knight
+    go(&mut s, "f8g9q"); // capture + promotion
+    go(&mut s, "h7i7n"); // West promotes
+    go(&mut s, "i16i15");
+    go(&mut s, "p1o1"); // East queen
+    go(&mut s, "i1k1"); // castle
+    go(&mut s, "i7g8"); // knight
     timeout(&mut s, Seat::North);
-    let ev = go(&mut s, "k1i1"); // East takes South's king
+    let ev = go(&mut s, "o1k1"); // East takes South's king
     assert_eq!(
         defeats(&ev),
         vec![(Seat::South, DefeatReason::LeaderCaptured)]
@@ -961,11 +961,11 @@ fn hash_matches_recompute_through_promotion_castle_ep_and_defeats() {
 #[test]
 fn mid_game_teams_position_round_trips_exactly() {
     let board = board_field(&[
-        "sKg1", "sRc1", "sRj1", "sPd4", "wRb8", "nKg12", "nPc11", "eKl7", "eQl6", "ePi5",
+        "sKi1", "sRe1", "sRl1", "sPf4", "wRb10", "nKi16", "nPe15", "eKp9", "eQp8", "ePm7",
     ]);
     let text = format!(
-        "teams {board} W ADFA Sc1,Sj1 Ej5 37 123 ep=on ml=30 \
-         civ=canada.1,canada.1,canada.1,canada.1 def=Wl,Nt rv=1"
+        "teams {board} W ADFA Se1,Sl1 En7 37 123 ep=on ml=30 \
+         civ=canada.1,canada.1,canada.1,canada.1 def=Wl,Nt rv=2"
     );
     let s = parse_position(&text).unwrap_or_else(|e| panic!("{e}"));
     assert_eq!(s.to_string(), text);
@@ -981,8 +981,8 @@ fn mid_game_teams_position_round_trips_exactly() {
     assert_eq!(
         s.ep_target(Seat::East),
         Some(EpTarget {
-            skipped: sq("j5"),
-            pawn: sq("i5")
+            skipped: sq("n7"),
+            pawn: sq("m7")
         })
     );
     assert_eq!(s.no_progress(), 37);
@@ -1001,7 +1001,7 @@ fn mid_game_teams_position_round_trips_exactly() {
     // West (DEFEATED) moves; North frozen is skipped; East's target expires
     // when the turn reaches East.
     let mut s = s.clone();
-    go(&mut s, "b8b9");
+    go(&mut s, "b10b11");
     assert_eq!(s.seat_to_move(), Seat::East);
     assert_eq!(s.ep_target(Seat::East), None);
     assert_eq!(s.no_progress(), 38);
@@ -1010,7 +1010,7 @@ fn mid_game_teams_position_round_trips_exactly() {
 
 #[test]
 fn finished_game_position_round_trips_and_derives_outcome() {
-    let s = pos("ffa", &["sKg1"], "S ARRR - - 0 50 def=Wl,Nl,El");
+    let s = pos("ffa", &["sKi1"], "S ARRR - - 0 50 def=Wl,Nl,El");
     assert!(s.is_over());
     let o = s.outcome().unwrap();
     assert_eq!(o.result, GameResult::FfaWinner { seat: Seat::South });
@@ -1033,7 +1033,7 @@ fn huge_ply_or_counter_never_panics() {
         let r = catch_unwind(|| {
             if let Ok(mut s) = parse_position(&text) {
                 let _ = s.to_string();
-                let _ = apply_move(&mut s, mv("g1g2"));
+                let _ = apply_move(&mut s, mv("i1i2"));
                 let to_move = s.seat_to_move();
                 let _ = apply_timeout(&mut s, to_move);
             }
@@ -1049,13 +1049,13 @@ fn position_parser_never_panics_on_mutated_input() {
         start(GameMode::Teams).to_string(),
         pos(
             "teams",
-            &["sKg1", "sRc1", "sPd4", "wRb8", "nKg12", "eKl7", "ePi5"],
-            "W ADFA Sc1 Ej5 37 123 ml=30 def=Wl,Nt",
+            &["sKi1", "sRe1", "sPf4", "wRb10", "nKi16", "eKp9", "ePm7"],
+            "W ADFA Se1 En7 37 123 ml=30 def=Wl,Nt",
         )
         .to_string(),
     ];
     let alphabet: Vec<char> =
-        " /0123456789swneSWNEADFRPNBQKabcdefghijklmlstar,-=._xyz\u{e9}\u{1F600}\0"
+        " /0123456789swneSWNEADFRPNBQKabcdefghijklmnoplstar,-=._xyz\u{e9}\u{1F600}\0"
             .chars()
             .collect();
     let mut rng = Rng(0x9E37_79B9_7F4A_7C15);
@@ -1112,14 +1112,14 @@ fn position_parser_never_panics_on_mutated_input() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn a10a12_west_rook_move_from_the_start() {
-    let m = mv("a10a12");
-    assert_eq!(m.from, sq("a10"));
-    assert_eq!(m.to, sq("a12"));
-    assert_eq!(format_move(&m), "a10a12");
+fn a12a16_west_rook_move_from_the_start() {
+    let m = mv("a12a16");
+    assert_eq!(m.from, sq("a12"));
+    assert_eq!(m.to, sq("a16"));
+    assert_eq!(format_move(&m), "a12a16");
     let mut s = start(GameMode::Ffa);
-    go(&mut s, "d1c3");
-    let ev = go(&mut s, "a10a12");
+    go(&mut s, "f1e3");
+    let ev = go(&mut s, "a12a16");
     assert!(matches!(
         ev[0],
         GameEvent::MoveMade {
@@ -1129,54 +1129,54 @@ fn a10a12_west_rook_move_from_the_start() {
         }
     ));
     assert_eq!(
-        s.piece_at(sq("a12")),
+        s.piece_at(sq("a16")),
         Some(Piece::new(PieceKind::Rook, Seat::West))
     );
-    assert_eq!(field(&s, 4), "Sc1,Sj1,Wa3,Nc12,Nj12,El3,El10");
+    assert_eq!(field(&s, 4), "Se1,Sl1,Wa5,Ne16,Nl16,Ep5,Ep12");
 }
 
 #[test]
 fn multi_digit_rank_parsing_is_unambiguous() {
     for (text, from, to) in [
-        ("a1a12", "a1", "a12"),
-        ("a11a2", "a11", "a2"),
-        ("l12l1", "l12", "l1"),
-        ("b10c11", "b10", "c11"),
-        ("a12a10", "a12", "a10"),
+        ("a1a16", "a1", "a16"),
+        ("a15a2", "a15", "a2"),
+        ("p16p1", "p16", "p1"),
+        ("b12e15", "b12", "e15"),
+        ("a16a12", "a16", "a12"),
     ] {
         let m = mv(text);
         assert_eq!((m.from, m.to), (sq(from), sq(to)), "{text}");
         assert_eq!(m.promotion, None);
         assert_eq!(format_move(&m), text);
     }
-    let m = mv("a11a12q");
+    let m = mv("a15a16q");
     assert_eq!(
         (m.from, m.to, m.promotion),
-        (sq("a11"), sq("a12"), Some(PieceKind::Queen))
+        (sq("a15"), sq("a16"), Some(PieceKind::Queen))
     );
-    assert_eq!(format_move(&m), "a11a12q");
+    assert_eq!(format_move(&m), "a15a16q");
 }
 
 #[test]
 fn promotion_is_mandatory_and_limited_to_non_leader_non_pawn_pieces() {
     let mut s = pos(
         "ffa",
-        &["sKg1", "sPd6", "wKa7", "nKg12", "nRe7", "eKl7"],
+        &["sKi1", "sPf8", "wKa9", "nKi16", "nRg9", "eKp9"],
         "S AAAA - - 9 0",
     );
-    illegal(&mut s, "d6d7");
-    illegal(&mut s, "d6d7k");
-    illegal(&mut s, "d6d7p");
-    illegal(&mut s, "d6e7");
+    illegal(&mut s, "f8f9");
+    illegal(&mut s, "f8f9k");
+    illegal(&mut s, "f8f9p");
+    illegal(&mut s, "f8g9");
     for (letter, kind) in [
         ('q', PieceKind::Queen),
         ('r', PieceKind::Rook),
         ('b', PieceKind::Bishop),
         ('n', PieceKind::Knight),
     ] {
-        for to in ["d7", "e7"] {
+        for to in ["f9", "g9"] {
             let mut t = s.clone();
-            let text = format!("d6{to}{letter}");
+            let text = format!("f8{to}{letter}");
             let ev = go(&mut t, &text);
             assert!(
                 ev.iter()
@@ -1188,9 +1188,9 @@ fn promotion_is_mandatory_and_limited_to_non_leader_non_pawn_pieces() {
         }
     }
     for (rest, pawn, m, bad) in [
-        ("W AAAA - - 0 0", "wPf5", "f5g5n", "f5g5"),
-        ("N AAAA - - 0 0", "nPd7", "d7d6b", "d7d6"),
-        ("E AAAA - - 0 0", "ePg5", "g5f5r", "g5f5"),
+        ("W AAAA - - 0 0", "wPh7", "h7i7n", "h7i7"),
+        ("N AAAA - - 0 0", "nPf9", "f9f8b", "f9f8"),
+        ("E AAAA - - 0 0", "ePi7", "i7h7r", "i7h7"),
     ] {
         let mut pieces = KINGS.to_vec();
         pieces.push(pawn);
@@ -1203,10 +1203,10 @@ fn promotion_is_mandatory_and_limited_to_non_leader_non_pawn_pieces() {
 #[test]
 fn promotion_suffix_on_a_non_promoting_move_is_rejected() {
     let mut s = start(GameMode::Ffa);
-    illegal(&mut s, "d1c3q");
-    illegal(&mut s, "d2d3q");
-    illegal(&mut s, "d2d4n");
-    illegal(&mut s, "c1b1r");
+    illegal(&mut s, "f1e5q");
+    illegal(&mut s, "f2f5q");
+    illegal(&mut s, "f2f6n");
+    illegal(&mut s, "e1b1r");
 }
 
 #[test]
@@ -1218,9 +1218,11 @@ fn move_parser_never_panics_and_rejects_garbage() {
         "a",
         "a1",
         "a1a",
-        "a1a13",
+        "a1a17",
+        "q1a1",
+        "p17a1",
         "a1a0",
-        "m1a1",
+        "a1a1",
         "a0a1",
         "a1a2qq",
         "a99999999999999999999a1",
@@ -1240,7 +1242,7 @@ fn move_parser_never_panics_and_rejects_garbage() {
         }
     }
     // Random strings: never panic; whatever parses round-trips.
-    let alphabet: Vec<char> = "abcdefghijklmnz0123456789-qrbnkpQRBNKP \u{e9}"
+    let alphabet: Vec<char> = "abcdefghijklmnopqz0123456789-qrbnkpQRBNKP \u{e9}"
         .chars()
         .collect();
     let mut rng = Rng(12345);
@@ -1560,8 +1562,8 @@ fn random_games_match_an_independent_counter_turn_and_ep_model() {
             } else {
                 if roll < 60 {
                     // junk move: must be rejected without side effects
-                    let from = Square::new(rng.below(144) as u8).unwrap();
-                    let to = Square::new(rng.below(144) as u8).unwrap();
+                    let from = Square::new(rng.below(256) as u8).unwrap();
+                    let to = Square::new(rng.below(256) as u8).unwrap();
                     let promo = [None, Some(PieceKind::Queen), Some(PieceKind::King)][rng.below(3)];
                     let junk = Move {
                         from,

@@ -69,12 +69,20 @@ describe('wire contract', () => {
           events = game.applyAbandon(pick<Seat>(inPlay, r))
         } else if (roll < 0.011) {
           events = game.applyResign(pick<Seat>(inPlay, r))
-        } else if (roll < 0.012 && seed % 3 === 0) {
+        } else if (roll < 0.015 && seed % 3 === 0) {
           events = game.applyAgreedDraw()
         } else {
-          // Prefer captures so games end in a reasonable number of plies.
+          // Prefer captures so games end in a reasonable number of plies, and
+          // take en passant when offered (rare on the 16×16 board, where the
+          // armies start four squares apart).
           const captures = moves.filter((m) => m.capture)
-          const m = captures.length > 0 && r() < 0.7 ? pick(captures, r) : pick(moves, r)
+          const ep = moves.filter((m) => m.flag === 'en_passant')
+          const m =
+            ep.length > 0 && r() < 0.9
+              ? pick(ep, r)
+              : captures.length > 0 && r() < 0.7
+                ? pick(captures, r)
+                : pick(moves, r)
           events = game.applyMove(m.notation)
           plies++
         }
@@ -91,6 +99,23 @@ describe('wire contract', () => {
         }
       }
       expect(game.snapshot().isOver).toBe(true)
+      game.free()
+    }
+    // En passant needs a pawn beside an enemy double step, which random games
+    // on the 16×16 board rarely set up: exercise it from a prepared position.
+    {
+      const game = Game.fromPosition(
+        'ffa 8nK7/16/16/16/16/16/16/wK14eK/16/16/16/16/3wP12/16/4sP11/8sK7 S AAAA - - 0 0',
+      )
+      for (const notation of ['e2e4', 'd4e3']) {
+        const m = game.legalMoves().find((x) => x.notation === notation)
+        if (m === undefined) throw new Error(`missing ${notation}`)
+        validateMove(m)
+        const events = game.applyMove(notation)
+        validateEvents(events)
+        for (const e of events) seen.add(e.type)
+      }
+      validateSnapshot(game.snapshot())
       game.free()
     }
     // Passes are rare in random play; they are covered in game.test.ts.

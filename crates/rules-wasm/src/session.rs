@@ -188,7 +188,7 @@ mod tests {
                 ],
                 "enPassant": true,
                 "moveLimitRounds": 25,
-                "rulesVersion": 1
+                "rulesVersion": 2
             })
         );
 
@@ -221,8 +221,8 @@ mod tests {
             (r#"{"mode":"ffa","civs":["mali"]}"#, "invalid config"),
             (r#"{"mode":"ffa","moveLimitRounds":0}"#, "move_limit_rounds"),
             (
-                r#"{"mode":"ffa","rulesVersion":2}"#,
-                "unsupported rules_version 2",
+                r#"{"mode":"ffa","rulesVersion":1}"#,
+                "unsupported rules_version 1",
             ),
             (
                 r#"{"mode":"ffa","civs":[{"id":"mali","version":9},"mali","mali","mali"]}"#,
@@ -261,14 +261,15 @@ mod tests {
             ]
         );
         let board = snap["board"].as_array().unwrap();
-        assert_eq!(board.len(), 144);
-        assert_eq!(board[2], json!({"kind": "rook", "owner": "south"})); // c1
-        assert_eq!(board[5], json!({"kind": "queen", "owner": "south"})); // f1
-        assert_eq!(board[12 * 6], json!({"kind": "king", "owner": "west"})); // a7
+        assert_eq!(board.len(), 256);
+        assert_eq!(board[4], json!({"kind": "rook", "owner": "south"})); // e1
+        assert_eq!(board[7], json!({"kind": "queen", "owner": "south"})); // h1
+        assert_eq!(board[16 * 8], json!({"kind": "king", "owner": "west"})); // a9
         assert_eq!(
-            board[12 * 11 + 6],
+            board[16 * 15 + 8],
             json!({"kind": "king", "owner": "north"})
-        ); // g12
+        ); // i16
+        assert_eq!(board[255], Value::Null); // p16 (empty corner)
         assert_eq!(board[0], Value::Null);
         assert_eq!(
             snap["statuses"],
@@ -283,16 +284,16 @@ mod tests {
         assert_eq!(snap["noProgress"], 0);
         assert_eq!(snap["moveLimit"], 100);
         assert_eq!(snap["ply"], 0);
-        assert_eq!(snap["rulesVersion"], 1);
+        assert_eq!(snap["rulesVersion"], 2);
         assert_eq!(
             snap["leaderUnderAttack"],
             json!([false, false, false, false])
         );
         assert_eq!(
             snap["leaderSquares"],
-            json!([["g1"], ["a7"], ["g12"], ["l7"]])
+            json!([["i1"], ["a9"], ["i16"], ["p9"]])
         );
-        assert_eq!(s.leader_squares("east").unwrap(), ["l7"]);
+        assert_eq!(s.leader_squares("east").unwrap(), ["p9"]);
         assert_eq!(s.leader_squares("up").unwrap_err(), "invalid seat \"up\"");
         let hash = snap["hash"].as_str().unwrap();
         assert_eq!(hash.len(), 16);
@@ -303,35 +304,34 @@ mod tests {
     fn moves_and_events_shape() {
         let mut s = Session::from_config_json(r#"{"mode":"ffa"}"#).unwrap();
         let moves = parse(&s.legal_moves_json());
-        assert_eq!(moves.as_array().unwrap().len(), 28);
-        assert_eq!(s.legal_move_notations().len(), 28);
-        let c2c4 = moves
+        assert_eq!(moves.as_array().unwrap().len(), 30);
+        assert_eq!(s.legal_move_notations().len(), 30);
+        let e2e4 = moves
             .as_array()
             .unwrap()
             .iter()
-            .find(|m| m["notation"] == "c2c4")
+            .find(|m| m["notation"] == "e2e4")
             .unwrap();
         assert_eq!(
-            c2c4,
-            &json!({"notation": "c2c4", "from": "c2", "to": "c4", "promotion": null,
+            e2e4,
+            &json!({"notation": "e2e4", "from": "e2", "to": "e4", "promotion": null,
                     "flag": "double_step", "piece": "pawn", "capture": false})
         );
-        let c2b3 = moves
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|m| m["notation"] == "c2b3")
-            .unwrap();
-        assert_eq!(c2b3["capture"], true);
+        // No army starts in contact with another: no opening captures.
+        assert!(
+            moves
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|m| m["capture"] == false)
+        );
 
-        let ev = parse(&s.apply_move("c2b3").unwrap());
+        let ev = parse(&s.apply_move("f1d2").unwrap());
         assert_eq!(
             ev,
             json!([
-                {"type": "move_made", "seat": "south", "notation": "c2b3", "from": "c2",
-                 "to": "b3", "promotion": null, "flag": "normal", "piece": "pawn"},
-                {"type": "capture", "seat": "south", "square": "b3",
-                 "captured": {"kind": "pawn", "owner": "west"}}
+                {"type": "move_made", "seat": "south", "notation": "f1d2", "from": "f1",
+                 "to": "d2", "promotion": null, "flag": "normal", "piece": "knight"}
             ])
         );
         let snap = parse(&s.snapshot_json());
@@ -341,30 +341,34 @@ mod tests {
 
     #[test]
     fn en_passant_and_castle_events() {
-        let mut s = Session::from_config_json(r#"{"mode":"ffa"}"#).unwrap();
-        s.apply_move("c2c4").unwrap();
+        // South e2 pawn, West d4 pawn (attacks e3), kings on their homes.
+        let mut s = Session::from_position(
+            "ffa 8nK7/16/16/16/16/16/16/wK14eK/16/16/16/16/3wP12/16/4sP11/8sK7 S AAAA - - 0 0",
+        )
+        .unwrap();
+        s.apply_move("e2e4").unwrap();
         let snap = parse(&s.snapshot_json());
-        assert_eq!(snap["epTargets"][0], json!({"skipped": "c3", "pawn": "c4"}));
+        assert_eq!(snap["epTargets"][0], json!({"skipped": "e3", "pawn": "e4"}));
         let moves = parse(&s.legal_moves_json());
         let ep = moves
             .as_array()
             .unwrap()
             .iter()
-            .find(|m| m["notation"] == "b4c3")
+            .find(|m| m["notation"] == "d4e3")
             .unwrap();
         assert_eq!(ep["flag"], "en_passant");
         assert_eq!(ep["capture"], true);
-        let ev = parse(&s.apply_move("b4c3").unwrap());
+        let ev = parse(&s.apply_move("d4e3").unwrap());
         assert_eq!(ev[1]["type"], "capture");
-        assert_eq!(ev[1]["square"], "c4");
+        assert_eq!(ev[1]["square"], "e4");
         assert_eq!(
             ev[2],
-            json!({"type": "en_passant", "seat": "west", "capturedSquare": "c4"})
+            json!({"type": "en_passant", "seat": "west", "capturedSquare": "e4"})
         );
 
-        // Castling: South king g1 -> i1 with an empty h1/i1.
+        // Castling: South king i1 -> k1 with an empty j1/k1.
         let mut s = Session::from_position(
-            "ffa 2nRnNnBnQnKnBnNnR2/2nPnPnPnPnPnPnPnP2/wRwP8ePeR/wNwP8ePeN/wBwP8ePeB/wKwP8ePeK/wQwP8ePeQ/wBwP8ePeB/wNwP8ePeN/wRwP8ePeR/2sPsPsPsPsPsPsPsP2/2sRsNsBsQsK2sR2 S AAAA Sc1,Sj1,Wa3,Wa10,Nc12,Nj12,El3,El10 - 0 0",
+            "ffa 4nRnNnBnQnKnBnNnR4/4nPnPnPnPnPnPnPnP4/16/16/wRwP12ePeR/wNwP12ePeN/wBwP12ePeB/wKwP12ePeK/wQwP12ePeQ/wBwP12ePeB/wNwP12ePeN/wRwP12ePeR/16/16/4sPsPsPsPsPsPsPsP4/4sRsNsBsQsK2sR4 S AAAA Se1,Sl1,Wa5,Wa12,Ne16,Nl16,Ep5,Ep12 - 0 0",
         )
         .unwrap();
         let moves = parse(&s.legal_moves_json());
@@ -372,14 +376,14 @@ mod tests {
             .as_array()
             .unwrap()
             .iter()
-            .find(|m| m["notation"] == "g1i1")
+            .find(|m| m["notation"] == "i1k1")
             .unwrap();
         assert_eq!(castle["flag"], "castle");
         assert_eq!(castle["capture"], false);
-        let ev = parse(&s.apply_move("g1i1").unwrap());
+        let ev = parse(&s.apply_move("i1k1").unwrap());
         assert_eq!(
             ev[1],
-            json!({"type": "castle", "seat": "south", "rookFrom": "j1", "rookTo": "h1"})
+            json!({"type": "castle", "seat": "south", "rookFrom": "l1", "rookTo": "j1"})
         );
     }
 
@@ -425,7 +429,7 @@ mod tests {
         );
         assert_eq!(snap["outcome"]["placements"], json!([2, 1, 2, 1]));
         assert_eq!(s.legal_moves().len(), 0);
-        assert_eq!(s.apply_move("c2c3").unwrap_err(), "the game is over");
+        assert_eq!(s.apply_move("e2e3").unwrap_err(), "the game is over");
 
         // FFA: removal and a winner.
         let mut s = Session::from_config_json(r#"{"mode":"ffa"}"#).unwrap();
@@ -533,7 +537,7 @@ mod tests {
     #[test]
     fn errors_and_misc() {
         let mut s = Session::from_config_json(r#"{"mode":"ffa"}"#).unwrap();
-        assert_eq!(s.apply_move("c2c5").unwrap_err(), "illegal move c2c5");
+        assert_eq!(s.apply_move("e2e5").unwrap_err(), "illegal move e2e5");
         assert_eq!(s.apply_move("zz").unwrap_err(), "invalid move \"zz\"");
         assert_eq!(s.apply_timeout("up").unwrap_err(), "invalid seat \"up\"");
         assert!(s.leader_under_attack("south").is_ok());
@@ -545,7 +549,7 @@ mod tests {
         );
         let text = s.position_string();
         assert_eq!(Session::from_position(&text).unwrap().state(), s.state());
-        assert_eq!(s.perft(3).unwrap(), 21_560);
+        assert_eq!(s.perft(3).unwrap(), 27_000);
         assert!(s.perft(7).is_err());
     }
 
@@ -553,10 +557,10 @@ mod tests {
     fn pass_event_shape() {
         // Teams: North DEFEATED and boxed in passes; East FROZEN is skipped.
         let mut s = Session::from_position(
-            "teams nKnB10/nPnPnP9/sRsNsB9/12/12/wK10eK/12/12/12/12/12/6sK5 W AADF - - 0 0 def=Ns,Et",
+            "teams nKnB14/nPnPnP13/sRsNsB13/16/16/16/16/wK14eK/16/16/16/16/16/16/16/8sK7 W AADF - - 0 0 def=Ns,Et",
         )
         .unwrap();
-        let ev = parse(&s.apply_move("a7b7").unwrap());
+        let ev = parse(&s.apply_move("a9b9").unwrap());
         assert_eq!(
             ev[1],
             json!({"type": "pass", "seat": "north", "notation": "--"})

@@ -11,11 +11,11 @@
 //! | Field | Format | Example |
 //! |---|---|---|
 //! | mode | `ffa` or `teams` | `ffa` |
-//! | board | 12 ranks from rank 12 down to rank 1, separated by `/`. Each rank lists files `a`..`l`: a piece is two characters, seat letter (`s w n e`, lowercase) + kind letter (`P N B R Q K`, uppercase); a number `1`..`12` is that many empty squares. Each rank must total 12. | `2sRsNsBsQsKsBsNsR2` |
+//! | board | 16 ranks from rank 16 down to rank 1, separated by `/`. Each rank lists files `a`..`p`: a piece is two characters, seat letter (`s w n e`, lowercase) + kind letter (`P N B R Q K`, uppercase); a number `1`..`16` is that many empty squares. Each rank must total 16. | `4sRsNsBsQsKsBsNsR4` |
 //! | to-move | seat letter `S W N E` | `S` |
 //! | statuses | 4 letters in seat order S, W, N, E: `A`ctive, `D`efeated, `F`rozen, `R`emoved | `AAAA` |
-//! | castling | comma list of seat letter + home square of a rook it may still castle with, or `-` | `Sc1,Sj1,Wa3` |
-//! | en-passant | comma list of seat letter + skipped square of that seat's live double-step, or `-`. Never the seat to move (its target expired when the turn reached it). | `Sd3` |
+//! | castling | comma list of seat letter + home square of a rook it may still castle with, or `-` | `Se1,Sl1,Wa5` |
+//! | en-passant | comma list of seat letter + skipped square of that seat's live double-step, or `-`. Never the seat to move (its target expired when the turn reached it). | `Sf3` |
 //! | no-progress | turns since last capture, pawn move or defeat | `0` |
 //! | ply | turns taken since the start (moves + passes) | `0` |
 //!
@@ -29,7 +29,7 @@
 //! | `ml` | move-limit rounds (≥ 1) | `25` |
 //! | `civ` | four `slug.version` in seat order | `canada.1` ×4 |
 //! | `def` | defeat order: comma list of seat letter + reason letter (`l` leader captured, `s` stalemate, `t` timeout, `a` abandon, `r` resign), or `-` | `-` |
-//! | `rv` | rules version | `1` |
+//! | `rv` | rules version (only the current version, `2`, parses; 12×12 version-1 positions are rejected) | `2` |
 //! | `end` | `draw` — the game ended in a draw by agreement ([`crate::apply_agreed_draw`]). Only valid if the game is not otherwise over (no elimination, move limit not reached) and the seat to move could still play. | absent |
 //!
 //! Resignations need no extra field: a resigned seat is `R` (FFA) or `F`
@@ -39,7 +39,7 @@
 //! The start position (FFA) is:
 //!
 //! ```text
-//! ffa 2nRnNnBnQnKnBnNnR2/2nPnPnPnPnPnPnPnP2/wRwP8ePeR/wNwP8ePeN/wBwP8ePeB/wKwP8ePeK/wQwP8ePeQ/wBwP8ePeB/wNwP8ePeN/wRwP8ePeR/2sPsPsPsPsPsPsPsP2/2sRsNsBsQsKsBsNsR2 S AAAA Sc1,Sj1,Wa3,Wa10,Nc12,Nj12,El3,El10 - 0 0 ep=on ml=25 civ=canada.1,canada.1,canada.1,canada.1 def=- rv=1
+//! ffa 4nRnNnBnQnKnBnNnR4/4nPnPnPnPnPnPnPnP4/16/16/wRwP12ePeR/wNwP12ePeN/wBwP12ePeB/wKwP12ePeK/wQwP12ePeQ/wBwP12ePeB/wNwP12ePeN/wRwP12ePeR/16/16/4sPsPsPsPsPsPsPsP4/4sRsNsBsQsKsBsNsR4 S AAAA Se1,Sl1,Wa5,Wa12,Ne16,Nl16,Ep5,Ep12 - 0 0 ep=on ml=25 civ=canada.1,canada.1,canada.1,canada.1 def=- rv=2
 //! ```
 //!
 //! The result is not stored: it is derived from statuses, defeat order,
@@ -367,7 +367,10 @@ fn parse_board(field: &str) -> Result<[Option<Piece>; NUM_SQUARES], PositionErro
     let mut board = [None; NUM_SQUARES];
     let ranks: Vec<&str> = field.split('/').collect();
     if ranks.len() != BOARD_SIZE as usize {
-        return Err(err(format!("expected 12 ranks, found {}", ranks.len())));
+        return Err(err(format!(
+            "expected {BOARD_SIZE} ranks, found {}",
+            ranks.len()
+        )));
     }
     for (i, rank_str) in ranks.iter().enumerate() {
         let rank = BOARD_SIZE - 1 - i as u8;
@@ -380,7 +383,7 @@ fn parse_board(field: &str) -> Result<[Option<Piece>; NUM_SQUARES], PositionErro
                 let mut n: u32 = 0;
                 while j < b.len() && b[j].is_ascii_digit() {
                     n = n * 10 + u32::from(b[j] - b'0');
-                    if n > 12 {
+                    if n > u32::from(BOARD_SIZE) {
                         return Err(err(format!("rank {}: run too long", rank + 1)));
                     }
                     j += 1;
@@ -421,13 +424,16 @@ fn parse_board(field: &str) -> Result<[Option<Piece>; NUM_SQUARES], PositionErro
                 file += 1;
                 j += 2;
             }
-            if file > 12 {
-                return Err(err(format!("rank {}: more than 12 squares", rank + 1)));
+            if file > u32::from(BOARD_SIZE) {
+                return Err(err(format!(
+                    "rank {}: more than {BOARD_SIZE} squares",
+                    rank + 1
+                )));
             }
         }
-        if file != 12 {
+        if file != u32::from(BOARD_SIZE) {
             return Err(err(format!(
-                "rank {}: {} squares, expected 12",
+                "rank {}: {} squares, expected {BOARD_SIZE}",
                 rank + 1,
                 file
             )));
@@ -440,7 +446,9 @@ fn parse_board(field: &str) -> Result<[Option<Piece>; NUM_SQUARES], PositionErro
 mod tests {
     use super::*;
 
-    const START: &str = "ffa 2nRnNnBnQnKnBnNnR2/2nPnPnPnPnPnPnPnP2/wRwP8ePeR/wNwP8ePeN/wBwP8ePeB/wKwP8ePeK/wQwP8ePeQ/wBwP8ePeB/wNwP8ePeN/wRwP8ePeR/2sPsPsPsPsPsPsPsP2/2sRsNsBsQsKsBsNsR2 S AAAA Sc1,Sj1,Wa3,Wa10,Nc12,Nj12,El3,El10 - 0 0 ep=on ml=25 civ=canada.1,canada.1,canada.1,canada.1 def=- rv=1";
+    const START: &str = "ffa 4nRnNnBnQnKnBnNnR4/4nPnPnPnPnPnPnPnP4/16/16/wRwP12ePeR/wNwP12ePeN/wBwP12ePeB/wKwP12ePeK/wQwP12ePeQ/wBwP12ePeB/wNwP12ePeN/wRwP12ePeR/16/16/4sPsPsPsPsPsPsPsP4/4sRsNsBsQsKsBsNsR4 S AAAA Se1,Sl1,Wa5,Wa12,Ne16,Nl16,Ep5,Ep12 - 0 0 ep=on ml=25 civ=canada.1,canada.1,canada.1,canada.1 def=- rv=2";
+    /// Teams kings only: North i16, West a9, East p9, South i1.
+    const KINGS: &str = "8nK7/16/16/16/16/16/16/wK14eK/16/16/16/16/16/16/16/8sK7";
 
     #[test]
     fn start_position_string() {
@@ -462,40 +470,46 @@ mod tests {
 
     #[test]
     fn rejects_garbage_without_panicking() {
+        let empty = ["16"; 16].join("/");
+        let blank = empty.as_str();
         let bad = [
             "",
             "ffa",
-            "chess 12/12/12/12/12/12/12/12/12/12/12/12 S AAAA - - 0 0",
-            "ffa 12/12/12/12/12/12/12/12/12/12/12 S AAAA - - 0 0",
-            "ffa 13/12/12/12/12/12/12/12/12/12/12/12 S AAAA - - 0 0",
-            "ffa 012/12/12/12/12/12/12/12/12/12/12/12 S AAAA - - 0 0",
-            "ffa 11sX/12/12/12/12/12/12/12/12/12/12/12 S AAAA - - 0 0",
-            "ffa 11s/12/12/12/12/12/12/12/12/12/12/12 S AAAA - - 0 0",
-            "ffa 6sK6sK/12/12/12/12/12/12/12/12/12/12/12 S AAAA - - 0 0",
+            &format!("chess {blank} S AAAA - - 0 0"),
+            // 15 ranks; 17 squares in a rank; leading zero; bad pieces.
+            &format!("ffa {} S AAAA - - 0 0", ["16"; 15].join("/")),
+            &format!("ffa 17/{} S AAAA - - 0 0", ["16"; 15].join("/")),
+            &format!("ffa 016/{} S AAAA - - 0 0", ["16"; 15].join("/")),
+            &format!("ffa 15sX/{} S AAAA - - 0 0", ["16"; 15].join("/")),
+            &format!("ffa 15s/{} S AAAA - - 0 0", ["16"; 15].join("/")),
+            &format!("ffa 8sK8sK/{} S AAAA - - 0 0", ["16"; 15].join("/")),
+            // The old 12×12 start position (rules version 1) is not a v2 board.
+            "ffa 2nRnNnBnQnKnBnNnR2/2nPnPnPnPnPnPnPnP2/wRwP8ePeR/wNwP8ePeN/wBwP8ePeB/wKwP8ePeK/wQwP8ePeQ/wBwP8ePeB/wNwP8ePeN/wRwP8ePeR/2sPsPsPsPsPsPsPsP2/2sRsNsBsQsKsBsNsR2 S AAAA Sc1,Sj1,Wa3,Wa10,Nc12,Nj12,El3,El10 - 0 0 ep=on ml=25 civ=canada.1,canada.1,canada.1,canada.1 def=- rv=1",
+            &START.replace("rv=2", "rv=1"),
             // No leaders at all for ACTIVE seats.
-            "ffa 12/12/12/12/12/12/12/12/12/12/12/12 S AAAA - - 0 0",
-            "ffa 12/12/12/12/12/12/12/12/12/12/12/12 S RRRR - - 0 0",
+            &format!("ffa {blank} S AAAA - - 0 0"),
+            &format!("ffa {blank} S RRRR - - 0 0"),
             &START.replace(" S AAAA", " X AAAA"),
             &START.replace(" S AAAA", " s AAAA"),
             &START.replace("AAAA", "AAA"),
             &START.replace("AAAA", "AAAD"),
-            &START.replace("Sc1,", "Sd1,"),
-            &START.replace("Sc1,", "Sc1,Sc1,"),
+            &START.replace("Se1,", "Sf1,"),
+            &START.replace("Se1,", "Se1,Se1,"),
             &START.replace(" - 0 0", " Sz9 0 0"),
-            &START.replace(" - 0 0", " Sd3 x 0"),
+            &START.replace(" - 0 0", " Sf3 x 0"),
             &START.replace(" - 0 0", " - 0 -1"),
             // Non-canonical numbers (sign, leading zeros).
             &START.replace(" - 0 0", " - +5 0"),
             &START.replace(" - 0 0", " - 0 007"),
             &START.replace("ml=25", "ml=025"),
-            &START.replace("rv=1", "rv=+1"),
-            // Castling right with the c1 rook missing from its home square.
-            &START.replace("2sRsNsBsQsKsBsNsR2 S", "3sNsBsQsKsBsNsR2 S"),
+            &START.replace("rv=2", "rv=+2"),
+            // Castling right with the e1 rook missing from its home square.
+            &START.replace("4sRsNsBsQsKsBsNsR4 S", "5sNsBsQsKsBsNsR4 S"),
             // South is on move, so its own en passant target has expired.
-            &START.replace(" - 0 0", " Sd3 0 0"),
+            &START.replace(" - 0 0", " Sf3 0 0"),
             &START.replace("ml=25", "ml=0"),
             &START.replace("ml=25", "ml=99999999"),
-            &START.replace("rv=1", "rv=2"),
+            &START.replace("rv=2", "rv=3"),
             &START.replace("canada.1,canada.1,canada.1,canada.1", "canada.1"),
             &START.replace(
                 "canada.1,canada.1,canada.1,canada.1",
@@ -513,12 +527,15 @@ mod tests {
             // An agreed draw cannot coexist with another ending.
             &format!("{} end=draw", START.replace(" - 0 0", " - 100 0")),
             // A resigned Teams seat is FROZEN, never DEFEATED.
-            "teams 6nK5/12/12/12/12/12/wK10eK/12/12/12/12/6sK5 S AADA - - 0 0 def=Nr",
-            "teams 12/12/12/12/12/12/wK10eK/12/12/12/12/6sK5 S AARA - - 0 0 def=Nr",
+            &format!("teams {KINGS} S AADA - - 0 0 def=Nr"),
+            &format!(
+                "teams 16{} S AARA - - 0 0 def=Nr",
+                KINGS.trim_start_matches("8nK7")
+            ),
             &format!("{START} ep=on"),
             &format!("{START} foo=bar"),
             &format!("{START} junk"),
-            "ffa \u{e9}/12/12/12/12/12/12/12/12/12/12/12 S AAAA - - 0 0",
+            &format!("ffa \u{e9}/{} S AAAA - - 0 0", ["16"; 15].join("/")),
         ];
         for b in bad {
             assert!(parse_position(b).is_err(), "should reject: {b}");
@@ -548,10 +565,7 @@ mod tests {
 
     #[test]
     fn resign_reason_letter() {
-        let s = parse_position(
-            "teams 6nK5/12/12/12/12/12/wK10eK/12/12/12/12/6sK5 S AAFA - - 0 0 def=Nr",
-        )
-        .unwrap();
+        let s = parse_position(&format!("teams {KINGS} S AAFA - - 0 0 def=Nr")).unwrap();
         assert_eq!(s.defeats().reason(Seat::North), Some(DefeatReason::Resign));
         assert!(format_position(&s).contains("def=Nr"));
     }

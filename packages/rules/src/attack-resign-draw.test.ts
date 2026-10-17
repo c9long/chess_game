@@ -42,7 +42,8 @@ function voters(s: Snapshot): boolean[] {
 }
 
 // South's only move is b4xc5 en passant on West's pawn (d5, skipped c5).
-const EP_TRAP_BOARD = '6nK5/12/12/12/12/wK10eK/12/1eR1wP8/1sP10/sBsP1eN8/sPsP1sP8/sKsRsB9'
+const EP_TRAP_BOARD =
+  '10nK5/16/16/16/16/wK14eK/16/16/16/16/16/1eR1wP12/1sP14/sBsP1eN12/sPsP1sP12/sKsRsB13'
 
 describe('resign (WASM/TS)', () => {
   it('FFA off-turn resign removes the army and keeps the turn', () => {
@@ -87,9 +88,9 @@ describe('resign (WASM/TS)', () => {
   it('Teams off-turn abandon clears only the leaver en passant target', () => {
     // A single Teams seat leaving is an abandon (a resignation takes the whole team out).
     const game = Game.create({ mode: 'teams' })
-    act(game.applyMove('c2c4'))
-    act(game.applyMove('b5d5'))
-    act(game.applyMove('d11d9'))
+    act(game.applyMove('e2e4'))
+    act(game.applyMove('b7d7'))
+    act(game.applyMove('f15f13'))
     expect(snap(game).seatToMove).toBe('east')
     const ev = act(game.applyAbandon('west'))
     expect(ev).toEqual([
@@ -98,8 +99,8 @@ describe('resign (WASM/TS)', () => {
     ])
     const s = snap(game)
     expect(s.epTargets[1]).toBeNull()
-    expect(s.epTargets[0]).toEqual({ skipped: 'c3', pawn: 'c4' })
-    expect(s.epTargets[2]).toEqual({ skipped: 'd10', pawn: 'd9' })
+    expect(s.epTargets[0]).toEqual({ skipped: 'e3', pawn: 'e4' })
+    expect(s.epTargets[2]).toEqual({ skipped: 'f14', pawn: 'f13' })
     expect(s.board.filter((p) => p?.owner === 'west')).toHaveLength(16)
     expect(game.drawVoters()).toEqual([true, false, true, true])
     expectRoundTrip(game)
@@ -151,7 +152,7 @@ describe('resign (WASM/TS)', () => {
   it('a Teams resignation by a defeated seat still playing resigns its team', () => {
     // North lost its leader but still plays; South is active. North resigns off turn.
     const game = Game.fromPosition(
-      'teams 6nR5/12/12/12/12/wK10eK/12/12/12/12/12/6sK5 W AADA - - 0 0 def=Nl',
+      'teams 8nR7/16/16/16/16/16/16/wK14eK/16/16/16/16/16/16/16/8sK7 W AADA - - 0 0 def=Nl',
     )
     const ev = act(game.applyResign('north'))
     expect(ev.slice(0, 3)).toEqual([
@@ -224,7 +225,7 @@ describe('agreed draw (WASM/TS)', () => {
 
   it('Teams with a defeated-still-playing seat and a frozen seat: everyone 1st', () => {
     const game = Game.fromPosition(
-      'teams 6nK5/12/12/12/12/wR10eK/12/12/12/12/12/6sK5 S ADAA - - 3 9 def=Wl',
+      'teams 8nK7/16/16/16/16/16/16/wR14eK/16/16/16/16/16/16/16/8sK7 S ADAA - - 3 9 def=Wl',
     )
     act(game.applyAbandon('north'))
     expect(game.drawVoters()).toEqual([true, true, false, true])

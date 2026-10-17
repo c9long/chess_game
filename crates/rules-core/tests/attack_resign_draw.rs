@@ -87,15 +87,15 @@ fn resign_is_not_a_turn_and_resets_no_progress() {
     for mode in [GameMode::Ffa, GameMode::Teams] {
         let mut s = start(mode);
         play(&mut s, "e2e4");
-        play(&mut s, "b5c5");
-        play(&mut s, "e11e10");
+        play(&mut s, "b6c6");
+        play(&mut s, "e15e14");
         // East moves a knight (no progress), then South a knight.
         let east_knight = move_strings(&s)
             .into_iter()
-            .find(|m| m.starts_with("l4") || m.starts_with("l9"))
+            .find(|m| m.starts_with("p6") || m.starts_with("p11"))
             .unwrap();
         play(&mut s, &east_knight);
-        play(&mut s, "d1c3");
+        play(&mut s, "f1e3");
         assert_eq!(s.no_progress(), 2);
         let ply = s.ply();
         // West is on move; North resigns off turn.
@@ -177,14 +177,14 @@ fn own_turn_resign_in_teams_differs_from_timeout() {
 /// South's only legal move is b4xc5 en passant on West's double-stepped pawn
 /// (d5, skipped c5).
 const EP_TRAP: [&str; 14] = [
-    "sKa1", "sRb1", "sBc1", "sBa3", "sPa2", "sPb2", "sPb3", "sPb4", "sPd2", "eRb5", "eNd3", "eKl7",
-    "wKa7", "wPd5",
+    "sKa1", "sRb1", "sBc1", "sBa3", "sPa2", "sPb2", "sPb3", "sPb4", "sPd2", "eRb5", "eNd3",
+    "eKp11", "wKa11", "wPd5",
 ];
 
 #[test]
 fn ep_trap_position_is_what_the_tests_assume() {
     let mut pieces = EP_TRAP.to_vec();
-    pieces.push("nKg12");
+    pieces.push("nKk16");
     let s = build("ffa", &pieces, "S AAAA - Wc5 0 0");
     assert_eq!(move_strings(&s), vec!["b4c5"]);
     let m = legal_moves(&s);
@@ -194,7 +194,7 @@ fn ep_trap_position_is_what_the_tests_assume() {
 #[test]
 fn ffa_off_turn_resign_of_ep_victim_stalemates_seat_on_move() {
     let mut pieces = EP_TRAP.to_vec();
-    pieces.push("nKg12");
+    pieces.push("nKk16");
     let mut s = build("ffa", &pieces, "S AAAA - Wc5 0 0");
     let ev = apply_resign(&mut s, Seat::West).unwrap();
     assert_eq!(
@@ -223,7 +223,7 @@ fn teams_off_turn_abandon_clears_ep_target_and_stalemates_seat_on_move() {
     // but its en passant target is cleared because West stopped taking turns
     // -> South has no move.
     let mut pieces = EP_TRAP.to_vec();
-    pieces.push("nKg12");
+    pieces.push("nKk16");
     let mut s = build("teams", &pieces, "S AAAA - Wc5 0 0");
     assert_eq!(move_strings(&s), vec!["b4c5"]);
     let ev = apply_abandon(&mut s, Seat::West).unwrap();
@@ -265,7 +265,7 @@ fn teams_off_turn_abandon_clears_ep_target_and_stalemates_seat_on_move() {
 #[test]
 fn teams_off_turn_abandon_makes_defeated_seat_on_move_pass() {
     let mut pieces = EP_TRAP.to_vec();
-    pieces.push("nKg12");
+    pieces.push("nKk16");
     let mut s = build("teams", &pieces, "S DAAA - Wc5 7 30 def=Sl");
     assert_eq!(move_strings(&s), vec!["b4c5"]);
     let ev = apply_abandon(&mut s, Seat::West).unwrap();
@@ -296,7 +296,7 @@ fn teams_off_turn_abandon_makes_defeated_seat_on_move_pass() {
 
 #[test]
 fn ffa_off_turn_resign_by_second_to_last_seat_crowns_seat_on_move() {
-    let mut s = build("ffa", &["sKg1", "nKg12"], "S ARAR - - 0 0 def=Wl,Er");
+    let mut s = build("ffa", &["sKk1", "nKk16"], "S ARAR - - 0 0 def=Wl,Er");
     let ev = apply_resign(&mut s, Seat::North).unwrap();
     let o = ended(&ev).unwrap();
     assert_eq!(o.result, GameResult::FfaWinner { seat: Seat::South });
@@ -325,7 +325,7 @@ fn ffa_off_turn_resign_by_second_to_last_seat_crowns_seat_on_move() {
 
 #[test]
 fn ffa_seat_on_move_resigns_leaving_one() {
-    let mut s = build("ffa", &["sKg1", "nKg12"], "S ARAR - - 0 0 def=Wl,Er");
+    let mut s = build("ffa", &["sKk1", "nKk16"], "S ARAR - - 0 0 def=Wl,Er");
     let ev = apply_resign(&mut s, Seat::South).unwrap();
     let o = ended(&ev).unwrap();
     assert_eq!(o.result, GameResult::FfaWinner { seat: Seat::North });
@@ -340,7 +340,7 @@ fn teams_resign_with_frozen_partner_ends_game_and_removes_both_armies() {
     // (including the frozen North pieces).
     let mut s = build(
         "teams",
-        &["sKg1", "sRa1", "wKa7", "nKg12", "nQf12", "eKl7"],
+        &["sKk1", "sRa1", "wKa11", "nKk16", "nQf16", "eKp11"],
         "W AAFA - - 0 0 def=Nt",
     );
     let ev = apply_resign(&mut s, Seat::South).unwrap();
@@ -448,7 +448,7 @@ fn double_resign_is_refused_in_both_modes() {
 fn teams_defeated_then_frozen_cannot_resign() {
     let mut s = build(
         "teams",
-        &["sKg1", "wKa7", "nRa12", "eKl7"],
+        &["sKk1", "wKa11", "nRa16", "eKp11"],
         "W AADA - - 0 0 def=Nl",
     );
     apply_abandon(&mut s, Seat::North).unwrap();
@@ -464,8 +464,8 @@ fn teams_defeated_then_frozen_cannot_resign() {
 
 #[test]
 fn resign_after_move_limit_end_is_refused() {
-    let mut s = build("ffa", &["sKg1", "nKg12", "eKl7"], "S ARAA - - 74 0 def=Wl");
-    let ev = play(&mut s, "g1g2");
+    let mut s = build("ffa", &["sKk1", "nKk16", "eKp11"], "S ARAA - - 74 0 def=Wl");
+    let ev = play(&mut s, "k1k2");
     assert!(ended(&ev).is_some());
     let before = s.clone();
     assert_eq!(apply_resign(&mut s, Seat::North), Err(RulesError::GameOver));
@@ -482,16 +482,16 @@ fn off_turn_departure_clears_only_the_leavers_ep_target() {
     // Teams resignation ends the game.
     for mode in [GameMode::Ffa, GameMode::Teams] {
         let mut s = start(mode);
-        play(&mut s, "c2c4");
-        play(&mut s, "b5d5");
-        play(&mut s, "d11d9");
+        play(&mut s, "e2e4");
+        play(&mut s, "b7d7");
+        play(&mut s, "f15f13");
         assert_eq!(s.seat_to_move(), Seat::East);
-        assert_eq!(ep_field(&s), "Sc3,Wc5,Nd10");
+        assert_eq!(ep_field(&s), "Se3,Wc7,Nf14");
         match mode {
             GameMode::Ffa => apply_resign(&mut s, Seat::West).unwrap(),
             GameMode::Teams => apply_abandon(&mut s, Seat::West).unwrap(),
         };
-        assert_eq!(ep_field(&s), "Sc3,Nd10", "{mode:?}");
+        assert_eq!(ep_field(&s), "Se3,Nf14", "{mode:?}");
         assert!(s.ep_target(Seat::West).is_none());
         full_check(&s);
         // North's target is still capturable by... nobody here, but it must
@@ -511,12 +511,12 @@ fn own_turn_abandon_after_double_step_skip_expires_targets_on_the_walk() {
     // pointer reaches/skips North its (absent) target and West's expire as
     // normal.
     let mut s = start(GameMode::Teams);
-    play(&mut s, "c2c4");
-    play(&mut s, "b5d5");
+    play(&mut s, "e2e4");
+    play(&mut s, "b7d7");
     apply_abandon(&mut s, Seat::North).unwrap(); // North to move
     // North was on move: the turn advanced to East.
     assert_eq!(s.seat_to_move(), Seat::East);
-    assert_eq!(ep_field(&s), "Sc3,Wc5");
+    assert_eq!(ep_field(&s), "Se3,Wc7");
     full_check(&s);
 }
 
@@ -525,16 +525,16 @@ fn resign_clears_castling_of_resigner_only() {
     // Teams: the whole resigning team loses its rights.
     let mut s = start(GameMode::Teams);
     apply_resign(&mut s, Seat::North).unwrap();
-    assert_eq!(castling_field(&s), "Wa3,Wa10,El3,El10");
+    assert_eq!(castling_field(&s), "Wa5,Wa12,Ep5,Ep12");
     full_check(&s);
     {
         let mode = GameMode::Ffa;
         let mut s = start(mode);
-        assert_eq!(castling_field(&s), "Sc1,Sj1,Wa3,Wa10,Nc12,Nj12,El3,El10");
+        assert_eq!(castling_field(&s), "Se1,Sl1,Wa5,Wa12,Ne16,Nl16,Ep5,Ep12");
         apply_resign(&mut s, Seat::North).unwrap();
-        assert_eq!(castling_field(&s), "Sc1,Sj1,Wa3,Wa10,El3,El10", "{mode:?}");
+        assert_eq!(castling_field(&s), "Se1,Sl1,Wa5,Wa12,Ep5,Ep12", "{mode:?}");
         apply_resign(&mut s, Seat::South).unwrap();
-        assert_eq!(castling_field(&s), "Wa3,Wa10,El3,El10", "{mode:?}");
+        assert_eq!(castling_field(&s), "Wa5,Wa12,Ep5,Ep12", "{mode:?}");
         assert!(s.castling_rights(Seat::South).is_empty());
         full_check(&s);
     }
@@ -544,15 +544,15 @@ fn resign_clears_castling_of_resigner_only() {
 fn teams_frozen_pieces_still_block_and_can_be_captured() {
     let mut s = build(
         "teams",
-        &["sKg1", "sRd1", "wKa7", "nKg12", "nRd5", "eKl7", "eRd12"],
+        &["sKk1", "sRd1", "wKa11", "nKk16", "nRd5", "eKp11", "eRd16"],
         "E AAAA - - 0 0",
     );
-    // East's rook on d12 sees down to North's rook on d5? North is an enemy
+    // East's rook on d16 sees down to North's rook on d5? North is an enemy
     // of East, so East can capture it only after... (it is on move now).
     apply_abandon(&mut s, Seat::North).unwrap(); // off turn
     assert_eq!(s.status(Seat::North), SeatStatus::Frozen);
-    assert!(is_legal(&s, "d12d5"), "frozen pieces can be captured");
-    assert!(!is_legal(&s, "d12d4"), "frozen pieces block");
+    assert!(is_legal(&s, "d16d5"), "frozen pieces can be captured");
+    assert!(!is_legal(&s, "d16d4"), "frozen pieces block");
     full_check(&s);
 }
 
@@ -598,7 +598,7 @@ fn ffa_agreed_draw_two_prior_defeats_mixed_reasons() {
     // South stalemated first (via resign of West off turn in EP_TRAP), then
     // West resigned before it: order is West (resign), South (stalemate).
     let mut pieces = EP_TRAP.to_vec();
-    pieces.push("nKg12");
+    pieces.push("nKk16");
     let mut s = build("ffa", &pieces, "S AAAA - Wc5 0 0");
     apply_resign(&mut s, Seat::West).unwrap();
     let ev = apply_agreed_draw(&mut s).unwrap();
@@ -621,7 +621,7 @@ fn teams_resign_of_last_active_on_a_team_with_defeated_partner_ends_game() {
     // ACTIVE seat -> S/N win and W/E pieces (incl. the defeated West) leave.
     let mut s = build(
         "teams",
-        &["sKg1", "wRa7", "nKg12", "eKl7", "eQl6"],
+        &["sKk1", "wRa11", "nKk16", "eKp11", "eQp6"],
         "S ADAA - - 3 9 def=Wl",
     );
     let ev = apply_resign(&mut s, Seat::East).unwrap();
@@ -642,7 +642,7 @@ fn teams_resign_of_last_active_on_a_team_with_defeated_partner_ends_game() {
 fn teams_agreed_draw_with_defeated_and_frozen_seats() {
     let mut s = build(
         "teams",
-        &["sKg1", "wRa7", "nKg12", "eKl7", "eQl6"],
+        &["sKk1", "wRa11", "nKk16", "eKp11", "eQp6"],
         "S ADAA - - 3 9 def=Wl",
     );
     apply_abandon(&mut s, Seat::North).unwrap(); // off turn
@@ -666,7 +666,7 @@ fn teams_agreed_draw_with_defeated_and_frozen_seats() {
 fn voters_follow_every_status_change() {
     let mut s = build(
         "teams",
-        &["sKg1", "wRa7", "wKb12", "nKg12", "eKl7"],
+        &["sKk1", "wRa11", "wKb16", "nKk16", "eKp11"],
         "S ADAA - - 0 0 def=Wl",
     );
     // West is DEFEATED but still playing: it votes.
@@ -689,7 +689,7 @@ fn voters_follow_every_status_change() {
 fn agreed_draw_with_defeated_seat_on_move_round_trips() {
     let mut s = build(
         "teams",
-        &["sKg1", "wRa7", "nKg12", "eKl7"],
+        &["sKk1", "wRa11", "nKk16", "eKp11"],
         "W ADAA - - 3 9 def=Wl",
     );
     assert_eq!(s.seat_to_move(), Seat::West);
@@ -706,7 +706,7 @@ fn agreed_draw_with_defeated_seat_on_move_round_trips() {
 fn end_marker_may_appear_anywhere_among_options() {
     let s = parse_position(&format!(
         "ffa {} S AAAA - - 0 0 end=draw ep=on",
-        board_field(&["sKg1", "wKa7", "nKg12", "eKl7"])
+        board_field(&["sKk1", "wKa11", "nKk16", "eKp11"])
     ))
     .unwrap();
     assert!(s.is_agreed_draw());
@@ -715,7 +715,7 @@ fn end_marker_may_appear_anywhere_among_options() {
 
 #[test]
 fn agreed_draw_hash_differs_from_move_limit_but_equals_parsed() {
-    let mut a = build("ffa", &["sKg1", "nKg12", "eKl7"], "S ARAA - - 10 0 def=Wl");
+    let mut a = build("ffa", &["sKk1", "nKk16", "eKp11"], "S ARAA - - 10 0 def=Wl");
     let pre = a.hash();
     apply_agreed_draw(&mut a).unwrap();
     assert_ne!(a.hash(), pre);
@@ -727,16 +727,16 @@ fn agreed_draw_hash_differs_from_move_limit_but_equals_parsed() {
 
 #[test]
 fn position_rejects_resign_reason_for_defeated_teams_seat_only() {
-    let board = board_field(&["sKg1", "wKa7", "nKg12", "eKl7"]);
+    let board = board_field(&["sKk1", "wKa11", "nKk16", "eKp11"]);
     assert!(parse_position(&format!("teams {board} S AADA - - 0 0 def=Nr")).is_err());
     assert!(parse_position(&format!("teams {board} S AAFA - - 0 0 def=Nr")).is_ok());
-    let board = board_field(&["sKg1", "wKa7", "eKl7"]);
+    let board = board_field(&["sKk1", "wKa11", "eKp11"]);
     assert!(parse_position(&format!("ffa {board} S AARA - - 0 0 def=Nr")).is_ok());
 }
 
 #[test]
 fn serde_rejects_agreed_draw_flag_on_decided_game() {
-    let s = build("ffa", &["sKg1", "nKg12", "eKl7"], "S ARAA - - 74 0 def=Wl");
+    let s = build("ffa", &["sKk1", "nKk16", "eKp11"], "S ARAA - - 74 0 def=Wl");
     let mut v: serde_json::Value = serde_json::to_value(&s).unwrap();
     assert!(v.get("agreed_draw").is_none(), "omitted when false");
     v["agreed_draw"] = serde_json::Value::Bool(true);

@@ -1,5 +1,5 @@
-//! Authoritative rules engine for the 4-player 12×12 chess variant.
-//! See `docs/PLAN.md` §2 ("rules_version 1") and `docs/RULES.md`.
+//! Authoritative rules engine for the 4-player 16×16 chess variant.
+//! See `docs/PLAN.md` §2 (rules version 2) and `docs/RULES.md`.
 //!
 //! This crate is the single implementation of the rules, shared by the
 //! browser and server (via WASM), the bot engine and the future Unity client.
@@ -10,9 +10,9 @@
 //! use rules_core::{GameConfig, GameMode, GameState, apply_move, legal_moves, parse_move};
 //!
 //! let mut state = GameState::new(GameConfig::new(GameMode::Ffa)).unwrap();
-//! assert_eq!(legal_moves(&state).len(), 28);
-//! let events = apply_move(&mut state, parse_move("c2b3").unwrap()).unwrap();
-//! assert_eq!(events.len(), 2); // MoveMade + Capture
+//! assert_eq!(legal_moves(&state).len(), 30);
+//! let events = apply_move(&mut state, parse_move("e2e4").unwrap()).unwrap();
+//! assert_eq!(events.len(), 1); // MoveMade
 //! assert_eq!(state.seat_to_move(), rules_core::Seat::West);
 //! let text = state.to_string(); // position string
 //! assert_eq!(rules_core::parse_position(&text).unwrap(), state);
@@ -76,7 +76,13 @@ pub use state::{
 
 /// Version of the rule set implemented by this crate. Stored with every match
 /// so replays re-simulate under the exact rules they were played with.
-pub const RULES_VERSION: u32 = 1;
+///
+/// * `1` — the original 12×12 board (no longer playable by this engine).
+/// * `2` — the 16×16 board (centred armies, promotion on the 9th line).
+///
+/// Only the current version is supported: configs and position strings with
+/// any other version are rejected with an error, never mis-simulated.
+pub const RULES_VERSION: u32 = 2;
 
 impl GameState {
     /// Parses a position string (see [`position_string`]).
@@ -102,7 +108,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn rules_version_is_one() {
-        assert_eq!(RULES_VERSION, 1);
+    fn rules_version_is_two() {
+        assert_eq!(RULES_VERSION, 2);
     }
 }

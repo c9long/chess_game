@@ -523,10 +523,10 @@ mod tests {
     #[test]
     fn no_castling_unless_active() {
         let mut s = crate::parse_position(
-            "teams 6nK5/12/12/12/12/wK10eK/12/12/12/12/12/6sK2sR2 S AAAA Sj1 - 0 0",
+            "teams 8nK7/16/16/16/16/16/16/wK14eK/16/16/16/16/16/16/16/8sK2sR4 S AAAA Sl1 - 0 0",
         )
         .unwrap();
-        let castle = Move::new("g1".parse().unwrap(), "i1".parse().unwrap());
+        let castle = Move::new("i1".parse().unwrap(), "k1".parse().unwrap());
         assert_eq!(
             find_legal_move(&s, castle).map(|m| m.flag),
             Some(MoveFlag::Castle)
@@ -543,19 +543,26 @@ mod tests {
     #[test]
     fn start_position_attacks() {
         let s = GameState::new(GameConfig::new(GameMode::Ffa)).unwrap();
-        // South's c2 pawn attacks b3 (West's corner pawn) and d3.
-        assert!(is_square_attacked_by(
-            &s,
-            "b3".parse().unwrap(),
-            Seat::South
-        ));
+        // South's e2 pawn attacks d3 (outside its army's span); its f1
+        // knight reaches d2 in the empty margin.
         assert!(is_square_attacked_by(
             &s,
             "d3".parse().unwrap(),
             Seat::South
         ));
-        // West's b3 pawn attacks c2 and c4.
-        assert!(is_square_attacked_by(&s, "c2".parse().unwrap(), Seat::West));
+        assert!(is_square_attacked_by(
+            &s,
+            "d2".parse().unwrap(),
+            Seat::South
+        ));
+        // West's b5 pawn attacks c4 and c6; nobody touches another army.
+        assert!(is_square_attacked_by(&s, "c4".parse().unwrap(), Seat::West));
+        assert!(is_square_attacked_by(&s, "c6".parse().unwrap(), Seat::West));
+        assert!(!is_square_attacked_by(
+            &s,
+            "b5".parse().unwrap(),
+            Seat::South
+        ));
         assert!(!is_square_attacked_by(
             &s,
             "g6".parse().unwrap(),

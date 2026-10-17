@@ -796,7 +796,7 @@ mod tests {
     #[test]
     fn state_is_small_and_cheap_to_clone() {
         // Fixed-size, heap-free: a clone is a memcpy.
-        assert!(core::mem::size_of::<GameState>() <= 512);
+        assert!(core::mem::size_of::<GameState>() <= 768);
     }
 
     #[test]

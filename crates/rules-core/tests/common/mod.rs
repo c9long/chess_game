@@ -16,7 +16,7 @@ pub fn mv(s: &str) -> Move {
 /// Board field of a position string from tokens like `"sKg1"` (seat letter,
 /// piece letter, square).
 pub fn board_field(pieces: &[&str]) -> String {
-    let mut grid: [Option<(char, char)>; 144] = [None; 144];
+    let mut grid: [Option<(char, char)>; 256] = [None; 256];
     for p in pieces {
         let mut ch = p.chars();
         let seat = ch.next().unwrap();
@@ -26,11 +26,11 @@ pub fn board_field(pieces: &[&str]) -> String {
         grid[square.index()] = Some((seat, kind));
     }
     let mut ranks = Vec::new();
-    for rank in (0..12).rev() {
+    for rank in (0..16).rev() {
         let mut s = String::new();
         let mut empty = 0;
-        for file in 0..12 {
-            match grid[rank * 12 + file] {
+        for file in 0..16 {
+            match grid[rank * 16 + file] {
                 None => empty += 1,
                 Some((seat, kind)) => {
                     if empty > 0 {

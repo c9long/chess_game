@@ -120,13 +120,13 @@ mod tests {
     #[test]
     fn json_round_trip() {
         let mut s = GameState::new(GameConfig::new(GameMode::Teams)).unwrap();
-        apply_move(&mut s, parse_move("c2c4").unwrap()).unwrap();
+        apply_move(&mut s, parse_move("e2e4").unwrap()).unwrap();
         let json = serde_json::to_string(&s).unwrap();
-        assert!(json.contains("\"square\":\"c4\""), "{json}");
+        assert!(json.contains("\"square\":\"e4\""), "{json}");
         let back: GameState = serde_json::from_str(&json).unwrap();
         assert_eq!(back, s);
 
-        let ev = apply_move(&mut s, parse_move("b3c4").unwrap()).unwrap();
+        let ev = apply_move(&mut s, parse_move("b5c5").unwrap()).unwrap();
         let ej = serde_json::to_string(&ev).unwrap();
         assert!(ej.contains("\"type\":\"move_made\""), "{ej}");
         let back: Vec<GameEvent> = serde_json::from_str(&ej).unwrap();
@@ -135,7 +135,12 @@ mod tests {
         let m: Move =
             serde_json::from_str(r#"{"from":"a10","to":"a12","promotion":null}"#).unwrap();
         assert_eq!(m, parse_move("a10a12").unwrap());
-        assert!(serde_json::from_str::<Square>("\"m1\"").is_err());
+        assert!(serde_json::from_str::<Square>("\"q1\"").is_err());
+        assert!(serde_json::from_str::<Square>("\"p17\"").is_err());
+        assert_eq!(
+            serde_json::from_str::<Square>("\"p16\"").unwrap().index(),
+            255
+        );
         assert!(serde_json::from_str::<GameState>("{}").is_err());
         assert!(!json.contains("agreed_draw"), "{json}");
     }

@@ -1,9 +1,10 @@
 //! Board geometry: squares, seats, teams and precomputed step/ray tables.
 //!
-//! The board is 12×12. Files are `a`..`l` (left to right from South's view),
-//! ranks are `1`..`12` (bottom to top). A [`Square`] is an index `0..144` with
-//! `file = index % 12` and `rank = index / 12` (both 0-based), so `a1 = 0`,
-//! `l1 = 11`, `a12 = 132` and `l12 = 143`.
+//! The board is 16×16 (rules version 2). Files are `a`..`p` (left to right
+//! from South's view), ranks are `1`..`16` (bottom to top). A [`Square`] is an
+//! index `0..256` with `file = index % 16` and `rank = index / 16` (both
+//! 0-based), so `a1 = 0`, `p1 = 15`, `a16 = 240` and `p16 = 255`. Every index
+//! fits in a `u8`, so code must never form `NUM_SQUARES as u8` (it is 0).
 //!
 //! Square colors follow standard chess: `a1` is dark, and a square is light
 //! when `file + rank` (0-based) is odd.
@@ -14,16 +15,17 @@ use core::str::FromStr;
 use crate::error::NotationError;
 
 /// Number of files (and ranks) on the board.
-pub const BOARD_SIZE: u8 = 12;
+pub const BOARD_SIZE: u8 = 16;
 /// Number of squares on the board.
-pub const NUM_SQUARES: usize = 144;
+pub const NUM_SQUARES: usize = 256;
 
-/// A square on the 12×12 board. Always holds a valid index `0..144`.
+/// A square on the 16×16 board. Every `u8` is a valid index `0..256`.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Square(u8);
 
 impl Square {
-    /// Builds a square from its index `0..144`.
+    /// Builds a square from its index `0..256`. (Every `u8` is a square on
+    /// the 16×16 board; the `Option` keeps the API stable across sizes.)
     pub const fn new(index: u8) -> Option<Square> {
         if (index as usize) < NUM_SQUARES {
             Some(Square(index))
@@ -41,13 +43,13 @@ impl Square {
         }
     }
 
-    /// Internal constructor; callers guarantee `index < 144`.
+    /// Internal constructor; callers guarantee `index < 256`.
     pub(crate) const fn from_index(index: usize) -> Square {
         debug_assert!(index < NUM_SQUARES);
         Square(index as u8)
     }
 
-    /// The square's index `0..144`, suitable for indexing board arrays.
+    /// The square's index `0..256`, suitable for indexing board arrays.
     pub const fn index(self) -> usize {
         self.0 as usize
     }
@@ -57,12 +59,12 @@ impl Square {
         self.0
     }
 
-    /// 0-based file (`a` = 0 .. `l` = 11).
+    /// 0-based file (`a` = 0 .. `p` = 15).
     pub const fn file(self) -> u8 {
         self.0 % BOARD_SIZE
     }
 
-    /// 0-based rank (`1` = 0 .. `12` = 11).
+    /// 0-based rank (`1` = 0 .. `16` = 15).
     pub const fn rank(self) -> u8 {
         self.0 / BOARD_SIZE
     }
@@ -83,26 +85,26 @@ impl Square {
         }
     }
 
-    /// All 144 squares in index order (`a1`, `b1`, ..., `l12`).
+    /// All 256 squares in index order (`a1`, `b1`, ..., `p16`).
     pub fn all() -> impl Iterator<Item = Square> + Clone {
-        (0..NUM_SQUARES as u8).map(Square)
+        (0..NUM_SQUARES).map(Square::from_index)
     }
 
-    /// The file letter `a`..`l`.
+    /// The file letter `a`..`p`.
     pub const fn file_char(self) -> char {
         (b'a' + self.file()) as char
     }
 
-    /// Parses a square at the start of `bytes` (e.g. `a1`, `l12`), returning it
+    /// Parses a square at the start of `bytes` (e.g. `a1`, `p16`), returning it
     /// and the number of bytes consumed. Ranks are read greedily (`a10` is
     /// `a10`, never `a1` followed by `0`); leading zeros are rejected.
     pub(crate) fn parse_prefix(bytes: &[u8]) -> Option<(Square, usize)> {
         let file = match bytes.first() {
-            Some(&c @ b'a'..=b'l') => c - b'a',
+            Some(&c @ b'a'..=b'p') => c - b'a',
             _ => return None,
         };
         let (rank1, used) = match (bytes.get(1), bytes.get(2)) {
-            (Some(b'1'), Some(&d @ b'0'..=b'2')) => (10 + (d - b'0'), 3),
+            (Some(b'1'), Some(&d @ b'0'..=b'6')) => (10 + (d - b'0'), 3),
             (Some(&d @ b'1'..=b'9'), _) => (d - b'0', 2),
             _ => return None,
         };
@@ -143,9 +145,9 @@ pub enum Seat {
     South = 0,
     /// Left edge (files a–b).
     West = 1,
-    /// Top edge (ranks 11–12).
+    /// Top edge (ranks 15–16).
     North = 2,
-    /// Right edge (files k–l).
+    /// Right edge (files o–p).
     East = 3,
 }
 
@@ -241,7 +243,7 @@ impl Seat {
     }
 
     /// How far `sq` lies from this seat's own back edge, measured along its
-    /// forward direction (0 = back line, 1 = pawn start line, 6 = promotion line).
+    /// forward direction (0 = back line, 1 = pawn start line, 8 = promotion line).
     pub const fn progress(self, sq: Square) -> u8 {
         match self {
             Seat::South => sq.rank(),
@@ -383,10 +385,11 @@ const fn build_ray_len() -> [[u8; 8]; NUM_SQUARES] {
         let mut d = 0;
         while d < 8 {
             let (df, dr) = DIRS[d];
-            let mut f = (s % 12) as i8 + df;
-            let mut r = (s / 12) as i8 + dr;
+            let size = BOARD_SIZE as i8;
+            let mut f = (s % BOARD_SIZE as usize) as i8 + df;
+            let mut r = (s / BOARD_SIZE as usize) as i8 + dr;
             let mut n = 0u8;
-            while f >= 0 && f < 12 && r >= 0 && r < 12 {
+            while f >= 0 && f < size && r >= 0 && r < size {
                 n += 1;
                 f += df;
                 r += dr;
@@ -423,34 +426,49 @@ mod tests {
     #[test]
     fn coordinates_and_names() {
         assert_eq!(sq("a1").index(), 0);
-        assert_eq!(sq("l1").index(), 11);
-        assert_eq!(sq("a12").index(), 132);
-        assert_eq!(sq("l12").index(), 143);
+        assert_eq!(sq("p1").index(), 15);
+        assert_eq!(sq("a16").index(), 240);
+        assert_eq!(sq("p16").index(), 255);
         assert_eq!(sq("g1").file(), 6);
         assert_eq!(sq("a10").rank(), 9);
+        assert_eq!(sq("p16").file(), 15);
+        assert_eq!(sq("p16").rank(), 15);
+        assert_eq!(Square::all().count(), 256);
+        assert_eq!(Square::all().last(), Some(sq("p16")));
         for s in Square::all() {
             assert_eq!(s.to_string().parse::<Square>().unwrap(), s);
+        }
+        for i in 0..=255u8 {
+            assert_eq!(Square::new(i).unwrap().to_u8(), i);
         }
     }
 
     #[test]
     fn rejects_bad_squares() {
         for bad in [
-            "", "a", "a0", "a13", "m1", "A1", "a01", "a1x", "1a", "a100", "l99",
+            "", "a", "a0", "a17", "q1", "A1", "a01", "a1x", "1a", "a100", "p99", "p17", "m160",
         ] {
             assert!(bad.parse::<Square>().is_err(), "{bad} should not parse");
+        }
+        for good in ["l12", "m13", "p16", "a16", "h9"] {
+            assert!(good.parse::<Square>().is_ok(), "{good} should parse");
         }
     }
 
     #[test]
     fn square_colors() {
+        // a1 (0,0) is dark; light iff file + rank (0-based) is odd.
         assert!(!sq("a1").is_light());
         assert!(sq("b1").is_light());
-        // Queens on their own color (§2).
-        assert!(sq("f1").is_light()); // South
-        assert!(sq("a6").is_light()); // West
-        assert!(!sq("f12").is_light()); // North
-        assert!(!sq("l6").is_light()); // East
+        assert!(!sq("p16").is_light()); // 15 + 15 = 30, even
+        assert!(sq("p1").is_light()); // 15 + 0 = 15, odd
+        // Queens on their own color (§2): h1 = (7,0) -> 7 odd -> light;
+        // a8 = (0,7) -> light; h16 = (7,15) -> 22 even -> dark;
+        // p8 = (15,7) -> 22 even -> dark.
+        assert!(sq("h1").is_light()); // South
+        assert!(sq("a8").is_light()); // West
+        assert!(!sq("h16").is_light()); // North
+        assert!(!sq("p8").is_light()); // East
     }
 
     #[test]
@@ -468,15 +486,15 @@ mod tests {
 
     #[test]
     fn progress_lines() {
-        // Pawn start lines are progress 1, promotion lines progress 6.
-        assert_eq!(Seat::South.progress(sq("d2")), 1);
-        assert_eq!(Seat::South.progress(sq("d7")), 6);
-        assert_eq!(Seat::North.progress(sq("d11")), 1);
-        assert_eq!(Seat::North.progress(sq("d6")), 6);
-        assert_eq!(Seat::West.progress(sq("b5")), 1);
-        assert_eq!(Seat::West.progress(sq("g5")), 6);
-        assert_eq!(Seat::East.progress(sq("k5")), 1);
-        assert_eq!(Seat::East.progress(sq("f5")), 6);
+        // Pawn start lines are progress 1, promotion lines progress 8.
+        assert_eq!(Seat::South.progress(sq("f2")), 1);
+        assert_eq!(Seat::South.progress(sq("f9")), 8);
+        assert_eq!(Seat::North.progress(sq("f15")), 1);
+        assert_eq!(Seat::North.progress(sq("f8")), 8);
+        assert_eq!(Seat::West.progress(sq("b7")), 1);
+        assert_eq!(Seat::West.progress(sq("i7")), 8);
+        assert_eq!(Seat::East.progress(sq("o7")), 1);
+        assert_eq!(Seat::East.progress(sq("h7")), 8);
     }
 
     #[test]
@@ -484,10 +502,19 @@ mod tests {
         assert_eq!(KNIGHT_STEPS[0].iter().count(), 2);
         assert_eq!(KING_STEPS[0].iter().count(), 3);
         assert_eq!(KING_STEPS[sq("f6").index()].iter().count(), 8);
+        assert_eq!(KNIGHT_STEPS[sq("p16").index()].iter().count(), 2);
+        assert_eq!(KING_STEPS[sq("p16").index()].iter().count(), 3);
         let north: Vec<Square> = ray(sq("a1"), 0).collect();
-        assert_eq!(north.len(), 11);
-        assert_eq!(north[10], sq("a12"));
-        let diag: Vec<Square> = ray(sq("l1"), 7).collect();
-        assert_eq!(diag.last(), Some(&sq("a12")));
+        assert_eq!(north.len(), 15);
+        assert_eq!(north[14], sq("a16"));
+        let diag: Vec<Square> = ray(sq("p1"), 7).collect();
+        assert_eq!(diag.len(), 15);
+        assert_eq!(diag.last(), Some(&sq("a16")));
+        let east: Vec<Square> = ray(sq("a16"), 1).collect();
+        assert_eq!(east.last(), Some(&sq("p16")));
+        // Diagonal from p16 toward a1 reaches every square of the long diagonal.
+        let sw: Vec<Square> = ray(sq("p16"), 6).collect();
+        assert_eq!(sw.len(), 15);
+        assert_eq!(sw.last(), Some(&sq("a1")));
     }
 }

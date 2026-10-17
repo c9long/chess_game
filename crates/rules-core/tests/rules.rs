@@ -1,4 +1,4 @@
-//! One or more tests per rule of PLAN §2 ("rules_version 1").
+//! One or more tests per rule of PLAN §2 (rules version 2, 16×16 board).
 
 mod common;
 
@@ -41,23 +41,23 @@ fn ended(ev: &[GameEvent]) -> Option<Outcome> {
 
 #[test]
 fn south_first_moves_hand_verified() {
-    // South's 28 opening moves:
-    //   pawns c2..j2: 8 × (single + double step)            = 16
-    //   corner-pawn captures c2xb3 (West) and j2xk3 (East)   =  2
-    //   knight d1: b2, c3, e3 (f2 is own pawn)               =  3
-    //   knight i1: h3, j3, k2 (g2 is own pawn)               =  3
-    //   rook c1: b1, a1; rook j1: k1, l1                      =  4
+    // South's 30 opening moves on the 16×16 board:
+    //   pawns e2..l2: 8 × (single + double step)            = 16
+    //   knight f1: d2 (empty margin), e3, g3 (h2 own pawn)   =  3
+    //   knight k1: j3, l3, m2 (i2 own pawn)                  =  3
+    //   rook e1: d1, c1, b1, a1; rook l1: m1, n1, o1, p1     =  8
     //   bishops, queen, king: boxed in by own pieces         =  0
-    //                                                         = 28
+    //                                                         = 30
+    // No other army is within reach (four empty squares separate the armies).
     let mut expected: Vec<String> = Vec::new();
-    for f in "cdefghij".chars() {
+    for f in "efghijkl".chars() {
         expected.push(format!("{f}2{f}3"));
         expected.push(format!("{f}2{f}4"));
     }
     expected.extend(
         [
-            "c2b3", "j2k3", "d1b2", "d1c3", "d1e3", "i1h3", "i1j3", "i1k2", "c1b1", "c1a1", "j1k1",
-            "j1l1",
+            "f1d2", "f1e3", "f1g3", "k1j3", "k1l3", "k1m2", "e1d1", "e1c1", "e1b1", "e1a1", "l1m1",
+            "l1n1", "l1o1", "l1p1",
         ]
         .map(String::from),
     );
@@ -68,20 +68,26 @@ fn south_first_moves_hand_verified() {
 }
 
 #[test]
-fn every_seat_has_28_opening_moves_including_corner_captures() {
-    let corner = [
-        (Seat::South, ["c2b3", "j2k3"]),
-        (Seat::West, ["b3c2", "b10c11"]),
-        (Seat::North, ["c11b10", "j11k10"]),
-        (Seat::East, ["k3j2", "k10j11"]),
+fn every_seat_has_30_opening_moves_reaching_into_the_margins() {
+    // Knights hop sideways into the empty margin; rooks slide into the corners.
+    let margin = [
+        (Seat::South, ["f1d2", "k1m2", "e1a1", "l1p1"]),
+        (Seat::West, ["a6b4", "a11b13", "a5a1", "a12a16"]),
+        (Seat::North, ["f16d15", "k16m15", "e16a16", "l16p16"]),
+        (Seat::East, ["p6o4", "p11o13", "p5p1", "p12p16"]),
     ];
     for mode in [GameMode::Ffa, GameMode::Teams] {
-        for (seat, caps) in corner {
+        for (seat, moves) in margin {
             let s = start_with_to_move(mode, seat);
-            assert_eq!(legal_moves(&s).len(), 28, "{seat} {mode:?}");
-            for c in caps {
-                assert!(is_legal(&s, c), "{c} for {seat}");
+            assert_eq!(legal_moves(&s).len(), 30, "{seat} {mode:?}");
+            for m in moves {
+                assert!(is_legal(&s, m), "{m} for {seat}");
             }
+            // Pawns never start in contact with another army.
+            assert!(
+                legal_moves(&s).iter().all(|m| s.piece_at(m.to).is_none()),
+                "{seat} has a capture at the start"
+            );
         }
     }
 }
@@ -94,46 +100,46 @@ fn every_seat_has_28_opening_moves_including_corner_captures() {
 fn self_check_is_allowed() {
     let s = build(
         "ffa",
-        &["sKe5", "nRe9", "nRd12", "wKa7", "nKg12", "eKl7"],
+        &["sKg7", "nRg11", "nRf16", "wKa9", "nKi16", "eKp9"],
         "S AAAA - - 0 0",
     );
     // Every king step is legal, even onto squares attacked by North's rooks.
     let moves = move_strings(&s);
     for m in [
-        "e5d4", "e5d5", "e5d6", "e5e4", "e5e6", "e5f4", "e5f5", "e5f6",
+        "g7f6", "g7f7", "g7f8", "g7g6", "g7g8", "g7h6", "g7h7", "g7h8",
     ] {
         assert!(moves.contains(&m.to_string()), "{m}");
     }
     assert!(leader_under_attack(&s, Seat::South));
-    assert!(is_square_attacked_by(&s, sq("d6"), Seat::North));
+    assert!(is_square_attacked_by(&s, sq("f8"), Seat::North));
 }
 
 #[test]
 fn teammates_block_and_cannot_be_captured() {
-    let pieces = ["sKg1", "sRa1", "nRa5", "wKa7", "nKg12", "eKl7"];
+    let pieces = ["sKi1", "sRa1", "nRa7", "wKa9", "nKi16", "eKp9"];
     let teams = build("teams", &pieces, "S AAAA - - 0 0");
-    assert!(!is_legal(&teams, "a1a5"));
-    assert!(!is_legal(&teams, "a1a6"));
-    assert!(is_legal(&teams, "a1a4"));
+    assert!(!is_legal(&teams, "a1a7"));
+    assert!(!is_legal(&teams, "a1a8"));
+    assert!(is_legal(&teams, "a1a6"));
     let ffa = build("ffa", &pieces, "S AAAA - - 0 0");
-    assert!(is_legal(&ffa, "a1a5"));
-    assert!(!is_legal(&ffa, "a1a6"));
+    assert!(is_legal(&ffa, "a1a7"));
+    assert!(!is_legal(&ffa, "a1a8"));
 }
 
 #[test]
 fn frozen_pieces_block_and_can_be_captured_but_never_move() {
     let mut s = build(
         "teams",
-        &["sKg1", "sRa1", "wKa7", "wRa4", "nKg12", "eKl7"],
+        &["sKi1", "sRa1", "wKa9", "wRa6", "nKi16", "eKp9"],
         "S AFAA - - 0 0 def=Wt",
     );
-    assert!(is_legal(&s, "a1a4")); // capture the frozen rook
-    assert!(!is_legal(&s, "a1a5")); // it blocks
+    assert!(is_legal(&s, "a1a6")); // capture the frozen rook
+    assert!(!is_legal(&s, "a1a7")); // it blocks
     let mut buf = Vec::new();
     generate_moves_for_seat(&s, Seat::West, &mut buf);
     assert!(buf.is_empty());
     // Turn order skips West.
-    play(&mut s, "g1g2");
+    play(&mut s, "i1i2");
     assert_eq!(s.seat_to_move(), Seat::North);
     check_invariants(&s);
 }
@@ -142,17 +148,17 @@ fn frozen_pieces_block_and_can_be_captured_but_never_move() {
 fn sliding_and_leaping_pieces_in_the_open() {
     let s = build(
         "ffa",
-        &["sKa1", "sQf6", "sNl12", "wKa7", "nKg12", "eKl7"],
+        &["sKa1", "sQh8", "sNp16", "wKa9", "nKi16", "eKp9"],
         "S AAAA - - 0 0",
     );
     let moves = legal_moves(&s);
     let from = |f: &str| moves.iter().filter(|m| m.from == sq(f)).count();
-    // Queen f6: 11 + 11 orthogonal minus blocks... count rays explicitly.
-    // rank 6: a6..e6 (5) and g6..k6 (5) + l6 (1) = 11; file f: f1..f5 (5), f7..f12 (6) = 11;
-    // diagonals: a1 is own king -> b2..e5 (4), g7..l12 but l12 own knight -> g7..k11 (5),
-    // g5..k1 (5), e7..a11 (5). Total 11 + 11 + 4 + 5 + 5 + 5 = 41.
-    assert_eq!(from("f6"), 41);
-    assert_eq!(from("l12"), 2); // knight in the corner: j11, k10
+    // Queen h8, rays counted explicitly:
+    // rank 8: a8..g8 (7) and i8..p8 (8) = 15; file h: h1..h7 (7), h9..h16 (8) = 15;
+    // diagonals: a1 is own king -> b2..g7 (6), i9..p16 but p16 own knight -> i9..o15 (7),
+    // i7..o1 (7), g9..a15 (7). Total 15 + 15 + 6 + 7 + 7 + 7 = 57.
+    assert_eq!(from("h8"), 57);
+    assert_eq!(from("p16"), 2); // knight in the corner: n15, o14
     assert_eq!(from("a1"), 3);
 }
 
@@ -164,10 +170,10 @@ fn sliding_and_leaping_pieces_in_the_open() {
 fn ffa_leader_capture_by_non_adjacent_seat_removes_army() {
     let mut s = build(
         "ffa",
-        &["sKg1", "sQg6", "wKa7", "nKg12", "nRa12", "nPc11", "eKl7"],
+        &["sKi1", "sQi8", "wKa9", "nKi16", "nRa16", "nPe15", "eKp9"],
         "S AAAA - - 7 0",
     );
-    let ev = play(&mut s, "g6g12");
+    let ev = play(&mut s, "i8i16");
     assert_eq!(
         defeat_events(&ev),
         vec![(Seat::North, DefeatReason::LeaderCaptured)]
@@ -180,7 +186,7 @@ fn ffa_leader_capture_by_non_adjacent_seat_removes_army() {
     assert_eq!(s.move_limit(), 75);
     check_invariants(&s);
     // North is skipped from now on.
-    play(&mut s, "a7a6");
+    play(&mut s, "a9a8");
     assert_eq!(s.seat_to_move(), Seat::East);
 }
 
@@ -188,10 +194,10 @@ fn ffa_leader_capture_by_non_adjacent_seat_removes_army() {
 fn teams_defeated_seat_keeps_playing_while_partner_active() {
     let mut s = build(
         "teams",
-        &["sKg1", "wKa7", "wQg6", "nKg12", "nRa12", "eKl7"],
+        &["sKi1", "wKa9", "wQi8", "nKi16", "nRa16", "eKp9"],
         "W AAAA - - 0 0",
     );
-    let ev = play(&mut s, "g6g12");
+    let ev = play(&mut s, "i8i16");
     assert_eq!(
         defeat_events(&ev),
         vec![(Seat::North, DefeatReason::LeaderCaptured)]
@@ -202,8 +208,8 @@ fn teams_defeated_seat_keeps_playing_while_partner_active() {
     );
     assert_eq!(s.status(Seat::North), SeatStatus::Defeated);
     assert_eq!(s.seat_to_move(), Seat::North);
-    assert!(is_legal(&s, "a12a8"));
-    play(&mut s, "a12a11");
+    assert!(is_legal(&s, "a16a10"));
+    play(&mut s, "a16a15");
     assert_eq!(s.seat_to_move(), Seat::East);
     check_invariants(&s);
 }
@@ -212,10 +218,10 @@ fn teams_defeated_seat_keeps_playing_while_partner_active() {
 fn capturing_a_defeated_seats_old_leader_has_no_effect() {
     let mut s = build(
         "teams",
-        &["sKg1", "wKa7", "wRa11", "nKa12", "nRc12", "eKl7"],
+        &["sKi1", "wKa9", "wRa15", "nKa16", "nRe16", "eKp9"],
         "W AADA - - 0 0 def=Ns",
     );
-    let ev = play(&mut s, "a11a12");
+    let ev = play(&mut s, "a15a16");
     assert!(defeat_events(&ev).is_empty());
     assert_eq!(s.status(Seat::North), SeatStatus::Defeated);
     assert!(!s.is_over());
@@ -231,9 +237,9 @@ const SOUTH_BOXED: [&str; 9] = [
 #[test]
 fn ffa_stalemate_is_a_loss_and_removes_the_army() {
     let mut pieces = SOUTH_BOXED.to_vec();
-    pieces.extend(["eRb5", "eNd3", "eKl7", "wKa7", "nKg12"]);
+    pieces.extend(["eRb5", "eNd3", "eKp9", "wKa9", "nKi16"]);
     let mut s = build("ffa", &pieces, "E AAAA - - 0 0");
-    let ev = play(&mut s, "l7l6");
+    let ev = play(&mut s, "p9p8");
     assert_eq!(
         defeat_events(&ev),
         vec![(Seat::South, DefeatReason::Stalemate)]
@@ -244,14 +250,14 @@ fn ffa_stalemate_is_a_loss_and_removes_the_army() {
     check_invariants(&s);
 }
 
-/// Teams: North's K a12, B b12, P a11 b11 c11 are boxed by their own pieces
-/// and by South's (teammate) R a10, N b10, B c10.
+/// Teams: North's K a16, B b16, P a15 b15 c15 are boxed by their own pieces
+/// and by South's (teammate) R a14, N b14, B c14.
 fn teams_north_boxed() -> GameState {
     build(
         "teams",
         &[
-            "nKa12", "nBb12", "nPa11", "nPb11", "nPc11", "sRa10", "sNb10", "sBc10", "sKg1", "sNe1",
-            "wKa7", "wQg6", "eKl7",
+            "nKa16", "nBb16", "nPa15", "nPb15", "nPc15", "sRa14", "sNb14", "sBc14", "sKi1", "sNg1",
+            "wKa9", "wQi8", "eKp9",
         ],
         "W AAAA - - 0 0",
     )
@@ -261,7 +267,7 @@ fn teams_north_boxed() -> GameState {
 fn teams_stalemate_once_then_automatic_passes_then_team_out() {
     let mut s = teams_north_boxed();
     // West moves; North has no legal move at the start of its turn: defeated.
-    let ev = play(&mut s, "a7b7");
+    let ev = play(&mut s, "a9b9");
     assert_eq!(
         defeat_events(&ev),
         vec![(Seat::North, DefeatReason::Stalemate)]
@@ -272,12 +278,12 @@ fn teams_stalemate_once_then_automatic_passes_then_team_out() {
     assert_eq!(s.no_progress(), 0); // reset by the defeat
     check_invariants(&s);
 
-    play(&mut s, "l7l6");
-    play(&mut s, "e1f3");
+    play(&mut s, "p9p8");
+    play(&mut s, "g1h3");
     assert_eq!(s.no_progress(), 2);
     // North is DEFEATED and still stuck: it passes automatically (once).
     let ply_before = s.ply();
-    let ev = play(&mut s, "b7b8");
+    let ev = play(&mut s, "b9b10");
     assert_eq!(
         ev.iter()
             .filter(|e| matches!(e, GameEvent::Pass { .. }))
@@ -292,9 +298,9 @@ fn teams_stalemate_once_then_automatic_passes_then_team_out() {
     check_invariants(&s);
 
     // Stalemated North + South losing its leader: the team is out.
-    play(&mut s, "l6l5");
-    play(&mut s, "f3e5");
-    let ev = play(&mut s, "g6g1");
+    play(&mut s, "p8p7");
+    play(&mut s, "h3g5");
+    let ev = play(&mut s, "i8i1");
     assert_eq!(
         defeat_events(&ev),
         vec![(Seat::South, DefeatReason::LeaderCaptured)]
@@ -312,7 +318,7 @@ fn teams_stalemate_once_then_automatic_passes_then_team_out() {
     assert!(ev.contains(&GameEvent::ArmyRemoved { seat: Seat::North }));
     assert_eq!(s.pieces_of(Seat::North).count(), 0);
     assert!(matches!(ev.last(), Some(GameEvent::GameEnded { .. })));
-    assert_eq!(apply_move(&mut s, mv("l5l4")), Err(RulesError::GameOver));
+    assert_eq!(apply_move(&mut s, mv("p7p6")), Err(RulesError::GameOver));
     check_invariants(&s);
 }
 
@@ -320,7 +326,7 @@ fn teams_stalemate_once_then_automatic_passes_then_team_out() {
 fn teams_frozen_partner_plus_leader_loss_is_team_out() {
     let mut s = build(
         "teams",
-        &["sKg1", "sNe1", "wKa7", "wQg6", "nKg12", "eKl7"],
+        &["sKi1", "sNg1", "wKa9", "wQi8", "nKi16", "eKp9"],
         "N AAAA - - 0 0",
     );
     let ev = apply_timeout(&mut s, Seat::North).unwrap();
@@ -332,9 +338,9 @@ fn teams_frozen_partner_plus_leader_loss_is_team_out() {
     assert_eq!(s.status(Seat::North), SeatStatus::Frozen);
     assert_eq!(s.seat_to_move(), Seat::East);
     check_invariants(&s);
-    play(&mut s, "l7l6");
-    play(&mut s, "e1f3");
-    let ev = play(&mut s, "g6g1");
+    play(&mut s, "p9p8");
+    play(&mut s, "g1h3");
+    let ev = play(&mut s, "i8i1");
     assert_eq!(
         ended(&ev).unwrap().result,
         GameResult::TeamsWinner {
@@ -348,7 +354,7 @@ fn teams_frozen_partner_plus_leader_loss_is_team_out() {
 fn teams_leaderless_teammate_timing_out_becomes_frozen() {
     let mut s = build(
         "teams",
-        &["sKg1", "wKa7", "nRa12", "eKl7"],
+        &["sKi1", "wKa9", "nRa16", "eKp9"],
         "N AADA - - 0 0 def=Nl",
     );
     let ev = apply_timeout(&mut s, Seat::North).unwrap();
@@ -427,82 +433,82 @@ fn teams_abandon_freezes_and_turn_advances_if_on_move() {
 
 #[test]
 fn castling_both_sides_without_attack_restrictions() {
-    // North's rooks attack h1 and e1; castling is still legal.
+    // North's rooks attack j1 and g1; castling is still legal.
     let pieces = [
-        "sKg1", "sRc1", "sRj1", "nRh12", "nRe11", "wKa7", "nKg12", "eKl7",
+        "sKi1", "sRe1", "sRl1", "nRj16", "nRg15", "wKa9", "nKi16", "eKp9",
     ];
-    let s = build("ffa", &pieces, "S AAAA Sc1,Sj1 - 0 0");
-    assert!(is_legal(&s, "g1i1"));
-    assert!(is_legal(&s, "g1e1"));
+    let s = build("ffa", &pieces, "S AAAA Se1,Sl1 - 0 0");
+    assert!(is_legal(&s, "i1k1"));
+    assert!(is_legal(&s, "i1g1"));
     assert_eq!(
-        find_legal_move(&s, mv("g1i1")).unwrap().flag,
+        find_legal_move(&s, mv("i1k1")).unwrap().flag,
         MoveFlag::Castle
     );
 
     let mut short = s.clone();
-    let ev = play(&mut short, "g1i1");
+    let ev = play(&mut short, "i1k1");
     assert!(ev.contains(&GameEvent::Castle {
         seat: Seat::South,
-        rook_from: sq("j1"),
-        rook_to: sq("h1")
+        rook_from: sq("l1"),
+        rook_to: sq("j1")
     }));
     assert_eq!(
-        short.piece_at(sq("i1")),
+        short.piece_at(sq("k1")),
         Some(Piece::new(PieceKind::King, Seat::South))
     );
     assert_eq!(
-        short.piece_at(sq("h1")),
+        short.piece_at(sq("j1")),
         Some(Piece::new(PieceKind::Rook, Seat::South))
     );
     assert!(short.castling_rights(Seat::South).is_empty());
     check_invariants(&short);
 
     let mut long = s.clone();
-    play(&mut long, "g1e1");
+    play(&mut long, "i1g1");
     assert_eq!(
-        long.piece_at(sq("e1")),
+        long.piece_at(sq("g1")),
         Some(Piece::new(PieceKind::King, Seat::South))
     );
     assert_eq!(
-        long.piece_at(sq("f1")),
+        long.piece_at(sq("h1")),
         Some(Piece::new(PieceKind::Rook, Seat::South))
     );
-    assert_eq!(long.piece_at(sq("c1")), None);
+    assert_eq!(long.piece_at(sq("e1")), None);
     check_invariants(&long);
 }
 
 #[test]
 fn castling_blocked_or_rights_lost() {
-    let pieces = ["sKg1", "sRc1", "sRj1", "sBh1", "wKa7", "nKg12", "eKl7"];
-    let s = build("ffa", &pieces, "S AAAA Sc1,Sj1 - 0 0");
-    assert!(!is_legal(&s, "g1i1")); // h1 occupied
-    assert!(is_legal(&s, "g1e1"));
+    let pieces = ["sKi1", "sRe1", "sRl1", "sBj1", "wKa9", "nKi16", "eKp9"];
+    let s = build("ffa", &pieces, "S AAAA Se1,Sl1 - 0 0");
+    assert!(!is_legal(&s, "i1k1")); // j1 occupied
+    assert!(is_legal(&s, "i1g1"));
 
     // Without the right there is no castle even with an empty path.
     let s = build(
         "ffa",
-        &["sKg1", "sRc1", "sRj1", "wKa7", "nKg12", "eKl7"],
-        "S AAAA Sj1 - 0 0",
+        &["sKi1", "sRe1", "sRl1", "wKa9", "nKi16", "eKp9"],
+        "S AAAA Sl1 - 0 0",
     );
-    assert!(!is_legal(&s, "g1e1"));
-    assert!(is_legal(&s, "g1i1"));
+    assert!(!is_legal(&s, "i1g1"));
+    assert!(is_legal(&s, "i1k1"));
 
     // Moving the leader away and back loses both rights.
     let mut s = build(
         "ffa",
-        &["sKg1", "sRc1", "sRj1", "wKa7", "nKg12", "eKl7"],
-        "S AAAA Sc1,Sj1 - 0 0",
+        &["sKi1", "sRe1", "sRl1", "wKa9", "nKi16", "eKp9"],
+        "S AAAA Se1,Sl1 - 0 0",
     );
-    play(&mut s, "g1g2");
+    play(&mut s, "i1i2");
     assert!(s.castling_rights(Seat::South).is_empty());
 
     // Moving a rook loses that side; capturing a rook loses that side.
     let mut s = build(
         "ffa",
-        &["sKg1", "sRc1", "sRj1", "wKa7", "wRj5", "nKg12", "eKl7"],
-        "S AAAA Sc1,Sj1 - 0 0",
+        &["sKi1", "sRe1", "sRl1", "wKa9", "wRl7", "nKi16", "eKp9"],
+        "S AAAA Se1,Sl1 - 0 0",
     );
-    play(&mut s, "c1c2");
+    play(&mut s, "e1e2");
     assert_eq!(
         s.castling_rights(Seat::South),
         CastlingRights {
@@ -510,7 +516,7 @@ fn castling_blocked_or_rights_lost() {
             short: true
         }
     );
-    play(&mut s, "j5j1");
+    play(&mut s, "l7l1");
     assert!(s.castling_rights(Seat::South).is_empty());
     check_invariants(&s);
 }
@@ -520,31 +526,31 @@ fn castling_for_west_north_east() {
     let s = build(
         "ffa",
         &[
-            "sKg1", "wKa7", "wRa3", "wRa10", "nKg12", "nRc12", "eKl7", "eRl3",
+            "sKi1", "wKa9", "wRa5", "wRa12", "nKi16", "nRe16", "eKp9", "eRp5",
         ],
-        "W AAAA Wa3,Wa10,Nc12,El3 - 0 0",
+        "W AAAA Wa5,Wa12,Ne16,Ep5 - 0 0",
     );
     let mut w = s.clone();
-    play(&mut w, "a7a9");
+    play(&mut w, "a9a11");
     assert_eq!(
-        w.piece_at(sq("a8")),
+        w.piece_at(sq("a10")),
         Some(Piece::new(PieceKind::Rook, Seat::West))
     );
-    play(&mut w, "g12e12");
+    play(&mut w, "i16g16");
     assert_eq!(
-        w.piece_at(sq("f12")),
+        w.piece_at(sq("h16")),
         Some(Piece::new(PieceKind::Rook, Seat::North))
     );
-    play(&mut w, "l7l5");
+    play(&mut w, "p9p7");
     assert_eq!(
-        w.piece_at(sq("l6")),
+        w.piece_at(sq("p8")),
         Some(Piece::new(PieceKind::Rook, Seat::East))
     );
     check_invariants(&w);
     let mut w2 = s.clone();
-    play(&mut w2, "a7a5");
+    play(&mut w2, "a9a7");
     assert_eq!(
-        w2.piece_at(sq("a6")),
+        w2.piece_at(sq("a8")),
         Some(Piece::new(PieceKind::Rook, Seat::West))
     );
 }
@@ -553,16 +559,16 @@ fn castling_for_west_north_east() {
 fn castling_rights_are_dropped_when_a_seat_leaves_active() {
     let s = build(
         "teams",
-        &["sKg1", "sRj1", "wKa7", "nKg12", "eKl7"],
-        "S ADAA Sj1 - 0 0 def=Ws",
+        &["sKi1", "sRl1", "wKa9", "nKi16", "eKp9"],
+        "S ADAA Sl1 - 0 0 def=Ws",
     );
     // Rights for a non-ACTIVE seat are rejected by the parser...
-    assert!(parse_position(&s.to_position_string().replace("Sj1 ", "Sj1,Wa10 ")).is_err());
+    assert!(parse_position(&s.to_position_string().replace("Sl1 ", "Sl1,Wa12 ")).is_err());
     // ...and cleared by the engine on defeat.
     let mut t = build(
         "teams",
-        &["sKg1", "sRj1", "wKa7", "nKg12", "eKl7"],
-        "S AAAA Sj1 - 0 0",
+        &["sKi1", "sRl1", "wKa9", "nKi16", "eKp9"],
+        "S AAAA Sl1 - 0 0",
     );
     apply_timeout(&mut t, Seat::South).unwrap();
     assert!(t.castling_rights(Seat::South).is_empty());
@@ -575,13 +581,13 @@ fn castling_rights_are_dropped_when_a_seat_leaves_active() {
 #[test]
 fn promotion_lines_per_seat_and_choices() {
     let pieces = [
-        "sKg1", "wKa7", "nKl12", "eKl7", "sPd6", "nPe7", "nPh7", "wPf5", "ePg4",
+        "sKi1", "wKa9", "nKp16", "eKp9", "sPf8", "nPg9", "nPj9", "wPh7", "ePi6",
     ];
     let cases = [
-        (Seat::South, "d6", "d7", "d6e7"), // rank 7
-        (Seat::North, "h7", "h6", "e7d6"), // rank 6
-        (Seat::West, "f5", "g5", "f5g4"),  // file g
-        (Seat::East, "g4", "f4", "g4f5"),  // file f
+        (Seat::South, "f8", "f9", "f8g9"), // rank 9
+        (Seat::North, "j9", "j8", "g9f8"), // rank 8
+        (Seat::West, "h7", "i7", "h7i6"),  // file i
+        (Seat::East, "i6", "h6", "i6h7"),  // file h
     ];
     for (seat, from, to, capture) in cases {
         let s = build("ffa", &pieces, &format!("{} AAAA - - 0 0", seat.letter()));
@@ -600,14 +606,14 @@ fn promotion_lines_per_seat_and_choices() {
         assert!(!is_legal(&s, capture));
     }
     let mut s = build("ffa", &pieces, "S AAAA - - 0 0");
-    let ev = play(&mut s, "d6e7n");
+    let ev = play(&mut s, "f8g9n");
     assert!(ev.contains(&GameEvent::Promotion {
         seat: Seat::South,
-        square: sq("e7"),
+        square: sq("g9"),
         kind: PieceKind::Knight
     }));
     assert_eq!(
-        s.piece_at(sq("e7")),
+        s.piece_at(sq("g9")),
         Some(Piece::new(PieceKind::Knight, Seat::South))
     );
     assert_eq!(s.no_progress(), 0);
@@ -615,12 +621,23 @@ fn promotion_lines_per_seat_and_choices() {
 }
 
 #[test]
-fn promotion_line_is_five_steps_from_the_start_line() {
-    for seat in Seat::ALL {
+fn promotion_line_is_seven_steps_from_the_start_line() {
+    // 16×16: the first line past the centre is seven steps from the pawn line
+    // (South rank 9, North rank 8, West file i, East file h).
+    let lines = [
+        (Seat::South, "e9"),
+        (Seat::North, "e8"),
+        (Seat::West, "i5"),
+        (Seat::East, "h5"),
+    ];
+    for (seat, example) in lines {
+        assert_eq!(seat.progress(sq(example)), setup::PROMOTION_PROGRESS);
         for s in setup::pawn_line(seat) {
             let (fx, fy) = seat.forward();
-            let five = s.offset(5 * fx, 5 * fy).unwrap();
-            assert_eq!(seat.progress(five), setup::PROMOTION_PROGRESS);
+            let seven = s.offset(7 * fx, 7 * fy).unwrap();
+            assert_eq!(seat.progress(seven), setup::PROMOTION_PROGRESS);
+            let six = s.offset(6 * fx, 6 * fy).unwrap();
+            assert_eq!(seat.progress(six) + 1, setup::PROMOTION_PROGRESS);
         }
     }
 }
@@ -629,29 +646,33 @@ fn promotion_line_is_five_steps_from_the_start_line() {
 // En passant
 // ---------------------------------------------------------------------------
 
+/// Kings on their home squares, South's e2 and f2 pawns, and a West pawn on
+/// d4 that attacks e3 (the square South's e2 pawn skips with a double step).
+const EP_SETUP: [&str; 7] = ["sKi1", "wKa9", "nKi16", "eKp9", "sPe2", "sPf2", "wPd4"];
+
 #[test]
 fn en_passant_capture() {
-    for mode in [GameMode::Ffa, GameMode::Teams] {
-        let mut s = start(mode);
-        play(&mut s, "c2c4");
+    for mode in ["ffa", "teams"] {
+        let mut s = build(mode, &EP_SETUP, "S AAAA - - 0 0");
+        play(&mut s, "e2e4");
         assert_eq!(
             s.ep_target(Seat::South),
             Some(EpTarget {
-                skipped: sq("c3"),
-                pawn: sq("c4")
+                skipped: sq("e3"),
+                pawn: sq("e4")
             })
         );
-        // West's b4 pawn captures diagonally onto c3.
-        let m = find_legal_move(&s, mv("b4c3")).unwrap();
+        // West's d4 pawn captures diagonally forward onto e3.
+        let m = find_legal_move(&s, mv("d4e3")).unwrap();
         assert_eq!(m.flag, MoveFlag::EnPassant);
-        let ev = play(&mut s, "b4c3");
+        let ev = play(&mut s, "d4e3");
         assert!(ev.contains(&GameEvent::EnPassant {
             seat: Seat::West,
-            captured_square: sq("c4")
+            captured_square: sq("e4")
         }));
-        assert_eq!(s.piece_at(sq("c4")), None);
+        assert_eq!(s.piece_at(sq("e4")), None);
         assert_eq!(
-            s.piece_at(sq("c3")),
+            s.piece_at(sq("e3")),
             Some(Piece::new(PieceKind::Pawn, Seat::West))
         );
         check_invariants(&s);
@@ -660,28 +681,28 @@ fn en_passant_capture() {
 
 #[test]
 fn en_passant_expires_when_turn_order_returns() {
-    let mut s = start(GameMode::Ffa);
-    play(&mut s, "c2c4");
-    play(&mut s, "a4c5"); // West declines
+    let mut s = build("ffa", &EP_SETUP, "S AAAA - - 0 0");
+    play(&mut s, "e2e4");
+    play(&mut s, "a9a8"); // West declines
     assert!(s.ep_target(Seat::South).is_some()); // still live for North/East
-    play(&mut s, "d12c10");
-    play(&mut s, "l4j5");
+    play(&mut s, "i16i15");
+    play(&mut s, "p9p8");
     // The pointer reached South: target cleared before South moves.
     assert_eq!(s.ep_target(Seat::South), None);
-    play(&mut s, "d2d3");
-    assert!(!is_legal(&s, "b4c3"));
+    play(&mut s, "f2f3");
+    assert!(!is_legal(&s, "d4e3"));
     check_invariants(&s);
 }
 
 #[test]
 fn en_passant_expires_when_double_stepper_stops_taking_turns() {
-    let mut s = start(GameMode::Teams);
-    play(&mut s, "c2c4");
-    assert!(is_legal(&s, "b4c3"));
+    let mut s = build("teams", &EP_SETUP, "S AAAA - - 0 0");
+    play(&mut s, "e2e4");
+    assert!(is_legal(&s, "d4e3"));
     apply_abandon(&mut s, Seat::South).unwrap(); // South frozen while West is on move
     assert_eq!(s.ep_target(Seat::South), None);
     assert_eq!(s.seat_to_move(), Seat::West);
-    assert!(!is_legal(&s, "b4c3"));
+    assert!(!is_legal(&s, "d4e3"));
     check_invariants(&s);
 }
 
@@ -692,14 +713,14 @@ fn en_passant_skipped_seat_target_is_cleared() {
     // can never exist.
     let mut s = build(
         "teams",
-        &["sKg1", "sPd2", "wKa7", "nKg12", "nPe11", "eKl7"],
+        &["sKi1", "sPf2", "wKa9", "nKi16", "nPg15", "eKp9"],
         "S AFAA - - 0 0 def=Wt",
     );
-    play(&mut s, "d2d4");
+    play(&mut s, "f2f4");
     assert_eq!(s.seat_to_move(), Seat::North);
     assert!(s.ep_target(Seat::South).is_some());
-    play(&mut s, "e11e10");
-    play(&mut s, "l7l6");
+    play(&mut s, "g15g13");
+    play(&mut s, "p9p8");
     assert_eq!(s.seat_to_move(), Seat::South);
     assert_eq!(s.ep_target(Seat::South), None);
     check_invariants(&s);
@@ -707,41 +728,40 @@ fn en_passant_skipped_seat_target_is_cleared() {
 
 #[test]
 fn en_passant_can_promote() {
-    // North g11-g9 skips g10, which is on West's promotion file g.
+    // North i15-i13 skips i14, which is on West's promotion file i.
     let mut s = build(
         "ffa",
-        &["sKg1", "wKa7", "wPf11", "nKl12", "nPg11", "eKl7"],
+        &["sKi1", "wKa9", "wPh15", "nKp16", "nPi15", "eKp9"],
         "N AAAA - - 0 0",
     );
-    play(&mut s, "g11g9");
-    play(&mut s, "l7l6");
-    play(&mut s, "g1g2");
+    play(&mut s, "i15i13");
+    play(&mut s, "p9p8");
+    play(&mut s, "i1i2");
     let promos: Vec<String> = move_strings(&s)
         .into_iter()
-        .filter(|m| m.starts_with("f11g10"))
+        .filter(|m| m.starts_with("h15i14"))
         .collect();
-    assert_eq!(promos, vec!["f11g10b", "f11g10n", "f11g10q", "f11g10r"]);
-    let ev = play(&mut s, "f11g10q");
+    assert_eq!(promos, vec!["h15i14b", "h15i14n", "h15i14q", "h15i14r"]);
+    let ev = play(&mut s, "h15i14q");
     assert!(ev.contains(&GameEvent::EnPassant {
         seat: Seat::West,
-        captured_square: sq("g9")
+        captured_square: sq("i13")
     }));
     assert_eq!(
-        s.piece_at(sq("g10")),
+        s.piece_at(sq("i14")),
         Some(Piece::new(PieceKind::Queen, Seat::West))
     );
-    assert_eq!(s.piece_at(sq("g9")), None);
+    assert_eq!(s.piece_at(sq("i13")), None);
     check_invariants(&s);
 }
 
 #[test]
 fn en_passant_disabled_by_config() {
-    let mut cfg = GameConfig::new(GameMode::Ffa);
-    cfg.en_passant_enabled = false;
-    let mut s = GameState::new(cfg).unwrap();
-    play(&mut s, "c2c4");
+    let mut s = build("ffa", &EP_SETUP, "S AAAA - - 0 0 ep=off");
+    assert!(!s.config().en_passant_enabled);
+    play(&mut s, "e2e4");
     assert_eq!(s.ep_target(Seat::South), None);
-    assert!(!is_legal(&s, "b4c3"));
+    assert!(!is_legal(&s, "d4e3"));
     assert!(s.to_position_string().contains("ep=off"));
     check_invariants(&s);
 }
@@ -750,14 +770,14 @@ fn en_passant_disabled_by_config() {
 // Move limit
 // ---------------------------------------------------------------------------
 
-const KINGS: [&str; 4] = ["sKg1", "wKa7", "nKg12", "eKl7"];
+const KINGS: [&str; 4] = ["sKi1", "wKa9", "nKi16", "eKp9"];
 
 #[test]
 fn move_limit_ffa_tie() {
     let mut s = build("ffa", &KINGS, "S AAAA - - 98 40");
-    play(&mut s, "g1g2");
+    play(&mut s, "i1i2");
     assert!(!s.is_over());
-    let ev = play(&mut s, "a7a6");
+    let ev = play(&mut s, "a9a8");
     let o = ended(&ev).unwrap();
     assert_eq!(
         o.result,
@@ -771,9 +791,9 @@ fn move_limit_ffa_tie() {
 
 #[test]
 fn move_limit_counts_only_seats_still_taking_turns() {
-    let mut s = build("ffa", &["sKg1", "nKg12", "eKl7"], "S ARAA - - 74 0 def=Wl");
+    let mut s = build("ffa", &["sKi1", "nKi16", "eKp9"], "S ARAA - - 74 0 def=Wl");
     assert_eq!(s.move_limit(), 75);
-    let ev = play(&mut s, "g1g2");
+    let ev = play(&mut s, "i1i2");
     let o = ended(&ev).unwrap();
     assert_eq!(
         o.result,
@@ -785,7 +805,7 @@ fn move_limit_counts_only_seats_still_taking_turns() {
 
     // Teams with a frozen seat: limit 75.
     let mut s = build("teams", &KINGS, "S AAFA - - 74 0 def=Nt");
-    let ev = play(&mut s, "g1g2");
+    let ev = play(&mut s, "i1i2");
     assert_eq!(ended(&ev).unwrap().result, GameResult::TeamsDraw);
     assert_eq!(ended(&ev).unwrap().placements, [1; 4]);
     check_invariants(&s);
@@ -795,17 +815,17 @@ fn move_limit_counts_only_seats_still_taking_turns() {
 fn move_limit_resets_on_capture_pawn_move_and_defeat() {
     let mut s = build(
         "ffa",
-        &["sKg1", "sRa1", "sPd2", "wKa7", "wNa3", "nKg12", "eKl7"],
+        &["sKi1", "sRa1", "sPf2", "wKa9", "wNa5", "nKi16", "eKp9"],
         "S AAAA - - 50 0",
     );
-    play(&mut s, "a1a3");
+    play(&mut s, "a1a5");
     assert_eq!(s.no_progress(), 0);
-    play(&mut s, "a7a6");
+    play(&mut s, "a9a8");
     assert_eq!(s.no_progress(), 1);
-    play(&mut s, "g12g11");
-    play(&mut s, "l7l6");
+    play(&mut s, "i16i15");
+    play(&mut s, "p9p8");
     assert_eq!(s.no_progress(), 3);
-    play(&mut s, "d2d3");
+    play(&mut s, "f2f4");
     assert_eq!(s.no_progress(), 0);
 
     // A timeout of an ACTIVE seat is a defeat: reset.
@@ -819,7 +839,7 @@ fn move_limit_resets_on_capture_pawn_move_and_defeat() {
 fn freezing_a_defeated_seat_lowers_the_limit_without_reset() {
     let mut s = build(
         "teams",
-        &["sKg1", "wKa7", "nRa12", "eKl7"],
+        &["sKi1", "wKa9", "nRa16", "eKp9"],
         "N AADA - - 80 0 def=Nl",
     );
     assert_eq!(s.move_limit(), 100);
@@ -840,13 +860,13 @@ fn automatic_passes_count_toward_the_move_limit() {
         .replace(" 0 0 ", " 95 0 ")
         .replace("def=-", "def=Ns");
     let mut s = parse_position(&text).unwrap();
-    let ev = play(&mut s, "a7b7"); // 96, North passes: 97
+    let ev = play(&mut s, "a9b9"); // 96, North passes: 97
     assert!(ev.contains(&GameEvent::Pass { seat: Seat::North }));
     assert_eq!(s.no_progress(), 97);
-    play(&mut s, "l7l6"); // 98
-    let ev = play(&mut s, "e1f3"); // 99
+    play(&mut s, "p9p8"); // 98
+    let ev = play(&mut s, "g1h3"); // 99
     assert!(!s.is_over(), "{ev:?}");
-    let ev = play(&mut s, "b7b8"); // 100 -> draw before North's pass
+    let ev = play(&mut s, "b9b10"); // 100 -> draw before North's pass
     assert_eq!(ended(&ev).unwrap().result, GameResult::TeamsDraw);
     assert!(!ev.iter().any(|e| matches!(e, GameEvent::Pass { .. })));
     check_invariants(&s);
@@ -861,7 +881,7 @@ fn illegal_and_garbage_moves_are_rejected_without_side_effects() {
     let mut s = start(GameMode::Ffa);
     let before = s.clone();
     for m in [
-        "a1a2", "b3c4", "c2c5", "c2c3q", "g1i1", "g1g2", "d1d3", "l12a1", "f1f12", "c2d3",
+        "a1a2", "b5c5", "e2e5", "e2e3q", "i1k1", "i1i2", "f1f3", "p16a1", "h1h16", "e2f3",
     ] {
         assert_eq!(
             apply_move(&mut s, mv(m)),
@@ -889,7 +909,7 @@ fn illegal_and_garbage_moves_are_rejected_without_side_effects() {
     // A wrong caller-supplied flag is ignored.
     let m = Move {
         flag: MoveFlag::EnPassant,
-        ..mv("c2c3")
+        ..mv("e2e3")
     };
     let ev = apply_move(&mut s, m).unwrap();
     assert!(matches!(ev[0], GameEvent::MoveMade { mv, .. } if mv.flag == MoveFlag::Normal));

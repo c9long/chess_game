@@ -239,8 +239,8 @@ fn play_game(seed: u64, game: usize, stats: &mut Stats, full_checks: bool) -> Ga
             assert_eq!(apply_resign(&mut s, mover), Err(RulesError::GameOver));
         } else if roll < 12 {
             // Garbage move: accepted iff legal, otherwise no change.
-            let from = Square::new(rng.below(144) as u8).unwrap();
-            let to = Square::new(rng.below(144) as u8).unwrap();
+            let from = Square::new(rng.below(256) as u8).unwrap();
+            let to = Square::new(rng.below(256) as u8).unwrap();
             let promo = [None, Some(PieceKind::Queen), Some(PieceKind::King)][rng.below(3)];
             let m = Move {
                 from,
@@ -264,7 +264,16 @@ fn play_game(seed: u64, game: usize, stats: &mut Stats, full_checks: bool) -> Ga
         } else {
             generate_legal_moves(&s, &mut moves);
             assert!(!moves.is_empty());
-            let m = moves[rng.below(moves.len())];
+            // On the 16×16 board en passant chances are rare in random play
+            // (armies start four squares apart), so take one when offered.
+            let ep = moves
+                .iter()
+                .copied()
+                .find(|m| m.flag == MoveFlag::EnPassant);
+            let m = match ep {
+                Some(ep) if rng.chance(700) => ep,
+                _ => moves[rng.below(moves.len())],
+            };
             if rng.chance(500) {
                 events = apply_move(&mut s, m).unwrap();
             } else {
@@ -368,8 +377,8 @@ fn fixtures() -> Vec<GameState> {
     let mut teams = south_boxed.to_vec();
     teams.extend(["eRb5", "eNd3", "eKl7", "wKa7", "nKg12", "nRh12", "nPh9"]);
     let north_boxed = [
-        "nKa12", "nBb12", "nPa11", "nPb11", "nPc11", "sRa10", "sNb10", "sBc10", "sKg1", "sNe1",
-        "wKa7", "wQg6", "eKl7", "eRl1",
+        "nKa16", "nBb16", "nPa15", "nPb15", "nPc15", "sRa14", "sNb14", "sBc14", "sKg1", "sNe1",
+        "wKa7", "wQg10", "eKl7", "eRl1",
     ];
     vec![
         common::build("ffa", &ffa, "E AAAA - - 0 0"),
@@ -427,7 +436,7 @@ fn fuzz_is_deterministic() {
 // ---------------------------------------------------------------------------
 
 fn at(s: &GameState, f: i32, r: i32) -> Option<Option<Piece>> {
-    if (0..12).contains(&f) && (0..12).contains(&r) {
+    if (0..16).contains(&f) && (0..16).contains(&r) {
         Some(s.piece_at(Square::from_coords(f as u8, r as u8).unwrap()))
     } else {
         None
@@ -461,8 +470,8 @@ fn reference_moves(s: &GameState) -> Vec<String> {
         Seat::North => (0, -1),
         Seat::East => (-1, 0),
     };
-    for f in 0..12 {
-        for r in 0..12 {
+    for f in 0..16 {
+        for r in 0..16 {
             let Some(Some(p)) = at(s, f, r) else { continue };
             if p.owner != me {
                 continue;
@@ -533,9 +542,9 @@ fn reference_moves(s: &GameState) -> Vec<String> {
                     // Distance from own back edge.
                     let prog = |f: i32, r: i32| match me {
                         Seat::South => r,
-                        Seat::North => 11 - r,
+                        Seat::North => 15 - r,
                         Seat::West => f,
-                        Seat::East => 11 - f,
+                        Seat::East => 15 - f,
                     };
                     let mut pawn_moves: Vec<(i32, i32)> = Vec::new();
                     let (of, or) = (f + fwd_f, r + fwd_r);
@@ -573,7 +582,7 @@ fn reference_moves(s: &GameState) -> Vec<String> {
                     }
                     for (tf, tr) in pawn_moves {
                         let base = format!("{from}{}", name(tf, tr));
-                        if prog(tf, tr) == 6 {
+                        if prog(tf, tr) == 8 {
                             for k in ["n", "b", "r", "q"] {
                                 out.push(format!("{base}{k}"));
                             }
@@ -586,35 +595,35 @@ fn reference_moves(s: &GameState) -> Vec<String> {
             }
         }
     }
-    // Castling (v1 table, written out by hand).
+    // Castling (rules v2, 16×16 table, written out by hand).
     if status == SeatStatus::Active {
         let table: [(&str, [CastleRow; 2]); 4] = [
             (
-                "g1",
+                "i1",
                 [
-                    ("c1", "e1", &["d1", "e1", "f1"], true),
-                    ("j1", "i1", &["h1", "i1"], false),
+                    ("e1", "g1", &["f1", "g1", "h1"], true),
+                    ("l1", "k1", &["j1", "k1"], false),
                 ],
             ),
             (
-                "a7",
+                "a9",
                 [
-                    ("a3", "a5", &["a4", "a5", "a6"], true),
-                    ("a10", "a9", &["a8", "a9"], false),
+                    ("a5", "a7", &["a6", "a7", "a8"], true),
+                    ("a12", "a11", &["a10", "a11"], false),
                 ],
             ),
             (
-                "g12",
+                "i16",
                 [
-                    ("c12", "e12", &["d12", "e12", "f12"], true),
-                    ("j12", "i12", &["h12", "i12"], false),
+                    ("e16", "g16", &["f16", "g16", "h16"], true),
+                    ("l16", "k16", &["j16", "k16"], false),
                 ],
             ),
             (
-                "l7",
+                "p9",
                 [
-                    ("l3", "l5", &["l4", "l5", "l6"], true),
-                    ("l10", "l9", &["l8", "l9"], false),
+                    ("p5", "p7", &["p6", "p7", "p8"], true),
+                    ("p12", "p11", &["p10", "p11"], false),
                 ],
             ),
         ];
@@ -666,4 +675,40 @@ fn movegen_matches_reference_generator() {
         }
     }
     eprintln!("compared {positions} positions");
+}
+
+/// Walks every line of the stalemate fixtures (and the start positions) a few
+/// plies deep, comparing the engine's move list with the reference generator
+/// at every node. This cross-checks the regression perft values in
+/// tests/perft.rs, which use the same kinds of boxed-in positions.
+#[test]
+fn fixture_trees_match_reference_generator() {
+    fn walk(s: &GameState, depth: u32, nodes: &mut usize) {
+        let mut engine: Vec<String> = legal_moves(s).iter().map(|m| m.to_string()).collect();
+        engine.sort();
+        assert_eq!(engine, reference_moves(s), "move lists differ in {s}");
+        *nodes += 1;
+        if depth == 0 {
+            return;
+        }
+        let mut events = Vec::new();
+        for mv in legal_moves(s) {
+            let mut child = s.clone();
+            events.clear();
+            apply_generated_move(&mut child, mv, &mut events);
+            walk(&child, depth - 1, nodes);
+        }
+    }
+    let mut nodes = 0;
+    for f in fixtures() {
+        walk(&f, 2, &mut nodes);
+    }
+    for mode in [GameMode::Ffa, GameMode::Teams] {
+        walk(
+            &GameState::new(GameConfig::new(mode)).unwrap(),
+            2,
+            &mut nodes,
+        );
+    }
+    assert!(nodes > 1000, "{nodes}");
 }

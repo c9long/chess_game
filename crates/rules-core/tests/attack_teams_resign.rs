@@ -13,10 +13,10 @@ fn letter(st: char, seat: char) -> Vec<String> {
     // Pieces per seat status: ACTIVE has a king and a rook, DEFEATED only a
     // rook (lost its leader), FROZEN a king and a rook.
     let (k, r) = match seat {
-        's' => ("sKg1", "sRa1"),
-        'w' => ("wKa7", "wRa4"),
-        'n' => ("nKg12", "nRl12"),
-        _ => ("eKl7", "eRl4"),
+        's' => ("sKi1", "sRa1"),
+        'w' => ("wKa9", "wRa6"),
+        'n' => ("nKi16", "nRp16"),
+        _ => ("eKp9", "eRp6"),
     };
     match st {
         'A' | 'F' => vec![k.to_string(), r.to_string()],

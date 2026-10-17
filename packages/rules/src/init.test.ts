@@ -16,7 +16,7 @@ describe('initRules', () => {
     await initRules()
     initRulesSync(readFileSync(new URL('../wasm/rules_wasm_bg.wasm', import.meta.url)))
     const game = Game.create({ mode: 'ffa' })
-    expect(game.legalMoves()).toHaveLength(28)
+    expect(game.legalMoves()).toHaveLength(30)
     game.free()
   })
 })

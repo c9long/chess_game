@@ -21,125 +21,145 @@ function snap(game: Game): Snapshot {
 }
 
 describe('Game', () => {
-  it('starts in the §2 setup with 28 legal moves for South', () => {
+  it('starts in the §2 setup (16×16) with 30 legal moves for South', () => {
     const game = Game.create({ mode: 'ffa' })
     const s = snap(game)
     expect(s.seatToMove).toBe('south')
-    expect(s.board[squareIndex('f1')]).toEqual({ kind: 'queen', owner: 'south' })
-    expect(s.board[squareIndex('a7')]).toEqual({ kind: 'king', owner: 'west' })
-    expect(s.board[squareIndex('l6')]).toEqual({ kind: 'queen', owner: 'east' })
-    expect(s.board[squareIndex('g12')]).toEqual({ kind: 'king', owner: 'north' })
+    expect(s.board).toHaveLength(256)
+    expect(s.board[squareIndex('h1')]).toEqual({ kind: 'queen', owner: 'south' })
+    expect(s.board[squareIndex('a9')]).toEqual({ kind: 'king', owner: 'west' })
+    expect(s.board[squareIndex('p8')]).toEqual({ kind: 'queen', owner: 'east' })
+    expect(s.board[squareIndex('i16')]).toEqual({ kind: 'king', owner: 'north' })
+    expect(s.board[squareIndex('p16')]).toBeNull()
     expect(s.board.filter((p) => p !== null)).toHaveLength(64)
     expect(s.moveLimit).toBe(100)
     const moves = game.legalMoves()
     for (const m of moves) validateMove(m)
-    expect(moves).toHaveLength(28)
+    expect(moves).toHaveLength(30)
     expect(moves.map((m) => m.notation).sort()).toEqual(game.legalMoveNotations().sort())
-    expect(moves.find((m) => m.notation === 'c2b3')).toEqual({
-      notation: 'c2b3',
-      from: 'c2',
-      to: 'b3',
+    expect(moves.some((m) => m.capture)).toBe(false)
+    expect(moves.find((m) => m.notation === 'f1d2')).toEqual({
+      notation: 'f1d2',
+      from: 'f1',
+      to: 'd2',
       promotion: null,
       flag: 'normal',
-      piece: 'pawn',
-      capture: true,
+      piece: 'knight',
+      capture: false,
     })
     game.free()
   })
 
   it('plays a scripted game with a capture and a promotion', () => {
     const game = Game.create({ mode: 'ffa', civs: ['mali', 'japan', 'france', 'usa'] })
-    const [, capture] = play(game, ['e2e4', 'b3c2'])
+    // South's rook slides into the empty corner; West's rook takes it.
+    const [, capture] = play(game, ['e1a1', 'a5a1'])
     expect(capture).toEqual([
       {
         type: 'move_made',
         seat: 'west',
-        notation: 'b3c2',
-        from: 'b3',
-        to: 'c2',
+        notation: 'a5a1',
+        from: 'a5',
+        to: 'a1',
         promotion: null,
         flag: 'normal',
-        piece: 'pawn',
+        piece: 'rook',
       },
-      { type: 'capture', seat: 'west', square: 'c2', captured: { kind: 'pawn', owner: 'south' } },
+      { type: 'capture', seat: 'west', square: 'a1', captured: { kind: 'rook', owner: 'south' } },
     ])
     expect(snap(game).noProgress).toBe(0)
+    // South walks its e-pawn to rank 8; the others shuffle pawns.
     play(game, [
-      'j11j10',
-      'k4j4',
+      'j15j14',
+      'o5n5',
+      'e2e4',
+      'b10c10',
+      'j14j13',
+      'n5m5',
       'e4e5',
-      'b9c9',
-      'j10j9',
-      'j4i4',
+      'b11c11',
+      'i15i14',
+      'o6n6',
       'e5e6',
-      'b8c8',
-      'i11i10',
-      'k5j5',
+      'c10d10',
+      'j13j12',
+      'o7n7',
+      'e6e7',
+      'c11d11',
+      'i14i13',
+      'o8n8',
+      'e7e8',
+      'b12c12',
+      'h15h14',
+      'o9n9',
     ])
 
-    // A pawn reaching its promotion line must promote.
-    expect(() => game.applyMove('e6e7')).toThrow('illegal move e6e7')
-    const promo = game.legalMoves().filter((m) => m.from === 'e6')
+    // A pawn reaching its promotion line (rank 9 for South) must promote.
+    expect(() => game.applyMove('e8e9')).toThrow('illegal move e8e9')
+    const promo = game.legalMoves().filter((m) => m.from === 'e8')
     expect(promo.map((m) => m.promotion).sort()).toEqual(['bishop', 'knight', 'queen', 'rook'])
-    const [events] = play(game, ['e6e7q'])
+    const [events] = play(game, ['e8e9q'])
     expect(events).toEqual([
       {
         type: 'move_made',
         seat: 'south',
-        notation: 'e6e7q',
-        from: 'e6',
-        to: 'e7',
+        notation: 'e8e9q',
+        from: 'e8',
+        to: 'e9',
         promotion: 'queen',
         flag: 'normal',
         piece: 'pawn',
       },
-      { type: 'promotion', seat: 'south', square: 'e7', kind: 'queen' },
+      { type: 'promotion', seat: 'south', square: 'e9', kind: 'queen' },
     ])
     const s = snap(game)
-    expect(s.board[squareIndex('e7')]).toEqual({ kind: 'queen', owner: 'south' })
-    expect(s.board[squareIndex('c2')]).toEqual({ kind: 'pawn', owner: 'west' })
-    expect(s.ply).toBe(13)
+    expect(s.board[squareIndex('e9')]).toEqual({ kind: 'queen', owner: 'south' })
+    expect(s.board[squareIndex('a1')]).toEqual({ kind: 'rook', owner: 'west' })
+    expect(s.ply).toBe(25)
     expect(s.seatToMove).toBe('west')
     expect(s.config.civs.map((c) => c.id)).toEqual(['mali', 'japan', 'france', 'usa'])
     game.free()
   })
 
   it('reports en passant, castling and leader capture', () => {
-    const game = Game.create({ mode: 'ffa' })
-    play(game, ['c2c4'])
-    expect(snap(game).epTargets).toEqual([{ skipped: 'c3', pawn: 'c4' }, null, null, null])
-    const ep = game.legalMoves().find((m) => m.notation === 'b4c3')
+    // South e2 pawn, West d4 pawn (attacks e3), kings on their home squares.
+    const game = Game.fromPosition(
+      'ffa 8nK7/16/16/16/16/16/16/wK14eK/16/16/16/16/3wP12/16/4sP11/8sK7 S AAAA - - 0 0',
+    )
+    play(game, ['e2e4'])
+    expect(snap(game).epTargets).toEqual([{ skipped: 'e3', pawn: 'e4' }, null, null, null])
+    const ep = game.legalMoves().find((m) => m.notation === 'd4e3')
     expect(ep).toMatchObject({ flag: 'en_passant', capture: true })
-    const [events] = play(game, ['b4c3'])
+    const [events] = play(game, ['d4e3'])
     expect(events?.slice(1)).toEqual([
-      { type: 'capture', seat: 'west', square: 'c4', captured: { kind: 'pawn', owner: 'south' } },
-      { type: 'en_passant', seat: 'west', capturedSquare: 'c4' },
+      { type: 'capture', seat: 'west', square: 'e4', captured: { kind: 'pawn', owner: 'south' } },
+      { type: 'en_passant', seat: 'west', capturedSquare: 'e4' },
     ])
 
     const castle = Game.fromPosition(
-      'ffa 2nRnNnBnQnKnBnNnR2/2nPnPnPnPnPnPnPnP2/wRwP8ePeR/wNwP8ePeN/wBwP8ePeB/wKwP8ePeK/wQwP8ePeQ/wBwP8ePeB/wNwP8ePeN/wRwP8ePeR/2sPsPsPsPsPsPsPsP2/2sRsNsBsQsK2sR2 S AAAA Sc1,Sj1,Wa3,Wa10,Nc12,Nj12,El3,El10 - 0 0',
+      'ffa 4nRnNnBnQnKnBnNnR4/4nPnPnPnPnPnPnPnP4/16/16/wRwP12ePeR/wNwP12ePeN/wBwP12ePeB/wKwP12ePeK/wQwP12ePeQ/wBwP12ePeB/wNwP12ePeN/wRwP12ePeR/16/16/4sPsPsPsPsPsPsPsP4/4sRsNsBsQsK2sR4 S AAAA Se1,Sl1,Wa5,Wa12,Ne16,Nl16,Ep5,Ep12 - 0 0',
     )
-    const [c] = play(castle, ['g1i1'])
-    expect(c?.[1]).toEqual({ type: 'castle', seat: 'south', rookFrom: 'j1', rookTo: 'h1' })
+    const [c] = play(castle, ['i1k1'])
+    expect(c?.[1]).toEqual({ type: 'castle', seat: 'south', rookFrom: 'l1', rookTo: 'j1' })
     expect(snap(castle).castling[0]).toEqual({ long: false, short: false })
 
     const attack = Game.fromPosition(
-      'ffa 6nK5/12/12/12/12/wK10eK/12/12/12/12/12/sR5sK5 S AAAA - - 0 0',
+      'ffa 8nK7/16/16/16/16/16/16/wK14eK/16/16/16/16/16/16/16/sR7sK7 S AAAA - - 0 0',
     )
     expect(attack.leaderUnderAttack('west')).toBe(true)
     expect(attack.leaderUnderAttack('south')).toBe(false)
     expect(snap(attack).leaderUnderAttack).toEqual([false, true, false, false])
     // Leader squares come from the civ roster's leader role, not from looking for kings.
-    expect(snap(attack).leaderSquares).toEqual([['g1'], ['a7'], ['g12'], ['l7']])
-    expect(attack.leaderSquares('west')).toEqual(['a7'])
-    const [kill] = play(attack, ['a1a7'])
+    expect(snap(attack).leaderSquares).toEqual([['i1'], ['a9'], ['i16'], ['p9']])
+    expect(attack.leaderSquares('west')).toEqual(['a9'])
+    const [kill] = play(attack, ['a1a9'])
     expect(kill?.slice(1)).toEqual([
-      { type: 'capture', seat: 'south', square: 'a7', captured: { kind: 'king', owner: 'west' } },
+      { type: 'capture', seat: 'south', square: 'a9', captured: { kind: 'king', owner: 'west' } },
       { type: 'defeat', seat: 'west', reason: 'leader_captured' },
       { type: 'army_removed', seat: 'west' },
     ])
     expect(snap(attack).statuses).toEqual(['active', 'removed', 'active', 'active'])
-    expect(snap(attack).leaderSquares).toEqual([['g1'], [], ['g12'], ['l7']])
+    expect(snap(attack).leaderSquares).toEqual([['i1'], [], ['i16'], ['p9']])
     for (const g of [game, castle, attack]) g.free()
   })
 
@@ -172,7 +192,7 @@ describe('Game', () => {
     ])
     expect(s.outcome?.placements).toEqual([2, 1, 2, 1])
     expect(game.legalMoves()).toEqual([])
-    expect(() => game.applyMove('b3c3')).toThrow('the game is over')
+    expect(() => game.applyMove('b5c5')).toThrow('the game is over')
     game.free()
   })
 
@@ -275,9 +295,9 @@ describe('Game', () => {
   it('reports automatic passes', () => {
     // Teams: North DEFEATED and boxed in, East FROZEN.
     const game = Game.fromPosition(
-      'teams nKnB10/nPnPnP9/sRsNsB9/12/12/wK10eK/12/12/12/12/12/6sK5 W AADF - - 0 0 def=Ns,Et',
+      'teams nKnB14/nPnPnP13/sRsNsB13/16/16/16/16/wK14eK/16/16/16/16/16/16/16/8sK7 W AADF - - 0 0 def=Ns,Et',
     )
-    const [events] = play(game, ['a7b7'])
+    const [events] = play(game, ['a9b9'])
     expect(events?.[1]).toEqual({ type: 'pass', seat: 'north', notation: '--' })
     expect(snap(game).seatToMove).toBe('south')
     game.free()
@@ -285,7 +305,7 @@ describe('Game', () => {
 
   it('round-trips position strings', () => {
     const game = Game.create({ mode: 'teams', enPassant: false, moveLimitRounds: 12 })
-    play(game, ['c2c4', 'b5c4', 'c11c9', 'k8j8', 'd1c3'])
+    play(game, ['e2e4', 'b5c5', 'e15e13', 'o8n8', 'f1e3'])
     const text = game.positionString()
     expect(text).toContain('ep=off ml=12')
     const copy = Game.fromPosition(text)
@@ -302,10 +322,10 @@ describe('Game', () => {
 
   it('throws engine errors for invalid input', () => {
     const game = Game.create({ mode: 'ffa' })
-    expect(() => game.applyMove('c2c5')).toThrow('illegal move c2c5')
-    expect(() => game.applyMove('b3b4')).toThrow('illegal move b3b4') // West's pawn, South to move
+    expect(() => game.applyMove('e2e5')).toThrow('illegal move e2e5')
+    expect(() => game.applyMove('b5c5')).toThrow('illegal move b5c5') // West's pawn, South to move
     expect(() => game.applyMove('hello')).toThrow('invalid move "hello"')
-    expect(() => game.applyMove('m1m2')).toThrow('invalid move')
+    expect(() => game.applyMove('q1q2')).toThrow('invalid move')
     expect(() => game.applyTimeout('up' as never)).toThrow('invalid seat "up"')
     expect(() => game.leaderUnderAttack('up' as never)).toThrow('invalid seat "up"')
     expect(() => game.perft(7)).toThrow('too deep')
@@ -313,7 +333,7 @@ describe('Game', () => {
     expect(game.snapshot().ply).toBe(0)
     let caught: unknown
     try {
-      game.applyMove('c2c5')
+      game.applyMove('e2e5')
     } catch (e) {
       caught = e
     }
@@ -322,7 +342,7 @@ describe('Game', () => {
 
     expect(() => Game.create({ mode: 'duel' as never })).toThrow('invalid config: unknown variant')
     expect(() => Game.create({ mode: 'ffa', moveLimitRounds: 0 })).toThrow('move_limit_rounds')
-    expect(() => Game.create({ mode: 'ffa', rulesVersion: 2 })).toThrow('unsupported rules_version')
+    expect(() => Game.create({ mode: 'ffa', rulesVersion: 1 })).toThrow('unsupported rules_version')
     expect(() =>
       Game.create({ mode: 'ffa', civs: [{ id: 'mali', version: 9 }, 'mali', 'mali', 'mali'] }),
     ).toThrow('unknown civ version')

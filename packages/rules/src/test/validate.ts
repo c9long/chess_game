@@ -44,7 +44,7 @@ function uint(v: unknown, path: string): void {
 }
 
 function square(v: unknown, path: string): void {
-  if (typeof v !== 'string' || !/^[a-l](1[0-2]|[1-9])$/.test(v)) fail(path, 'expected square', v)
+  if (typeof v !== 'string' || !/^[a-p](1[0-6]|[1-9])$/.test(v)) fail(path, 'expected square', v)
   if (squareName(squareIndex(v as never)) !== v) fail(path, 'square helpers disagree', v)
 }
 
@@ -66,7 +66,7 @@ function piece(v: unknown, path: string): void {
 }
 
 function notation(v: unknown, path: string): void {
-  if (typeof v !== 'string' || !/^[a-l]\d{1,2}[a-l]\d{1,2}[qrbn]?$/.test(v)) {
+  if (typeof v !== 'string' || !/^[a-p]\d{1,2}[a-p]\d{1,2}[qrbn]?$/.test(v)) {
     fail(path, 'expected move notation', v)
   }
 }
@@ -140,7 +140,7 @@ export function validateSnapshot(v: unknown): asserts v is Snapshot {
   uint(c.moveLimitRounds, 'config.moveLimitRounds')
   uint(c.rulesVersion, 'config.rulesVersion')
   if (!Array.isArray(s.board) || s.board.length !== NUM_SQUARES)
-    fail('board', 'expected 144', s.board)
+    fail('board', `expected ${NUM_SQUARES}`, s.board)
   s.board.forEach((x, i) => {
     nullable(x, `board[${i}]`, piece)
   })

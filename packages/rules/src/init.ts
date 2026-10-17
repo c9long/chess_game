@@ -16,7 +16,7 @@ export type WasmBytes = Uint8Array | ArrayBuffer
 export type WasmSource = URL | string | WasmBytes
 
 /** Rules version these TypeScript types describe (checked against the engine on init). */
-export const RULES_VERSION = 1
+export const RULES_VERSION = 2
 
 let initialized = false
 let pending: Promise<void> | undefined

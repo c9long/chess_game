@@ -5,7 +5,7 @@
 //! whose structured results are **JSON strings** in the wire format defined
 //! in [`dto`] (camelCase keys, snake_case enum values). `@game/rules` parses
 //! them into typed objects. Every error is thrown as a JS `Error` whose
-//! message is the engine's error message (e.g. `"illegal move c2c5"`).
+//! message is the engine's error message (e.g. `"illegal move e2e5"`).
 //!
 //! All logic lives in [`session::Session`], which is target-independent and
 //! unit-tested natively; this module only adapts it to wasm-bindgen.
@@ -72,7 +72,7 @@ impl WasmGame {
         self.inner.legal_move_notations()
     }
 
-    /// Applies a move in notation (`"c2c4"`, `"c6c7q"`); returns events JSON.
+    /// Applies a move in notation (`"e2e4"`, `"e8e9q"`); returns events JSON.
     #[wasm_bindgen(js_name = applyMove)]
     pub fn apply_move(&mut self, notation: &str) -> Result<String, JsError> {
         self.inner.apply_move(notation).map_err(js_err)

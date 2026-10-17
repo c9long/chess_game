@@ -40,16 +40,16 @@ function perftStructured(game: Game, depth: number): number {
 }
 
 const NATIVE: Record<GameMode, number[]> = {
-  ffa: [1, 28, 777, 21_560, 592_802],
-  teams: [1, 28, 777, 21_560, 592_802],
+  ffa: [1, 30, 900, 27_000, 810_000],
+  teams: [1, 30, 900, 27_000, 810_000],
 }
 
 describe.each(['ffa', 'teams'] as const)('perft %s', (mode) => {
   it('matches native counts to depth 3', () => {
     const game = Game.create({ mode })
     for (let d = 0; d <= 3; d++) expect(perft(game, d)).toBe(NATIVE[mode][d])
-    expect(perftStructured(game, 3)).toBe(21_560)
-    expect(game.perft(3)).toBe(21_560)
+    expect(perftStructured(game, 3)).toBe(27_000)
+    expect(game.perft(3)).toBe(27_000)
 
     const t0 = performance.now()
     const n = perft(game, 3)

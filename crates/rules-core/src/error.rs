@@ -86,7 +86,7 @@ impl std::error::Error for ConfigError {}
 /// Malformed move or square notation.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum NotationError {
-    /// Not a square name `a1`..`l12`.
+    /// Not a square name `a1`..`p16`.
     InvalidSquare(String),
     /// Not a move string like `g1h3` or `c6c7q`.
     InvalidMove(String),

@@ -5,9 +5,9 @@
  * objects, so keep them stable. Conventions:
  * - object keys are camelCase;
  * - enum values are snake_case string literals (same as rules-core's serde);
- * - squares are names, 'a1' to 'l12';
+ * - squares are names, 'a1' to 'p16' (rules version 2: a 16×16 board);
  * - per-seat tuples are in turn order South, West, North, East (see `SEATS`);
- * - the board has 144 entries, index `rank * 12 + file` (a1 = 0, l12 = 143).
+ * - the board has 256 entries, index `rank * 16 + file` (a1 = 0, p16 = 255).
  *
  * The tests in contract.test.ts check every value produced by the engine
  * against these types, key by key.
@@ -55,10 +55,43 @@ export const CIV_IDS = [
 ] as const
 export type CivId = (typeof CIV_IDS)[number]
 
-export const FILES = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l'] as const
+export const FILES = [
+  'a',
+  'b',
+  'c',
+  'd',
+  'e',
+  'f',
+  'g',
+  'h',
+  'i',
+  'j',
+  'k',
+  'l',
+  'm',
+  'n',
+  'o',
+  'p',
+] as const
 export type File = (typeof FILES)[number]
-export type Rank = '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' | '10' | '11' | '12'
-/** A square name, 'a1' to 'l12'. */
+export type Rank =
+  | '1'
+  | '2'
+  | '3'
+  | '4'
+  | '5'
+  | '6'
+  | '7'
+  | '8'
+  | '9'
+  | '10'
+  | '11'
+  | '12'
+  | '13'
+  | '14'
+  | '15'
+  | '16'
+/** A square name, 'a1' to 'p16'. */
 export type Square = `${File}${Rank}`
 
 /** One value per seat, in `SEATS` order. */
@@ -164,7 +197,7 @@ export interface Outcome {
 export interface Snapshot {
   readonly rulesVersion: number
   readonly config: GameConfig
-  /** 144 squares, index `rank * 12 + file`; `null` = empty. */
+  /** 256 squares, index `rank * 16 + file`; `null` = empty. */
   readonly board: readonly (Piece | null)[]
   readonly statuses: SeatTuple<SeatStatus>
   /** Seat on move (meaningless once `isOver`). */
@@ -199,7 +232,7 @@ export interface Snapshot {
 
 /** A legal move of the seat to move. */
 export interface MoveView {
-  /** What `applyMove` takes, e.g. 'c2c4', 'a10a12', 'c6c7q'. */
+  /** What `applyMove` takes, e.g. 'e2e4', 'a12a16', 'e8e9q'. */
   readonly notation: string
   /** Origin (castling: the leader's square). */
   readonly from: Square
@@ -318,17 +351,17 @@ export const GAME_EVENT_TYPES = [
 // Board helpers (pure coordinate math, no rules)
 // ---------------------------------------------------------------------------
 
-export const BOARD_SIZE = 12
-export const NUM_SQUARES = 144
+export const BOARD_SIZE = 16
+export const NUM_SQUARES = 256
 
-/** Board index of a square name (`rank * 12 + file`). */
+/** Board index of a square name (`rank * 16 + file`). */
 export function squareIndex(square: Square): number {
   const file = square.charCodeAt(0) - 97
   const rank = Number(square.slice(1)) - 1
   return rank * BOARD_SIZE + file
 }
 
-/** Square name of a board index 0..143. */
+/** Square name of a board index 0..255. */
 export function squareName(index: number): Square {
   if (!Number.isInteger(index) || index < 0 || index >= NUM_SQUARES) {
     throw new RangeError(`square index out of range: ${index}`)

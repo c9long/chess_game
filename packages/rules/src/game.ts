@@ -54,7 +54,7 @@ export class Game {
     return this.#inner.legalMoveNotations()
   }
 
-  /** Validates and applies a move ('c2c4', 'c6c7q'); returns what happened, in order. */
+  /** Validates and applies a move ('e2e4', 'e8e9q'); returns what happened, in order. */
   applyMove(notation: string): GameEvent[] {
     return JSON.parse(this.#inner.applyMove(notation)) as GameEvent[]
   }

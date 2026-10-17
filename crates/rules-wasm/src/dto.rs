@@ -9,10 +9,10 @@
 //!   serde output: seats `"south" | "west" | "north" | "east"`, piece kinds
 //!   `"pawn" | "knight" | ...`, statuses, defeat reasons, move flags, civ
 //!   slugs, teams (`"south_north" | "west_east"`) and event / result tags.
-//! * Squares are names (`"a1"` .. `"l12"`).
+//! * Squares are names (`"a1"` .. `"p16"`; files `a`..`p`, ranks `1`..`16`).
 //! * Per-seat arrays have four entries in turn order South, West, North, East.
-//! * The board is 144 entries, index `rank * 12 + file` (`a1` = 0, `b1` = 1,
-//!   `a2` = 12, `l12` = 143), `null` for an empty square.
+//! * The board is 256 entries, index `rank * 16 + file` (`a1` = 0, `b1` = 1,
+//!   `a2` = 16, `p16` = 255), `null` for an empty square.
 
 use rules_core::{
     CivId, CivSpec, DefeatReason, GameConfig, GameEvent, GameMode, GameResult, GameState, Move,
@@ -153,9 +153,9 @@ impl From<Piece> for PieceView {
 #[derive(Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct CastlingView {
-    /// With the long-side rook (South: c1).
+    /// With the long-side rook (South: e1).
     pub long: bool,
-    /// With the short-side rook (South: j1).
+    /// With the short-side rook (South: l1).
     pub short: bool,
 }
 
@@ -248,7 +248,7 @@ pub struct SnapshotView {
     pub rules_version: u32,
     /// Game configuration.
     pub config: ConfigView,
-    /// 144 squares, index `rank * 12 + file`.
+    /// 256 squares, index `rank * 16 + file`.
     pub board: Vec<Option<PieceView>>,
     /// Status per seat.
     pub statuses: [SeatStatus; 4],
@@ -324,7 +324,7 @@ impl From<&GameState> for SnapshotView {
 #[derive(Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct MoveView {
-    /// Move notation, e.g. `"c2c4"`, `"a10a12"`, `"c6c7q"` (what `applyMove` takes).
+    /// Move notation, e.g. `"e2e4"`, `"a12a16"`, `"e8e9q"` (what `applyMove` takes).
     pub notation: String,
     /// Origin (castling: the leader's square).
     pub from: Square,
