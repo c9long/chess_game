@@ -6,6 +6,7 @@
 import { z } from 'zod'
 import { GAME_MODES, TIME_CONTROL_IDS } from './constants.ts'
 import { seatSchema } from './messages.ts'
+import type { BlockedUser } from './moderation.ts'
 
 /** Accepted friends per player (both sides are checked when a request is accepted). */
 export const FRIENDS_MAX = 50
@@ -33,6 +34,11 @@ export const CHALLENGES_PER_10_MIN = 10
  * - NOT_FRIENDS (403): a challenge may only invite your friends
  * - ALREADY_IN_ROOM (409): leave your current lobby or game before challenging
  * - CHALLENGE_CLOSED (409): the challenge expired, started or was closed
+ * - BLOCKED (409): you blocked that player (unblock them first). A player who blocked you gets
+ *   the usual NOT_ELIGIBLE / NOT_FRIENDS answer instead, so a block is never revealed
+ * - BLOCK_CAP (409): you already block BLOCKS_MAX players
+ * - ALREADY_REPORTED (409): you have an open report about that player (for that game)
+ * - FORBIDDEN (403): admin endpoints, for anyone not in ADMIN_USER_IDS
  * - NOT_FOUND (404), BAD_REQUEST (400), RATE_LIMITED (429), MAINTENANCE (503)
  */
 export const SOCIAL_ERROR_CODES = [
@@ -47,6 +53,10 @@ export const SOCIAL_ERROR_CODES = [
   'NOT_FRIENDS',
   'ALREADY_IN_ROOM',
   'CHALLENGE_CLOSED',
+  'BLOCKED',
+  'BLOCK_CAP',
+  'ALREADY_REPORTED',
+  'FORBIDDEN',
   'NOT_FOUND',
   'BAD_REQUEST',
   'RATE_LIMITED',
@@ -154,7 +164,9 @@ export interface FriendsResponse {
   incoming: FriendRequest[]
   /** Your requests waiting for an answer, newest first. */
   outgoing: FriendRequest[]
-  limits: { maxFriends: number; maxOutgoing: number }
+  /** Players you blocked, newest first. */
+  blocked: BlockedUser[]
+  limits: { maxFriends: number; maxOutgoing: number; maxBlocked: number }
 }
 
 /** Your relation to another player: what an "Add friend" button shows. */
@@ -167,8 +179,11 @@ export interface MatchRelationsResponse {
   capReached: boolean
   /** You have FRIEND_REQUESTS_OUTGOING_MAX requests waiting. */
   outgoingFull: boolean
-  /** `self` for your seat; `ineligible` for bots, guests, deleted accounts, aborted games. */
-  seats: { seat: number; relation: FriendRelation | 'self' | 'ineligible' }[]
+  /**
+   * `self` for your seat; `ineligible` for bots, guests, deleted accounts, aborted games.
+   * `blocked`: you blocked this player (registered players only; "Unblock" in the menu).
+   */
+  seats: { seat: number; relation: FriendRelation | 'self' | 'ineligible'; blocked: boolean }[]
 }
 
 /** `POST /api/friends/requests` (also `.../accept`): the relation afterwards. */

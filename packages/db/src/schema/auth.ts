@@ -46,6 +46,9 @@ export const users = pgTable(
     ageConfirmedAt: ts('age_confirmed_at'),
     /** Set on the placeholder row that holds a deleted account's re-keyed history. */
     deletedAt: ts('deleted_at'),
+    /** Moderation: suspended (sign-in refused) since, and by which admin; null = not. */
+    suspendedAt: ts('suspended_at'),
+    suspendedBy: text('suspended_by'),
   },
   (t) => [index('users_guest_updated_idx').on(t.updatedAt).where(sql`${t.isAnonymous}`)],
 )

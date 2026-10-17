@@ -12,6 +12,13 @@ export interface MatchListOpponent {
    * they can't be added: bots, guests, deleted accounts, aborted games, or you are a guest.
    */
   friend: 'none' | 'outgoing' | 'incoming' | 'friends' | null
+  /**
+   * Whether you blocked this opponent, or null when blocking doesn't apply (bots, guests,
+   * deleted accounts, or you are a guest).
+   */
+  blocked: boolean | null
+  /** Whether you can report this opponent (a person, not a bot or a deleted account). */
+  reportable: boolean
 }
 
 export interface MatchListItem {

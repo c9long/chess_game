@@ -18,6 +18,16 @@ import {
   serverMessageSchemas,
 } from './messages.ts'
 import {
+  BLOCKS_MAX,
+  blockBodySchema,
+  REPORT_NOTE_MAX,
+  REPORT_REASONS,
+  REPORT_RESOLUTIONS,
+  REPORTS_PER_DAY,
+  reportBodySchema,
+  resolveReportBodySchema,
+} from './moderation.ts'
+import {
   CHALLENGE_MAX_INVITEES,
   CHALLENGE_TTL_MS,
   challengeBodySchema,
@@ -75,6 +85,20 @@ export function buildProtocolJsonSchema() {
         challenge: toSchema(challengeBodySchema, 'input'),
       },
       roomMessages: mapSchemas(socialMessageSchemas, 'output'),
+    },
+    moderation: {
+      limits: {
+        blocksMax: BLOCKS_MAX,
+        reportsPerDay: REPORTS_PER_DAY,
+        reportNoteMax: REPORT_NOTE_MAX,
+      },
+      reportReasons: REPORT_REASONS,
+      reportResolutions: REPORT_RESOLUTIONS,
+      restBodies: {
+        block: toSchema(blockBodySchema, 'input'),
+        report: toSchema(reportBodySchema, 'input'),
+        resolveReport: toSchema(resolveReportBodySchema, 'input'),
+      },
     },
   }
 }

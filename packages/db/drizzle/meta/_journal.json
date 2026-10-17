@@ -57,6 +57,13 @@
       "when": 1792218048743,
       "tag": "0007_friends",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1792231002649,
+      "tag": "0008_moderation",
+      "breakpoints": true
     }
   ]
 }

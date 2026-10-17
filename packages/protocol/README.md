@@ -268,8 +268,8 @@ seat, so user ids are never needed to add someone (and can't be guessed to spam 
 
 | Call | Body / answer |
 |---|---|
-| `GET /api/friends` | `FriendsResponse`: `{ friends: [{ userId, username, online, since }], incoming: [{ user, createdAt }], outgoing: [...], limits }` |
-| `GET /api/friends/match/:matchId` | participants only: `MatchRelationsResponse` `{ matchId, capReached, outgoingFull, seats: [{ seat, relation }] }`, relation `self` \| `ineligible` \| `none` \| `outgoing` \| `incoming` \| `friends` |
+| `GET /api/friends` | `FriendsResponse`: `{ friends: [{ userId, username, online, since }], incoming: [{ user, createdAt }], outgoing: [...], blocked: [{ userId, username, since }], limits: { maxFriends, maxOutgoing, maxBlocked } }` |
+| `GET /api/friends/match/:matchId` | participants only: `MatchRelationsResponse` `{ matchId, capReached, outgoingFull, seats: [{ seat, relation, blocked }] }`, relation `self` \| `ineligible` \| `none` \| `outgoing` \| `incoming` \| `friends`; `blocked`: you blocked that player |
 | `POST /api/friends/requests` | `{ matchId, seat }` → `{ relation: 'outgoing' \| 'friends', user }` (`friends`: they had asked you, so it is accepted at once) |
 | `POST /api/friends/requests/:userId/accept` | → `{ relation: 'friends', user }` |
 | `POST /api/friends/requests/:userId/decline` | → 204 |
@@ -281,7 +281,9 @@ seat, so user ids are never needed to add someone (and can't be guessed to spam 
 | `DELETE /api/challenges/:id` | the challenger withdraws it → 204 (the lobby stays open) |
 
 `GET /api/matches` opponents carry `friend`: the same relation for registered opponents of
-finished games, `null` otherwise. Refusals are `{ error, message }` with the codes in
+finished games, `null` otherwise (also while you block them); `blocked` (you blocked them, or
+`null` when blocking doesn't apply: bots, guests, deleted accounts, or you are a guest); and
+`reportable` (a person, not a bot or a deleted account). Refusals are `{ error, message }` with the codes in
 `SOCIAL_ERROR_CODES` (`NOT_ELIGIBLE`, `FRIEND_CAP` / `TARGET_FRIEND_CAP` (both sides are checked
 when a request is accepted), `OUTGOING_CAP`, `ALREADY_FRIENDS`, `ALREADY_REQUESTED`,
 `NOT_FRIENDS`, `ALREADY_IN_ROOM`, `CHALLENGE_CLOSED`, `RATE_LIMITED` (429, per user), ...).
@@ -306,6 +308,50 @@ Server → client messages (`socialMessageSchemas`):
 | `challenge` | `Challenge`: a friend challenged you (join the lobby, or decline over REST). Co-invitees who aren't your friends come without `userId` (name and status only) |
 | `challengeUpdate` | to the challenger: `{ challengeId, user, status: 'declined' \| 'joined' \| 'expired' }` |
 | `challengeClosed` | `{ challengeId, reason }`: `expired`, `started` (its game began), `closed` (the lobby closed), `cancelled` (withdrawn, or replaced by a newer challenge), or `answered` (only to an invitee whose other tab or device joined or declined: drop the prompt) |
+
+### Usernames
+
+Better Auth's sign-up (`/api/auth/sign-up/email`) and choosing a username (`/api/auth/update-user`
+with `username`, for accounts without one) answer `400 { code: 'USERNAME_UNAVAILABLE', message:
+"That username isn’t available. Try another." }` for profane or reserved names (staff words,
+`Guest…`, `Player…`, bot names, the app's name). The message never says which rule matched.
+Format problems keep Better Auth's own codes (`USERNAME_TOO_SHORT`, `INVALID_USERNAME`, ...).
+Usernames can't be changed during the beta. A suspended account's sign-in answers
+`403 { code: 'ACCOUNT_SUSPENDED' }`.
+
+### Blocking and reporting
+
+Types and limits in `moderation.ts` (`BLOCKS_MAX` 500, `REPORTS_PER_DAY` 10, `REPORT_NOTE_MAX`
+500). A target (`PlayerTarget`) is either `{ matchId, seat }` (a game you played in: live card,
+result screen, history row) or `{ userId }` (someone on your Friends page: a friend, a request
+either way, or a player you blocked). Any other user id gets `404 NOT_FOUND`.
+
+| Call | Body / answer |
+|---|---|
+| `POST /api/blocks` | registered accounts only (`ACCOUNT_REQUIRED` for guests): `PlayerTarget` → `{ user }`. Removes any friendship or request between you, ends open challenges between you, and pushes `friendsChanged` to both. Blocking twice is fine. Guests and bots can't be blocked (`NOT_ELIGIBLE`); `BLOCK_CAP` (409) past `BLOCKS_MAX`; 60 per hour per user |
+| `DELETE /api/blocks/:userId` | unblock → 204 (404 when not blocked) |
+| `DELETE /api/blocks/match/:matchId/:seat` | unblock the player in that seat of a game you played in → 204 |
+| `POST /api/reports` | any signed-in player, guests included: `PlayerTarget & { reason, note? }`, reason `offensive_username` \| `harassment` \| `cheating` \| `other` → 201 `{ ok: true }`. `ALREADY_REPORTED` (409): you have an open report about that player for that game (or without a game); `RATE_LIMITED` (429): `REPORTS_PER_DAY` reached |
+
+While A blocks B, B's friend requests to A get exactly the `NOT_ELIGIBLE` answer any ineligible
+player gets, and a challenge naming A gets `NOT_FRIENDS` (as for any non-friend), so a block is
+never revealed; A's requests to B get `BLOCKED` (409, "unblock them first"). Presence goes to
+friends only, so neither sees the other online. A block never removes anyone from a running
+game. The reported player is never told about a report or who filed it.
+
+### Admin review queue
+
+Only user ids in the server's `ADMIN_USER_IDS` (comma list, empty by default); everyone else gets
+`403 { error: 'FORBIDDEN' }` from every call (401 without a session). The web page is
+`/admin/reports`.
+
+| Call | Body / answer |
+|---|---|
+| `GET /api/admin/me` | `{ admin: true }` (or 403) |
+| `GET /api/admin/reports` | `AdminReportsResponse`: `{ reports: AdminReport[] (open, oldest first: reason, note, matchId, createdAt, reported { userId, name, reportedName, isGuest, deleted, suspendedAt, openReports, totalReports, openReporters }, reporter { userId, name }), suspended: [{ userId, name, suspendedAt }] }` |
+| `POST /api/admin/reports/:id/dismiss` | → 204 (404 when no longer open) |
+| `POST /api/admin/reports/:id/resolve` | `{ action: 'warn' \| 'rename' \| 'suspend' }` → 204. `warn` is recorded only; `rename` clears the username (the account shows "Player-1234" and must choose a new username, so matchmaking answers `username_required` until it does); `suspend` refuses every sign-in (`403 ACCOUNT_SUSPENDED` from Better Auth), deletes all sessions (bearer tokens included), closes `social` connections and frees any pre-game lobby seat (`kicked` with reason `suspended`); a running game goes on. Admins can't be suspended (400) |
+| `POST /api/admin/users/:userId/unsuspend` | → 204 (404 when not suspended) |
 
 ### Challenge lobbies
 
