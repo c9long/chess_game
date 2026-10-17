@@ -3,10 +3,11 @@
  * `social` room's server messages, and the limits. REST does every action (so polling works
  * too); the `social` room pushes notifications and friends' online status. See README.md.
  */
-import { z } from 'zod'
+
 import { GAME_MODES, TIME_CONTROL_IDS } from './constants.ts'
 import { seatSchema } from './messages.ts'
 import type { BlockedUser } from './moderation.ts'
+import { z } from './zod.ts'
 
 /** Accepted friends per player (both sides are checked when a request is accepted). */
 export const FRIENDS_MAX = 50

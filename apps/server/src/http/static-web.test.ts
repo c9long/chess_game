@@ -167,15 +167,15 @@ describe('webAppHandler', () => {
 describe('webAppCsp', () => {
   it('allows the wasm engine, Turnstile and the same-origin API and WebSocket', () => {
     const csp = webAppCsp('https://play.example.test')
-    expect(csp).toContain(
-      "script-src 'self' 'wasm-unsafe-eval' 'unsafe-eval' https://challenges.cloudflare.com",
-    )
+    expect(csp).toContain("script-src 'self' 'wasm-unsafe-eval' https://challenges.cloudflare.com")
     expect(csp).toContain('frame-src https://challenges.cloudflare.com')
     expect(csp).toContain("connect-src 'self' https://play.example.test wss://play.example.test")
     expect(csp).toContain("frame-ancestors 'none'")
     // No inline scripts and no other script hosts.
     const scriptSrc = csp.split('; ').find((d) => d.startsWith('script-src ')) ?? ''
     expect(scriptSrc).not.toContain("'unsafe-inline'")
+    // No eval: the board renderer uses PixiJS's CSP-safe path (pixi.js/unsafe-eval).
+    expect(scriptSrc.split(' ')).not.toContain("'unsafe-eval'")
     expect(scriptSrc.split(' ').filter((t) => t.startsWith('http'))).toEqual([
       'https://challenges.cloudflare.com',
     ])

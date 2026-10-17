@@ -60,10 +60,9 @@ export function resolveWebDistDir(
 /**
  * Content-Security-Policy for the web app's pages. Scripts come only from this origin (the
  * Vite build has no inline scripts) plus Turnstile; `wasm-unsafe-eval` lets the rules engine
- * (WebAssembly) compile. `unsafe-eval` is there for the board renderer: PixiJS's WebGL
- * renderer generates its uniform upload code with `new Function` and refuses to draw without
- * it (the board stays on "Setting up the board..."). Importing `pixi.js/unsafe-eval` in
- * @game/board would let this policy drop it. Styles allow inline attributes, which React and
+ * (WebAssembly) compile. There is no `unsafe-eval`: the board renderer imports
+ * `pixi.js/unsafe-eval` (in @game/board), PixiJS's CSP-safe path that uploads uniforms and
+ * builds shaders without `new Function`. Styles allow inline attributes, which React and
  * the animation library set. API calls and the game's WebSocket go to the API origin (this origin in a
  * single-origin deploy; listed explicitly because older browsers don't match ws(s) to 'self').
  */
@@ -72,7 +71,7 @@ export function webAppCsp(apiPublicUrl: string): string {
   const ws = `${api.protocol === 'https:' ? 'wss:' : 'ws:'}//${api.host}`
   return [
     "default-src 'self'",
-    `script-src 'self' 'wasm-unsafe-eval' 'unsafe-eval' ${TURNSTILE}`,
+    `script-src 'self' 'wasm-unsafe-eval' ${TURNSTILE}`,
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob:",
     "font-src 'self' data:",

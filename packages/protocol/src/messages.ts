@@ -1,5 +1,4 @@
 import type { GameEvent, GameResult } from '@game/rules'
-import { z } from 'zod'
 import {
   BOT_LEVEL_LABELS,
   CIV_SLUGS,
@@ -13,6 +12,7 @@ import {
   TIME_CONTROL_IDS,
   UNTIMED,
 } from './constants.ts'
+import { z } from './zod.ts'
 
 // ---------------------------------------------------------------------------
 // Shared pieces

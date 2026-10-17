@@ -2,8 +2,9 @@
  * Moderation (PLAN §3 "Moderation"): blocking players, reporting players, and the admin
  * review queue. REST only; see README.md "Blocking and reporting" and "Admin review queue".
  */
-import { z } from 'zod'
+
 import { seatSchema } from './messages.ts'
+import { z } from './zod.ts'
 
 /** Players one account may block. */
 export const BLOCKS_MAX = 500

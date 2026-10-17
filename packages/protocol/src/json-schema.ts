@@ -1,4 +1,3 @@
-import { z } from 'zod'
 import {
   CLOSE_CODES,
   ERROR_CODES,
@@ -38,6 +37,7 @@ import {
   SOCIAL_ERROR_CODES,
   socialMessageSchemas,
 } from './social.ts'
+import { z } from './zod.ts'
 
 function toSchema(schema: z.ZodType, io: 'input' | 'output') {
   return z.toJSONSchema(schema, { io, target: 'draft-2020-12', unrepresentable: 'any' })
