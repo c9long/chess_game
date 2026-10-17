@@ -46,6 +46,8 @@ export const END_REASON_LABEL: Record<string, string> = {
   team_resigned: 'A team resigned',
   move_limit: 'Move limit reached (25 rounds without a capture or pawn move)',
   agreed_draw: 'Every player still in the game agreed to a draw',
+  // Solo FFA: the game ends when its (only) player is out; history rows are the viewer's own.
+  player_eliminated: 'You were eliminated',
   server_shutdown: 'Game cancelled: the server restarted',
   server_restart: 'Game cancelled: the server restarted',
   persist_failed: 'Game cancelled: the result could not be saved',

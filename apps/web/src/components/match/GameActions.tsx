@@ -360,7 +360,7 @@ function ResignDialog({
         {teams ? null : (
           <li>
             {solo
-              ? 'You can stay and watch the bots finish, or leave at any time.'
+              ? 'The game ends there: the bots share 1st place.'
               : 'You can stay and watch the rest of the game, or leave at any time.'}
           </li>
         )}

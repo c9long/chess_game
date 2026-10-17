@@ -4,6 +4,13 @@ import { Game, type GameConfig, type GameEvent, type Piece, type Snapshot } from
 import { useReducedMotion } from 'motion/react'
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
+import {
+  type CheckAction,
+  type CheckMemo,
+  type CheckNotice,
+  INITIAL_CHECK,
+  nextCheck,
+} from '../../lib/check-indicator.ts'
 import { leaveMatch, type MatchRoom, matchApi } from '../../lib/match.ts'
 import { lostMaterial, type SeatMaterial } from '../../lib/material.ts'
 import { usePrefs } from '../../lib/prefs.ts'
@@ -90,8 +97,90 @@ function readSeatInfo(positionString: string): SeatInfo | null {
   }
 }
 
+const SEAT_INDEX = { south: 0, west: 1, north: 2, east: 3 } as const
+
+/**
+ * The position the board shows: the latest `events` message when it is at least as new as the
+ * room state (its rules events make the animation exact, and it names the action that led
+ * there), else the state's position.
+ */
+function shownPosition(feed: MatchFeed): {
+  ps: string
+  events: readonly GameEvent[] | undefined
+  action: CheckAction | null
+} {
+  const { state, lastEvents } = feed
+  const ps =
+    lastEvents && lastEvents.seq >= state.actionSeq
+      ? lastEvents.positionString
+      : state.positionString
+  const last = lastEvents && lastEvents.positionString === ps ? lastEvents : null
+  return {
+    ps,
+    events: last?.events,
+    action: last ? { seat: last.seat, action: last.action } : null,
+  }
+}
+
+/**
+ * The check indicator for the viewer's own seat (see `lib/check-indicator.ts` for the rule).
+ * Whether a leader is attacked comes from the engine's snapshot; the memo carries a self-check
+ * across positions. Keyed on the position, so a re-render (or a StrictMode double render) of
+ * the same position returns the same answer.
+ */
+function useCheckNotice(
+  ready: boolean,
+  ps: string,
+  actionSeat: number | null,
+  actionKind: string | null,
+  mySeat: number,
+): CheckNotice {
+  const memo = useRef<{ key: string; memo: CheckMemo; notice: CheckNotice }>({
+    key: '',
+    memo: INITIAL_CHECK,
+    notice: 'none',
+  })
+  return useMemo(() => {
+    if (!ready || !ps || mySeat < 0) return 'none'
+    const key = `${mySeat}|${ps}`
+    const m = memo.current
+    if (m.key === key) return m.notice
+    const game = Game.fromPosition(ps)
+    let snapshot: Snapshot
+    try {
+      snapshot = game.snapshot()
+    } finally {
+      game.free()
+    }
+    const action =
+      actionSeat !== null && actionKind !== null ? { seat: actionSeat, action: actionKind } : null
+    const out = nextCheck(
+      m.key.startsWith(`${mySeat}|`) ? m.memo : INITIAL_CHECK,
+      mySeat,
+      {
+        ply: snapshot.ply,
+        seatToMove: SEAT_INDEX[snapshot.seatToMove],
+        isOver: snapshot.isOver,
+        leaderUnderAttack: snapshot.leaderUnderAttack,
+      },
+      action,
+    )
+    memo.current = { key, memo: out.memo, notice: out.notice }
+    return out.notice
+  }, [ready, ps, actionSeat, actionKind, mySeat])
+}
+
 /** Mounts the PixiJS board and keeps it in sync with the server's position. */
-function Board({ room, feed }: { room: MatchRoom; feed: MatchFeed }) {
+function Board({
+  room,
+  feed,
+  check,
+}: {
+  room: MatchRoom
+  feed: MatchFeed
+  /** The viewer's check indicator (from `useCheckNotice`). */
+  check: CheckNotice
+}) {
   const host = useRef<HTMLDivElement>(null)
   const viewRef = useRef<BoardView | null>(null)
   // Bumped each time a BoardView finishes mounting, so a re-created view (the mount effect
@@ -100,7 +189,7 @@ function Board({ room, feed }: { room: MatchRoom; feed: MatchFeed }) {
   const appliedRef = useRef<string>('')
   const prefs = usePrefs()
   const send = useMemo(() => matchApi(room).send, [room])
-  const { state, mySeat, lastEvents } = feed
+  const { state, mySeat } = feed
   // The keyboard hint shows once, the first time the board gets keyboard focus.
   const [hint, setHint] = useState<'idle' | 'shown' | 'done'>('idle')
   const frame = useRef<HTMLDivElement>(null)
@@ -130,7 +219,6 @@ function Board({ room, feed }: { room: MatchRoom; feed: MatchFeed }) {
     const view = new BoardView({
       onMoveIntent: (move) => send('move', { move }),
       sound: usePrefs.getState().sound,
-      showAttackedLeaderGlow: usePrefs.getState().showAttackedLeaderGlow,
       colorblindPatterns: usePrefs.getState().colorblindPatterns,
       reducedMotion: usePrefs.getState().reducedMotion,
     })
@@ -144,6 +232,7 @@ function Board({ room, feed }: { room: MatchRoom; feed: MatchFeed }) {
           return p && rect ? { x: rect.left + p.x, y: rect.top + p.y } : null
         },
         position: () => appliedRef.current,
+        checkSquares: () => view.checkSquares,
       }
     }
     let live = true
@@ -164,11 +253,10 @@ function Board({ room, feed }: { room: MatchRoom; feed: MatchFeed }) {
   useEffect(() => {
     viewRef.current?.setOptions({
       sound: prefs.sound,
-      showAttackedLeaderGlow: prefs.showAttackedLeaderGlow,
       colorblindPatterns: prefs.colorblindPatterns,
       reducedMotion: prefs.reducedMotion,
     })
-  }, [prefs.sound, prefs.showAttackedLeaderGlow, prefs.colorblindPatterns, prefs.reducedMotion])
+  }, [prefs.sound, prefs.colorblindPatterns, prefs.reducedMotion])
 
   useEffect(() => {
     if (viewGen === 0) return
@@ -177,12 +265,7 @@ function Board({ room, feed }: { room: MatchRoom; feed: MatchFeed }) {
 
   // Follow the authoritative position. The `events` message carries the rules events that
   // make animations exact; a state patch alone (e.g. after a reconnect) still animates by diff.
-  const ps =
-    lastEvents && lastEvents.seq >= state.actionSeq
-      ? lastEvents.positionString
-      : state.positionString
-  const events: readonly GameEvent[] | undefined =
-    lastEvents && lastEvents.positionString === ps ? lastEvents.events : undefined
+  const { ps, events } = shownPosition(feed)
   useEffect(() => {
     const view = viewRef.current
     if (viewGen === 0 || !view || !ps) return
@@ -200,6 +283,13 @@ function Board({ room, feed }: { room: MatchRoom; feed: MatchFeed }) {
     view.setInteractive(myTurn ? seatName(mySeat) : null)
     view.setLegalMoves(myTurn ? pos.legal : [])
   }, [viewGen, ps, events, mySeat, state.phase])
+
+  // The check indicator on the viewer's leader square(s). After the position above, so the
+  // board times it (and its sound) after the move that caused it.
+  useEffect(() => {
+    if (viewGen === 0) return
+    viewRef.current?.setCheck(check !== 'none' && mySeat >= 0 ? seatName(mySeat) : null)
+  }, [viewGen, check, mySeat])
 
   // A refused move: put the board back on the current position (the piece slides home).
   useEffect(() => {
@@ -225,6 +315,18 @@ function Board({ room, feed }: { room: MatchRoom; feed: MatchFeed }) {
           <Spinner /> Setting up the board…
         </div>
       )}
+      {check === 'self_check' ? (
+        <div className="pointer-events-none absolute inset-x-0 top-2 flex justify-center px-3">
+          <p
+            role="status"
+            className="flex items-center gap-2 rounded-full border border-seat-south-light/50 bg-seat-south/90 px-3.5 py-1.5 text-sm font-semibold text-parchment shadow-lg shadow-black/40 backdrop-blur"
+            data-testid="self-check-notice"
+          >
+            <span aria-hidden="true" className="h-2 w-2 shrink-0 rounded-full bg-parchment" />
+            Your leader is in check
+          </p>
+        </div>
+      ) : null}
       {hint === 'shown' ? (
         <div
           className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center px-3"
@@ -281,6 +383,14 @@ export function GameRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) {
     [ready, state.positionString],
   )
   const stillPlaying = mySeat >= 0 && seatInfo?.voters[mySeat] === true
+  const shown = shownPosition(feed)
+  const check = useCheckNotice(
+    ready,
+    shown.ps,
+    shown.action?.seat ?? null,
+    shown.action?.action ?? null,
+    mySeat,
+  )
   useTurnTitle(myTurn)
 
   // The lobby's Start button sits below the fold: open the game at the top of the page.
@@ -359,7 +469,7 @@ export function GameRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) {
     >
       <div className="order-2 flex min-w-0 justify-center lg:order-none">
         {ready ? (
-          <Board room={room} feed={feed} />
+          <Board room={room} feed={feed} check={check} />
         ) : (
           <div className="flex aspect-square w-[var(--board)] items-center justify-center gap-3 text-parchment/60">
             <Spinner /> Loading the game engine…
@@ -387,6 +497,7 @@ export function GameRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) {
           <TurnBanner
             finished={finished}
             myTurn={myTurn}
+            inCheck={myTurn && check === 'check'}
             mover={state.seats[state.seatToMove]}
             moverColor={seatHex(state.seatToMove)}
             reduceMotion={reduceMotion}
@@ -475,9 +586,11 @@ export function GameRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) {
         onOpenChange={setConfirmLeave}
         title="Leave this game?"
         description={
-          untimed
-            ? 'Your army will be eliminated and the bots will finish without you.'
-            : 'Your seat will be eliminated (as if your time ran out).'
+          !untimed
+            ? 'Your seat will be eliminated (as if your time ran out).'
+            : state.mode === 'teams'
+              ? 'Your army will be eliminated and the bots will finish without you.'
+              : 'Your army will be eliminated and the game ends.'
         }
         confirmLabel="Leave game"
         cancelLabel="Keep playing"

@@ -108,13 +108,17 @@ export function GameOver({
   // Ratings arrive with gameOver (after the result is saved); until then, the room state.
   const rated = gameOver ? gameOver.rated : state.rated
   const myRating = mySeat >= 0 ? (gameOver?.ratings[mySeat] ?? null) : null
-  const agreedDraw = result.type === 'ffa_agreed_draw' || result.type === 'teams_agreed_draw'
+  // A solo FFA game ends (as a draw between the bots) as soon as its player is out.
+  const eliminated = result.endReason === 'player_eliminated'
+  const agreedDraw =
+    !eliminated && (result.type === 'ffa_agreed_draw' || result.type === 'teams_agreed_draw')
   // A player knocked out before an agreed draw didn't share it: they see their own place.
   const inDraw = agreedDraw && (myPlace === undefined || myPlace === 1)
   const isDraw = inDraw || result.type === 'teams_draw'
   const won = !aborted && !isDraw && myPlace === 1
   let headline = 'Game over'
   if (aborted) headline = 'Game cancelled'
+  else if (eliminated) headline = mySeat >= 0 ? 'You were eliminated' : 'Player eliminated'
   else if (inDraw) headline = 'Draw agreed'
   else if (result.type === 'teams_draw') headline = 'Draw'
   else if (myPlace === 1) headline = 'Victory'
@@ -122,6 +126,11 @@ export function GameOver({
 
   const parts = [END_REASON_LABEL[result.endReason] ?? '']
   if (agreedDraw && !inDraw) parts[0] = 'The remaining players agreed to a draw'
+  if (eliminated) {
+    parts[0] = myPlace
+      ? `You finished ${ordinal(myPlace)}. The game ends here; the bots share 1st place`
+      : 'The player was eliminated. The bots share 1st place'
+  }
   if (inDraw && myPlace === 1 && placements.filter((p) => p === 1).length > 1) {
     parts.push('You share 1st place')
   }

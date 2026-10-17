@@ -3,7 +3,6 @@ import { create } from 'zustand'
 /** Per-browser board preferences (remembered in localStorage when available). */
 export interface BoardPrefs {
   sound: boolean
-  showAttackedLeaderGlow: boolean
   colorblindPatterns: boolean
   reducedMotion: boolean
 }
@@ -13,8 +12,6 @@ const KEY = 'board:prefs'
 function load(): BoardPrefs {
   const defaults: BoardPrefs = {
     sound: true,
-    // Open rules question (TODO.md): the glow's default. Off keeps players watchful.
-    showAttackedLeaderGlow: false,
     colorblindPatterns: false,
     reducedMotion:
       typeof window !== 'undefined' &&
@@ -22,7 +19,15 @@ function load(): BoardPrefs {
   }
   try {
     const raw = localStorage.getItem(KEY)
-    return raw ? { ...defaults, ...(JSON.parse(raw) as Partial<BoardPrefs>) } : defaults
+    if (!raw) return defaults
+    const saved = JSON.parse(raw) as Record<string, unknown>
+    // Known keys only: settings that no longer exist (e.g. the old attacked-leader glow,
+    // replaced by the check indicator) are dropped.
+    const prefs = { ...defaults }
+    for (const key of Object.keys(defaults) as (keyof BoardPrefs)[]) {
+      if (typeof saved[key] === 'boolean') prefs[key] = saved[key]
+    }
+    return prefs
   } catch {
     return defaults
   }

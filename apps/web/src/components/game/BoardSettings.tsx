@@ -84,11 +84,6 @@ export function BoardSettings({ id }: { id: string }) {
       <div className="flex flex-col">
         <Toggle label="Sound" checked={prefs.sound} onChange={(v) => prefs.set({ sound: v })} />
         <Toggle
-          label="Glow on attacked leaders"
-          checked={prefs.showAttackedLeaderGlow}
-          onChange={(v) => prefs.set({ showAttackedLeaderGlow: v })}
-        />
-        <Toggle
           label="Colour-blind markers"
           checked={prefs.colorblindPatterns}
           onChange={(v) => prefs.set({ colorblindPatterns: v })}
