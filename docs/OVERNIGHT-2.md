@@ -60,6 +60,29 @@ pnpm dev          # applies migrations, rebuilds the rules engine, then open htt
 
 ## Completed
 
+### 1. 16×16 board (rules version 2)
+Built as decided above: rules engine, bots, board drawing, web pages, server, tests and docs.
+- **Opening:** the armies start four squares apart, so nobody can capture on move 1 any more
+  (on 12×12 the corner pawns could). Every seat has exactly 30 opening moves.
+- **Bots:** moves cost about 1.3–1.5× more thinking time on the bigger board, but every level
+  still answers within its time target, and arena games confirm each level still beats the
+  one below.
+- **Old games:** 12×12 matches stay in history; replaying them is refused cleanly instead of
+  producing wrong positions.
+- **En passant** practically never comes up early now: a pawn can only be taken en passant once
+  enemy pawns have moved off their starting files by capturing.
+- **Phones:** at 390 px wide a square is only about 19 px. Pieces still read, but taps are
+  small. A zoom for the board on phones is on the to-do list.
+Commits `622407b`…`54c9fd1`. A review pass (rules attack tests + visual check) follows.
+
+### 2. Friends and challenges
+Built as decided above. Requests are tied to a shared match and seat, so nobody can use user
+ids to spam strangers. A review found 17 problems, all fixed. Among them: a signed-out device
+kept receiving friends' updates; deleting an account left invitations open; challenge
+invitees could see the ids of strangers invited with them; the challenge prompt opened over
+other dialogs. The full check passed on the friends commits on their own (server 319 tests,
+web 57). Commits `ac83876`…`de6617e`.
+
 ### 6. Docker (M0 leftover): verified for real
 Both images build, and a local test stack migrated the database, answered `/api/health` and
 played a full solo game against the bot engine in its own container. A real run turned up
