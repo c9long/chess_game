@@ -580,6 +580,19 @@ export class MatchRoom
     )
   }
 
+  /**
+   * The account whose seat a reconnection token belongs to, or undefined when the token
+   * matches no seat here. Read-only (unlike Colyseus' `checkReconnectionToken`, which closes a
+   * still-connected client): matchmaking checks it before letting a reconnect through.
+   */
+  reconnectionOwner(token: string): string | undefined {
+    const pending = (this as unknown as { _reconnections: Record<string, [string] | undefined> })
+      ._reconnections[token]?.[0]
+    const sessionId = pending ?? this.clients.find((c) => c.reconnectionToken === token)?.sessionId
+    if (!sessionId) return undefined
+    return this.bindings[seatOfSession(this.bindings, sessionId)]?.userId
+  }
+
   /** Whether `userId` holds a seat here. */
   hasSeated(userId: string): boolean {
     return this.bindings.some((b) => b?.userId === userId)

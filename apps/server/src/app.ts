@@ -84,7 +84,17 @@ export function createApp(config: AppConfig, overrides: AppOverrides = {}) {
   app.use(securityHeaders(config))
   app.use(requestLogger(logger))
   app.use(normalizeForwardedFor(config))
-  app.use(cors({ origin: config.webOrigin, credentials: true, maxAge: 600 }))
+  // The web app with credentials (its session cookie). The mobile app WebViews
+  // (NATIVE_ORIGINS; empty by default) authenticate with a bearer token, so their CORS grant
+  // carries no credentials: a cookie session can't be set or used from an app origin.
+  const native = new Set(config.nativeOrigins)
+  const webCors = cors({ origin: config.webOrigin, credentials: true, maxAge: 600 })
+  const nativeCors = cors({ origin: true, credentials: false, maxAge: 600 })
+  app.use((req, res, next) => {
+    const origin = req.headers.origin
+    if (origin && native.has(origin)) nativeCors(req, res, next)
+    else webCors(req, res, next)
+  })
 
   // Better Auth parses its own bodies, so it is mounted before express.json().
   app.all(

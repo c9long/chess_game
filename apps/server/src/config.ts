@@ -33,6 +33,11 @@ const envSchema = z.object({
   API_PUBLIC_URL: url.optional(),
   /** The only origin allowed to call the API with credentials. */
   WEB_ORIGIN: url.optional(),
+  /**
+   * Extra origins of the mobile app shells (Capacitor WebViews), comma-separated, e.g.
+   * `capacitor://localhost,https://localhost`. Empty (the default) changes nothing.
+   */
+  NATIVE_ORIGINS: z.string().default(''),
   PASSKEY_RP_ID: optionalString,
   TRUST_CLOUDFLARE: bool.default(false),
   RATE_LIMIT_ENABLED: bool.default(true),
@@ -110,6 +115,11 @@ export interface AppConfig {
   authSecret: string
   apiPublicUrl: string
   webOrigin: string
+  /**
+   * Mobile app WebView origins (NATIVE_ORIGINS), allowed next to `webOrigin` for CORS, Better
+   * Auth's trusted origins and the WebSocket origin check. Empty by default.
+   */
+  nativeOrigins: string[]
   passkeyRpId: string
   trustCloudflare: boolean
   rateLimitEnabled: boolean
@@ -153,6 +163,50 @@ function isRegistrableSuffix(rpId: string, host: string): boolean {
   return host === rpId || host.endsWith(`.${rpId}`)
 }
 
+/**
+ * Parses NATIVE_ORIGINS: a comma-separated list of bare origins (`scheme://host[:port]`, no
+ * path, no wildcard). `new URL().origin` is "null" for custom schemes such as `capacitor:`, so
+ * origins are compared as normalized strings. Plain http is for development live reload only.
+ */
+export function parseNativeOrigins(
+  raw: string,
+  isProduction: boolean,
+): { origins: string[]; problems: string[] } {
+  const origins: string[] = []
+  const problems: string[] = []
+  for (const entry of raw.split(',')) {
+    const value = entry.trim()
+    if (!value) continue
+    const m = /^([a-z][a-z0-9+.-]*):\/\/([a-z0-9.-]+(?::\d{1,5})?)\/?$/i.exec(value)
+    if (!m) {
+      problems.push(
+        `NATIVE_ORIGINS entry "${value}" must be a bare origin like capacitor://localhost`,
+      )
+      continue
+    }
+    const scheme = (m[1] as string).toLowerCase()
+    // Browsers leave the scheme's default port out of Origin, so drop it here too (an entry
+    // with `:443` would otherwise never match).
+    const defaultPort = scheme === 'https' ? ':443' : scheme === 'http' ? ':80' : undefined
+    let authority = (m[2] as string).toLowerCase()
+    if (defaultPort && authority.endsWith(defaultPort)) {
+      authority = authority.slice(0, -defaultPort.length)
+    }
+    const origin = `${scheme}://${authority}`
+    if (isProduction && origin.startsWith('http://')) {
+      problems.push(`NATIVE_ORIGINS entry "${value}" must not use plain http in production`)
+      continue
+    }
+    if (!origins.includes(origin)) origins.push(origin)
+  }
+  return { origins, problems }
+}
+
+/** Every origin a browser or app WebView may call the API from: the web app, then the apps. */
+export function allowedOrigins(config: Pick<AppConfig, 'webOrigin' | 'nativeOrigins'>): string[] {
+  return [config.webOrigin, ...config.nativeOrigins]
+}
+
 /** Parses and validates configuration from environment variables. Throws ConfigError. */
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const parsed = envSchema.safeParse(env)
@@ -164,6 +218,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const isProduction = e.NODE_ENV === 'production'
   const problems: string[] = []
   const DEV_ORIGIN = 'http://localhost:5173'
+  const native = parseNativeOrigins(e.NATIVE_ORIGINS, isProduction)
+  problems.push(...native.problems)
 
   const authSecret = e.BETTER_AUTH_SECRET ?? (isProduction ? undefined : DEV_SECRET)
   if (!authSecret || authSecret.length < 32) {
@@ -247,6 +303,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     authSecret,
     apiPublicUrl: (e.API_PUBLIC_URL ?? DEV_ORIGIN).replace(/\/$/, ''),
     webOrigin: new URL(e.WEB_ORIGIN ?? DEV_ORIGIN).origin,
+    nativeOrigins: native.origins,
     passkeyRpId: e.PASSKEY_RP_ID ?? 'localhost',
     trustCloudflare: e.TRUST_CLOUDFLARE,
     rateLimitEnabled: e.RATE_LIMIT_ENABLED,

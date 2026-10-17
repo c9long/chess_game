@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ConfigError, loadConfig, TURNSTILE_TEST_SECRET_KEY } from './config.ts'
+import { allowedOrigins, ConfigError, loadConfig, TURNSTILE_TEST_SECRET_KEY } from './config.ts'
 
 const base = { NODE_ENV: 'development', DATABASE_URL: 'postgres://u:p@localhost:5432/db' }
 const prod = {
@@ -102,5 +102,36 @@ describe('loadConfig', () => {
     expect(g.devClockBaseMs).toBe(2000)
     expect(loadConfig({ ...base, BOT_SERVICE_URL: '' }).game.botServiceUrl).toBeUndefined()
     expect(() => loadConfig({ ...prod, DEV_CLOCK_BASE_MS: '2000' })).toThrow(/DEV_CLOCK_BASE_MS/)
+  })
+
+  it('parses NATIVE_ORIGINS (mobile app WebViews), empty by default', () => {
+    const plain = loadConfig(base)
+    expect(plain.nativeOrigins).toEqual([])
+    expect(allowedOrigins(plain)).toEqual(['http://localhost:5173'])
+
+    const c = loadConfig({
+      ...prod,
+      NATIVE_ORIGINS: ' capacitor://localhost , https://localhost/,Capacitor://LOCALHOST,',
+    })
+    expect(c.nativeOrigins).toEqual(['capacitor://localhost', 'https://localhost'])
+    expect(allowedOrigins(c)).toEqual([
+      'https://play.example.com',
+      'capacitor://localhost',
+      'https://localhost',
+    ])
+    // Live reload from a dev machine uses plain http: allowed outside production only.
+    expect(loadConfig({ ...base, NATIVE_ORIGINS: 'http://localhost:8100' }).nativeOrigins).toEqual([
+      'http://localhost:8100',
+    ])
+    expect(() => loadConfig({ ...prod, NATIVE_ORIGINS: 'http://localhost' })).toThrow(/plain http/)
+    for (const bad of [
+      '*',
+      'null',
+      'capacitor://localhost/app',
+      'https://*.example.com',
+      'localhost',
+    ]) {
+      expect(() => loadConfig({ ...base, NATIVE_ORIGINS: bad })).toThrow(/NATIVE_ORIGINS/)
+    }
   })
 })

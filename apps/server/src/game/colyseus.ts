@@ -18,7 +18,7 @@ import { WebSocketTransport } from '@colyseus/ws-transport'
 import { COLYSEUS_PATH, ERROR_CODES, ROOM_NAMES } from '@game/protocol'
 import { fromNodeHeaders } from 'better-auth/node'
 import { type Request, type Response, Router } from 'express'
-import type { AppConfig } from '../config.ts'
+import { type AppConfig, allowedOrigins } from '../config.ts'
 import { clientIp } from '../http/client-ip.ts'
 import { fixedWindowLimiter } from '../http/security.ts'
 import type { SocialService } from '../social/service.ts'
@@ -56,6 +56,28 @@ function allowed(method: string, target: string): boolean {
 const KNOWN_CODES: readonly string[] = ERROR_CODES
 
 /**
+ * A reconnect skips the rooms' `onAuth` (Colyseus checks only the token), so a match seat's
+ * reconnection token would be enough to take the seat over: e.g. the next user of a shared
+ * browser, which keeps the token in localStorage. Matchmaking therefore asks for the session
+ * of the account that holds the seat. The SDK's automatic reconnection of a live socket goes
+ * straight to the WebSocket and doesn't come here; that socket already belongs to the seat.
+ */
+async function checkReconnectOwner(
+  roomId: string,
+  body: Record<string, unknown>,
+  headers: Headers,
+) {
+  const room = matchMaker.getLocalRoomById(roomId)
+  if (!(room instanceof MatchRoom)) return
+  const token = typeof body.reconnectionToken === 'string' ? body.reconnectionToken : ''
+  const owner = room.reconnectionOwner(token)
+  if (!owner) return // an unknown token: Colyseus refuses it
+  const session = await MatchRoom.service.auth.api.getSession({ headers }).catch(() => null)
+  if (!session) throw joinError('unauthorized')
+  if (session.user.id !== owner) throw joinError('not_seated')
+}
+
+/**
  * `POST {COLYSEUS_PATH}/matchmake/:method/:target`, the endpoint the Colyseus SDK calls.
  * The session cookie / bearer token is resolved in the rooms' `onAuth`.
  */
@@ -89,6 +111,7 @@ export function matchmakeRouter(config: AppConfig, svc: GameService): Router {
     const body =
       req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {}
     try {
+      if (method === 'reconnect') await checkReconnectOwner(target, body, headers)
       const reservation = await matchMaker.controller.invokeMethod(method, target, body, context)
       res.json(reservation)
     } catch (err) {
@@ -120,9 +143,11 @@ export async function attachGameServer(
   const isGamePath = (req: IncomingMessage) => Boolean(req.url?.startsWith(`${COLYSEUS_PATH}/`))
   // Cross-site WebSocket hijacking defence in depth (a seat reservation from the
   // origin-checked matchmaking POST is needed anyway): browsers always send Origin on an
-  // upgrade, so one from another site is refused; native clients send none.
+  // upgrade, so one from another site is refused. Native desktop clients send none; the mobile
+  // app WebViews send their own origin (NATIVE_ORIGINS).
+  const origins = allowedOrigins(svc.config)
   const originAllowed = (req: IncomingMessage) =>
-    req.headers.origin === undefined || req.headers.origin === svc.config.webOrigin
+    req.headers.origin === undefined || origins.includes(req.headers.origin)
   httpServer.on('upgrade', (req: IncomingMessage, socket: Duplex) => {
     if (isGamePath(req) && !originAllowed(req)) {
       socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n')

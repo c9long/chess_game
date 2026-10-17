@@ -25,7 +25,7 @@ import {
   username,
 } from 'better-auth/plugins'
 import { eq } from 'drizzle-orm'
-import type { AppConfig } from '../config.ts'
+import { type AppConfig, allowedOrigins } from '../config.ts'
 import type { EmailSender } from '../email/sender.ts'
 import { accountExistsEmail, resetPasswordEmail, verificationEmail } from '../email/templates.ts'
 import { hashIp } from '../http/client-ip.ts'
@@ -60,8 +60,11 @@ export const CAPTCHA_ENDPOINTS = [
   '/send-verification-email',
 ]
 
-/** Client ids allowed to start a device-authorization (user code) sign-in. */
-export const DEVICE_CLIENT_IDS = ['game-unity-client']
+/**
+ * Client ids allowed to start a device-authorization (user code) sign-in: the desktop (Unity)
+ * client and the mobile apps (docs/MOBILE.md §2).
+ */
+export const DEVICE_CLIENT_IDS = ['game-unity-client', 'game-mobile-client']
 
 /** Paths checked early (before password hashing) for the age screen and clickwrap. */
 const CLICKWRAP_PATHS = new Set(['/sign-up/email', '/sign-in/anonymous'])
@@ -178,7 +181,8 @@ export function createAuth({ config, db, email, logger, namePolicy, onSessionDel
     baseURL: config.apiPublicUrl,
     basePath: AUTH_BASE_PATH,
     secret: config.authSecret,
-    trustedOrigins: [config.webOrigin],
+    // The mobile app WebViews (NATIVE_ORIGINS) are trusted next to the web origin.
+    trustedOrigins: allowedOrigins(config),
     database: drizzleAdapter(db, {
       provider: 'pg',
       schema: {
