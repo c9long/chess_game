@@ -6,18 +6,24 @@ import { seatTitle } from './PlayerCard.tsx'
 
 /** The banner text on the viewer's turn when their leader is under attack. */
 export const CHECK_TEXT = 'Check! Your leader is under attack'
+/** The notice after the viewer's own move left their leader under attack (self-check). */
+export const SELF_CHECK_TEXT = 'Your leader is in check'
 
 /**
  * Whose turn it is. "Your move" gets a short pop and a gold glow when the turn arrives; when
  * the viewer's leader is under attack at that moment it reads "Check! Your leader is under
- * attack" in red instead (the check indicator; only ever for the viewer's own seat). An
- * opponent's turn names them in their seat colour. The texts "Your move", the check text and
+ * attack" in the danger colour instead (the check indicator; only ever for the viewer's own
+ * seat). An opponent's turn names them in their seat colour; after the viewer's own move left
+ * their leader attacked (`selfCheck`), a "Your leader is in check" pill sits beside it (its own
+ * row in the desktop side panel), never over the board. The pill is visual only: the host
+ * announces it through its own live region. The texts "Your move", the check text and
  * "Game over" are exact (tests and screen readers rely on them).
  */
 export function TurnBanner({
   finished,
   myTurn,
   inCheck = false,
+  selfCheck = false,
   mover,
   moverColor,
   reduceMotion,
@@ -27,6 +33,8 @@ export function TurnBanner({
   myTurn: boolean
   /** It is the viewer's turn and the check indicator applies (see `lib/check-indicator.ts`). */
   inCheck?: boolean
+  /** Not the viewer's turn, and their own move left their leader under attack. */
+  selfCheck?: boolean
   /** The seat to move (when it isn't the viewer's turn). */
   mover: SeatStateJson | undefined
   moverColor: string
@@ -43,7 +51,7 @@ export function TurnBanner({
     wasMyTurn.current = myTurn
     wasInCheck.current = inCheck
     if (!arrived || reduceMotion || !scope.current) return
-    const rgb = inCheck ? '220,48,38' : '212,160,23'
+    const rgb = inCheck ? '255,90,31' : '212,160,23'
     animate(scope.current, { scale: [1, 1.04, 1] }, { duration: 0.32, ease: 'easeOut' })
     animate(
       scope.current,
@@ -65,7 +73,7 @@ export function TurnBanner({
   let style: CSSProperties | undefined
   if (finished) tone = 'bg-ink/50 text-parchment/70 justify-center'
   else if (myTurn && inCheck)
-    tone = 'bg-seat-south text-parchment justify-center ring-1 ring-inset ring-seat-south-light/60'
+    tone = 'bg-danger text-ink justify-center ring-2 ring-inset ring-danger-light/80'
   else if (myTurn) tone = 'bg-gold text-ink justify-center'
   else if (mover) {
     tone = 'text-parchment pl-4'
@@ -73,7 +81,7 @@ export function TurnBanner({
   }
 
   return (
-    <div className="flex min-w-0 items-center gap-2">
+    <div className="flex min-w-0 flex-wrap items-center gap-2">
       <p
         ref={scope}
         className={`${base} ${tone}`}
@@ -110,6 +118,18 @@ export function TurnBanner({
           </>
         ) : null}
       </p>
+      {!finished && !myTurn && selfCheck ? (
+        <p
+          aria-hidden="true"
+          // Phones and tablets: beside the banner (no layout shift under the board). Desktop:
+          // its own row in the side panel, so the mover's name keeps its room.
+          className="flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-lg bg-danger px-2.5 text-xs font-semibold text-ink ring-2 ring-inset ring-danger-light/80 sm:px-3 sm:text-sm lg:w-full"
+          data-testid="self-check-notice"
+        >
+          <CheckIcon />
+          {SELF_CHECK_TEXT}
+        </p>
+      ) : null}
       {finished && onShowResults ? (
         <button
           type="button"

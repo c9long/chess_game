@@ -132,9 +132,14 @@ const PROMO_EASE = outBackWith(1.5)
 const HINT_EASE = outBackWith(1.7)
 /** Highlight colour of the last move (both square shades). */
 const LAST_MOVE_FILL = 0xffd66e
-/** Check indicator: the ring and square wash, and the tint of the glow under the leader. */
-const CHECK_RED = 0xff3b30
-const CHECK_GLOW = 0xff5a4a
+/**
+ * Check indicator: the ring and square wash, and the tint of the glow under the leader. A hot
+ * vermilion that no seat colour uses (South is crimson), with a light inner line as a cue that
+ * doesn't depend on hue (colour-blind players, a red piece on the square).
+ */
+const CHECK_RED = 0xff5a1f
+const CHECK_GLOW = 0xff7a3a
+const CHECK_INNER = 0xfff1e0
 /** Hover and selection lift. */
 const HOVER_LIFT = 0.22
 const SELECT_LIFT = 0.3
@@ -527,6 +532,17 @@ export class BoardView {
     ) {
       this.#playLater('turn', Math.max(260, this.#handoverAt + 120))
     }
+    // A check already shown follows its leader: when the leader itself moves (and stays in
+    // check), the marking leaves the old square now and appears on the new one once the
+    // slide lands, instead of jumping ahead of the piece. No second sound.
+    const checked = this.#checkSeat
+    if (checked !== null && this.#checkShown === checked && prev && willAnimate) {
+      const s = SEATS.indexOf(checked)
+      const before = prev.leaderSquares[s] ?? []
+      const after = snapshot.leaderSquares[s] ?? []
+      const moved = before.length !== after.length || before.some((sq, k) => sq !== after[k])
+      if (moved) this.#showCheckAtHandover(checked, false)
+    }
     this.#refreshAll()
   }
 
@@ -614,14 +630,23 @@ export class BoardView {
       this.#refreshCheck()
       return
     }
+    this.#showCheckAtHandover(seat, options.sound ?? true)
+  }
+
+  /**
+   * Hides the check marking until the move in flight hands the turn over (when it lands),
+   * then shows it on `seat`'s leader square(s), with the check sound when `sound`.
+   */
+  #showCheckAtHandover(seat: Seat, sound: boolean): void {
+    this.#anim.cancel(this.#checkTween)
+    this.#checkTween = null
     const show = () => {
       this.#checkTween = null
       if (this.#checkSeat !== seat) return
       this.#checkShown = seat
       this.#refreshCheck()
-      if (options.sound ?? true) this.#playLater('check', 0)
+      if (sound) this.#playLater('check', 0)
     }
-    // The move that gave check hands the turn over when it lands: show the check then.
     const wait = this.#handoverAt - (this.#clock - this.#snapshotClock)
     this.#checkShown = null
     this.#refreshCheck()
@@ -2677,6 +2702,26 @@ export class BoardView {
     if (on) m.glow.tint = hexToNumber(mixHex(bandColor(SEATS[i] as Seat), '#fff4d6', 0.3))
   }
 
+  /** The `n`th leader glow sprite, created (and layered with the others) when first needed. */
+  #leaderGlowAt(n: number): Sprite | null {
+    const have = this.#leaderGlows[n]
+    if (have) return have
+    const fx = this.#effects
+    if (!fx || this.#checkRing.parent !== this.#root) return null
+    for (let k = this.#leaderGlows.length; k <= n; k++) {
+      const g = new Sprite(fx.halo)
+      g.anchor.set(0.5)
+      g.tint = CHECK_GLOW
+      g.visible = false
+      g.label = `leaderGlow${k}`
+      g.width = this.#layout.square * 1.5
+      g.height = this.#layout.square * 1.5
+      this.#root.addChildAt(g, this.#root.getChildIndex(this.#checkRing))
+      this.#leaderGlows.push(g)
+    }
+    return this.#leaderGlows[n] ?? null
+  }
+
   /** Check indicator: glow and ring on the shown seat's leader squares (from the snapshot). */
   #refreshCheck(): void {
     const snap = this.#snapshot
@@ -2691,12 +2736,15 @@ export class BoardView {
     const w = Math.max(2.5, sq * 0.075)
     for (const name of squares) {
       const i = indexOf(name)
-      const g = this.#leaderGlows[this.#checkSquares.length]
-      if (!g) break
-      squareCenter(i, this.#layout, this.#tmpVec)
-      g.position.set(this.#tmpVec.x, this.#tmpVec.y)
-      g.visible = true
-      g.alpha = 0.85
+      // Every leader square gets a ring; the glow sprites grow with the roster (a civ may
+      // have more than four leader pieces).
+      const g = this.#leaderGlowAt(this.#checkSquares.length)
+      if (g) {
+        squareCenter(i, this.#layout, this.#tmpVec)
+        g.position.set(this.#tmpVec.x, this.#tmpVec.y)
+        g.visible = true
+        g.alpha = 0.85
+      }
       this.#squareOrigin(i, this.#tmpVec)
       const x = this.#tmpVec.x
       const y = this.#tmpVec.y
@@ -2704,6 +2752,10 @@ export class BoardView {
       ring
         .roundRect(x + w / 2, y + w / 2, sq - w, sq - w, sq * 0.08)
         .stroke({ color: CHECK_RED, width: w, alpha: 1 })
+      const wi = Math.max(1, w * 0.3)
+      ring
+        .roundRect(x + w + wi / 2, y + w + wi / 2, sq - 2 * w - wi, sq - 2 * w - wi, sq * 0.05)
+        .stroke({ color: CHECK_INNER, width: wi, alpha: 0.9 })
       this.#checkSquares.push(i)
     }
     ring.alpha = 1

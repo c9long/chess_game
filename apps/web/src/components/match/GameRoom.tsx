@@ -5,6 +5,7 @@ import { useReducedMotion } from 'motion/react'
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
 import {
+  actionFromEvents,
   type CheckAction,
   type CheckMemo,
   type CheckNotice,
@@ -20,7 +21,7 @@ import { BoardSettings, KeyboardHints } from '../game/BoardSettings.tsx'
 import { GameButton } from '../game/GameButton.tsx'
 import { ExitIcon, GearIcon } from '../game/icons.tsx'
 import { PlayerCard } from '../game/PlayerCard.tsx'
-import { TurnBanner } from '../game/TurnBanner.tsx'
+import { SELF_CHECK_TEXT, TurnBanner } from '../game/TurnBanner.tsx'
 import { ConfirmDialog } from '../overlay.tsx'
 import { Alert, Spinner } from '../ui.tsx'
 import { DrawOfferCard, GameActions, TeamResignCard } from './GameActions.tsx'
@@ -102,23 +103,30 @@ const SEAT_INDEX = { south: 0, west: 1, north: 2, east: 3 } as const
 /**
  * The position the board shows: the latest `events` message when it is at least as new as the
  * room state (its rules events make the animation exact, and it names the action that led
- * there), else the state's position.
+ * there), else the state's position (whose action comes from the state's own `lastEvents`).
+ * `seatToMove` belongs to that same position, so everything keyed on it (the turn banner, the
+ * check indicator, the board) changes together.
  */
 function shownPosition(feed: MatchFeed): {
   ps: string
   events: readonly GameEvent[] | undefined
   action: CheckAction | null
+  seatToMove: number
 } {
   const { state, lastEvents } = feed
-  const ps =
-    lastEvents && lastEvents.seq >= state.actionSeq
-      ? lastEvents.positionString
-      : state.positionString
-  const last = lastEvents && lastEvents.positionString === ps ? lastEvents : null
+  if (lastEvents && lastEvents.seq >= state.actionSeq) {
+    return {
+      ps: lastEvents.positionString,
+      events: lastEvents.events,
+      action: { seat: lastEvents.seat, action: lastEvents.action },
+      seatToMove: lastEvents.seatToMove,
+    }
+  }
   return {
-    ps,
-    events: last?.events,
-    action: last ? { seat: last.seat, action: last.action } : null,
+    ps: state.positionString,
+    events: undefined,
+    action: actionFromEvents(state.lastEvents),
+    seatToMove: state.seatToMove,
   }
 }
 
@@ -315,18 +323,6 @@ function Board({
           <Spinner /> Setting up the board…
         </div>
       )}
-      {check === 'self_check' ? (
-        <div className="pointer-events-none absolute inset-x-0 top-2 flex justify-center px-3">
-          <p
-            role="status"
-            className="flex items-center gap-2 rounded-full border border-seat-south-light/50 bg-seat-south/90 px-3.5 py-1.5 text-sm font-semibold text-parchment shadow-lg shadow-black/40 backdrop-blur"
-            data-testid="self-check-notice"
-          >
-            <span aria-hidden="true" className="h-2 w-2 shrink-0 rounded-full bg-parchment" />
-            Your leader is in check
-          </p>
-        </div>
-      ) : null}
       {hint === 'shown' ? (
         <div
           className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center px-3"
@@ -377,13 +373,16 @@ export function GameRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) {
   const finished = state.phase === 'finished'
   const inGame = state.phase === 'in_game'
   const untimed = isUntimed(state.timeControl)
-  const myTurn = inGame && mySeat >= 0 && state.seatToMove === mySeat
+  const shown = shownPosition(feed)
+  // The turn as of the position the board shows (an `events` message can be ahead of the
+  // state patch), so the banner, the check indicator and the board agree.
+  const seatToMove = shown.seatToMove
+  const myTurn = inGame && mySeat >= 0 && seatToMove === mySeat
   const seatInfo = useMemo(
     () => (ready ? readSeatInfo(state.positionString) : null),
     [ready, state.positionString],
   )
   const stillPlaying = mySeat >= 0 && seatInfo?.voters[mySeat] === true
-  const shown = shownPosition(feed)
   const check = useCheckNotice(
     ready,
     shown.ps,
@@ -498,11 +497,17 @@ export function GameRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) {
             finished={finished}
             myTurn={myTurn}
             inCheck={myTurn && check === 'check'}
-            mover={state.seats[state.seatToMove]}
-            moverColor={seatHex(state.seatToMove)}
+            selfCheck={!myTurn && check === 'self_check'}
+            mover={state.seats[seatToMove]}
+            moverColor={seatHex(seatToMove)}
             reduceMotion={reduceMotion}
             onShowResults={finished && !showResult ? () => setShowResult(true) : undefined}
           />
+          {/* Always mounted, so screen readers announce the self-check when its text appears
+              (the visual pill beside the banner is aria-hidden). */}
+          <p className="sr-only" role="status" aria-live="polite" data-testid="check-announcer">
+            {!myTurn && check === 'self_check' ? SELF_CHECK_TEXT : ''}
+          </p>
         </div>
 
         {finished ? null : (
@@ -529,7 +534,7 @@ export function GameRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) {
                   seat={seat}
                   me={i === mySeat}
                   color={seatHex(i)}
-                  toMove={inGame && state.seatToMove === i}
+                  toMove={inGame && seatToMove === i}
                   inGame={inGame}
                   timed={!untimed}
                   clock={feed.clock}

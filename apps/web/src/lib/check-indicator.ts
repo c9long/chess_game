@@ -45,10 +45,17 @@ export const INITIAL_CHECK: CheckMemo = { selfCheck: false, prev: null }
 /**
  * The next memo and notice for a newly shown position.
  *
- * `action` is the action that produced `pos`, or `null` when unknown (first load, reconnect,
- * a state patch). Without it the viewer's own move is still recognised when the previous
- * position had the viewer to move and exactly one turn was taken since; anything else counts
- * as not the viewer's move, so an unexplained check is held back until the viewer's turn.
+ * `action` is the action that produced `pos` (the server's `events` message, or the room
+ * state's own `lastEvents`, see `actionFromEvents`), or `null` when unknown (before the first
+ * action). Without it the viewer's own move is still recognised when the previous position had
+ * the viewer to move and exactly one turn was taken since; anything else (several plies at
+ * once could be the viewer's move plus automatic passes, or opponents' moves) counts as not
+ * the viewer's move, so an unexplained check is held back until the viewer's turn.
+ *
+ * Known limit: the memo lives in the page. After a reload or reconnect while it is not the
+ * viewer's turn, a self-check still shows when the viewer's move was the last action (the
+ * room state names it), but not when opponents have moved since; it reappears as `check`
+ * when the viewer's turn starts. The server keeps no per-viewer history to tell those apart.
  */
 export function nextCheck(
   memo: CheckMemo,
@@ -68,4 +75,20 @@ export function nextCheck(
   const notice: CheckNotice =
     pos.seatToMove === viewer ? 'check' : selfCheck ? 'self_check' : 'none'
   return { memo: { selfCheck, prev }, notice }
+}
+
+/** The minimal shape of a rules event as the room state carries it (`MatchState.lastEvents`). */
+export type ActionEvent = Readonly<Record<string, string | number | undefined>>
+
+/**
+ * The action behind a list of rules events (one server action's events, e.g. the room
+ * state's `lastEvents`): a move names its mover (automatic passes of seats with no legal move
+ * may follow it in the same list); any other action (timeout, resign, abandon, agreed draw)
+ * is not a move. Null for an empty list (no action yet).
+ */
+export function actionFromEvents(events: readonly ActionEvent[]): CheckAction | null {
+  if (events.length === 0) return null
+  const move = events.find((e) => e.type === 'move_made')
+  if (move) return { seat: Number(move.seat ?? -1), action: 'move' }
+  return { seat: Number(events[0]?.seat ?? -1), action: 'other' }
 }
