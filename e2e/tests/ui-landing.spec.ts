@@ -24,6 +24,16 @@ test('landing: demo board loads after first paint, emblems, CTAs, no console err
   await page.reload()
   await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
 
+  // The copy matches the 16×16 board everywhere (hero, demo label, value props).
+  await expect(
+    page.getByText('Four players. Sixteen by sixteen. One civ left standing.'),
+  ).toBeVisible()
+  await expect(page.getByRole('img', { name: /on the 16 by 16 board/ })).toHaveCount(1)
+  await expect(page.getByText('16×16 board', { exact: true })).toBeVisible()
+  await expect(page.getByText('256 squares, four armies')).toBeVisible()
+  const bodyText = await page.locator('body').innerText()
+  expect(bodyText).not.toMatch(/twelve|12\s*(×|x|by)\s*12|144 squares/i)
+
   // The board renderer arrives after first paint, then draws into a canvas.
   await expect(board(page)).toHaveAttribute('data-ready', 'true', { timeout: 30_000 })
   await expect(board(page).locator('canvas')).toHaveCount(1)

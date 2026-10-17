@@ -375,3 +375,19 @@ textarea {
 .mt {
   margin-top: 7px;
 }
+
+/* Phone widths: the board on top (square, full width), the panel scrolls below it. */
+@media (max-width: 720px) {
+  #app {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: 100vw auto;
+    height: auto;
+    min-height: 100vh;
+  }
+
+  #panel {
+    border-left: 0;
+    border-top: 1px solid var(--line);
+    overflow-y: visible;
+  }
+}

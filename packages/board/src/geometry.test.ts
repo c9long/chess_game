@@ -9,6 +9,7 @@ import {
   isDarkSquare,
   nameOf,
   nearestAngle,
+  nearestTarget,
   perspectiveAngle,
   pointToSquare,
   relativeSeat,
@@ -189,5 +190,34 @@ describe('hopOffset', () => {
     const p = toScreen(path, a)
     expect(s.x * p.x + s.y * p.y).toBeCloseTo(0)
     expect(s.y).toBeLessThan(0)
+  })
+})
+
+describe('nearestTarget (touch slop)', () => {
+  const layout: BoardLayout = { square: 20, frame: 10 }
+  const c = (sq: string) => squareCenter(indexOf(sq), layout, { x: 0, y: 0 })
+
+  it('picks the target whose centre is within the slop', () => {
+    const e4 = c('e4')
+    // Just over the edge into f4 (a non-target), still within 22 px of e4's centre.
+    expect(nearestTarget(e4.x + 12, e4.y, [indexOf('e4'), indexOf('e6')], layout, 22)).toBe(
+      indexOf('e4'),
+    )
+  })
+
+  it('gives -1 when no target is close enough', () => {
+    const e4 = c('e4')
+    expect(nearestTarget(e4.x + 30, e4.y, [indexOf('e4')], layout, 22)).toBe(-1)
+    expect(nearestTarget(0, 0, [], layout, 22)).toBe(-1)
+  })
+
+  it('refuses to guess between two almost equally near targets', () => {
+    const e4 = c('e4')
+    // Exactly between e4 and g4 (both targets), on f4.
+    expect(nearestTarget(e4.x + 20, e4.y, [indexOf('e4'), indexOf('g4')], layout, 22)).toBe(-1)
+    // Clearly nearer to g4.
+    expect(nearestTarget(e4.x + 28, e4.y, [indexOf('e4'), indexOf('g4')], layout, 22)).toBe(
+      indexOf('g4'),
+    )
   })
 })

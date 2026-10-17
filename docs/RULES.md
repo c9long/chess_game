@@ -33,7 +33,7 @@ Each army sits centered on its own edge, with four empty squares at each end of 
 
 As in normal chess, each queen starts on her own color, so opposite queens face each other. South and West are the "light" armies (queen on a light square); North and East are the "dark" armies.
 
-**Room to develop:** no army starts in contact with another, so nobody can capture on the first move. Knights can hop sideways into the empty margin (South: f1 to d2, k1 to m2) and rooks can slide straight into the empty corners (South: e1 to a1, l1 to p1), where a neighbor's rook can meet them.
+**Room to develop:** no army starts in contact with another, so on the first move the only possible capture is a rook taking a neighbor's rook that has just moved into the shared corner. Knights can hop sideways into the empty margin (South: f1 to d2, k1 to m2) and rooks can slide straight into the empty corners (South: e1 to a1, l1 to p1), where a neighbor's rook can meet them.
 
 ---
 

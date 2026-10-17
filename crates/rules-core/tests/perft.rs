@@ -23,7 +23,8 @@ fn start(mode: GameMode) -> GameState {
 /// of the first four seats always has exactly 30 moves:
 /// depth 2 = 30², depth 3 = 30³, depth 4 = 30⁴. South's second move (depth 5)
 /// is the first that depends on earlier moves (its own opened lines, and in
-/// FFA a capture of a North knight that reached d15 or m15).
+/// FFA a capture of a North knight on d15/m15 or a North rook on
+/// c16/d16/m16/n16 up a file South's rook opened: 3,720 leaves).
 #[test]
 fn perft_start_ffa() {
     let s = start(GameMode::Ffa);

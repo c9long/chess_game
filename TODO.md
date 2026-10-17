@@ -53,6 +53,7 @@ Conventions (see [CLAUDE.md](CLAUDE.md)):
 - Board art pass: illustrator pass on the knight (mane, muzzle) and wider bases/collars across the piece set (packages/assets/pieces)
 - Board art pass: simplified heavy-stroke emblem variants for Mali, China and Russia for medallions under ~72 device px
 - Board: install binaryen (wasm-opt) in CI/release builds so the rules wasm ships size-optimized (the build now warns when it is missing)
+- Board: pinch or tap-to-zoom (or a magnifier while a piece is selected or dragged) for phones: on the 16×16 board a 390 px-wide screen gets ~19 px squares, far below the 44 px touch-target guideline. Partly mitigated 2026-10-17 (touch taps and drops just off a legal target count as that target; hint dots have a 9 px minimum; coordinate labels step aside from the medallions)
 
 ### M3 — Accounts + legal — §1, §5, §8
 

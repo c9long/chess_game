@@ -43,7 +43,7 @@ pair the intervals are wide, so a full 192-game run is still worth doing before 
 re-anchored. Max now searches about 150k nodes per move in FFA at its 500 ms target (240k on
 12×12), so its edge over 2400 (98k) is thinner. Seat bias, FFA (336 games): first places S
 22.8%, W 27.1%, N 23.2%, E 26.9% (±4.5%), no seat significantly off; Teams: South+North score
-0.479 ± 0.076. With no contact on move 1, the old "East's exposed corner pawns" question is
+0.479 ± 0.076. With no pawn contact on move 1, the old "East's exposed corner pawns" question is
 moot. Games are longer: about 380 plies after the opening in FFA ladder games.
 
 Commands: as below, with `-g 48 -j 6 --seed 8101` (FFA) and `--mode teams -g 24 -j 6 --seed 8102`.

@@ -191,10 +191,9 @@ test('turn indicator follows the engine across a whole random game (FFA and Team
         const legal = await sb<string[]>(page, 'legal')
         // Prefer captures so seats get eliminated.
         const caps = legal.filter((m) => {
-          const to = m.slice(2).match(/[a-l]\d+/)?.[0] ?? ''
-          return !!eng.pieces[
-            m.match(/^[a-l]\d+[a-l]\d+/)?.[0].slice(m.match(/^[a-l]\d+/)?.[0].length) ?? to
-          ]
+          // Squares are a1..p16: the destination is the second square in the move.
+          const to = m.match(/^[a-p]\d{1,2}([a-p]\d{1,2})/)?.[1]
+          return !!to && !!eng.pieces[to]
         })
         const pool = caps.length && r < 0.7 ? caps : legal
         await sb(page, 'play', pool[Math.floor(rnd() * pool.length)])

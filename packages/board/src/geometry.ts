@@ -157,6 +157,38 @@ export function pointToSquare(x: number, y: number, layout: BoardLayout): number
   return (BOARD_SIZE - 1 - row) * BOARD_SIZE + file
 }
 
+/**
+ * The legal target a slightly-off tap meant: the target whose centre is nearest to the
+ * point (board-local, south frame) and within `slop`, or -1. An almost even tie between two
+ * targets is ambiguous and also gives -1, so a tap between them never guesses.
+ */
+export function nearestTarget(
+  x: number,
+  y: number,
+  targets: readonly number[],
+  layout: BoardLayout,
+  slop: number,
+): number {
+  const c = { x: 0, y: 0 }
+  let best = -1
+  let bd = Number.POSITIVE_INFINITY
+  let second = Number.POSITIVE_INFINITY
+  for (const t of targets) {
+    squareCenter(t, layout, c)
+    const d = Math.hypot(c.x - x, c.y - y)
+    if (d < bd) {
+      second = bd
+      bd = d
+      best = t
+    } else if (d < second) {
+      second = d
+    }
+  }
+  if (best < 0 || bd > slop) return -1
+  if (second <= slop && second - bd < layout.square * 0.15) return -1
+  return best
+}
+
 /** Rotates a vector by `angle` (radians, clockwise on screen), written into `out`. */
 export function rotateVector(
   x: number,

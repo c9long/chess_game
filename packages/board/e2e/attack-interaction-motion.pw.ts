@@ -282,3 +282,41 @@ test.describe('resize', () => {
     await expectBoardMatchesEngine(page, 'resize with picker')
   })
 })
+
+test.describe('moves arriving faster than frames', () => {
+  // Two full rounds: each seat's piece moves twice, so one piece has two flights queued.
+  const MOVES = ['e2e4', 'a6c5', 'f16e14', 'p6n5', 'e4e5', 'c5a6', 'e14f16', 'n5p6']
+
+  test('a burst of eight moves in one go ends on the engine position', async ({ page }) => {
+    await openSandbox(page)
+    expect(await sb<boolean>(page, 'playAll', MOVES, 0)).toBe(true)
+    await expectBoardMatchesEngine(page, 'after synchronous burst')
+  })
+
+  test('eight moves while drawing is paused (background tab), then resumed', async ({ page }) => {
+    await openSandbox(page)
+    // Hold every animation frame, the way a hidden tab does.
+    await page.evaluate(() => {
+      const g = globalThis as unknown as {
+        __heldFrames: FrameRequestCallback[]
+        __origRaf: typeof requestAnimationFrame
+      }
+      g.__heldFrames = []
+      g.__origRaf = globalThis.requestAnimationFrame.bind(globalThis)
+      globalThis.requestAnimationFrame = (cb: FrameRequestCallback) => {
+        g.__heldFrames.push(cb)
+        return 0
+      }
+    })
+    expect(await sb<boolean>(page, 'playAll', MOVES, 300)).toBe(true)
+    await page.evaluate(() => {
+      const g = globalThis as unknown as {
+        __heldFrames: FrameRequestCallback[]
+        __origRaf: typeof requestAnimationFrame
+      }
+      globalThis.requestAnimationFrame = g.__origRaf
+      for (const cb of g.__heldFrames.splice(0)) g.__origRaf(cb)
+    })
+    await expectBoardMatchesEngine(page, 'after resuming drawing')
+  })
+})

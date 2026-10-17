@@ -62,8 +62,9 @@ pnpm dev          # applies migrations, rebuilds the rules engine, then open htt
 
 ### 1. 16×16 board (rules version 2)
 Built as decided above: rules engine, bots, board drawing, web pages, server, tests and docs.
-- **Opening:** the armies start four squares apart, so nobody can capture on move 1 any more
-  (on 12×12 the corner pawns could). Every seat has exactly 30 opening moves.
+- **Opening:** the armies start four squares apart, so on move 1 the only possible capture
+  is a rook taking a rook that moved into the shared corner (a1/p1/a16/p16); on 12×12 the
+  corner pawns attacked each other. Every seat still has exactly 30 opening moves.
 - **Bots:** moves cost about 1.3–1.5× more thinking time on the bigger board, but every level
   still answers within its time target, and arena games confirm each level still beats the
   one below.
@@ -72,8 +73,22 @@ Built as decided above: rules engine, bots, board drawing, web pages, server, te
 - **En passant** practically never comes up early now: a pawn can only be taken en passant once
   enemy pawns have moved off their starting files by capturing.
 - **Phones:** at 390 px wide a square is only about 19 px. Pieces still read, but taps are
-  small. A zoom for the board on phones is on the to-do list.
-Commits `622407b`…`54c9fd1`. A review pass (rules attack tests + visual check) follows.
+  small. After the review, a tap or drop just off a legal target counts as that target (touch
+  only, never past the near half of the next square), move dots never shrink below 9 px, and
+  the h/i file labels step aside from the medallion instead of hiding under it. A real zoom
+  for the board on phones is on the to-do list.
+Commits `622407b`…`54c9fd1`.
+
+**Review pass:** rules attack tests and a visual check raised 9 issues; all were real.
+- The landing page still said "Twelve by twelve" under a "16×16 board" heading; fixed, and the
+  landing test now fails if the copy drifts from the board size again.
+- The board could get stuck showing an old position: when 5 or more moves arrived while it
+  wasn't drawing (a background tab, a burst of updates), one piece had two moves queued and
+  the earlier one cancelled the later one. Fixed in the board, with two new board tests.
+- Docs said nothing can be captured on move 1; in fact a rook can take a rook that moved into
+  a shared corner. Fixed here, in the plan and in the rules page.
+- Smaller fixes: a test comment, a board test that ignored captures on files m–p, and the
+  dev sandbox now works at phone width.
 
 ### 2. Friends and challenges
 Built as decided above. Requests are tied to a shared match and seat, so nobody can use user

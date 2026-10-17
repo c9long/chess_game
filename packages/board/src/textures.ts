@@ -615,15 +615,18 @@ export function createEffectTextures(): EffectTextures {
   const hintDotC = canvas(H, H)
   {
     const g = ctx2d(hintDotC)
+    // Diameter 0.28 of the texture (HINT_DOT_FRACTION in BoardView). The rim scales with the
+    // dot so it still shows when the dot is only a few pixels wide.
     const r = H * 0.14
+    const rim = H * 0.025
     g.beginPath()
     g.arc(H / 2, H / 2, r, 0, Math.PI * 2)
-    g.fillStyle = 'rgba(26,18,12,0.3)'
+    g.fillStyle = 'rgba(26,18,12,0.38)'
     g.fill()
-    g.lineWidth = 2
-    g.strokeStyle = 'rgba(255,241,214,0.55)'
+    g.lineWidth = rim
+    g.strokeStyle = 'rgba(255,241,214,0.75)'
     g.beginPath()
-    g.arc(H / 2, H / 2, r - 1, 0, Math.PI * 2)
+    g.arc(H / 2, H / 2, r - rim / 2, 0, Math.PI * 2)
     g.stroke()
   }
   const hintRingC = canvas(H, H)

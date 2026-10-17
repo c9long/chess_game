@@ -29,6 +29,7 @@ import {
   NUM_SQUARES,
   nameOf,
   nearestAngle,
+  nearestTarget,
   perspectiveAngle,
   pointToSquare,
   relativeSeat,
@@ -166,6 +167,18 @@ const STATUS_FADE_MS = 400
 const SHADOW_DX = 0.045
 const SHADOW_DY = 0.06
 const DRAG_THRESHOLD = 5
+/**
+ * Fingertip slop for touch and pen (CSS px): a tap or drop this close to a legal target's
+ * centre counts as that target, but never past the near half of the next square (plus
+ * TOUCH_EDGE_PX), so tapping the middle of another square still means that square. It
+ * mostly matters when squares are smaller than a fingertip (a 16×16 board on a phone).
+ */
+const TOUCH_SLOP_PX = 22
+const TOUCH_EDGE_PX = 6
+/** Smallest on-screen diameter of a quiet-move hint dot (CSS px). */
+const HINT_DOT_MIN_PX = 9
+/** The hint dot's diameter as a fraction of its texture (see `hintDot` in textures.ts). */
+const HINT_DOT_FRACTION = 0.28
 
 interface PieceNode {
   readonly node: Container
@@ -1129,22 +1142,37 @@ export class BoardView {
   #layoutStatic(): void {
     const { square: sq, frame } = this.#layout
     const half = (sq * BOARD_SIZE) / 2
-    const off = frame * 0.27
-    const fontSize = Math.max(8, Math.round(sq * 0.21))
+    // Labels have an 8 px floor so they stay legible, but never outgrow the frame.
+    const fontSize = Math.min(Math.max(8, Math.round(sq * 0.21)), Math.max(6, frame * 0.6))
+    // Medallions sit on the frame, overhanging its outer edge a little.
+    const r = half + frame * MEDALLION_AT
+    // A medallion's footprint at its largest (the seat to move): the labels next to it
+    // step aside along the edge, or hide when they can't clear it.
+    const medR = sq * MEDALLION * MEDALLION_ACTIVE * 0.46 + Math.max(1, sq * 0.02)
     this.#labelTexts.forEach((t, i) => {
       const side = Math.floor(i / BOARD_SIZE)
       const k = i % BOARD_SIZE
       t.style.fontSize = fontSize
       t.resolution = this.#res
-      const along = (k + 0.5) * sq - half
-      const alongRank = (BOARD_SIZE - 1 - k + 0.5) * sq - half
+      // Upright labels turn with the perspective, so allow for either orientation.
+      const labelR = Math.max(t.width, t.height) / 2
+      // Out from the field far enough that two-digit ranks don't reach into it.
+      const off = Math.min(frame * 0.5, Math.max(frame * 0.27, labelR + 1))
+      let along =
+        side === 0 || side === 2 ? (k + 0.5) * sq - half : (BOARD_SIZE - 1 - k + 0.5) * sq - half
+      const dy = r - (half + off)
+      const need = medR + labelR
+      t.visible = true
+      if (Math.hypot(along, dy) < need) {
+        const clear = Math.sqrt(Math.max(0, need * need - dy * dy))
+        if (clear - Math.abs(along) <= sq * 0.35) along = Math.sign(along || 1) * clear
+        else t.visible = false
+      }
       if (side === 0) t.position.set(along, half + off)
       else if (side === 2) t.position.set(along, -half - off)
-      else if (side === 1) t.position.set(-half - off, alongRank)
-      else t.position.set(half + off, alongRank)
+      else if (side === 1) t.position.set(-half - off, along)
+      else t.position.set(half + off, along)
     })
-    // Medallions sit on the frame, overhanging its outer edge a little.
-    const r = half + frame * MEDALLION_AT
     const pos: readonly (readonly [number, number])[] = [
       [0, r],
       [-r, 0],
@@ -1353,6 +1381,16 @@ export class BoardView {
     if (this.#hoverNode === n) this.#hoverNode = null
     if (!n.node.destroyed) n.node.destroy({ children: true })
     if (!n.shadow.destroyed) n.shadow.destroy()
+  }
+
+  /**
+   * Whether a flight of `n` is already scheduled to start after `start`. When moves arrive
+   * faster than frames are drawn (a background tab, a burst of updates), one piece can have
+   * two flights queued; the later one owns the piece, and the earlier one must not cancel it.
+   */
+  #laterFlight(n: PieceNode, start: number): boolean {
+    const t = n.tween
+    return !!t && t.alive && t.start > start
   }
 
   /** Stops whatever flight drives `n` and puts its body back on the ground. */
@@ -1594,8 +1632,11 @@ export class BoardView {
       if (n.node.destroyed) return
       if (!started) {
         started = true
-        if (n.tween && n.tween !== tween) this.#anim.cancel(n.tween)
-        n.tween = tween
+        // A later flight of this piece, already queued, keeps the piece; this one runs first.
+        if (!(tween && this.#laterFlight(n, tween.start))) {
+          if (n.tween && n.tween !== tween) this.#anim.cancel(n.tween)
+          n.tween = tween
+        }
         this.#anim.cancel(n.liftTween)
         n.liftTween = null
         fx = n.node.x - n.ox
@@ -1643,16 +1684,18 @@ export class BoardView {
       ease: ease.linear,
       tag: o.tag ?? 0,
       done: () => {
+        // A later flight queued for this piece takes over from here: stay in the air layer.
+        const handOff = !!tween && this.#laterFlight(n, tween.start)
         if (n.tween === tween) n.tween = null
-        n.moving = false
+        n.moving = handOff
         n.lift = 0
         n.ox = 0
         n.oy = 0
         if (!n.node.destroyed) {
           n.node.position.set(tx, ty)
-          this.#pieceLayer.addChild(n.node)
+          if (!handOff) this.#pieceLayer.addChild(n.node)
           this.#placeShadow(n)
-          if (settle > 0) this.#settle(n, settle)
+          if (settle > 0 && !handOff) this.#settle(n, settle)
         }
         done?.()
       },
@@ -1687,11 +1730,13 @@ export class BoardView {
     tag: number,
     done?: () => void,
   ): void {
-    this.#anim.add(
+    let self: Tween | null = null
+    self = this.#anim.add(
       0,
       () => {
         if (n.node.destroyed) return
-        this.#stopMotion(n)
+        // A flight of this piece queued after this move keeps running (it starts from here).
+        if (!(self && this.#laterFlight(n, self.start))) this.#stopMotion(n)
         const dist = Math.hypot(n.node.x - tx, n.node.y - ty)
         n.lift = 0
         if (dist >= this.#layout.square * 0.15) {
@@ -3044,7 +3089,16 @@ export class BoardView {
   #scaleHint(h: Hint, s: number): void {
     const sq = this.#layout.square
     const w = Math.max(1, h.sprite.texture.width)
-    h.sprite.scale.set((sq * s) / w)
+    // Quiet-move dots keep a readable size on small squares (a 16×16 board on a phone),
+    // up to at most 60% of the square.
+    let size = sq
+    if (h.sprite.texture === this.#effects?.hintDot) {
+      const wt = this.#root.worldTransform
+      const screen = Math.hypot(wt.a, wt.b) || 1
+      const minSize = HINT_DOT_MIN_PX / screen / HINT_DOT_FRACTION
+      size = Math.min(Math.max(sq, minSize), (sq * 0.6) / HINT_DOT_FRACTION)
+    }
+    h.sprite.scale.set((size * s) / w)
     h.promo.scale.set((sq * s) / Math.max(1, h.promo.texture.width))
   }
 
@@ -3279,6 +3333,21 @@ export class BoardView {
     return pointToSquare(this.#tmpPoint.x, this.#tmpPoint.y, this.#layout)
   }
 
+  /**
+   * For touch or pen, the legal target of `from` that a tap or drop just off it meant
+   * (see TOUCH_SLOP_PX), or -1. A mouse is precise and never gets this help.
+   */
+  #touchTarget(e: FederatedPointerEvent, from: number): number {
+    if (e.pointerType === 'mouse' || from < 0) return -1
+    this.#root.toLocal(e.global, undefined, this.#tmpPoint)
+    const wt = this.#root.worldTransform
+    const scale = Math.hypot(wt.a, wt.b) || 1
+    const sq = this.#layout.square
+    const slop = Math.min(TOUCH_SLOP_PX / scale, sq * 0.5 + TOUCH_EDGE_PX / scale)
+    const targets = this.#moves.targetsFrom(from).map((m) => m.to)
+    return nearestTarget(this.#tmpPoint.x, this.#tmpPoint.y, targets, this.#layout, slop)
+  }
+
   #canAct(): boolean {
     const s = this.#snapshot
     return (
@@ -3311,6 +3380,12 @@ export class BoardView {
       const wasSelected = this.#selected === sq
       this.#select(sq)
       this.#press = { square: sq, x: e.global.x, y: e.global.y, wasSelected }
+      return
+    }
+    // A fingertip just off a legal target on a small board: that target was meant.
+    const near = this.#selected >= 0 ? this.#touchTarget(e, this.#selected) : -1
+    if (near >= 0 && near !== this.#selected) {
+      this.#commit(this.#selected, near, false)
       return
     }
     if (this.#selected >= 0 && this.#snapshot?.board[sq]) this.#sound.play('illegal')
@@ -3353,7 +3428,11 @@ export class BoardView {
     this.#press = null
     if (this.#drag) {
       const from = this.#drag.square
-      const to = this.#hit(e)
+      let to = this.#hit(e)
+      if (to !== from && !(to >= 0 && this.#moves.target(from, to))) {
+        const near = this.#touchTarget(e, from)
+        if (near >= 0) to = near
+      }
       if (to >= 0 && to !== from && this.#moves.target(from, to)) {
         this.#endDrag(true)
         this.#commit(from, to, true)

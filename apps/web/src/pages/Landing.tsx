@@ -103,7 +103,7 @@ export function Landing() {
           <div
             className="relative aspect-square"
             role="img"
-            aria-label="A four-player game playing itself on the 12 by 12 board"
+            aria-label="A four-player game playing itself on the 16 by 16 board"
           >
             <div
               aria-hidden="true"
@@ -127,7 +127,7 @@ export function Landing() {
           </p>
           <h1 className="font-display text-display font-semibold">{APP_NAME}</h1>
           <p className="mt-5 max-w-lg text-base text-pretty text-parchment/70 sm:text-lg">
-            Four players. Twelve by twelve. One civ left standing.
+            Four players. Sixteen by sixteen. One civ left standing.
           </p>
 
           {user ? (

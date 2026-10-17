@@ -108,7 +108,7 @@ stored as rules version 1 stay in the history but are not replayed by the curren
 
 **"Queen on her color":** opposing queens face each other on the same line, as in standard chess. South and West are "light" armies (queen on a light square); North and East are "dark" armies (queen on a dark square). Each Teams pairing has one light and one dark army.
 
-**No contact at the start (rules version 2):** the armies start four squares apart, so no piece can capture on move 1 (on the 12×12 board neighbouring corner pawns attacked each other from move 1). Each seat has 30 opening moves: 16 pawn moves, 3 per knight (one into the empty margin) and 4 per rook (into the empty corner). En passant can only arise after pawns have captured their way off their starting files.
+**No contact at the start (rules version 2):** the armies start four squares apart, so no piece can capture on move 1 except a rook taking a rook that moved into the shared corner (a1/p1/a16/p16); on the 12×12 board neighbouring corner pawns attacked each other from move 1. Each seat has 30 opening moves: 16 pawn moves, 3 per knight (one into the empty margin) and 4 per rook (into the empty corner). En passant can only arise after pawns have captured their way off their starting files.
 
 ### Pieces, rosters and leaders (the foundation for civ abilities)
 - Each civ has a **piece roster** (data, not hard-coded logic). Each piece type has a movement definition and an optional **`leader`** role.
@@ -533,7 +533,7 @@ If many players fill seats with strong bots, the next step is a bigger OVH tier 
 
 - **Rules core:**
   - Unit tests for every rule in §2:
-    - setup squares and colors, and the 30 opening moves per seat (no contact on move 1);
+    - setup squares and colors, and the 30 opening moves per seat (the only round-1 contact is a rook capture in a shared corner);
     - leader capture by a non-adjacent seat;
     - stalemate-once, then auto-pass;
     - Teams cases: stalemated A plus B losing its leader → team out; frozen A plus B losing its leader → team out; leaderless teammate timing out → frozen;
