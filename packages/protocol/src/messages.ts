@@ -78,6 +78,14 @@ export type ParsedCreateOptions = z.output<typeof createOptionsSchema>
 export const joinOptionsSchema = z.strictObject({
   protocolVersion: z.literal(PROTOCOL_VERSION),
   password: z.string().max(LOBBY_PASSWORD_MAX).optional(),
+  /**
+   * Watch instead of taking a seat (read-only spectator, see ROOM_NAMES.watch). Matchmaking
+   * answers with a seat in the match's watch room (its `roomId` differs from the match
+   * room's). Public lobbies and games: anyone signed in; password lobbies: the password;
+   * challenge lobbies: the invited players and the host's friends. Refused with
+   * `already_seated` for the room's own players and `spectators_full` past SPECTATORS_MAX.
+   */
+  spectate: z.boolean().optional(),
 })
 export type JoinOptions = z.input<typeof joinOptionsSchema>
 
@@ -104,6 +112,8 @@ export const lobbyMetadataSchema = z.object({
    * browser can show which seats are free. An additive field within protocol v1.
    */
   occupied: z.array(z.boolean()).length(4),
+  /** Spectators watching right now. An additive field within protocol v1. */
+  spectators: z.number().int().optional(),
 })
 export type LobbyMetadata = z.infer<typeof lobbyMetadataSchema>
 
@@ -153,6 +163,15 @@ export const clientMessageSchemas = {
   respondResign: z.strictObject({ accept: z.boolean() }),
   /** Asks for an immediate `clock` message (e.g. after the tab was in the background). */
   syncClock: empty,
+  // after the game (phase `finished`, seated humans)
+  /**
+   * Propose a rematch: the same players, mode, time control, seats, civs and bots in a fresh
+   * lobby. Your own vote counts as accepted; every other seated human still in the room must
+   * answer (`respondRematch`) within REMATCH_TIMEOUT_MS. See `rematchEvent`.
+   */
+  proposeRematch: empty,
+  /** Answer the pending rematch proposal. */
+  respondRematch: z.strictObject({ accept: z.boolean() }),
 } as const
 
 export type ClientMessageType = keyof typeof clientMessageSchemas
@@ -233,6 +252,13 @@ export const serverMessageSchemas = {
     /** Seat of this client, or -1. */
     seat: seatOrNone,
     isHost: z.boolean(),
+    /** A spectator in a watch room (read-only: every game message is refused). */
+    spectator: z.boolean().optional(),
+    /**
+     * Spectators of a ranked game: how many full rounds late the room shows the game
+     * (SPECTATOR_DELAY_ROUNDS); 0 or absent = live.
+     */
+    delayRounds: z.number().int().optional(),
   }),
   /** The result of one game action (a move, a timeout, an abandon, a resign or an agreed draw). */
   events: z.object({
@@ -249,6 +275,24 @@ export const serverMessageSchemas = {
     positionString: z.string(),
     seatToMove: seatOrNone,
     clock: clockSyncSchema,
+  }),
+  /**
+   * The game so far, for the move log: every action since the start, oldest first, in the
+   * shape of the `events` message without its clock. Sent right after `welcome` (on join and
+   * on every reconnect) once the game has started; the `events` messages that follow carry on
+   * from its last `seq`. A client replaces its log with it.
+   */
+  moveLog: z.object({
+    entries: z.array(
+      z.object({
+        seq: z.number().int(),
+        action: z.enum(GAME_ACTIONS),
+        seat: seatSchema,
+        notation: z.string().nullable(),
+        events: z.array(gameEventSchema),
+        positionString: z.string(),
+      }),
+    ),
   }),
   /** Clock resync: on every turn change, every few seconds in game and on `syncClock`. */
   clock: clockSyncSchema,
@@ -311,6 +355,25 @@ export const serverMessageSchemas = {
      */
     outSeat: seatSchema.optional(),
   }),
+  /**
+   * A change to the rematch proposal after the game, sent to everyone in the finished room.
+   * The proposal itself is in the room state (`rematchSeat`, `rematchVotes`,
+   * `rematchDeadline`, `rematchRoomId`); this message says what happened, for toasts.
+   * - `proposed`: `seat` proposed a rematch (its own vote counts as accepted)
+   * - `accepted` / `declined`: `seat` answered (`declined` also when a seat left the room)
+   * - `ready`: the new lobby exists (`roomId`); players who accepted join it with
+   *   `joinById(roomId)` and find their old seat and civ held for REMATCH_SEAT_HOLD_MS. It is
+   *   ranked (`ranked`) only if the game was ranked and all four players accepted; otherwise
+   *   casual, and a seat whose player declined is open to anyone.
+   * - `cancelled`: no new lobby (`reason`: `proposer_left`, `nobody_accepted` or `failed`)
+   */
+  rematchEvent: z.object({
+    type: z.enum(['proposed', 'accepted', 'declined', 'ready', 'cancelled']),
+    seat: seatSchema.optional(),
+    roomId: z.string().optional(),
+    ranked: z.boolean().optional(),
+    reason: z.enum(['proposer_left', 'nobody_accepted', 'failed']).optional(),
+  }),
   /** A request was refused, or a server-side problem. */
   error: z.object({
     code: errorCodeSchema,
@@ -326,7 +389,13 @@ export type ServerMessageType = keyof typeof serverMessageSchemas
 type Inferred = { [K in ServerMessageType]: z.infer<(typeof serverMessageSchemas)[K]> }
 
 /** Server -> client payloads, with the rules-engine types filled in. */
-export type ServerMessages = Omit<Inferred, 'events' | 'gameOver'> & {
+export type ServerMessages = Omit<Inferred, 'events' | 'gameOver' | 'moveLog'> & {
   events: Omit<Inferred['events'], 'events'> & { events: GameEvent[] }
+  moveLog: { entries: MoveLogEntry[] }
   gameOver: Omit<Inferred['gameOver'], 'result'> & { result: GameResult }
+}
+
+/** One action in the `moveLog` message (an `events` message without its clock and turn). */
+export type MoveLogEntry = Omit<Inferred['moveLog']['entries'][number], 'events'> & {
+  events: GameEvent[]
 }

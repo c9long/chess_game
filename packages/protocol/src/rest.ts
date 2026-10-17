@@ -33,6 +33,12 @@ export interface MatchListItem {
   /** Played in a ranked lobby (true even when it ended aborted or unrated). */
   ranked: boolean
   endReason: string | null
+  /**
+   * Rules version the match was played under (1 = the old 12×12 board, which can't be
+   * replayed; 2 = the 16×16 board). Finished version 2 matches have a replay
+   * (`GET /api/matches/:id/replay`).
+   */
+  rulesVersion: number
   /** The current user's seat, civ and result. */
   seat: number
   civ: string
@@ -97,6 +103,39 @@ export interface MatchDetailResponse {
   events: MatchDetailEvent[]
 }
 
+/**
+ * GET /api/matches/:id/replay: what a client needs to replay a finished match with the rules
+ * engine (participants only, like the detail). Build the game with `Game.create(config)`,
+ * apply `actions` in order with `applyReplayAction` (`@game/protocol`), and the final
+ * position string equals `finalPosition`, the server's own re-simulation of the stored rows.
+ *
+ * Errors: 404 `NOT_FOUND` (no such match, or you didn't play in it); 409 `NOT_FINISHED`
+ * (in progress or cancelled); 409 `RULES_VERSION_UNSUPPORTED` with `rulesVersion` (played
+ * under another rules version, e.g. the old 12×12 board, which this engine can't replay).
+ */
+export interface MatchReplayResponse {
+  id: string
+  mode: 'ffa' | 'teams'
+  timeControl: string
+  rulesVersion: number
+  /** Input for `Game.create`: the mode, each seat's civ at the version played, the rules version. */
+  config: {
+    mode: 'ffa' | 'teams'
+    civs: { id: string; version: number }[]
+    rulesVersion: number
+  }
+  /** Every game action, in order (see `ReplayAction`). */
+  actions: {
+    seq: number
+    action: 'move' | 'timeout' | 'abandon' | 'resign' | 'agreed_draw'
+    seat: number | null
+    notation: string | null
+  }[]
+  /** Position string after the last action, from the server's re-simulation. */
+  finalPosition: string
+  endReason: string | null
+}
+
 /** One Elo rating (ranked games), per mode x time control. */
 export interface RatingEntry {
   mode: 'ffa' | 'teams'
@@ -133,4 +172,31 @@ export interface LeaderboardResponse {
   timeControl: string
   minGames: number
   entries: LeaderboardEntry[]
+}
+
+/** A friend's game you may watch (see `FriendGamesResponse`). */
+export interface FriendGame {
+  /** The match room: watch with `joinById(roomId, { protocolVersion, spectate: true })`. */
+  roomId: string
+  /** The friends playing in it (usernames), in seat order. */
+  friends: string[]
+  name: string
+  mode: 'ffa' | 'teams'
+  timeControl: string
+  ranked: boolean
+  /** Singleplayer game against bots. */
+  solo: boolean
+  /** Password lobby: watching needs the password. */
+  locked: boolean
+  /** Spectators watching right now. */
+  spectators: number
+}
+
+/**
+ * GET /api/live/friends: games your friends are playing right now that you may watch
+ * (running games only, and the same rules as watching: challenge games only when you were
+ * invited or are the host's friend). Registered accounts; guests get an empty list.
+ */
+export interface FriendGamesResponse {
+  games: FriendGame[]
 }

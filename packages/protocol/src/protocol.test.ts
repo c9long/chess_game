@@ -322,8 +322,21 @@ describe('state schema', () => {
       'teamResignSeat',
       'teamResignCooldowns',
       'inviteOnly',
+      'spectators',
+      'delayRounds',
+      'rematchSeat',
+      'rematchVotes',
+      'rematchDeadline',
+      'rematchRoomId',
     ])
     expect(state.inviteOnly).toBe(false)
+    // No spectators and no rematch proposal by default (appended after `inviteOnly`).
+    expect(state.spectators).toBe(0)
+    expect(state.delayRounds).toBe(0)
+    expect(state.rematchSeat).toBe(-1)
+    expect([...state.rematchVotes]).toEqual([-1, -1, -1, -1])
+    expect(state.rematchDeadline).toBe(0)
+    expect(state.rematchRoomId).toBe('')
     const encoder = new Encoder(state)
     expect(encoder.encodeAll().length).toBeGreaterThan(0)
     const reflected = Reflection.decode(Reflection.encode(encoder))

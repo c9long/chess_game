@@ -10,5 +10,6 @@
 export * from './constants.ts'
 export * from './messages.ts'
 export * from './moderation.ts'
+export * from './replay.ts'
 export type * from './rest.ts'
 export * from './social.ts'

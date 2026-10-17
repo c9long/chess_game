@@ -160,6 +160,21 @@ export const MatchState = schema(
      * they invited can join (others get `not_invited`); never listed, no password.
      */
     inviteOnly: t.boolean().default(false),
+    /** Spectators watching (in the match's watch room) right now, at most SPECTATORS_MAX. */
+    spectators: t.uint8().default(0),
+    /**
+     * Watch rooms only: how many full rounds late this state shows the game (ranked games:
+     * SPECTATOR_DELAY_ROUNDS while the game runs), 0 = live. Always 0 in the match room.
+     */
+    delayRounds: t.uint8().default(0),
+    /** After the game: the seat that proposed a rematch, or -1. */
+    rematchSeat: t.int8().default(-1),
+    /** Per seat while a rematch is proposed: REMATCH_VOTE values (all -1 otherwise). */
+    rematchVotes: t.array('int8'),
+    /** When unanswered rematch votes count as declined (server ms since epoch), else 0. */
+    rematchDeadline: t.float64().default(0),
+    /** The rematch lobby's room id once it exists ('' before); see `rematchEvent` `ready`. */
+    rematchRoomId: t.string().default(''),
   },
   'MatchState',
 )
@@ -183,6 +198,7 @@ export function createMatchState(): MatchState {
   state.drawCooldowns = new ArraySchema<number>(0, 0, 0, 0)
   state.teamResignSeat = new ArraySchema<number>(-1, -1)
   state.teamResignCooldowns = new ArraySchema<number>(0, 0, 0, 0)
+  state.rematchVotes = new ArraySchema<number>(-1, -1, -1, -1)
   return state
 }
 
@@ -230,6 +246,18 @@ export interface MatchStateJson {
   teamResignCooldowns: number[]
   /** Challenge lobby: only invited friends may join (appended in protocol v1). */
   inviteOnly: boolean
+  /** Spectators watching right now (appended in protocol v1). */
+  spectators: number
+  /** Watch rooms: full rounds the shown game lags behind (0 = live; appended in protocol v1). */
+  delayRounds: number
+  /** Rematch proposer seat or -1 (appended in protocol v1). */
+  rematchSeat: number
+  /** Per seat: REMATCH_VOTE values (appended in protocol v1). */
+  rematchVotes: number[]
+  /** Rematch answer deadline, server ms since epoch, or 0 (appended in protocol v1). */
+  rematchDeadline: number
+  /** The rematch lobby's room id, or '' (appended in protocol v1). */
+  rematchRoomId: string
 }
 
 export interface SeatStateJson {

@@ -29,6 +29,7 @@ accepted the current Terms/Privacy versions and (registered accounts) chosen a u
 | `match` | `create('match', CreateOptions)` | lobby: `{ protocolVersion: 1, kind?: 'lobby', name, mode: 'ffa'\|'teams', timeControl: '10+0'\|'3+2', password?, pickMode?: 'blind', ranked?: boolean }` |
 | `match` | `create('match', CreateOptions)` | solo: `{ protocolVersion: 1, kind: 'solo', name?, mode, timeControl: 'untimed', civ, botLevel }` |
 | `match` | `joinById(roomId, JoinOptions)` | `{ protocolVersion: 1, password? }` |
+| `watch` | `joinById(<match roomId>, { protocolVersion: 1, spectate: true, password? })` | watch the match read-only (see "Spectators"); the answer is a seat in the match's own `watch` room, whose `roomId` differs |
 | `social` | `joinOrCreate('social')` | none. Registered accounts only: friends' presence and notifications (see "Friends and challenges") |
 | any | `reconnect(room.reconnectionToken)` | within the reconnect grace (`reconnectGraceMs`, 60 s by default) |
 
@@ -42,8 +43,10 @@ Listing metadata (`listing.metadata`): `{ name, mode, timeControl, seatsFilled, 
 pickMode, ranked, civs, occupied }` (`locked` = password-protected; `civs` = the civ slug of each
 seat in seat order South, West, North, East, `''` for an open seat or a civ not chosen yet;
 `occupied` = whether each seat, in the same order, is taken by a human or a bot; both updated
-whenever a seat or civ changes). Only lobbies are listed: a room leaves the list
-(`-` roomId) when its game starts, and seated players rejoin it by id.
+whenever a seat or civ changes; `spectators` = how many are watching). Public lobbies are
+listed, and so are their games while they run (`phase: 'in_game'`, for people to watch); a
+room leaves the list (`-` roomId) when its game is over. Solo games and challenge lobbies are
+never listed. Seated players rejoin by id.
 
 Ranked lobbies (`ranked: true`, default false): Elo-rated (see REST below). Guests can't
 create or join one (`account_required`), bots can't be added (`addBot` answers
@@ -79,7 +82,48 @@ message is the code: `unauthorized`, `age_confirmation_required`, `legal_accepta
 `room_not_joinable`, `room_full`, `already_seated`, `already_in_room` (one seat per user),
 `kicked`, `maintenance`, `account_required` (a guest creating or joining a ranked lobby, or
 joining `social`), `not_invited` (joining a challenge lobby you weren't invited to),
+`spectators_full` (watching a room that already has `SPECTATORS_MAX` spectators),
 `not_implemented` (`pickMode: 'draft'`).
+
+### Spectators
+
+`joinById(<match room id>, { protocolVersion: 1, spectate: true, password? })` watches a lobby
+or game read-only. Matchmaking answers with a seat in that match's `watch` room (created on
+first use; its `roomId` is not the match room's). Who may watch:
+
+- public lobbies and games, solo games included (solo games and running games are found in the
+  lobby browser or on the Friends page; anyone signed in with the room id may watch);
+- password lobbies with the password (the same attempt limits as joining: `invalid_password`,
+  `too_many_attempts`);
+- challenge lobbies only the invited players and the host's friends (`not_invited`);
+- never the room's own players (`already_seated`; they rejoin their seat) or players the host
+  kicked (`kicked`); at most `SPECTATORS_MAX` (20) accounts at a time (`spectators_full`).
+
+These checks run at matchmaking before the watch room is created, so a refused request creates
+nothing. Places are counted per account: one account may watch from up to 3 tabs or devices at
+once, which take one place (`spectators_full` past that), so it can't fill the room. A spectator who drops may reconnect for 20 s with its reconnection token,
+which works only with that account's session (`not_seated` otherwise). A spectator who loses
+the right to watch (suspended, the challenge's friendship ended, kicked) is closed with
+`CLOSE_CODES.kicked` and can't reconnect.
+
+The watch room's state is the match room's `MatchState` (seats' `sessionId` blanked), and it
+passes on the match room's messages: `welcome` (`seat: -1, spectator: true, delayRounds`),
+`moveLog`, `events`, `clock`, `drawEvent`, `resignEvent`, `gameOver`. Every other message a
+spectator sends is answered with `error { code: 'spectating' }` (`syncClock` gets a `clock`):
+nothing reaches the game. `state.spectators` (in both rooms) and `metadata.spectators` count
+them. A seated player who resigned or was knocked out stays in the match room and watches the
+rest from their seat, as before (live, also in ranked games: they keep the seat for the result
+and the rematch vote; delaying their view is a TODO).
+
+Ranked games are shown late while they run (anti-cheat): the watch room's state is the game
+as it was at least `SPECTATOR_DELAY_ROUNDS` (2) full rounds ago (`state.delayRounds` = 2;
+`positionString`, `seatToMove`, `actionSeq`, seat `status`, `lastEvents` and the clocks from
+then, clocks not running: `clock.runningSeat` -1; seats show `connected: true` and
+`graceDeadline: 0`, since drops are live news), draw offers, resignation votes and their
+cooldowns are hidden,
+and `events` / `moveLog` / `clock` messages cover only that delayed part of the game (each
+`events` arrives once it is old enough, with that moment's clock, not running). When the game
+ends the delay is over: a full `moveLog`, the final state (`delayRounds` 0) and `gameOver`.
 
 ## Client -> server messages (`room.send(type, payload)`)
 
@@ -87,11 +131,11 @@ joining `social`), `not_invited` (joining a challenge lobby you weren't invited 
 |---|---|---|
 | `setCiv` | `{ civ }` (civ slug, duplicates allowed) | seated human, lobby |
 | `setReady` | `{ ready }` (needs a civ) | seated human, lobby |
-| `addBot` | `{ seat: 0-3, level: '600'…'2400'\|'max' }` (random enabled civ; `ranked_no_bots` in ranked lobbies) | host, lobby |
+| `addBot` | `{ seat: 0-3, level: '600'…'2400'\|'max' }` (random enabled civ; `ranked_no_bots` in ranked lobbies; `seat_occupied` for a rematch seat still held for its player) | host, lobby |
 | `removeBot` | `{ seat }` | host, lobby |
 | `setBotCiv` | `{ seat, civ }` | host, lobby |
 | `kick` | `{ seat }` (kicked users can't rejoin this lobby) | host, lobby |
-| `swapSeats` | `{ a, b }` (teams: S+N vs W+E) | host, lobby |
+| `swapSeats` | `{ a, b }` (teams: S+N vs W+E; nobody can be moved into a held rematch seat: `seat_occupied`) | host, lobby |
 | `startGame` | `{}` (4 seats, all civs, all humans ready and connected) | host, `civ_select` |
 | `move` | `{ move }` (rules-core notation, e.g. `e2e4`, `e8e9q`) | seat to move, `in_game` |
 | `resign` | `{}` (FFA: resigns at once; Teams: proposes resigning the team to the teammate, or agrees to the teammate's pending proposal) | any seat still taking turns, any time in `in_game` (not only on its turn) |
@@ -99,6 +143,8 @@ joining `social`), `not_invited` (joining a challenge lobby you weren't invited 
 | `respondDraw` | `{ accept: boolean }` | a voter still pending on the current offer, `in_game` |
 | `respondResign` | `{ accept: boolean }` | Teams: the teammate of a seat whose resignation proposal is pending, `in_game` |
 | `syncClock` | `{}` | anyone |
+| `proposeRematch` | `{}` (same players, mode, time control, seats, civs and bots in a fresh lobby; your vote counts as accepted; sending it while someone else's proposal waits for you accepts it) | seated human, `finished` |
+| `respondRematch` | `{ accept: boolean }` | a seated human still pending on the rematch proposal, `finished` |
 
 Reserved (answered with `error { code: 'not_implemented', requestType }`): `takeback*`,
 `chat.*`.
@@ -110,17 +156,41 @@ more moves), `no_draw_offer`, `already_responded` (the offerer, or a voter who a
 also a proposer answering its own resignation proposal), `resign_proposal_pending` (your
 Teams resignation proposal already waits), `resign_proposal_cooldown` (`message`: how many
 more moves), `no_resign_proposal` (no proposal from your teammate to answer, or FFA).
+Rematch refusals: `wrong_phase` (the game isn't over, the rematch lobby is already open, or the
+three proposals a game allows are used up), `rematch_pending` (a proposal already waits),
+`no_rematch` (nothing to answer), `already_responded`, `maintenance`; and `spectating` for any
+game or rematch message from a spectator.
+
+### Rematch
+
+After the game (phase `finished`), any seated human may `proposeRematch`. Every other seated
+human still connected must answer within `REMATCH_TIMEOUT_MS` (60 s; `state.rematchDeadline`);
+no answer, or leaving the room, counts as a decline; a human who had already left is a decline
+from the start; bots come along. The proposer leaving cancels it. Once nobody is left to answer:
+
+- if every other human declined: cancelled (`rematchEvent { type: 'cancelled', reason:
+  'nobody_accepted' }`); otherwise
+- the server creates a fresh lobby (a new room, and later a new match id) with the same name,
+  mode, time control, password or invite list, the bots in their seats with their civs and
+  levels, and the seats of the players who accepted held for them with their civs for
+  `REMATCH_SEAT_HOLD_MS` (30 s; no password needed for a held seat). A declined seat is empty
+  and open to anyone. It is ranked only if the game was ranked and all four players accepted;
+  otherwise casual. The proposer hosts it; players ready up and the host starts as usual (a
+  solo rematch starts by itself). `state.rematchRoomId` and `rematchEvent { type: 'ready',
+  roomId, ranked }` announce it; the players who accepted `joinById(roomId)` (no password).
 
 ## Server -> client messages
 
 | Type | Payload |
 |---|---|
-| `welcome` | `{ protocolVersion, roomId, sessionId, seat (-1 = none), isHost }` on join and reconnect |
+| `welcome` | `{ protocolVersion, roomId, sessionId, seat (-1 = none), isHost, spectator?, delayRounds? }` on join and reconnect (`spectator`: a watch room; `delayRounds`: how many rounds late a ranked game is shown, 0 = live) |
 | `events` | `{ seq, action: 'move'\|'timeout'\|'abandon'\|'resign'\|'agreed_draw', seat, notation, events: GameEvent[], positionString, seatToMove, clock }` after every game action (`GAME_ACTIONS`; for `agreed_draw`, `seat` is the voter whose acceptance completed it and `events` is the `game_ended` event) |
+| `moveLog` | `{ entries: { seq, action, seat, notation, events: GameEvent[], positionString }[] }`: the game so far (every action, oldest first, each an `events` message without `seatToMove` and `clock`), sent right after `welcome` on join and on every reconnect once the game has started; replace the client's log with it, then append each `events` message with a higher `seq`. Register the handler as soon as the room is joined: it can arrive before a page mounts |
 | `drawEvent` | `{ type: 'offered'\|'accepted'\|'declined'\|'lapsed', seat, offerSeat, reason?: 'round'\|'voters_changed' }` on every change to the draw offer (`seat`: who acted; for `lapsed`, the offerer) |
 | `resignEvent` | Teams: `{ type: 'proposed'\|'accepted'\|'declined'\|'lapsed'\|'immediate', seat, team: 0\|1, reason?: 'round'\|'voters_changed', outSeat? }` on every change to a resignation proposal (`seat`: who acted; for `lapsed` and `immediate`, the proposer; `outSeat`: for a `voters_changed` lapse, the teammate who stopped taking turns). `accepted` and `immediate` are followed by the `events` message with action `resign` |
 | `clock` | `{ remainingMs: [S,W,N,E], runningSeat, serverTimestamp, turnStartedAt }` on game start, every 5 s, on `syncClock` |
 | `gameOver` | `{ matchId, result, placements, endReason, rated, ratings: ({ before, after } \| null)[] }` once saved (`ratings` are Elo before/after per seat; `rated` is true only for a ranked game whose Elo was applied, false if it couldn't be, e.g. a participant deleted their account; `state.rated` follows) |
+| `rematchEvent` | `{ type: 'proposed'\|'accepted'\|'declined'\|'ready'\|'cancelled', seat?, roomId?, ranked?, reason?: 'proposer_left'\|'nobody_accepted'\|'failed' }` on every change to the rematch proposal (players only; see "Rematch") |
 | `error` | `{ code, message?, requestType? }` |
 | `kicked` | `{ reason }`, then the connection closes with code 4100 |
 
@@ -134,9 +204,14 @@ Render clocks with `remainingNow(sync, Date.now(), offset)` from `@game/protocol
 `protocolVersion, name, mode, timeControl, pickMode, hasPassword, hostSeat, phase,
 countdownEndsAt, seats[4], matchId, rated, positionString, seatToMove, actionSeq, clock,
 lastEvents[], result, reconnectGraceMs, drawOfferSeat, drawVotes[4], drawOfferActionSeq,
-drawCooldowns[4], ranked, teamResignSeat[2], teamResignCooldowns[4], inviteOnly` (the four
-draw fields, `ranked`, the two resignation-vote fields and `inviteOnly` were appended in
-protocol v1; older decoders ignore them). `inviteOnly`: a challenge lobby (see below).
+drawCooldowns[4], ranked, teamResignSeat[2], teamResignCooldowns[4], inviteOnly, spectators,
+delayRounds, rematchSeat, rematchVotes[4], rematchDeadline, rematchRoomId` (the four draw
+fields, `ranked`, the two resignation-vote fields, `inviteOnly` and the spectator and rematch
+fields were appended in protocol v1; older decoders ignore them). `inviteOnly`: a challenge
+lobby (see below). `spectators`: how many watch; `delayRounds`: watch rooms of ranked games
+only (see "Spectators"). `rematchSeat` (-1 = none), `rematchVotes[i]` (`REMATCH_VOTE`: -1 not
+asked, 0 pending, 1 accepted, 2 declined), `rematchDeadline` (server ms, 0 = none) and
+`rematchRoomId` ('' until the new lobby exists): see "Rematch".
 
 - `seats[i]` (0 = South, 1 = West, 2 = North, 3 = East): `occupied, sessionId, displayName,
   isGuest, isBot, botLevel, civ, ready, connected, graceDeadline, team, status`. User ids are
@@ -233,6 +308,23 @@ protocol v1; older decoders ignore them). `inviteOnly`: a challenge lobby (see b
   solo games have `timeControl: 'untimed'`, `rated: false`; `ranked` says the game was played in a
   ranked lobby, `rated` that its Elo was applied, so an aborted ranked game is `ranked`, not `rated`)
 - `GET /api/matches/:id`: players and the full event log, participants only (`MatchDetailResponse`)
+- `GET /api/matches/:id/replay`: a finished match's replay input, participants only
+  (`MatchReplayResponse`): `config` (mode, each seat's `{ id, version }` civ, `rulesVersion`)
+  for `Game.create`, `actions` (`{ seq, action, seat, notation }`, the stored game actions in
+  order) and `finalPosition`, the server's own re-simulation of the stored rows. Apply the
+  actions with `applyReplayAction` (`@game/protocol`; `replayActionsOf` picks the actions out of
+  a detail's `events`, the same code the server's re-simulation check uses): the last position
+  string equals `finalPosition`. 404 `NOT_FOUND` for non-participants and unknown ids, 409
+  `NOT_FINISHED` for games in progress or cancelled, 409 `RULES_VERSION_UNSUPPORTED` (with
+  `rulesVersion`) for games from the old 12×12 board, 429 `RATE_LIMITED` past 30 replays a
+  minute per account. `MatchListItem.rulesVersion` tells history rows apart without a request.
+  A solo FFA game that ended because its player was out (`endReason: 'player_eliminated'`) has
+  its ending `agreed_draw` as a separate last action; the live `events`/`moveLog` fold it into
+  the action before it (the web replay folds it the same way)
+- `GET /api/live/friends`: your friends' running games you may watch (`FriendGamesResponse`:
+  `games: [{ roomId, friends: usernames, name, mode, timeControl, ranked, solo, locked,
+  spectators }]`; the same rules as watching; guests get an empty list). Watch with
+  `joinById(roomId, { protocolVersion: 1, spectate: true })`
 - `GET /api/ratings/me`: your Elo ratings, `{ mode, timeControl, rating, gamesPlayed, peak }`
   per mode × time control you have played ranked (`RatingsResponse`)
 - `GET /api/leaderboard?mode=ffa|teams&tc=10%2B0|3%2B2&limit=1..100` (public, no session;

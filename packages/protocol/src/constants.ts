@@ -18,7 +18,38 @@ export const ROOM_NAMES = {
    * `joinOrCreate`s it once and listens; actions go through REST (see social.ts).
    */
   social: 'social',
+  /**
+   * Spectators of one match room (read-only, PLAN §3). Not joined by name: a client sends
+   * `joinById(<match room id>, { protocolVersion, spectate: true })` and matchmaking hands it
+   * a seat in that match's watch room. Its state is the match state (delayed for ranked games,
+   * see SPECTATOR_DELAY_ROUNDS) and it accepts no game messages.
+   */
+  watch: 'watch',
 } as const
+
+/** Most spectators one match room admits at a time (`spectators_full` after that). */
+export const SPECTATORS_MAX = 20
+
+/**
+ * Ranked games: spectators see the game at least this many full rounds late (anti-cheat: a
+ * player can't have a friend relay the live board). Casual and solo games are live.
+ */
+export const SPECTATOR_DELAY_ROUNDS = 2
+
+/** Rematch: how long the other players have to answer a proposal (then it counts as no). */
+export const REMATCH_TIMEOUT_MS = 60_000
+
+/**
+ * Rematch: how long a player who accepted keeps their seat in the new lobby before it is
+ * opened to anyone (they join it as soon as it exists).
+ */
+export const REMATCH_SEAT_HOLD_MS = 30_000
+
+/**
+ * `rematchVotes` entries in the room state: not asked (a bot, an empty seat, or no proposal),
+ * waiting, accepted, declined (or no answer in time, or left the room).
+ */
+export const REMATCH_VOTE = { notVoter: -1, pending: 0, accepted: 1, declined: 2 } as const
 
 /**
  * Colyseus endpoint path on the API origin: matchmaking is `POST {path}/matchmake/...` and
@@ -216,6 +247,11 @@ export const ERROR_CODES = [
   'resign_proposal_pending',
   'resign_proposal_cooldown',
   'no_resign_proposal',
+  // spectators (watch rooms) and rematches
+  'spectating',
+  'spectators_full',
+  'rematch_pending',
+  'no_rematch',
   'not_implemented',
   'internal',
 ] as const
