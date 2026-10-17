@@ -3,7 +3,7 @@ import { APP_NAME } from '@game/config'
 import { Resend } from 'resend'
 import type { Logger } from '../logger.ts'
 
-export type EmailKind = 'verify-email' | 'reset-password' | 'account-exists'
+export type EmailKind = 'verify-email' | 'reset-password' | 'account-exists' | 'sign-in-locked'
 
 export interface EmailMessage {
   kind: EmailKind

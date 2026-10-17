@@ -11,6 +11,7 @@ import {
   integer,
   pgEnum,
   pgTable,
+  primaryKey,
   text,
   timestamp,
 } from 'drizzle-orm/pg-core'
@@ -202,3 +203,20 @@ export const signInThrottle = pgTable('sign_in_throttle', {
   windowStartedAt: ts('window_started_at').notNull().defaultNow(),
   lockedUntil: ts('locked_until'),
 })
+
+/**
+ * Security emails sent to an account owner, one row per kind (e.g. `sign-in-locked`), so a
+ * repeated trigger (an attacker locking the account again and again) sends at most one email
+ * per interval.
+ */
+export const securityNotices = pgTable(
+  'security_notices',
+  {
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    kind: text('kind').notNull(),
+    sentAt: ts('sent_at').notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.kind] })],
+)

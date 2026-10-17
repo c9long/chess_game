@@ -1,8 +1,7 @@
 import type { Database } from '@game/db'
-import { fromNodeHeaders } from 'better-auth/node'
 import { Router } from 'express'
 import { z } from 'zod'
-import type { Auth } from '../auth/auth.ts'
+import { type Auth, BACKUP_CODE_COUNT, FRESH_SESSION_MS } from '../auth/auth.ts'
 import { GUEST_INTENT_COOKIE, GUEST_INTENT_MAX_AGE_S, signStamped } from '../auth/guest-link.ts'
 import type { AppConfig } from '../config.ts'
 import { requireSession, sessionOf } from '../http/session.ts'
@@ -13,17 +12,22 @@ import type { SocialService } from '../social/service.ts'
 import { anonymizeUser } from './anonymize.ts'
 import { buildAccountExport } from './export.ts'
 import { referenceCode } from './reference.ts'
+import { stepUpMethods, verifyStepUp } from './step-up.ts'
 
 /**
- * Deleting a registered account needs a session created within this window, or the current
- * password. Guests have no credential to re-authenticate with, so for them the typed
- * confirmation is enough (PLAN §8 "Delete guest account").
+ * Deleting a registered account needs a session created within FRESH_SESSION_MS, or a
+ * step-up: the current password, a passkey, or a two-step code (account/step-up.ts). Guests
+ * have no credential to re-authenticate with, so for them the typed confirmation is enough
+ * (PLAN §8 "Delete guest account").
  */
-export const FRESH_SESSION_MS = 24 * 60 * 60 * 1000
+export { FRESH_SESSION_MS }
 
 const deleteBody = z.object({
   confirm: z.literal('DELETE'),
   password: z.string().max(256).optional(),
+  passkey: z.record(z.string(), z.unknown()).optional(),
+  totpCode: z.string().max(16).optional(),
+  backupCode: z.string().max(32).optional(),
 })
 
 export function accountRouter(deps: {
@@ -56,6 +60,27 @@ export function accountRouter(deps: {
     const { user } = sessionOf(res)
     res.setHeader('Cache-Control', 'no-store')
     res.json({ code: referenceCode(config, user.id) })
+  })
+
+  /**
+   * How many of the account's two-step backup codes are unused. Never the codes themselves:
+   * they are stored encrypted and only decrypted here to count them.
+   */
+  router.get('/two-factor/backup-codes', async (_req, res) => {
+    const { user } = sessionOf(res)
+    res.setHeader('Cache-Control', 'no-store')
+    if (!user.twoFactorEnabled) {
+      res.json({ enabled: false, remaining: 0, total: BACKUP_CODE_COUNT })
+      return
+    }
+    try {
+      const { backupCodes } = await auth.api.viewBackupCodes({ body: { userId: user.id } })
+      res.json({ enabled: true, remaining: backupCodes.length, total: BACKUP_CODE_COUNT })
+    } catch {
+      // No two-step row, or codes that can't be read (e.g. the auth secret changed): the count
+      // is unknown, which is not the same as none left.
+      res.json({ enabled: true, remaining: null, total: BACKUP_CODE_COUNT })
+    }
   })
 
   /**
@@ -94,27 +119,24 @@ export function accountRouter(deps: {
     const { user, session } = sessionOf(res)
     const fresh = Date.now() - new Date(session.createdAt).getTime() <= FRESH_SESSION_MS
     if (!user.isAnonymous && !fresh) {
-      let confirmed = false
-      if (parsed.data.password) {
-        try {
-          await auth.api.verifyPassword({
-            body: { password: parsed.data.password },
-            headers: fromNodeHeaders(req.headers),
+      const { password, passkey, totpCode, backupCode } = parsed.data
+      const proof = { password, passkey, totpCode, backupCode }
+      const result = await verifyStepUp({ auth, db, config, req, user, proof })
+      if (!result.ok) {
+        if (result.error === 'SESSION_NOT_FRESH') {
+          const methods = await stepUpMethods(db, user)
+          res.status(403).json({
+            error: 'SESSION_NOT_FRESH',
+            message:
+              methods.length > 0
+                ? 'For your security, confirm it’s you (or sign in again) before deleting your account.'
+                : 'For your security, sign in again before deleting your account.',
+            methods,
           })
-          confirmed = true
-        } catch {
-          res
-            .status(403)
-            .json({ error: 'INVALID_PASSWORD', message: 'That password is incorrect.' })
           return
         }
-      }
-      if (!confirmed) {
-        res.status(403).json({
-          error: 'SESSION_NOT_FRESH',
-          message:
-            'For your security, enter your password (or sign in again) before deleting your account.',
-        })
+        if (result.retryAfter) res.setHeader('Retry-After', String(result.retryAfter))
+        res.status(result.status).json({ error: result.error, message: result.message })
         return
       }
     }

@@ -71,6 +71,13 @@
       "when": 1792238260037,
       "tag": "0009_reserved_names",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1792266081190,
+      "tag": "0010_security_notices",
+      "breakpoints": true
     }
   ]
 }

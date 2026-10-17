@@ -24,10 +24,15 @@ import {
   twoFactor,
   username,
 } from 'better-auth/plugins'
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { type AppConfig, allowedOrigins } from '../config.ts'
 import type { EmailSender } from '../email/sender.ts'
-import { accountExistsEmail, resetPasswordEmail, verificationEmail } from '../email/templates.ts'
+import {
+  accountExistsEmail,
+  resetPasswordEmail,
+  signInLockedEmail,
+  verificationEmail,
+} from '../email/templates.ts'
 import { hashIp } from '../http/client-ip.ts'
 import { recordAcceptances } from '../legal/acceptances.ts'
 import { LEGAL_PENDING_COOKIE, pendingCoversCurrent, readGate } from '../legal/gate.ts'
@@ -47,7 +52,14 @@ import {
 import { NAME_UNAVAILABLE } from './name-filter.ts'
 import { generateGuestName, generatePlayerName, type NamePolicy } from './name-policy.ts'
 import { hashPassword, verifyPassword } from './password.ts'
-import { clearFailures, lockedForSeconds, recordFailure, throttleKey } from './throttle.ts'
+import { claimSecurityNotice } from './security-notice.ts'
+import {
+  clearFailures,
+  lockedForSeconds,
+  recordFailure,
+  THROTTLE,
+  throttleKey,
+} from './throttle.ts'
 
 export const AUTH_BASE_PATH = '/api/auth'
 
@@ -73,6 +85,26 @@ const CLICKWRAP_PATHS = new Set(['/sign-up/email', '/sign-in/anonymous'])
 
 /** Password sign-in paths covered by the per-account throttle. */
 const PASSWORD_PATHS = new Set(['/sign-in/email', '/sign-in/username'])
+
+/**
+ * Sensitive actions (deleting the account, adding a passkey, changing two-step on a
+ * passwordless account) need a session created within this window, or a step-up. Same as
+ * Better Auth's default `session.freshAge` (1 day), which guards passkey registration.
+ */
+export const FRESH_SESSION_MS = 24 * 60 * 60 * 1000
+
+/**
+ * Two-step management endpoints. With `allowPasswordless`, Better Auth guards them with a
+ * session only; an account without a password must use a fresh session instead, or a stale
+ * session could read the TOTP secret or mint backup codes and then use them as the step-up
+ * for deleting the account (and enrolling swaps the stale session for a brand-new one).
+ */
+const TWO_FACTOR_MANAGE_PATHS = new Set([
+  '/two-factor/enable',
+  '/two-factor/disable',
+  '/two-factor/get-totp-uri',
+  '/two-factor/generate-backup-codes',
+])
 
 /**
  * Interactive sign-ins after which a guest's history moves into the signed-in account, when
@@ -150,7 +182,9 @@ function emailFromVerifiedToken(token: unknown): string | undefined {
 
 /** Backup codes: unambiguous upper-case alphabet (no I/L/O/U/0/1), XXXXX-XXXXX. */
 const BACKUP_ALPHABET = 'ABCDEFGHJKMNPQRSTVWXYZ23456789'
-export function generateBackupCodes(amount = 10): string[] {
+/** How many backup codes a set has (enabling two-step, or creating new codes). */
+export const BACKUP_CODE_COUNT = 10
+export function generateBackupCodes(amount = BACKUP_CODE_COUNT): string[] {
   return Array.from({ length: amount }, () => {
     let s = ''
     for (let i = 0; i < 10; i++) s += BACKUP_ALPHABET[randomInt(BACKUP_ALPHABET.length)]
@@ -191,6 +225,36 @@ export function createAuth({ config, db, email, logger, namePolicy, onSessionDel
     email.send(message).catch((err: unknown) => {
       log.error({ kind: message.kind, err: (err as Error).message }, 'email delivery failed')
     })
+  }
+  /**
+   * The per-account throttle just locked password sign-in: tell the owner, at most once an
+   * hour. Run detached from the request so the response time is the same whether or not an
+   * email goes out (the requester can't learn anything about the account from it).
+   */
+  const notifyLocked = async (userId: string, lockedUntil: Date) => {
+    const [u] = await db
+      .select({
+        email: users.email,
+        emailVerified: users.emailVerified,
+        isAnonymous: users.isAnonymous,
+        deletedAt: users.deletedAt,
+        twoFactorEnabled: users.twoFactorEnabled,
+      })
+      .from(users)
+      .where(eq(users.id, userId))
+    // Only a verified address: an unverified one may belong to someone else.
+    if (!u?.emailVerified || u.isAnonymous || u.deletedAt) return
+    if (!(await claimSecurityNotice(db, userId, 'sign-in-locked'))) return
+    send(
+      signInLockedEmail(u.email, {
+        unlocksAt: lockedUntil,
+        lockMinutes: Math.round(THROTTLE.lockMs / 60_000),
+        twoFactorEnabled: Boolean(u.twoFactorEnabled),
+        resetLink: `${config.webOrigin}/forgot-password`,
+        securityLink: `${config.webOrigin}/account#two-step`,
+      }),
+    )
+    log.info({ event: 'sign_in_locked_notice' }, 'sign-in lock notice sent')
   }
   const cookieAttrs = (maxAge: number) => ({
     httpOnly: true,
@@ -391,6 +455,27 @@ export function createAuth({ config, db, email, logger, namePolicy, onSessionDel
           return
         }
 
+        if (TWO_FACTOR_MANAGE_PATHS.has(ctx.path)) {
+          const current = await getSessionFromCtx(ctx, { disableRefresh: true })
+          if (!current) return // the endpoint answers 401
+          const age = Date.now() - new Date(current.session.createdAt).getTime()
+          if (age > FRESH_SESSION_MS) {
+            const [credential] = await db
+              .select({ id: accounts.id })
+              .from(accounts)
+              .where(
+                and(eq(accounts.userId, current.user.id), eq(accounts.providerId, 'credential')),
+              )
+              .limit(1)
+            if (!credential) {
+              throw APIError.from('FORBIDDEN', {
+                code: 'SESSION_NOT_FRESH',
+                message: 'For your security, sign in again before changing two-step verification.',
+              })
+            }
+          }
+        }
+
         if (ctx.path === '/two-factor/verify-backup-code' && typeof body.code === 'string') {
           return { context: { body: { ...body, code: normalizeBackupCode(body.code) } } }
         }
@@ -419,8 +504,14 @@ export function createAuth({ config, db, email, logger, namePolicy, onSessionDel
         if (PASSWORD_PATHS.has(ctx.path)) {
           const key = await throttleKey(db, ctx.path, ctx.body)
           if (key) {
-            if (isAPIError(returned) && returned.statusCode === 401) await recordFailure(db, key)
-            else if (!isAPIError(returned)) await clearFailures(db, key)
+            if (isAPIError(returned) && returned.statusCode === 401) {
+              const { lockedNow, lockedUntil } = await recordFailure(db, key)
+              if (lockedNow && lockedUntil && key.startsWith('u:')) {
+                notifyLocked(key.slice(2), lockedUntil).catch((err: unknown) => {
+                  log.error({ err: (err as Error).message }, 'sign-in lock notice failed')
+                })
+              }
+            } else if (!isAPIError(returned)) await clearFailures(db, key)
           }
         }
 
