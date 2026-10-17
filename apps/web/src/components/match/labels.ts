@@ -1,4 +1,5 @@
 import { GAME_MODES, SEAT_NAMES, type SeatName, TIME_CONTROL_IDS } from '@game/protocol'
+import { pieceName } from '../../lib/civ-info.ts'
 
 /** Text labels for seats, modes and results (no renderer dependency, safe for any page). */
 export const SEAT_LABEL: Record<SeatName, string> = {
@@ -62,6 +63,23 @@ export const DEFEAT_REASON_LABEL: Record<string, string> = {
   timeout: 'Out of time',
   abandon: 'Left the game',
   resign: 'Resigned',
+}
+
+/**
+ * How a seat was knocked out, for display. A seat that started with several leader pieces
+ * (England's Prime Minister) is out only when the last one falls, so its leader capture reads
+ * "All Prime Ministers captured". `leaderKind` and `leaderCount` come from the engine's start
+ * position for that seat's civ.
+ */
+export function defeatReasonLabel(
+  reason: string,
+  leaderKind: string | null,
+  leaderCount: number,
+): string {
+  if (reason === 'leader_captured' && leaderKind && leaderCount > 1) {
+    return `All ${pieceName(leaderKind, leaderCount)} captured`
+  }
+  return DEFEAT_REASON_LABEL[reason] ?? reason
 }
 
 /** Medal colours for 1st, 2nd and 3rd (gold, silver, bronze). */

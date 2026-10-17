@@ -1,14 +1,28 @@
 import { specialArmy } from '../lib/civ-info.ts'
 import { cx } from './ui.tsx'
 
-/** The "Special army" tag for a civ, or nothing for the standard army. */
-export function SpecialArmyTag({ civ, className }: { civ: string; className?: string }) {
+/**
+ * The "Special army" tag for a civ, or nothing for the standard army. `compact`: smaller, on
+ * one line, for narrow places (under the name in the civ picker's trigger).
+ */
+export function SpecialArmyTag({
+  civ,
+  className,
+  compact = false,
+}: {
+  civ: string
+  className?: string
+  compact?: boolean
+}) {
   const army = specialArmy(civ)
   if (!army) return null
   return (
     <span
       className={cx(
-        'inline-flex shrink-0 items-center rounded-full border border-gold/40 bg-gold/10 px-1.5 py-px font-sans text-[10px] font-semibold uppercase tracking-wider text-gold',
+        'inline-flex shrink-0 items-center rounded-full border border-gold/40 bg-gold/10 font-sans font-semibold whitespace-nowrap uppercase text-gold',
+        compact
+          ? 'max-w-full px-1 text-[9px] leading-[13px] tracking-normal'
+          : 'px-1.5 py-px text-[10px] tracking-wider',
         className,
       )}
       data-testid="special-army-tag"

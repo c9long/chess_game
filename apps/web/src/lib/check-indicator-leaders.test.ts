@@ -1,6 +1,6 @@
 import { Game, initRulesSync, type Snapshot, seatIndex } from '@game/rules'
 import { beforeAll, describe, expect, it } from 'vitest'
-import { type CheckPosition, INITIAL_CHECK, nextCheck } from './check-indicator.ts'
+import { type CheckPosition, checkDetail, INITIAL_CHECK, nextCheck } from './check-indicator.ts'
 
 // England (civ v2) has four leaders, the Prime Ministers. The check indicator is driven by the
 // engine's snapshot: it shows when any of them is attacked, and the board rings only the
@@ -67,6 +67,34 @@ describe('check indicator with several leaders', () => {
     expect(s.leaderUnderAttack[SOUTH]).toBe(false)
     expect(s.attackedLeaderSquares[SOUTH]).toEqual([])
     expect(nextCheck(INITIAL_CHECK, SOUTH, pos(s), null).notice).toBe('none')
+    game.free()
+  })
+
+  it('names the attacked Prime Ministers and their squares for screen readers', () => {
+    // West's rook on m3 attacks c3; with a second rook on k10, k1 is attacked too. South to move.
+    const one = Game.fromPosition(
+      `ffa wK14nK/16/16/16/16/16/16/16/16/16/16/16/16/2sM9wR3/16/5sM4sM4eK S AAAA - - 0 0 ${ENGLAND_SOUTH}`,
+    )
+    expect(checkDetail(one.snapshot(), SOUTH)).toBe(
+      '1 of your 3 Prime Ministers is under attack: c3',
+    )
+    one.free()
+    const two = Game.fromPosition(
+      `ffa wK14nK/16/16/16/16/16/10wR5/16/16/16/16/16/16/2sM9wR3/16/5sM4sM4eK S AAAA - - 0 0 ${ENGLAND_SOUTH}`,
+    )
+    expect(checkDetail(two.snapshot(), SOUTH)).toBe(
+      '2 of your 3 Prime Ministers are under attack: k1, c3',
+    )
+    two.free()
+  })
+
+  it('has no detail for a single leader', () => {
+    const game = Game.fromPosition(
+      `ffa wK14nK/16/16/16/16/16/16/16/16/16/16/16/16/2sM9wR3/16/15eK S AAAA - - 0 0 ${ENGLAND_SOUTH}`,
+    )
+    const s = game.snapshot()
+    expect(s.attackedLeaderSquares[SOUTH]).toEqual(['c3'])
+    expect(checkDetail(s, SOUTH)).toBeNull()
     game.free()
   })
 })

@@ -83,6 +83,12 @@ function Medallion({ civ, size }: { civ: CivOption | undefined; size: Size }) {
   )
 }
 
+/** Extra search text for a civ with a special army (its tag and summary). */
+function armyKeywords(civ: CivOption): string {
+  const army = specialArmy(civ.slug)
+  return army ? `${army.tag} ${army.summary}` : ''
+}
+
 /**
  * Pick a civilization. `value` is a civ slug ('' for none yet). Give it a name with `labelId`
  * (the id of a visible heading or label) or `label` (read by screen readers only).
@@ -128,7 +134,7 @@ export function CivSelect({
   /** Set by Tab in the open list: where focus goes once the list has closed. */
   const tabOut = useRef<'next' | 'prev' | null>(null)
 
-  const searchIndex = useMemo(() => buildSearchIndex(civs), [civs])
+  const searchIndex = useMemo(() => buildSearchIndex(civs, armyKeywords), [civs])
   const options = useMemo(() => filterCivs(searchIndex, query), [searchIndex, query])
   const selected = civs.find((c) => c.slug === value)
 
@@ -259,21 +265,25 @@ export function CivSelect({
           )}
         >
           <Medallion civ={selected} size={size} />
-          <span
-            id={valueId}
-            className={cx(
-              'min-w-0 flex-1 truncate',
-              selected
-                ? cx(
-                    'font-display font-semibold tracking-tight text-parchment',
-                    size === 'lg' ? 'text-lg' : 'text-base',
-                  )
-                : 'text-sm text-parchment/55',
-            )}
-          >
-            {selected ? selected.name : placeholder}
+          {/* The tag sits under the name, so the name keeps the full width (narrow triggers:
+              the lobby card, a bot's seat menu). */}
+          <span className="flex min-w-0 flex-1 flex-col items-start justify-center">
+            <span
+              id={valueId}
+              className={cx(
+                'max-w-full min-w-0 truncate',
+                selected
+                  ? cx(
+                      'font-display font-semibold leading-tight tracking-tight text-parchment',
+                      size === 'lg' ? 'text-lg' : 'text-base',
+                    )
+                  : 'text-sm text-parchment/55',
+              )}
+            >
+              {selected ? selected.name : placeholder}
+            </span>
+            {selected ? <SpecialArmyTag civ={selected.slug} compact className="mt-0.5" /> : null}
           </span>
-          {selected ? <SpecialArmyTag civ={selected.slug} /> : null}
           <span
             aria-hidden="true"
             className="grid h-7 w-7 shrink-0 place-items-center rounded-md border border-gold/25 bg-ink/40 text-gold/80 transition group-hover/civ:border-gold/50 group-hover/civ:text-gold group-data-[state=open]/civ:border-gold/60 group-data-[state=open]/civ:text-gold"
@@ -377,7 +387,7 @@ export function CivSelect({
                   }}
                   onClick={() => choose(c)}
                   className={cx(
-                    'civ-row relative flex h-14 cursor-pointer items-center gap-3 rounded-lg pr-3 pl-1.5 transition-colors duration-100 select-none',
+                    'civ-row relative flex min-h-14 cursor-pointer items-center py-1 gap-3 rounded-lg pr-3 pl-1.5 transition-colors duration-100 select-none',
                     'before:absolute before:inset-y-2.5 before:left-0 before:w-0.5 before:rounded-full before:bg-gold before:opacity-0 before:transition-opacity',
                     isActive && 'bg-gold/[0.11] before:opacity-100',
                     isSelected && !isActive && 'bg-parchment/[0.04]',
@@ -401,7 +411,7 @@ export function CivSelect({
                       <SpecialArmyTag civ={c.slug} />
                     </span>
                     {specialArmy(c.slug) ? (
-                      <span className="truncate text-[11px] leading-tight text-parchment/60">
+                      <span className="line-clamp-2 text-[11px] leading-tight text-parchment/60">
                         {specialArmy(c.slug)?.summary}
                       </span>
                     ) : null}

@@ -15,6 +15,9 @@
  * module only decides visibility, never whether a leader is attacked.
  */
 
+import { type Piece, type Square, squareIndex } from '@game/rules'
+import { pieceName } from './civ-info.ts'
+
 export type CheckNotice = 'none' | 'check' | 'self_check'
 
 /** What the engine says about the position now shown (from its snapshot; seats as indexes). */
@@ -91,4 +94,27 @@ export function actionFromEvents(events: readonly ActionEvent[]): CheckAction | 
   const move = events.find((e) => e.type === 'move_made')
   if (move) return { seat: Number(move.seat ?? -1), action: 'move' }
   return { seat: Number(events[0]?.seat ?? -1), action: 'other' }
+}
+
+/** What `checkDetail` reads from the engine's snapshot (seats as indexes). */
+export interface CheckLeaders {
+  readonly board: readonly (Piece | null)[]
+  readonly leaderSquares: readonly (readonly Square[])[]
+  readonly attackedLeaderSquares: readonly (readonly Square[])[]
+}
+
+/**
+ * For a seat with several leader pieces (England's Prime Ministers), which of them are under
+ * attack, for screen readers: "2 of your 4 Prime Ministers are under attack: h3, i3". Null
+ * for a seat with one leader (the check text says it all) or with none attacked. The leader
+ * kind and squares come from the engine's snapshot.
+ */
+export function checkDetail(pos: CheckLeaders, seat: number): string | null {
+  const all = pos.leaderSquares[seat] ?? []
+  const hit = pos.attackedLeaderSquares[seat] ?? []
+  const first = hit[0]
+  if (all.length <= 1 || first === undefined) return null
+  const kind = pos.board[squareIndex(first)]?.kind ?? 'king'
+  const verb = hit.length === 1 ? 'is' : 'are'
+  return `${hit.length} of your ${all.length} ${pieceName(kind, all.length)} ${verb} under attack: ${hit.join(', ')}`
 }

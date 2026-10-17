@@ -4,6 +4,7 @@ import pawn from '@game/assets/pieces/pawn.svg?raw'
 import primeMinister from '@game/assets/pieces/prime-minister.svg?raw'
 import queen from '@game/assets/pieces/queen.svg?raw'
 import rook from '@game/assets/pieces/rook.svg?raw'
+import { pieceName } from '../../lib/civ-info.ts'
 import { LOST_ORDER, type LostKind, type SeatMaterial } from '../../lib/material.ts'
 
 // Decorative copies of the piece art: no <title> (the row says it in words), and the
@@ -20,18 +21,9 @@ const GLYPHS: Record<LostKind, string> = {
   pawn: strip(pawn),
 }
 
-const NAMES: Record<LostKind, [string, string]> = {
-  queen: ['queen', 'queens'],
-  prime_minister: ['Prime Minister', 'Prime Ministers'],
-  rook: ['rook', 'rooks'],
-  bishop: ['bishop', 'bishops'],
-  knight: ['knight', 'knights'],
-  pawn: ['pawn', 'pawns'],
-}
-
 export function describeLost(m: SeatMaterial): string {
   const parts = LOST_ORDER.filter((k) => m.lost[k] > 0).map(
-    (k) => `${m.lost[k]} ${NAMES[k][m.lost[k] === 1 ? 0 : 1]}`,
+    (k) => `${m.lost[k]} ${pieceName(k, m.lost[k])}`,
   )
   return parts.length ? `Pieces lost: ${parts.join(', ')}` : 'No pieces lost'
 }

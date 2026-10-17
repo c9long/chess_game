@@ -16,7 +16,13 @@ describe('civ info', () => {
 
   it('names every piece kind for screen readers', () => {
     expect(pieceName('prime_minister')).toBe('Prime Minister')
-    expect(pieceName('knight')).toBe('Knight')
-    for (const k of PIECE_KINDS) expect(pieceName(k)).toMatch(/^[A-Z][a-z]+( [A-Z][a-z]+)?$/)
+    expect(pieceName('prime_minister', 4)).toBe('Prime Ministers')
+    expect(pieceName('knight')).toBe('knight')
+    expect(pieceName('knight', 0)).toBe('knights')
+    expect(pieceName('toString')).toBe('toString')
+    for (const k of PIECE_KINDS) {
+      expect(pieceName(k)).toMatch(/^[A-Za-z]+( [A-Z][a-z]+)?$/)
+      expect(pieceName(k, 2)).not.toBe(pieceName(k))
+    }
   })
 })

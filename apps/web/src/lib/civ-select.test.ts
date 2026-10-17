@@ -68,6 +68,21 @@ describe('filterCivs', () => {
     ])
   })
 
+  it('also finds civs by keywords, from three letters on', () => {
+    const civs = [
+      { slug: 'england', name: 'England' },
+      { slug: 'canada', name: 'Canada' },
+    ]
+    const idx = buildSearchIndex(civs, (c) =>
+      c.slug === 'england' ? 'Special army Four Prime Ministers replace the king' : '',
+    )
+    expect(filterCivs(idx, 'prime').map((c) => c.slug)).toEqual(['england'])
+    expect(filterCivs(idx, 'Prime Minister').map((c) => c.slug)).toEqual(['england'])
+    expect(filterCivs(idx, 'special').map((c) => c.slug)).toEqual(['england'])
+    expect(filterCivs(idx, 'pr')).toEqual([])
+    expect(filterCivs(idx, 'can').map((c) => c.slug)).toEqual(['canada'])
+  })
+
   it('stays fast with 120 civs (a keystroke is far under a frame)', () => {
     const queries = ['r', 're', 'rea', 'real', 'realm', 'realm 0', 'realm 05', 'côte', 'x']
     const start = performance.now()

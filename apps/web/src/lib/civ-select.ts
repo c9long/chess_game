@@ -19,20 +19,32 @@ export function foldName(text: string): string {
     .trim()
 }
 
-/** A civ as the search box sees it: its folded name and where each word starts. */
+/** A civ as the search box sees it: its folded name and any extra folded keywords. */
 export interface CivSearchEntry<T extends CivOption = CivOption> {
   readonly civ: T
   readonly folded: string
-}
-
-/** Fold every name once, so filtering on each keystroke is just substring checks. */
-export function buildSearchIndex<T extends CivOption>(civs: readonly T[]): CivSearchEntry<T>[] {
-  return civs.map((civ) => ({ civ, folded: foldName(civ.name) }))
+  /** Extra text the search also matches (e.g. a special army's tag and summary), folded. */
+  readonly keywords: string
 }
 
 /**
- * The civs whose name contains the query (case- and accent-insensitive), in roster order.
- * An empty or blank query keeps every civ.
+ * Fold every name once, so filtering on each keystroke is just substring checks. `keywords`
+ * gives extra text a civ is also found by (England: "Special army", "Prime Ministers").
+ */
+export function buildSearchIndex<T extends CivOption>(
+  civs: readonly T[],
+  keywords?: (civ: T) => string,
+): CivSearchEntry<T>[] {
+  return civs.map((civ) => ({
+    civ,
+    folded: foldName(civ.name),
+    keywords: keywords ? foldName(keywords(civ)) : '',
+  }))
+}
+
+/**
+ * The civs whose name (or, for a query of three letters or more, keywords) contains the query
+ * (case- and accent-insensitive), in roster order. An empty or blank query keeps every civ.
  */
 export function filterCivs<T extends CivOption>(
   index: readonly CivSearchEntry<T>[],
@@ -41,7 +53,9 @@ export function filterCivs<T extends CivOption>(
   const q = foldName(query)
   if (!q) return index.map((e) => e.civ)
   const out: T[] = []
-  for (const e of index) if (e.folded.includes(q)) out.push(e.civ)
+  // Keywords only from three letters on, so a typeahead letter still means a name.
+  const kw = q.length >= 3
+  for (const e of index) if (e.folded.includes(q) || (kw && e.keywords.includes(q))) out.push(e.civ)
   return out
 }
 

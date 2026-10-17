@@ -50,6 +50,13 @@ test('England: special-army tag, explanation, and a game with Prime Ministers', 
     await page.keyboard.press('Escape')
     await expect(page.getByTestId('civ-select-list')).toBeHidden()
   }
+  // The search finds England by its army ("prime", "special").
+  await panel.getByTestId('civ-select').click()
+  await page.getByTestId('civ-select-search').fill('prime')
+  await expect(page.getByTestId('civ-select-list').getByRole('option')).toHaveCount(1)
+  await expect(page.getByTestId('civ-select-list').getByTestId('civ-england')).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(page.getByTestId('civ-select-list')).toBeHidden()
   // A standard civ gets the plain note.
   await chooseCiv(page, 'japan', panel)
   await expect(panel.getByTestId('civ-army-note')).toHaveCount(0)

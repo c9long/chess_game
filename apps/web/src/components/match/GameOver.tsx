@@ -100,6 +100,7 @@ function useDialogFocus(panel: RefObject<HTMLElement | null>, onClose: () => voi
 export function GameOver({
   feed,
   defeatReasons,
+  defeatLabels = null,
   reduceMotion = false,
   onClose,
   onLeave,
@@ -108,6 +109,8 @@ export function GameOver({
   feed: MatchFeed
   /** Per seat: how it was knocked out (rules defeat reason), or null. */
   defeatReasons: (string | null)[] | null
+  /** Per seat: display text for its defeat (see `defeatReasonLabel`), or null for the default. */
+  defeatLabels?: (string | null)[] | null
   reduceMotion?: boolean
   onClose: () => void
   onLeave: () => void
@@ -344,7 +347,7 @@ export function GameOver({
                           data-testid={`defeat-${seatName(i)}`}
                         >
                           {' · '}
-                          {DEFEAT_REASON_LABEL[reason] ?? reason}
+                          {defeatLabels?.[i] ?? DEFEAT_REASON_LABEL[reason] ?? reason}
                         </span>
                       ) : null}
                     </span>

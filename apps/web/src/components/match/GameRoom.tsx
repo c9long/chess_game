@@ -1,6 +1,13 @@
 import { BoardView } from '@game/board'
 import { isUntimed } from '@game/protocol'
-import { Game, type GameConfig, type GameEvent, type Piece, type Snapshot } from '@game/rules'
+import {
+  Game,
+  type GameConfig,
+  type GameEvent,
+  type Piece,
+  type Snapshot,
+  squareIndex,
+} from '@game/rules'
 import { useReducedMotion } from 'motion/react'
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
@@ -9,6 +16,7 @@ import {
   type CheckAction,
   type CheckMemo,
   type CheckNotice,
+  checkDetail,
   INITIAL_CHECK,
   nextCheck,
 } from '../../lib/check-indicator.ts'
@@ -30,6 +38,7 @@ import { useSeatFriendActions } from '../social/SeatFriendButton.tsx'
 import { Alert, Spinner } from '../ui.tsx'
 import { DrawOfferCard, GameActions, TeamResignCard } from './GameActions.tsx'
 import { GameOver } from './GameOver.tsx'
+import { defeatReasonLabel } from './labels.ts'
 import { RankedBadge } from './RankedBadge.tsx'
 import { MODE_LABEL, seatHex, seatName, teamLabel } from './seats.ts'
 
@@ -51,22 +60,26 @@ function readPosition(positionString: string, legalFor: number): Position | null
   }
 }
 
-/** Starting boards by game config, from the engine (so they follow future civ rosters). */
-const startBoards = new Map<string, readonly (Piece | null)[]>()
+/** Starting positions by game config, from the engine (so they follow future civ rosters). */
+const startSnapshots = new Map<string, Snapshot>()
 
-function startBoard(config: GameConfig): readonly (Piece | null)[] {
+function startSnapshot(config: GameConfig): Snapshot {
   const key = JSON.stringify(config)
-  let board = startBoards.get(key)
-  if (!board) {
+  let snapshot = startSnapshots.get(key)
+  if (!snapshot) {
     const game = Game.create(config)
     try {
-      board = game.snapshot().board
+      snapshot = game.snapshot()
     } finally {
       game.free()
     }
-    startBoards.set(key, board)
+    startSnapshots.set(key, snapshot)
   }
-  return board
+  return snapshot
+}
+
+function startBoard(config: GameConfig): readonly (Piece | null)[] {
+  return startSnapshot(config).board
 }
 
 /**
@@ -76,6 +89,8 @@ function startBoard(config: GameConfig): readonly (Piece | null)[] {
 interface SeatInfo {
   voters: readonly boolean[]
   defeatReasons: (string | null)[]
+  /** Display text per defeat (names the leader kind for a seat that started with several). */
+  defeatLabels: (string | null)[]
   material: SeatMaterial[] | null
 }
 
@@ -90,13 +105,21 @@ function readSeatInfo(positionString: string): SeatInfo | null {
     } catch {
       material = null
     }
-    return {
-      voters: game.drawVoters(),
-      defeatReasons: (['south', 'west', 'north', 'east'] as const).map(
-        (seat) => snapshot.defeats.find((d) => d.seat === seat)?.reason ?? null,
-      ),
-      material,
+    const defeatReasons = (['south', 'west', 'north', 'east'] as const).map(
+      (seat) => snapshot.defeats.find((d) => d.seat === seat)?.reason ?? null,
+    )
+    let defeatLabels: (string | null)[]
+    try {
+      const start = startSnapshot(snapshot.config)
+      defeatLabels = defeatReasons.map((r, i) => {
+        const first = start.leaderSquares[i]?.[0]
+        const kind = first ? (start.board[squareIndex(first)]?.kind ?? null) : null
+        return r ? defeatReasonLabel(r, kind, start.leaderSquares[i]?.length ?? 1) : null
+      })
+    } catch {
+      defeatLabels = defeatReasons.map((r) => (r ? defeatReasonLabel(r, null, 1) : null))
     }
+    return { voters: game.drawVoters(), defeatReasons, defeatLabels, material }
   } finally {
     game.free()
   }
@@ -146,17 +169,23 @@ function useCheckNotice(
   actionSeat: number | null,
   actionKind: string | null,
   mySeat: number,
-): CheckNotice {
-  const memo = useRef<{ key: string; memo: CheckMemo; notice: CheckNotice }>({
+): { notice: CheckNotice; detail: string | null } {
+  const memo = useRef<{
+    key: string
+    memo: CheckMemo
+    notice: CheckNotice
+    detail: string | null
+  }>({
     key: '',
     memo: INITIAL_CHECK,
     notice: 'none',
+    detail: null,
   })
   return useMemo(() => {
-    if (!ready || !ps || mySeat < 0) return 'none'
+    if (!ready || !ps || mySeat < 0) return { notice: 'none', detail: null }
     const key = `${mySeat}|${ps}`
     const m = memo.current
-    if (m.key === key) return m.notice
+    if (m.key === key) return { notice: m.notice, detail: m.detail }
     const game = Game.fromPosition(ps)
     let snapshot: Snapshot
     try {
@@ -177,8 +206,10 @@ function useCheckNotice(
       },
       action,
     )
-    memo.current = { key, memo: out.memo, notice: out.notice }
-    return out.notice
+    // Several leaders (England's Prime Ministers): which ones, for screen readers.
+    const detail = out.notice === 'none' ? null : checkDetail(snapshot, mySeat)
+    memo.current = { key, memo: out.memo, notice: out.notice, detail }
+    return { notice: out.notice, detail }
   }, [ready, ps, actionSeat, actionKind, mySeat])
 }
 
@@ -476,7 +507,7 @@ export function GameRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) {
   )
   const stillPlaying = mySeat >= 0 && seatInfo?.voters[mySeat] === true
   const friendAction = useSeatFriendActions(state, untimed)
-  const check = useCheckNotice(
+  const { notice: check, detail: checkLeaders } = useCheckNotice(
     ready,
     shown.ps,
     shown.action?.seat ?? null,
@@ -611,9 +642,14 @@ export function GameRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) {
             onShowResults={finished && !showResult ? () => setShowResult(true) : undefined}
           />
           {/* Always mounted, so screen readers announce the self-check when its text appears
-              (the visual pill beside the banner is aria-hidden). */}
+              (the visual pill beside the banner is aria-hidden), and, for a seat with several
+              leaders, which of them are attacked. */}
           <p className="sr-only" role="status" aria-live="polite" data-testid="check-announcer">
-            {!myTurn && check === 'self_check' ? SELF_CHECK_TEXT : ''}
+            {!myTurn && check === 'self_check'
+              ? [SELF_CHECK_TEXT, checkLeaders].filter(Boolean).join('. ')
+              : myTurn && check === 'check'
+                ? (checkLeaders ?? '')
+                : ''}
           </p>
         </div>
 
@@ -690,6 +726,7 @@ export function GameRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) {
         <GameOver
           feed={feed}
           defeatReasons={seatInfo?.defeatReasons ?? null}
+          defeatLabels={seatInfo?.defeatLabels ?? null}
           reduceMotion={reduceMotion}
           onClose={() => setShowResult(false)}
           onLeave={leave}
