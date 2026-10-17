@@ -24,7 +24,7 @@ export const PROVIDER_LABELS: Record<OAuthProvider, string> = {
 }
 
 export function SignIn() {
-  const { config, session, refreshSession } = useAppState()
+  const { config, session, refreshSession, ageGate } = useAppState()
   const navigate = useNavigate()
   const location = useLocation()
   const [params] = useSearchParams()
@@ -35,7 +35,7 @@ export function SignIn() {
   const [widgetKey, setWidgetKey] = useState(0)
   const [busy, setBusy] = useState<'password' | 'passkey' | OAuthProvider>()
   const [error, setError] = useState<string | undefined>(() =>
-    oauthErrorMessage(params.get('error')),
+    oauthErrorMessage(params.get('error'), ageGate(true) === 'ok'),
   )
   /** Passkey failures show under the passkey button, the rest above "Sign in". */
   const [passkeyError, setPasskeyError] = useState<string>()
@@ -221,7 +221,9 @@ export function SignIn() {
           <Divider label="or" />
           <div className="flex flex-col gap-3">
             <p className="mt-2 text-xs text-parchment/60">
-              Signing in with another service creates an account if you don’t have one yet.
+              {ageGate(true) === 'ok'
+                ? 'Signing in with another service creates an account if you don’t have one yet.'
+                : 'Signing in with another service works for an account you already have. New here? Choose Create account.'}
             </p>
             <Clickwrap checked={agreed} onChange={setAgreed} />
             {providers.map((p) => (

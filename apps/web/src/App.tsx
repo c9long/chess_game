@@ -123,18 +123,27 @@ export function App() {
           <Route path="verify-email" element={<VerifyEmail />} />
           <Route path="resend-verification" element={<CheckEmail />} />
           <Route path="reset-password" element={<ResetPassword />} />
-          {/* Everything else sits behind the neutral age screen, then any re-acceptance, then
-              (for accounts created through OAuth) choosing a username. */}
+          {/* Signing in to an existing account (confirmed when it was created) and recovering
+              it need no age screen; only a recent under-13 answer in this browser blocks them. */}
+          <Route element={<AgeGate requireAge={false} />}>
+            <Route element={<AcceptanceGate />}>
+              <Route element={<UsernameGate />}>
+                <Route path="sign-in" element={<SignIn />} />
+                <Route path="check-email" element={<CheckEmail />} />
+                <Route path="forgot-password" element={<ForgotPassword />} />
+                <Route path="two-factor" element={<TwoFactor />} />
+              </Route>
+            </Route>
+          </Route>
+          {/* Everything else sits behind the neutral age screen (new visitors, before playing as
+              a guest or creating an account), then any re-acceptance, then (for accounts created
+              through OAuth) choosing a username. */}
           <Route element={<AgeGate />}>
             <Route element={<AcceptanceGate />}>
               <Route element={<UsernameGate />}>
                 <Route index element={<Landing />} />
                 <Route path="guest" element={<GuestStart />} />
-                <Route path="sign-in" element={<SignIn />} />
                 <Route path="sign-up" element={<SignUp />} />
-                <Route path="check-email" element={<CheckEmail />} />
-                <Route path="forgot-password" element={<ForgotPassword />} />
-                <Route path="two-factor" element={<TwoFactor />} />
                 <Route
                   path="account"
                   element={

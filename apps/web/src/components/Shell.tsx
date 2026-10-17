@@ -114,9 +114,10 @@ function MobileMenu({ onSignOut }: { onSignOut: () => void }) {
 }
 
 export function Shell() {
-  const { session, legal, signOut } = useAppState()
+  const { session, ageGate, signOut } = useAppState()
   const { pathname } = useLocation()
   const user = session?.user
+  const age = ageGate(true)
   const reducedPref = usePrefs((st) => st.reducedMotion)
   // The game screen fits the viewport: no footer under the board.
   const inMatch = pathname.startsWith('/match/')
@@ -182,7 +183,18 @@ export function Shell() {
                   </button>
                   <MobileMenu onSignOut={signOut} />
                 </>
-              ) : pathname === '/' || !legal?.ageConfirmed ? null : (
+              ) : age === 'ask' ? (
+                // Before the age screen: signing in to an existing account doesn't need it.
+                pathname === '/sign-in' ? null : (
+                  <Link
+                    to="/sign-in"
+                    className="rounded-lg px-3 py-2 text-parchment/85 hover:bg-parchment/5 hover:text-parchment"
+                    data-testid="nav-sign-in"
+                  >
+                    Sign in
+                  </Link>
+                )
+              ) : pathname === '/' || age !== 'ok' ? null : (
                 // Signed out: a way in from any page (the landing page has its own buttons).
                 <>
                   <Link

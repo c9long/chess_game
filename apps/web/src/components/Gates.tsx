@@ -55,12 +55,15 @@ function DateOfBirthScreen({ onDone }: { onDone: () => Promise<void> }) {
     setError(undefined)
     const dateOfBirth = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`
     try {
-      await api('/api/legal/age-confirmation', { body: { dateOfBirth } })
+      try {
+        await api('/api/legal/age-confirmation', { body: { dateOfBirth } })
+      } catch (err) {
+        // 403: the neutral refusal, which the refreshed status shows.
+        if (!(err instanceof ApiError && err.status === 403)) throw err
+      }
       await onDone()
     } catch (err) {
-      if (err instanceof ApiError && err.status === 403) {
-        await onDone()
-      } else if (err instanceof ApiError && err.status === 400) {
+      if (err instanceof ApiError && err.status === 400) {
         setError('Please enter a valid date.')
       } else if (err instanceof ApiError && err.status === 429) {
         setError(tooManyAttempts(err.retryAfter))
@@ -151,29 +154,56 @@ function Refusal() {
   )
 }
 
-/** Shows the DOB screen before anything else on a first visit. */
-export function AgeGate() {
-  const { legal, configError, refreshLegal } = useAppState()
-  if (configError) {
+/**
+ * The neutral age screen (PLAN §8). With `requireAge` (the default) a visitor who hasn't
+ * answered sees the DOB screen first; the sign-in and recovery pages pass `requireAge={false}`
+ * and only apply the under-13 block. A signed-in account confirmed at creation is never asked.
+ * While the session or the legal status is loading or the server is restarting, this shows a
+ * spinner (or keeps the previous answer), never the DOB screen.
+ */
+export function AgeGate({ requireAge = true }: { requireAge?: boolean }) {
+  const { ageGate, configError, refreshLegal, refreshSession, session } = useAppState()
+  const state = ageGate(requireAge)
+  if (state === 'unreachable' || (configError && state !== 'blocked')) {
     return (
       <CenteredPage>
-        <Alert>We can&apos;t reach the server right now. Please try again shortly.</Alert>
+        <div className="flex flex-col items-center gap-4" data-testid="server-unreachable">
+          <Alert>We can&apos;t reach the server right now. Please try again shortly.</Alert>
+          <p className="flex items-center gap-2 text-sm text-parchment/60" aria-live="polite">
+            <Spinner /> Trying again…
+          </p>
+        </div>
       </CenteredPage>
     )
   }
-  if (!legal) return <Loading />
-  if (legal.blocked) return <Refusal />
-  if (!legal.ageConfirmed) return <DateOfBirthScreen onDone={refreshLegal} />
+  if (state === 'loading') return <Loading />
+  if (state === 'blocked') return <Refusal />
+  if (state === 'ask') {
+    return (
+      <DateOfBirthScreen
+        onDone={async () => {
+          // A failed refresh keeps this screen up with an error, never a wrong answer.
+          if (!(await refreshLegal())) throw new Error('status refresh failed')
+          // A signed-in account that wasn't confirmed has just been: refresh its session too.
+          if (session) await refreshSession()
+        }}
+      />
+    )
+  }
   return <Outlet />
 }
 
 /** Signed-in users must accept the current Terms/Privacy versions before continuing. */
 export function AcceptanceGate() {
-  const { legal, session, config, refreshLegal } = useAppState()
+  const { legal, legalFor, legalUnreachable, session, config, refreshLegal } = useAppState()
   const [checked, setChecked] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string>()
-  if (!session || !legal?.needsAcceptance || !config) return <Outlet />
+  if (!session || !config) return <Outlet />
+  // Only trust an answer about this account; wait for it (the server enforces acceptance on
+  // every lobby and game route anyway, so a server that keeps failing doesn't block here).
+  if (legalFor !== session.user.id) return legalUnreachable ? <Outlet /> : <Loading />
+  if (!legal?.needsAcceptance) return <Outlet />
   return (
     <AuthCard
       title="Before you continue"
@@ -189,7 +219,7 @@ export function AcceptanceGate() {
             setBusy(true)
             try {
               await acceptCurrentLegal(config.legalVersions)
-              await refreshLegal()
+              if (!(await refreshLegal())) throw new Error('status refresh failed')
             } catch {
               setError('Something went wrong. Please try again.')
             } finally {

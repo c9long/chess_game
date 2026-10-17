@@ -64,6 +64,8 @@ export interface PublicConfig {
 export type OAuthProvider = 'google' | 'discord' | 'github' | 'microsoft'
 
 export interface LegalStatus {
+  /** The signed-in user the server saw for this request, or null when signed out. */
+  userId?: string | null
   required: Record<'terms' | 'privacy', string>
   accepted: Partial<Record<'terms' | 'privacy', string>>
   needsAcceptance?: boolean
@@ -131,9 +133,17 @@ export function authErrorMessage(
   return error.message || error.error_description || 'Something went wrong. Please try again.'
 }
 
-/** Better Auth OAuth error codes passed back as ?error= on the sign-in page. */
-export function oauthErrorMessage(code: string | null): string | undefined {
+/**
+ * Better Auth OAuth error codes passed back as ?error= on the sign-in page. `ageDone` is false
+ * when this browser hasn't been through the age screen: the sign-in page no longer requires it,
+ * so a new account can't be created from there and the visitor is pointed to Create account
+ * (which asks first) rather than to the Terms box.
+ */
+export function oauthErrorMessage(code: string | null, ageDone = true): string | undefined {
   if (!code) return undefined
+  if (!ageDone && (code === 'unable_to_create_user' || code === 'AGE_CONFIRMATION_REQUIRED')) {
+    return 'There’s no account for that sign-in yet. To make one, choose Create account.'
+  }
   switch (code) {
     case 'unable_to_create_user':
     case 'LEGAL_ACCEPTANCE_REQUIRED':
