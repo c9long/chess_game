@@ -1,4 +1,4 @@
-import { type Database, reports } from '@game/db'
+import { type Database, reports, reservedNames } from '@game/db'
 import { and, lt, ne } from 'drizzle-orm'
 
 /** Resolved and dismissed reports are kept this long after resolution (Privacy Policy). */
@@ -17,5 +17,14 @@ export async function purgeOldReports(
     .delete(reports)
     .where(and(ne(reports.status, 'open'), lt(reports.resolvedAt, cutoff)))
     .returning({ id: reports.id })
+  return rows.length
+}
+
+/** Nightly (same schedule): deletes username holds that have expired. Returns the count. */
+export async function purgeExpiredNameHolds(db: Database, now = new Date()): Promise<number> {
+  const rows = await db
+    .delete(reservedNames)
+    .where(lt(reservedNames.reservedUntil, now))
+    .returning({ name: reservedNames.name })
   return rows.length
 }

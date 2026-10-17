@@ -46,6 +46,19 @@ export async function blockedAmong(db: Executor, me: string, others: string[]) {
   return new Set(rows.map((r) => r.id))
 }
 
+/**
+ * Which of `others` blocked `me`. Their seats are shown to `me` like any ineligible seat (no
+ * "Add friend" that would always fail), so the block isn't revealed.
+ */
+export async function blockedByAmong(db: Executor, me: string, others: string[]) {
+  if (others.length === 0) return new Set<string>()
+  const rows = await db
+    .select({ id: blocks.blockerId })
+    .from(blocks)
+    .where(and(eq(blocks.blockedId, me), inArray(blocks.blockerId, [...new Set(others)])))
+  return new Set(rows.map((r) => r.id))
+}
+
 /** Players `me` blocked, newest first. */
 export async function blockedList(db: Executor, me: string): Promise<BlockedUser[]> {
   const rows = await db

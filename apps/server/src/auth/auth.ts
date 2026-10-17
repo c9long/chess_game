@@ -32,6 +32,7 @@ import { hashIp } from '../http/client-ip.ts'
 import { recordAcceptances } from '../legal/acceptances.ts'
 import { LEGAL_PENDING_COOKIE, pendingCoversCurrent, readGate } from '../legal/gate.ts'
 import { type Logger, scrubMessage } from '../logger.ts'
+import { isNameHeld } from '../moderation/reserved-names.ts'
 import {
   GUEST_INTENT_COOKIE,
   GUEST_INTENT_MAX_AGE_S,
@@ -43,6 +44,7 @@ import {
   signStamped,
   takePendingGuestLink,
 } from './guest-link.ts'
+import { NAME_UNAVAILABLE } from './name-filter.ts'
 import { generateGuestName, generatePlayerName, type NamePolicy } from './name-policy.ts'
 import { hashPassword, verifyPassword } from './password.ts'
 import { clearFailures, lockedForSeconds, recordFailure, throttleKey } from './throttle.ts'
@@ -104,6 +106,11 @@ function refuseUnavailableName(namePolicy: NamePolicy, name: string) {
   if (!verdict.ok && verdict.code === 'USERNAME_UNAVAILABLE') {
     throw badRequest('USERNAME_UNAVAILABLE', verdict.reason)
   }
+}
+
+/** A username a moderator reset is held for a while (moderation/reserved-names.ts). */
+async function refuseHeldName(db: Database, name: string) {
+  if (await isNameHeld(db, name)) throw badRequest('USERNAME_UNAVAILABLE', NAME_UNAVAILABLE)
 }
 
 /** The name passes the policy's format rules (length, charset), moderation aside. */
@@ -339,6 +346,9 @@ export function createAuth({ config, db, email, logger, namePolicy, onSessionDel
             )
           }
           refuseUnavailableName(namePolicy, name)
+          // The shown spelling too: whole words are found from its case ("BigWord").
+          refuseUnavailableName(namePolicy, shown)
+          await refuseHeldName(db, name)
           return { context: { body: { ...body, name: shown, displayUsername: shown } } }
         }
 
@@ -362,6 +372,7 @@ export function createAuth({ config, db, email, logger, namePolicy, onSessionDel
             if (typeof body.username !== 'string') throw badRequest('INVALID_USERNAME', 'Invalid.')
             name = body.username
             refuseUnavailableName(namePolicy, name)
+            await refuseHeldName(db, name)
           }
           if ('displayUsername' in body) {
             const shown = body.displayUsername
@@ -371,6 +382,7 @@ export function createAuth({ config, db, email, logger, namePolicy, onSessionDel
                 'The display name must match the username.',
               )
             }
+            refuseUnavailableName(namePolicy, shown)
           }
           if ('username' in body && name) {
             const shown = (body.displayUsername as string | undefined) ?? name

@@ -12,6 +12,7 @@ import {
   matches,
   matchPlayers,
   reports,
+  reservedNames,
   sessions,
   users,
 } from '@game/db'
@@ -305,13 +306,20 @@ describe('blocking', () => {
     expect(fromBlocker.status).toBe(409)
     expect(fromBlocker.body).toMatchObject({ error: 'BLOCKED' })
 
-    // Seat relations and history show the block to the blocker only.
+    // Seat relations and history show the block to the blocker only. The blocked player sees
+    // the blocker like any ineligible seat (no "Add friend" that would always fail).
     const rel = (await a.get(`/api/friends/match/${matchId}`))
       .body as unknown as MatchRelationsResponse
     expect(rel.seats.find((s) => s.seat === 1)).toMatchObject({ relation: 'none', blocked: true })
     const relB = (await b.get(`/api/friends/match/${matchId}`))
       .body as unknown as MatchRelationsResponse
-    expect(relB.seats.find((s) => s.seat === 0)).toMatchObject({ relation: 'none', blocked: false })
+    expect(relB.seats.find((s) => s.seat === 0)).toMatchObject({
+      relation: 'ineligible',
+      blocked: false,
+    })
+    const histB = (await b.get('/api/matches')).body as unknown as MatchListResponse
+    const oppB = histB.matches.find((m) => m.id === matchId)?.opponents.find((o) => o.seat === 0)
+    expect(oppB).toMatchObject({ blocked: false, friend: null, reportable: true })
     const hist = (await a.get('/api/matches')).body as unknown as MatchListResponse
     const opp = hist.matches.find((m) => m.id === matchId)?.opponents.find((o) => o.seat === 1)
     expect(opp).toMatchObject({ blocked: true, friend: null, reportable: true })
@@ -625,6 +633,13 @@ describe('admin review queue', () => {
     ).toBe('username_required')
     const q = (await admin.get('/api/admin/reports')).body as unknown as AdminReportsResponse
     expect(q.reports.some((r) => r.id === reportId)).toBe(false)
+    // The old name is held: not for them, and not for anyone else either.
+    expect((await target.post('/api/auth/update-user', { username: old })).status).toBe(400)
+    const [held] = await db()
+      .select()
+      .from(reservedNames)
+      .where(eq(reservedNames.name, old.toLowerCase()))
+    expect(held?.reservedUntil.getTime()).toBeGreaterThan(Date.now() + 300 * 24 * 60 * 60_000)
     const fresh = `renamed_${Date.now() % 100000}`
     expect((await target.post('/api/auth/update-user', { username: fresh })).status).toBe(200)
     expect(fresh).not.toBe(old)
@@ -670,6 +685,57 @@ describe('admin review queue', () => {
     expect(back.status).toBe(200)
     expect((await fresh.get('/api/friends')).status).toBe(200)
     await hostPlayer.leave()
+  })
+
+  it('an action settles the player’s other open reports it covers', async () => {
+    const admin = await makeAdmin()
+    const { target, reportId } = await reportedPair('offensive_username')
+    const fileReport = async (reason: string) => {
+      const reporter = await registered(h)
+      const m = await seedMatch('finished', [reporter.userId, target.userId, null, null])
+      expect((await reporter.post('/api/reports', { matchId: m, seat: 1, reason })).status).toBe(
+        201,
+      )
+      const [row] = await db().select().from(reports).where(eq(reports.matchId, m))
+      return row?.id as string
+    }
+    const nameReport = await fileReport('offensive_username')
+    const cheatReport = await fileReport('cheating')
+    const statusOf = async (id: string) =>
+      (await db().select().from(reports).where(eq(reports.id, id)))[0]
+    // Rename settles the other username reports only.
+    expect(
+      (await admin.post(`/api/admin/reports/${reportId}/resolve`, { action: 'rename' })).status,
+    ).toBe(204)
+    expect(await statusOf(nameReport)).toMatchObject({ status: 'resolved', action: 'rename' })
+    expect(await statusOf(cheatReport)).toMatchObject({ status: 'open' })
+    // Suspend settles everything left about the player.
+    const lastReport = await fileReport('other')
+    expect(
+      (await admin.post(`/api/admin/reports/${cheatReport}/resolve`, { action: 'suspend' })).status,
+    ).toBe(204)
+    expect(await statusOf(lastReport)).toMatchObject({
+      status: 'resolved',
+      action: 'suspend',
+      resolvedBy: admin.userId,
+    })
+    const q = (await admin.get('/api/admin/reports')).body as unknown as AdminReportsResponse
+    expect(q.reports.some((r) => r.reported.userId === target.userId)).toBe(false)
+    await h.server.ctx.moderation.unsuspend(target.userId, admin.userId)
+  })
+
+  it('does not suspend guests (they can start a new guest session)', async () => {
+    const admin = await makeAdmin()
+    const reporter = await registered(h)
+    const g = await guest(h)
+    const m = await seedMatch('finished', [reporter.userId, g.userId, null, null])
+    expect(
+      (await reporter.post('/api/reports', { matchId: m, seat: 1, reason: 'other' })).status,
+    ).toBe(201)
+    const [row] = await db().select().from(reports).where(eq(reports.matchId, m))
+    const res = await admin.post(`/api/admin/reports/${row?.id}/resolve`, { action: 'suspend' })
+    expect(res.status).toBe(400)
+    expect((await g.get('/api/friends')).status).not.toBe(401)
   })
 
   it('never suspends an admin', async () => {

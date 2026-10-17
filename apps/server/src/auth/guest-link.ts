@@ -64,6 +64,10 @@ export async function repointUserRows(tx: Executor, fromUserId: string, toUserId
     .update(reports)
     .set({ reportedUserId: toUserId })
     .where(eq(reports.reportedUserId, fromUserId))
+  // Moderator audit columns (plain text, no foreign key): a deleted admin's real id doesn't
+  // stay behind on the reports they reviewed or the suspensions they made.
+  await tx.update(reports).set({ resolvedBy: toUserId }).where(eq(reports.resolvedBy, fromUserId))
+  await tx.update(users).set({ suspendedBy: toUserId }).where(eq(users.suspendedBy, fromUserId))
 }
 
 /**

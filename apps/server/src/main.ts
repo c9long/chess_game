@@ -1,6 +1,6 @@
 import { ConfigError, loadConfig } from './config.ts'
 import { purgeInactiveGuests } from './jobs/guest-purge.ts'
-import { purgeOldReports } from './jobs/moderation-purge.ts'
+import { purgeExpiredNameHolds, purgeOldReports } from './jobs/moderation-purge.ts'
 import { startServer } from './server.ts'
 
 let config: ReturnType<typeof loadConfig>
@@ -31,11 +31,16 @@ async function runGuestPurge() {
   }
 }
 
-/** Moderation retention: resolved reports go one year after resolution (same schedule). */
+/**
+ * Moderation retention (same schedule): resolved reports go one year after resolution, and
+ * held usernames when their hold ends.
+ */
 async function runReportPurge() {
   try {
     const deleted = await purgeOldReports(ctx.db)
     if (deleted > 0) logger.info({ deleted }, 'old reports purged')
+    const released = await purgeExpiredNameHolds(ctx.db)
+    if (released > 0) logger.info({ released }, 'expired username holds purged')
   } catch (err) {
     logger.error({ err: (err as Error).message }, 'report purge failed')
   }

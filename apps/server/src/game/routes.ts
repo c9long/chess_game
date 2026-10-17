@@ -26,7 +26,7 @@ import { z } from 'zod'
 import type { Auth } from '../auth/auth.ts'
 import { requireSession, sessionOf } from '../http/session.ts'
 import { requireCurrentAcceptance } from '../legal/routes.ts'
-import { blockedAmong } from '../social/blocks.ts'
+import { blockedAmong, blockedByAmong } from '../social/blocks.ts'
 import { relationsOf } from '../social/friends.ts'
 
 const leaderboardQuery = z.object({
@@ -207,6 +207,14 @@ export function gameRouter({ db, auth }: { db: Database; auth: Auth }) {
           players.filter(blockable).map((p) => p.userId as string),
         )
       : new Set<string>()
+    // Players who blocked the viewer look like any ineligible seat (the block isn't revealed).
+    const blockedBy = canFriend
+      ? await blockedByAmong(
+          db,
+          me,
+          players.filter(addable).map((p) => p.userId as string),
+        )
+      : new Set<string>()
     const items: MatchListItem[] = page.map((m) => {
       const seats = players.filter((p) => p.matchId === m.id)
       const mine = seats.find((p) => p.seat === m.seat)
@@ -239,7 +247,7 @@ export function gameRouter({ db, auth }: { db: Database; auth: Auth }) {
             botLevel: p.botLevel,
             isGuest: Boolean(p.isGuest),
             friend:
-              addable(p) && !blocked.has(p.userId as string)
+              addable(p) && !blocked.has(p.userId as string) && !blockedBy.has(p.userId as string)
                 ? (relations.get(p.userId as string) ?? 'none')
                 : null,
             blocked: blockable(p) ? blocked.has(p.userId as string) : null,

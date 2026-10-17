@@ -103,3 +103,18 @@ export const reports = pgTable(
     check('reports_action', sql`${t.action} is null or ${t.status} = 'resolved'`),
   ],
 )
+
+/**
+ * Usernames a moderator reset (the `rename` action), held so neither the renamed player nor
+ * anyone else can take the name straight back. `name` is the lower-case username; the row
+ * isn't linked to any account. Deleted after `reserved_until` (jobs/moderation-purge.ts).
+ */
+export const reservedNames = pgTable(
+  'reserved_names',
+  {
+    name: text('name').primaryKey(),
+    reservedUntil: ts('reserved_until').notNull(),
+    createdAt: ts('created_at').notNull().defaultNow(),
+  },
+  (t) => [index('reserved_names_until_idx').on(t.reservedUntil)],
+)

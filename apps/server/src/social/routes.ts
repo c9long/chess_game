@@ -20,7 +20,7 @@ import { fixedWindowLimiter } from '../http/security.ts'
 import { requireSession, sessionOf } from '../http/session.ts'
 import { requireCurrentAcceptance } from '../legal/routes.ts'
 import { resolveTarget } from '../moderation/targets.ts'
-import { blockedAmong } from './blocks.ts'
+import { blockedAmong, blockedByAmong } from './blocks.ts'
 import { countsOf, matchSeatsOf, relationsOf, SocialError, usernameOf } from './friends.ts'
 import type { SocialService } from './service.ts'
 
@@ -121,6 +121,7 @@ export function socialRouter({
       for (const s of seats) if (s.userId && s.userId !== my) others.push(s.userId)
       const relations = await relationsOf(db, my, others)
       const blocked = await blockedAmong(db, my, others)
+      const blockedBy = await blockedByAmong(db, my, others)
       const counts = await countsOf(db, my)
       const body: MatchRelationsResponse = {
         matchId,
@@ -131,10 +132,11 @@ export function socialRouter({
           relation:
             s.userId === my
               ? 'self'
-              : !shared || !s.userId || !s.registered
+              : !shared || !s.userId || !s.registered || blockedBy.has(s.userId)
                 ? 'ineligible'
                 : (relations.get(s.userId) ?? 'none'),
           blocked: Boolean(s.userId && s.registered && blocked.has(s.userId)),
+          blockable: Boolean(s.userId && s.registered && s.userId !== my),
         })),
       }
       res.setHeader('Cache-Control', 'no-store')

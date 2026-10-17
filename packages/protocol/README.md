@@ -269,7 +269,7 @@ seat, so user ids are never needed to add someone (and can't be guessed to spam 
 | Call | Body / answer |
 |---|---|
 | `GET /api/friends` | `FriendsResponse`: `{ friends: [{ userId, username, online, since }], incoming: [{ user, createdAt }], outgoing: [...], blocked: [{ userId, username, since }], limits: { maxFriends, maxOutgoing, maxBlocked } }` |
-| `GET /api/friends/match/:matchId` | participants only: `MatchRelationsResponse` `{ matchId, capReached, outgoingFull, seats: [{ seat, relation, blocked }] }`, relation `self` \| `ineligible` \| `none` \| `outgoing` \| `incoming` \| `friends`; `blocked`: you blocked that player |
+| `GET /api/friends/match/:matchId` | participants only: `MatchRelationsResponse` `{ matchId, capReached, outgoingFull, seats: [{ seat, relation, blocked, blockable }] }`, relation `self` \| `ineligible` \| `none` \| `outgoing` \| `incoming` \| `friends` (`ineligible` also when that player blocked you, so the block isn't revealed); `blocked`: you blocked that player; `blockable`: another registered player (the menu offers Block / Unblock) |
 | `POST /api/friends/requests` | `{ matchId, seat }` → `{ relation: 'outgoing' \| 'friends', user }` (`friends`: they had asked you, so it is accepted at once) |
 | `POST /api/friends/requests/:userId/accept` | → `{ relation: 'friends', user }` |
 | `POST /api/friends/requests/:userId/decline` | → 204 |
@@ -350,7 +350,7 @@ Only user ids in the server's `ADMIN_USER_IDS` (comma list, empty by default); e
 | `GET /api/admin/me` | `{ admin: true }` (or 403) |
 | `GET /api/admin/reports` | `AdminReportsResponse`: `{ reports: AdminReport[] (open, oldest first: reason, note, matchId, createdAt, reported { userId, name, reportedName, isGuest, deleted, suspendedAt, openReports, totalReports, openReporters }, reporter { userId, name }), suspended: [{ userId, name, suspendedAt }] }` |
 | `POST /api/admin/reports/:id/dismiss` | → 204 (404 when no longer open) |
-| `POST /api/admin/reports/:id/resolve` | `{ action: 'warn' \| 'rename' \| 'suspend' }` → 204. `warn` is recorded only; `rename` clears the username (the account shows "Player-1234" and must choose a new username, so matchmaking answers `username_required` until it does); `suspend` refuses every sign-in (`403 ACCOUNT_SUSPENDED` from Better Auth), deletes all sessions (bearer tokens included), closes `social` connections and frees any pre-game lobby seat (`kicked` with reason `suspended`); a running game goes on. Admins can't be suspended (400) |
+| `POST /api/admin/reports/:id/resolve` | `{ action: 'warn' \| 'rename' \| 'suspend' }` → 204. `warn` is recorded only; `rename` clears the username (the account shows "Player-1234" and must choose a new username, so matchmaking answers `username_required` until it does), holds the old name for a year (sign-up and username choice answer `USERNAME_UNAVAILABLE`) and closes the player's other open `offensive_username` reports; `suspend` refuses every sign-in (`403 ACCOUNT_SUSPENDED` from Better Auth), deletes all sessions (bearer tokens included), closes `social` connections and frees any pre-game lobby seat (`kicked` with reason `suspended`); a running game goes on; it closes every other open report about the player. Admins and guests can't be suspended (400) |
 | `POST /api/admin/users/:userId/unsuspend` | → 204 (404 when not suspended) |
 
 ### Challenge lobbies

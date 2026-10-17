@@ -180,10 +180,17 @@ export interface MatchRelationsResponse {
   /** You have FRIEND_REQUESTS_OUTGOING_MAX requests waiting. */
   outgoingFull: boolean
   /**
-   * `self` for your seat; `ineligible` for bots, guests, deleted accounts, aborted games.
+   * `self` for your seat; `ineligible` for bots, guests, deleted accounts, aborted games, and
+   * players who blocked you (shown like any other ineligible seat, so the block isn't revealed).
    * `blocked`: you blocked this player (registered players only; "Unblock" in the menu).
+   * `blockable`: another registered player, so the menu offers Block or Unblock.
    */
-  seats: { seat: number; relation: FriendRelation | 'self' | 'ineligible'; blocked: boolean }[]
+  seats: {
+    seat: number
+    relation: FriendRelation | 'self' | 'ineligible'
+    blocked: boolean
+    blockable: boolean
+  }[]
 }
 
 /** `POST /api/friends/requests` (also `.../accept`): the relation afterwards. */

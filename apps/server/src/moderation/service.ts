@@ -2,8 +2,10 @@
  * Reports and the admin review queue (PLAN §3 "Moderation"). Players (registered or guest)
  * report another player from a game or their Friends page; admins (ADMIN_USER_IDS) dismiss a
  * report or resolve it with an action: `warn` (recorded only), `rename` (the username is reset
- * and the player picks a new one at their next visit) or `suspend` (sign-in refused, sessions
- * revoked, removed from pre-game lobbies; reversible). Match history is never touched.
+ * and held for a year; the player picks a new one at their next visit) or `suspend` (sign-in
+ * refused, sessions revoked, removed from pre-game lobbies; reversible; registered accounts
+ * only). Suspending also resolves the player's other open reports, and renaming their other
+ * username reports. Match history is never touched.
  */
 import { matchMaker } from '@colyseus/core'
 import { type Database, type ReportAction, reports, sessions, users } from '@game/db'
@@ -21,6 +23,7 @@ import type { GameService } from '../game/service.ts'
 import type { Logger } from '../logger.ts'
 import { SocialError, usernameOf } from '../social/friends.ts'
 import type { SocialService } from '../social/service.ts'
+import { holdName } from './reserved-names.ts'
 import { resolveTarget } from './targets.ts'
 
 export interface ModerationOptions {
@@ -273,13 +276,22 @@ export class ModerationService {
         throw new SocialError('BAD_REQUEST', 400, 'That account was deleted. Dismiss the report.')
       }
       let suspended: string | undefined
+      // Other open reports this action settles: every report about a suspended player, and
+      // the username reports about a renamed one.
+      let settles: ReturnType<typeof and> | undefined
       if (action === 'rename') {
         if (user.isGuest) {
-          throw new SocialError('BAD_REQUEST', 400, 'Guests have generated names. Suspend instead.')
+          throw new SocialError(
+            'BAD_REQUEST',
+            400,
+            'Guests have generated names. Dismiss or warn instead.',
+          )
         }
         // The player chooses a new username at their next visit (the web asks, like after an
-        // OAuth sign-up); until then they show as "Player-1234".
+        // OAuth sign-up); until then they show as "Player-1234". The old name is held, so
+        // neither they nor anyone else can take it straight back.
         if (user.username) {
+          await holdName(tx, user.username)
           await tx
             .update(users)
             .set({
@@ -290,9 +302,18 @@ export class ModerationService {
             })
             .where(eq(users.id, userId))
         }
+        settles = and(eq(reports.reportedUserId, userId), eq(reports.reason, 'offensive_username'))
       } else if (action === 'suspend') {
         if (this.isAdmin(userId)) {
           throw new SocialError('BAD_REQUEST', 400, 'Admins can’t be suspended here.')
+        }
+        // A guest can start a new guest session at once, so suspending one means nothing.
+        if (user.isGuest) {
+          throw new SocialError(
+            'BAD_REQUEST',
+            400,
+            'Guests can’t be suspended: they can start a new guest session. Dismiss or warn instead.',
+          )
         }
         if (!user.suspendedAt) {
           await tx
@@ -301,11 +322,21 @@ export class ModerationService {
             .where(eq(users.id, userId))
         }
         suspended = userId
+        settles = eq(reports.reportedUserId, userId)
       }
-      await tx
-        .update(reports)
-        .set({ status: 'resolved', action, resolvedBy: adminId, resolvedAt: new Date() })
-        .where(eq(reports.id, reportId))
+      const resolution = {
+        status: 'resolved',
+        action,
+        resolvedBy: adminId,
+        resolvedAt: new Date(),
+      } as const
+      await tx.update(reports).set(resolution).where(eq(reports.id, reportId))
+      if (settles) {
+        await tx
+          .update(reports)
+          .set(resolution)
+          .where(and(settles, eq(reports.status, 'open')))
+      }
       return suspended
     })
     this.logger.info({ event: 'report_resolved', reportId, adminId, action }, 'report resolved')
