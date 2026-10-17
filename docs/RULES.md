@@ -50,10 +50,10 @@ All pieces move exactly as in regular chess. "Forward" for a pawn means toward t
 
 The game tells you when **your own** king is under attack ("in check"), at two moments:
 
-- **When your turn starts** with your king under attack (someone else put you in check), the turn banner turns red and says **"Check! Your leader is under attack"**.
-- **Right after your own move** leaves your king under attack (you put yourself in check), you see **"Your leader is in check"**. It stays until your king is no longer attacked, and if your turn comes round with it still attacked, the turn banner says "Check!" as above.
+- **When your turn starts** with your king under attack (someone else put you in check), the turn banner turns bright orange-red and says **"Check! Your leader is under attack"**.
+- **Right after your own move** leaves your king under attack (you put yourself in check), you see **"Your leader is in check"** next to the turn banner. It stays until your king is no longer attacked, and if your turn comes round with it still attacked, the turn banner says "Check!" as above.
 
-While the indicator is on, your king's square has a pulsing red ring (a steady one with reduced motion) and a short alert sound plays when it appears.
+While the indicator is on, your king's square has a pulsing orange-red ring with a light inner line (a steady one with reduced motion), in a colour no player's army uses, and a short alert sound plays when it appears.
 
 - If an opponent attacks your king while it isn't your turn, you are **not** told until your turn starts (by then the danger may already be gone).
 - The indicator is only ever for you: you never see it for other players' kings, and spectators see none.
@@ -137,6 +137,11 @@ What happens next depends on the mode:
 - **Free-for-All:** the game ends when only **one active player** is left. That player wins.
 - **Teams:** the game ends as soon as a team has **no active player**. That team's pieces are removed and the other team wins. For example, if your partner was stalemated or ran out of time and then your king is captured, your team is out.
 
+### Playing against bots
+
+- **Free-for-All against bots:** the game ends as soon as **you are out**: your king is captured, you are stalemated, you resign or you leave. The game isn't played out between the bots. The bots still in play share 1st place, and you keep the place you were knocked out in (for example 4th, or 2nd if two bots were already out).
+- **Teams against bots** works like any Teams game: if you are defeated but your bot partner still has a king, your team plays on.
+
 ### The move limit
 
 - The game counts every turn taken (automatic passes included) since the last **capture**, **pawn move** (promotions count) or **defeat of a player**.
@@ -150,7 +155,7 @@ What happens next depends on the mode:
 - Only one offer can be open at a time, and your own vote counts as accepted. The offer ends without a draw as soon as anyone declines, when a player is knocked out or frozen, or after one full round (everyone else has had a turn and it is your turn again; if your turn is skipped because you have no legal move, the skipped turn counts as your turn coming round).
 - If your offer is declined or runs out, make two more moves before offering again (a turn you pass because you have no legal move counts as one).
 - Bots accept only when they are clearly behind on material; otherwise they decline.
-- The move limit and a draw by agreement are the only ways a game can end without a single winner.
+- The move limit, a draw by agreement and the early end of a Free-for-All game against bots (see above) are the only ways a game can end without a single winner.
 
 ### Placements
 
