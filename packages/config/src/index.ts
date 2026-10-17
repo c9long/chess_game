@@ -25,6 +25,8 @@ export const CIVILIZATIONS = [
 
 export type CivSlug = (typeof CIVILIZATIONS)[number]['slug']
 
+export * from './civ-info.ts'
+
 /** Time controls offered in v1: base minutes + increment seconds. */
 export const TIME_CONTROLS = {
   '10+0': { baseMs: 10 * 60_000, incrementMs: 0 },
