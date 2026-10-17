@@ -41,8 +41,9 @@ function startApi() {
       E2E_DATABASE_URL,
       E2E_SERVER_PORT: String(API_PORT),
       E2E_SERVER_WEB_ORIGIN: WEB,
-      // The main E2E server already reset and seeded the database.
-      E2E_SKIP_DB_RESET: '1',
+      // Shares the database the main E2E server reset and seeded, and leaves the main
+      // server's in-progress matches alone when it (re)starts.
+      E2E_SECONDARY: '1',
     },
     stdio: 'ignore',
     detached: true,

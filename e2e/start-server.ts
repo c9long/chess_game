@@ -3,8 +3,10 @@
  * normal server entry point with E2E settings.
  *
  * A spec that needs a second, restartable API (e.g. restart-session.spec) runs this with
- * E2E_SERVER_PORT / E2E_SERVER_WEB_ORIGIN set to its own ports and E2E_SKIP_DB_RESET=1, so it
- * shares the database the main E2E server already prepared.
+ * E2E_SERVER_PORT / E2E_SERVER_WEB_ORIGIN set to its own ports and E2E_SECONDARY=1: it shares
+ * the database the main E2E server already prepared (no reset), and it doesn't abort the
+ * in-progress matches it finds at startup, because those belong to the main server's live
+ * rooms.
  */
 import { createDb } from '@game/db'
 import { resetTestDatabase } from '@game/db/migrate'
@@ -14,7 +16,9 @@ import { E2E_API_PORT, E2E_DATABASE_URL, E2E_WEB_ORIGIN } from './env.ts'
 const port = process.env.E2E_SERVER_PORT ?? String(E2E_API_PORT)
 const webOrigin = process.env.E2E_SERVER_WEB_ORIGIN ?? E2E_WEB_ORIGIN
 
-if (process.env.E2E_SKIP_DB_RESET !== '1') {
+const secondary = process.env.E2E_SECONDARY === '1'
+
+if (!secondary) {
   await resetTestDatabase(E2E_DATABASE_URL)
   const { db, close } = createDb(E2E_DATABASE_URL, { max: 1 })
   await seedCatalog(db)
@@ -41,5 +45,6 @@ Object.assign(process.env, {
   RESEND_API_KEY: '',
   // Bot pacing as in production, so the specs see bot moves spaced for their animations.
   BOT_MIN_MOVE_MS: '700',
+  ABORT_ORPHANED_MATCHES: secondary ? 'false' : 'true',
 })
 await import('../apps/server/src/main.ts')

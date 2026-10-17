@@ -93,11 +93,22 @@ test('the civ dropdown works from the keyboard (ARIA combobox + listbox)', async
   await page.keyboard.press('Enter')
   await expect(trigger).toHaveAttribute('data-value', 'japan')
 
-  // Tab closes the list and leaves focus on the trigger.
+  // Tab closes the list and moves on to the next field (like a native select); Shift+Tab from
+  // there comes back to the trigger.
   await page.keyboard.press('ArrowUp')
   await expect(list).toBeVisible()
   await page.keyboard.press('Tab')
   await expect(list).toBeHidden()
+  await expect(page.getByTestId('bot-level')).toBeFocused()
+  await page.keyboard.press('Shift+Tab')
+  await expect(trigger).toBeFocused()
+  // Shift+Tab in the open list closes it and moves to the field before the trigger.
+  await page.keyboard.press('ArrowUp')
+  await expect(list).toBeVisible()
+  await page.keyboard.press('Shift+Tab')
+  await expect(list).toBeHidden()
+  await expect(trigger).not.toBeFocused()
+  await page.keyboard.press('Tab')
   await expect(trigger).toBeFocused()
 
   // Mouse: hover highlights, a click chooses.
@@ -164,7 +175,8 @@ test('the host picks a bot civ from the seat menu, which stays open', async ({ p
     .click()
   const menu = west.locator('details')
   await expect(menu).toHaveAttribute('open', '')
-  const trigger = page.getByRole('combobox', { name: /^Civilization/ })
+  // Its name says which seat it changes ("West bot Civilization <civ>").
+  const trigger = page.getByRole('combobox', { name: /^West bot Civilization/ })
   await expect(trigger).toHaveAttribute('data-testid', 'civ-select-west')
   const current = await trigger.getAttribute('data-value')
   const target = current === 'germany' ? 'china' : 'germany'
@@ -209,4 +221,45 @@ test('lobby cards show the civs already chosen at each table', async ({ browser 
   if (SHOTS) await row.screenshot({ path: `${SHOTS}/lobby-card-civs.png` })
   await hostCtx.close()
   await viewerCtx.close()
+})
+
+test('a 120-civ roster filters, scrolls and keeps the highlighted row in view', async ({
+  page,
+}) => {
+  // Development-only page with a synthetic roster (apps/web/src/pages/DevCivSelect.tsx).
+  await page.goto('/dev/civ-select')
+  const trigger = page.getByTestId('civ-select')
+  await trigger.focus()
+  await page.keyboard.press('ArrowDown')
+  const list = page.getByTestId('civ-select-list')
+  await expect(list).toBeVisible()
+  await expect(list.getByRole('option')).toHaveCount(120)
+  // The list scrolls inside itself: far fewer rows fit than there are.
+  const box = await list.boundingBox()
+  expect(box?.height ?? 0).toBeLessThan(120 * 56)
+
+  await page.keyboard.press('End')
+  expect(await activeCiv(page)).toBe('civ-realm-119')
+  await expect(list.getByTestId('civ-realm-119')).toBeInViewport()
+  await page.keyboard.press('Home')
+  expect(await activeCiv(page)).toBe('civ-realm-0')
+  await expect(list.getByTestId('civ-realm-0')).toBeInViewport()
+  for (let i = 0; i < 10; i++) await page.keyboard.press('PageDown')
+  expect(await activeCiv(page)).toBe('civ-realm-50')
+  await expect(list.getByTestId('civ-realm-50')).toBeInViewport()
+  for (let i = 0; i < 30; i++) await page.keyboard.press('ArrowDown')
+  expect(await activeCiv(page)).toBe('civ-realm-80')
+  await expect(list.getByTestId('civ-realm-80')).toBeInViewport()
+
+  // Filtering 120 rows stays quick (each keystroke re-renders the list).
+  const started = Date.now()
+  await page.keyboard.type('realm 11')
+  await expect(list.getByRole('option')).toHaveCount(10)
+  expect(Date.now() - started).toBeLessThan(3000)
+  await page.getByTestId('civ-select-search').fill('ALAND')
+  await expect(list.getByRole('option')).toHaveCount(1)
+  await expect(list.getByTestId('civ-aland')).toContainText('Åland')
+  await page.keyboard.press('Enter')
+  await expect(trigger).toHaveAttribute('data-value', 'aland')
+  await expect(page.getByTestId('dev-civ-value')).toHaveText('aland')
 })

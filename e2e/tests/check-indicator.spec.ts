@@ -210,6 +210,15 @@ test('check indicators are only for the viewer, from their turn or after their o
   await expect(south.getByTestId('turn-banner')).not.toHaveAttribute('data-check', 'true')
   await expect.poll(() => checkSquares(south)).toEqual(['g1'])
   await expectNoIndicator(east)
+  // The live region announces the self-check (the visual pill is aria-hidden).
+  await expect(south.getByTestId('check-announcer')).toHaveText('Your leader is in check')
+  if (SHOTS) {
+    await south.screenshot({ path: `${SHOTS}/check-self-desktop.png` })
+    await south.setViewportSize({ width: 390, height: 844 })
+    await south.waitForTimeout(300)
+    await south.screenshot({ path: `${SHOTS}/check-self-phone.png`, fullPage: true })
+    await south.setViewportSize({ width: 1280, height: 720 })
+  }
 
   // East leaves the leader be; South's turn comes round with it still attacked: banner check.
   await expect(east.getByTestId('turn-banner')).toHaveText('Your move', { timeout: 30_000 })

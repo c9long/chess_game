@@ -9,7 +9,7 @@ import { chooseCiv, passAgeScreen, signUpAndVerify, YOUR_TURN } from './helpers.
 
 const BLOCKING = new Set(['serious', 'critical'])
 
-async function audit(page: Page, name: string) {
+async function audit(page: Page, name: string, extraRules: readonly string[] = []) {
   // Let entrance transitions (fades, slides) finish so contrast is measured on final colors.
   await page.waitForTimeout(600)
   // The page background is a CSS gradient (checkerboard plus a warm glow at the top), which
@@ -19,14 +19,19 @@ async function audit(page: Page, name: string) {
   // so passing here means passing everywhere on it.
   await page.addStyleTag({ content: 'body { background: #322b1e !important; }' })
   const results = await new AxeBuilder({ page })
-    .withTags(['wcag2a', 'wcag2aa'])
+    .withTags(['wcag2a', 'wcag2aa', ...(extraRules.length > 0 ? ['best-practice'] : [])])
     // The live PixiJS board has its own aria-label and keyboard controls; axe can't read a
     // canvas's pixels anyway.
     .exclude('[data-testid="board"] canvas')
     // Cloudflare's Turnstile widget is a third-party frame we don't control.
     .exclude('[data-testid="turnstile"] iframe')
     .analyze()
-  const blocking = results.violations.filter((v) => BLOCKING.has(v.impact ?? ''))
+  const blocking = results.violations
+    .filter((v) => BLOCKING.has(v.impact ?? ''))
+    // Best-practice rules count only when asked for by name.
+    .filter(
+      (v) => v.tags.includes('wcag2a') || v.tags.includes('wcag2aa') || extraRules.includes(v.id),
+    )
   const report = blocking.map(
     (v) =>
       `[${v.impact}] ${v.id} (${v.nodes.length}): ${v.help}\n` +
@@ -67,9 +72,19 @@ test('a11y: signed-out pages and a guest session', async ({ page }) => {
   await page.getByTestId('play').click()
   await expect(page.getByRole('heading', { name: 'Lobbies' })).toBeVisible()
   await audit(page, 'play (lobby browser)')
+  // The civ dropdown, open (its popover must be a named dialog, or none at all).
+  await page.getByTestId('civ-select').click()
+  await expect(page.getByTestId('civ-select-list')).toBeVisible()
+  await audit(page, 'play (civ dropdown open)', ['aria-dialog-name'])
+  await page.keyboard.press('Escape')
+  await expect(page.getByTestId('civ-select-list')).toBeHidden()
   await page.getByTestId('create-lobby').click()
   await expect(page.getByTestId('seat-south')).toBeVisible()
   await audit(page, 'lobby room')
+  await page.getByTestId('civ-select').click()
+  await expect(page.getByTestId('civ-select-list')).toBeVisible()
+  await audit(page, 'lobby room (civ dropdown open)', ['aria-dialog-name'])
+  await page.keyboard.press('Escape')
   // One lobby or game at a time: leave before starting a singleplayer game.
   await page.getByTestId('leave-lobby').click()
   await expect(page.getByRole('heading', { name: 'Lobbies' })).toBeVisible()
@@ -84,6 +99,12 @@ test('a11y: signed-out pages and a guest session', async ({ page }) => {
   await expect(page.getByTestId('board')).toBeVisible({ timeout: 20_000 })
   await expect(page.getByTestId('turn-banner')).toHaveText(YOUR_TURN, { timeout: 20_000 })
   await audit(page, 'singleplayer game')
+
+  // Resigning ends a solo FFA game at once: the "You were eliminated" result dialog.
+  await page.getByTestId('resign').click()
+  await page.getByTestId('resign-confirm').click()
+  await expect(page.getByTestId('game-over')).toBeVisible({ timeout: 10_000 })
+  await audit(page, 'solo result (eliminated)')
 })
 
 test('a11y: registered user pages', async ({ page }) => {
