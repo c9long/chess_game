@@ -78,6 +78,10 @@ export interface MatchDetailResponse {
   rated: boolean
   /** Played in a ranked lobby. */
   ranked: boolean
+  /**
+   * Rules version the match was played under: 1 = the original 12×12 board (history only; its
+   * moves can't be replayed on the current engine), 2 = the 16×16 board.
+   */
   rulesVersion: number
   startedAt: string
   endedAt: string | null
