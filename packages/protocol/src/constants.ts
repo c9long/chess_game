@@ -13,6 +13,11 @@ export const ROOM_NAMES = {
   lobby: 'lobby',
   /** One room per lobby; the same room carries the live game. */
   match: 'match',
+  /**
+   * Friends' presence and notifications (registered accounts): every signed-in client
+   * `joinOrCreate`s it once and listens; actions go through REST (see social.ts).
+   */
+  social: 'social',
 } as const
 
 /**
@@ -184,6 +189,8 @@ export const ERROR_CODES = [
   // ranked lobbies: registered accounts only, no bots
   'account_required',
   'ranked_no_bots',
+  // challenge lobbies (invite-only): someone not invited tried to join
+  'not_invited',
   // lobby / game messages
   'invalid_message',
   'unknown_message',
@@ -219,4 +226,7 @@ export const CLOSE_CODES = {
   kicked: 4100,
   seatLost: 4101,
   roomClosed: 4102,
+  /** `social` room: the session it was opened with ended (signed out, revoked, expired) or
+   * the account was deleted. Don't rejoin until signed in again. */
+  sessionEnded: 4103,
 } as const

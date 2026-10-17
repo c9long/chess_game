@@ -17,6 +17,17 @@ import {
   RESERVED_MESSAGE_TYPES,
   serverMessageSchemas,
 } from './messages.ts'
+import {
+  CHALLENGE_MAX_INVITEES,
+  CHALLENGE_TTL_MS,
+  challengeBodySchema,
+  FRIEND_REQUESTS_OUTGOING_MAX,
+  FRIEND_REQUESTS_PER_HOUR,
+  FRIENDS_MAX,
+  friendRequestBodySchema,
+  SOCIAL_ERROR_CODES,
+  socialMessageSchemas,
+} from './social.ts'
 
 function toSchema(schema: z.ZodType, io: 'input' | 'output') {
   return z.toJSONSchema(schema, { io, target: 'draft-2020-12', unrepresentable: 'any' })
@@ -50,5 +61,20 @@ export function buildProtocolJsonSchema() {
     lobbyMetadata: toSchema(lobbyMetadataSchema, 'output'),
     clientMessages: mapSchemas(clientMessageSchemas, 'input'),
     serverMessages: mapSchemas(serverMessageSchemas, 'output'),
+    social: {
+      limits: {
+        friendsMax: FRIENDS_MAX,
+        outgoingRequestsMax: FRIEND_REQUESTS_OUTGOING_MAX,
+        requestsPerHour: FRIEND_REQUESTS_PER_HOUR,
+        challengeMaxInvitees: CHALLENGE_MAX_INVITEES,
+        challengeTtlMs: CHALLENGE_TTL_MS,
+      },
+      errorCodes: SOCIAL_ERROR_CODES,
+      restBodies: {
+        friendRequest: toSchema(friendRequestBodySchema, 'input'),
+        challenge: toSchema(challengeBodySchema, 'input'),
+      },
+      roomMessages: mapSchemas(socialMessageSchemas, 'output'),
+    },
   }
 }

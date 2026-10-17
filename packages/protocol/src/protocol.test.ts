@@ -321,7 +321,9 @@ describe('state schema', () => {
       'ranked',
       'teamResignSeat',
       'teamResignCooldowns',
+      'inviteOnly',
     ])
+    expect(state.inviteOnly).toBe(false)
     const encoder = new Encoder(state)
     expect(encoder.encodeAll().length).toBeGreaterThan(0)
     const reflected = Reflection.decode(Reflection.encode(encoder))

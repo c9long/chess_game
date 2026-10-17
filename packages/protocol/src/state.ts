@@ -155,6 +155,11 @@ export const MatchState = schema(
      * TEAM_RESIGN_COOLDOWN_MOVES when its proposal lapses or is declined).
      */
     teamResignCooldowns: t.array('uint8'),
+    /**
+     * Challenge lobby (set at create): invite-only, so only the challenger and the friends
+     * they invited can join (others get `not_invited`); never listed, no password.
+     */
+    inviteOnly: t.boolean().default(false),
   },
   'MatchState',
 )
@@ -223,6 +228,8 @@ export interface MatchStateJson {
   teamResignSeat: number[]
   /** Per seat: moves left before it may propose resigning again (appended in protocol v1). */
   teamResignCooldowns: number[]
+  /** Challenge lobby: only invited friends may join (appended in protocol v1). */
+  inviteOnly: boolean
 }
 
 export interface SeatStateJson {

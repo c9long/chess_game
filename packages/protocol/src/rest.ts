@@ -7,6 +7,11 @@ export interface MatchListOpponent {
   civ: string
   botLevel: string | null
   isGuest: boolean
+  /**
+   * Your friend relation to this opponent (what an "Add friend" button shows), or null when
+   * they can't be added: bots, guests, deleted accounts, aborted games, or you are a guest.
+   */
+  friend: 'none' | 'outgoing' | 'incoming' | 'friends' | null
 }
 
 export interface MatchListItem {

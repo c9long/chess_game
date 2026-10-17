@@ -50,6 +50,13 @@
       "when": 1792159845431,
       "tag": "0006_team_resign_votes",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1792218048743,
+      "tag": "0007_friends",
+      "breakpoints": true
     }
   ]
 }

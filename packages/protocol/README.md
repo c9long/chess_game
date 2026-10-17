@@ -27,6 +27,7 @@ accepted the current Terms/Privacy versions and (registered accounts) chosen a u
 | `match` | `create('match', CreateOptions)` | lobby: `{ protocolVersion: 1, kind?: 'lobby', name, mode: 'ffa'\|'teams', timeControl: '10+0'\|'3+2', password?, pickMode?: 'blind', ranked?: boolean }` |
 | `match` | `create('match', CreateOptions)` | solo: `{ protocolVersion: 1, kind: 'solo', name?, mode, timeControl: 'untimed', civ, botLevel }` |
 | `match` | `joinById(roomId, JoinOptions)` | `{ protocolVersion: 1, password? }` |
+| `social` | `joinOrCreate('social')` | none. Registered accounts only: friends' presence and notifications (see "Friends and challenges") |
 | any | `reconnect(room.reconnectionToken)` | within the reconnect grace (60 s) |
 
 Listing metadata (`listing.metadata`): `{ name, mode, timeControl, seatsFilled, locked, phase,
@@ -66,7 +67,8 @@ message is the code: `unauthorized`, `age_confirmation_required`, `legal_accepta
 `username_required`, `protocol_mismatch`, `invalid_options`, `invalid_password`,
 `too_many_attempts` (5 wrong passwords per minute per IP and per room), `room_not_found`,
 `room_not_joinable`, `room_full`, `already_seated`, `already_in_room` (one seat per user),
-`kicked`, `maintenance`, `account_required` (a guest creating or joining a ranked lobby),
+`kicked`, `maintenance`, `account_required` (a guest creating or joining a ranked lobby, or
+joining `social`), `not_invited` (joining a challenge lobby you weren't invited to),
 `not_implemented` (`pickMode: 'draft'`).
 
 ## Client -> server messages (`room.send(type, payload)`)
@@ -81,7 +83,7 @@ message is the code: `unauthorized`, `age_confirmation_required`, `legal_accepta
 | `kick` | `{ seat }` (kicked users can't rejoin this lobby) | host, lobby |
 | `swapSeats` | `{ a, b }` (teams: S+N vs W+E) | host, lobby |
 | `startGame` | `{}` (4 seats, all civs, all humans ready and connected) | host, `civ_select` |
-| `move` | `{ move }` (rules-core notation, e.g. `c2c4`, `c6c7q`) | seat to move, `in_game` |
+| `move` | `{ move }` (rules-core notation, e.g. `e2e4`, `e8e9q`) | seat to move, `in_game` |
 | `resign` | `{}` (FFA: resigns at once; Teams: proposes resigning the team to the teammate, or agrees to the teammate's pending proposal) | any seat still taking turns, any time in `in_game` (not only on its turn) |
 | `offerDraw` | `{}` | a draw voter (seat still taking turns), no offer pending, no cooldown, `in_game` |
 | `respondDraw` | `{ accept: boolean }` | a voter still pending on the current offer, `in_game` |
@@ -122,9 +124,9 @@ Render clocks with `remainingNow(sync, Date.now(), offset)` from `@game/protocol
 `protocolVersion, name, mode, timeControl, pickMode, hasPassword, hostSeat, phase,
 countdownEndsAt, seats[4], matchId, rated, positionString, seatToMove, actionSeq, clock,
 lastEvents[], result, reconnectGraceMs, drawOfferSeat, drawVotes[4], drawOfferActionSeq,
-drawCooldowns[4], ranked, teamResignSeat[2], teamResignCooldowns[4]` (the four draw fields,
-`ranked` and the two resignation-vote fields were appended in protocol v1; older decoders
-ignore them)
+drawCooldowns[4], ranked, teamResignSeat[2], teamResignCooldowns[4], inviteOnly` (the four
+draw fields, `ranked`, the two resignation-vote fields and `inviteOnly` were appended in
+protocol v1; older decoders ignore them). `inviteOnly`: a challenge lobby (see below).
 
 - `seats[i]` (0 = South, 1 = West, 2 = North, 3 = East): `occupied, sessionId, displayName,
   isGuest, isBot, botLevel, civ, ready, connected, graceDeadline, team, status`. User ids are
@@ -237,3 +239,72 @@ rating = mean of the two players, standard Elo team vs team, Δ = round(K × (S 
 player. Agreed draws and move-limit ties are ties; aborted games are unrated. Casual games
 with bots update a hidden OpenSkill shadow rating against fixed bot anchors
 (`bot_level_anchors`), never exposed; guests are never rated.
+
+## Friends and challenges
+
+Registered accounts only (guests get `403 { error: 'ACCOUNT_REQUIRED' }` from every endpoint
+below and `account_required` from the `social` room). Every action is a REST call, so a client
+can also just poll; the `social` room adds live presence and notifications. All endpoints take
+the session cookie (web) or `Authorization: Bearer <token>` (native apps); limits are in
+`social.ts` (`FRIENDS_MAX` 50, `FRIEND_REQUESTS_OUTGOING_MAX` 10, `FRIEND_REQUESTS_PER_HOUR` 20,
+`CHALLENGE_MAX_INVITEES` 3, `CHALLENGE_TTL_MS` 5 min).
+
+**Who can be added:** only someone you are playing with right now (a running game) or finished a
+game with: both seated in the same match. A lobby that never started doesn't count, nor do
+aborted games, bots, guests or deleted accounts. Requests name the other player by match and
+seat, so user ids are never needed to add someone (and can't be guessed to spam strangers).
+
+### REST
+
+| Call | Body / answer |
+|---|---|
+| `GET /api/friends` | `FriendsResponse`: `{ friends: [{ userId, username, online, since }], incoming: [{ user, createdAt }], outgoing: [...], limits }` |
+| `GET /api/friends/match/:matchId` | participants only: `MatchRelationsResponse` `{ matchId, capReached, outgoingFull, seats: [{ seat, relation }] }`, relation `self` \| `ineligible` \| `none` \| `outgoing` \| `incoming` \| `friends` |
+| `POST /api/friends/requests` | `{ matchId, seat }` → `{ relation: 'outgoing' \| 'friends', user }` (`friends`: they had asked you, so it is accepted at once) |
+| `POST /api/friends/requests/:userId/accept` | → `{ relation: 'friends', user }` |
+| `POST /api/friends/requests/:userId/decline` | → 204 |
+| `DELETE /api/friends/requests/:userId` | cancel your own request → 204 |
+| `DELETE /api/friends/:userId` | remove a friend → 204 |
+| `GET /api/challenges` | `{ incoming: Challenge[], outgoing: Challenge[] }` (incoming: still waiting for your answer) |
+| `POST /api/challenges` | `{ friendIds: 1-3 ids, mode: 'ffa' \| 'teams', timeControl: '10+0' \| '3+2' }` → 201 `{ challenge }`; then `joinById(challenge.roomId, { protocolVersion })` within the 10 s seat reservation |
+| `POST /api/challenges/:id/decline` | → 204 |
+| `DELETE /api/challenges/:id` | the challenger withdraws it → 204 (the lobby stays open) |
+
+`GET /api/matches` opponents carry `friend`: the same relation for registered opponents of
+finished games, `null` otherwise. Refusals are `{ error, message }` with the codes in
+`SOCIAL_ERROR_CODES` (`NOT_ELIGIBLE`, `FRIEND_CAP` / `TARGET_FRIEND_CAP` (both sides are checked
+when a request is accepted), `OUTGOING_CAP`, `ALREADY_FRIENDS`, `ALREADY_REQUESTED`,
+`NOT_FRIENDS`, `ALREADY_IN_ROOM`, `CHALLENGE_CLOSED`, `RATE_LIMITED` (429, per user), ...).
+
+### `social` room
+
+`joinOrCreate('social')` once per signed-in app; keep it open and rejoin with backoff when it
+closes (disable the SDK's token reconnect: `room.reconnection.enabled = false`; a fresh join is
+always fine). At most 8 connections per user (more: `too_many_attempts`). The room has no state and takes no messages.
+The connection belongs to the session it was opened with: when that session ends (sign-out,
+revoked sessions, password reset, expiry; checked at once on deletion and every minute as a
+safety net) or the account is deleted, the server closes it with code 4103
+(`CLOSE_CODES.sessionEnded`), and a rejoin with the old cookie or token gets `unauthorized`.
+Server → client messages (`socialMessageSchemas`):
+
+| Type | Payload |
+|---|---|
+| `presence` | `{ userId, online }`: a friend came online or went offline (offline after a 5 s grace, so reloads don't flicker) |
+| `friendRequest` | `{ user, createdAt }`: someone asked you |
+| `friendAccepted` | `{ user, online }`: you are now friends |
+| `friendsChanged` | `{}`: refetch `GET /api/friends` (a removal, a cancelled or declined request, or another device of yours acted) |
+| `challenge` | `Challenge`: a friend challenged you (join the lobby, or decline over REST). Co-invitees who aren't your friends come without `userId` (name and status only) |
+| `challengeUpdate` | to the challenger: `{ challengeId, user, status: 'declined' \| 'joined' \| 'expired' }` |
+| `challengeClosed` | `{ challengeId, reason }`: `expired`, `started` (its game began), `closed` (the lobby closed), `cancelled` (withdrawn, or replaced by a newer challenge), or `answered` (only to an invitee whose other tab or device joined or declined: drop the prompt) |
+
+### Challenge lobbies
+
+`POST /api/challenges` creates a casual `match` room hosted by the challenger: never listed, no
+password, `state.inviteOnly = true`. Only the challenger and the invited friends can take a
+seat; anyone else gets `not_invited`. The host fills empty seats with bots as usual. The
+invitation ends after 5 minutes, when the game starts or when the lobby closes; after it
+expires (or is withdrawn) only players already seated can come back. A challenge also ends for
+an invitee when the friendship does (either side removes the other) or an account is deleted:
+the invitee gets `challengeClosed` (`cancelled`), the challenger `challengeUpdate` (`expired`),
+and the invitee can no longer join unless already seated. Ranked challenges are not
+available yet.
