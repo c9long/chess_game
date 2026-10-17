@@ -36,9 +36,11 @@ export function Kbd({ children }: { children: string }) {
 /** The board's keyboard controls (BoardView handles them on the focused canvas). */
 export function KeyboardHints({ compact = false }: { compact?: boolean }) {
   const rows: [string[], string][] = [
-    [['←', '↑', '→', '↓'], 'Move the cursor'],
+    [['←', '↑', '→', '↓'], 'Move the cursor (its square is read out)'],
     [['Enter', 'Space'], 'Pick up / place a piece'],
     [['Esc'], 'Cancel'],
+    [['+', '−'], 'Zoom in / out'],
+    [['0'], 'Show the whole board'],
   ]
   if (compact) {
     return (
@@ -65,6 +67,25 @@ export function KeyboardHints({ compact = false }: { compact?: boolean }) {
             ))}
           </dt>
           <dd>{what}</dd>
+        </div>
+      ))}
+    </dl>
+  )
+}
+
+/** How to zoom and pan the board with fingers (BoardView handles the gestures). */
+export function TouchHints() {
+  const rows: [string, string][] = [
+    ['Pinch, or double-tap an empty square', 'Zoom in / out'],
+    ['Drag with one finger off your pieces', 'Move the zoomed board'],
+    ['Magnifier button (board corner)', 'Zoom in / out with one hand'],
+  ]
+  return (
+    <dl className="flex flex-col gap-1.5 text-xs text-parchment/65">
+      {rows.map(([how, what]) => (
+        <div key={what} className="flex items-baseline justify-between gap-3">
+          <dt className="text-parchment/80">{how}</dt>
+          <dd className="shrink-0 text-right">{what}</dd>
         </div>
       ))}
     </dl>
@@ -110,6 +131,14 @@ export function BoardSettings({ id }: { id: string }) {
         Keyboard
       </h2>
       <KeyboardHints />
+      {touch ? (
+        <>
+          <h2 className="mt-3 mb-2 border-t border-parchment/10 pt-3 text-[11px] font-semibold tracking-[0.2em] text-parchment/50 uppercase">
+            Touch
+          </h2>
+          <TouchHints />
+        </>
+      ) : null}
     </section>
   )
 }

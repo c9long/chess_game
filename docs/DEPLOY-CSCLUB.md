@@ -309,8 +309,8 @@ the server does (`WEB_DIST_DIR`, set by the scripts to the release's `web/` fold
 names with a content hash under `/assets/` are cached for a year, everything else is checked
 for changes on each load, any other page address gets `index.html` (so links such as
 `/match/<id>` work), and nothing under `/api/` is ever answered by the web app. The pages
-carry a Content-Security-Policy that allows only the game's own scripts (including the code
-the board renderer generates), the rules engine (WebAssembly) and Cloudflare Turnstile.
+carry a Content-Security-Policy that allows only the game's own scripts (no `eval`), the
+rules engine (WebAssembly) and Cloudflare Turnstile.
 Releases made before this option existed have no web app, and the scripts refuse
 `SERVE_WEB_APP=true` with them.
 

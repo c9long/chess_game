@@ -264,6 +264,8 @@ function Board({
       sound: usePrefs.getState().sound,
       colorblindPatterns: usePrefs.getState().colorblindPatterns,
       reducedMotion: usePrefs.getState().reducedMotion,
+      // The turn banner and the check announcer say the viewer's own check.
+      announceOwnCheck: false,
     })
     viewRef.current = view
     if (import.meta.env.DEV) {
@@ -304,6 +306,8 @@ function Board({
   useEffect(() => {
     if (viewGen === 0) return
     viewRef.current?.setPerspective(seatName(mySeat >= 0 ? mySeat : 0), { animate: false })
+    // Announcements say "You" for the viewer's own seat.
+    viewRef.current?.setLocalSeat(mySeat >= 0 ? seatName(mySeat) : null)
   }, [viewGen, mySeat])
 
   // Follow the authoritative position. The `events` message carries the rules events that
