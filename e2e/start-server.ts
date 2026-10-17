@@ -11,7 +11,7 @@
 import { createDb } from '@game/db'
 import { resetTestDatabase } from '@game/db/migrate'
 import { seedCatalog } from '@game/db/seed'
-import { E2E_API_PORT, E2E_DATABASE_URL, E2E_WEB_ORIGIN } from './env.ts'
+import { E2E_ADMIN_USER_ID, E2E_API_PORT, E2E_DATABASE_URL, E2E_WEB_ORIGIN } from './env.ts'
 
 const port = process.env.E2E_SERVER_PORT ?? String(E2E_API_PORT)
 const webOrigin = process.env.E2E_SERVER_WEB_ORIGIN ?? E2E_WEB_ORIGIN
@@ -46,5 +46,7 @@ Object.assign(process.env, {
   // Bot pacing as in production, so the specs see bot moves spaced for their animations.
   BOT_MIN_MOVE_MS: '700',
   ABORT_ORPHANED_MATCHES: secondary ? 'false' : 'true',
+  // The review queue's admin (moderation.spec creates the account with this id).
+  ADMIN_USER_IDS: E2E_ADMIN_USER_ID,
 })
 await import('../apps/server/src/main.ts')

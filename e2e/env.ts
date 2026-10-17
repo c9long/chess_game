@@ -12,3 +12,8 @@ export const E2E_DATABASE_URL =
 /** Second, restartable API/web pair for specs that need one (restart-session). */
 export const E2E_AUX_API_PORT = E2E_API_PORT + 2
 export const E2E_AUX_WEB_PORT = E2E_WEB_PORT + 1
+/**
+ * The E2E API treats this user id as a moderation admin (ADMIN_USER_IDS). No account has it
+ * until a spec creates one (moderation.spec inserts it into the E2E database).
+ */
+export const E2E_ADMIN_USER_ID = 'e2e-admin'

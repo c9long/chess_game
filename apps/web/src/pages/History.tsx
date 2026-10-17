@@ -20,6 +20,7 @@ import {
 import { EloDelta, RankedBadge } from '../components/match/RankedBadge.tsx'
 import { seatHex } from '../components/match/seats.ts'
 import { FriendButton } from '../components/social/FriendButton.tsx'
+import { PlayerMenu } from '../components/social/PlayerMenu.tsx'
 import { Alert, Button, Spinner } from '../components/ui.tsx'
 import { api } from '../lib/api.ts'
 import { isGuest, useAppState } from '../lib/app-state.tsx'
@@ -45,7 +46,7 @@ function HistoryChip({ children }: { children: ReactNode }) {
   )
 }
 
-function MatchRow({ m }: { m: MatchListItem }) {
+function MatchRow({ m, viewerRegistered }: { m: MatchListItem; viewerRegistered: boolean }) {
   const caps = capsFrom(useSocial((s) => s.friends))
   const delta = m.ratingDelta
   const aborted = m.status === 'aborted'
@@ -130,6 +131,18 @@ function MatchRow({ m }: { m: MatchListItem }) {
                   testId="history-friend"
                 />
               ) : null}
+              {o.reportable || o.blocked !== null ? (
+                <PlayerMenu
+                  name={o.name}
+                  target={{ matchId: m.id, seat: o.seat as 0 | 1 | 2 | 3 }}
+                  viewerRegistered={viewerRegistered}
+                  targetRegistered={o.blocked !== null}
+                  blocked={o.blocked === true}
+                  reportable={o.reportable}
+                  className="ml-0.5"
+                  testId="history-menu"
+                />
+              ) : null}
             </span>
           ))}
         </p>
@@ -198,10 +211,11 @@ export function History() {
             if (!f) return m
             return {
               ...m,
-              opponents: m.opponents.map((o) => ({
-                ...o,
-                friend: f.opponents.find((x) => x.seat === o.seat)?.friend ?? o.friend,
-              })),
+              opponents: m.opponents.map((o) => {
+                const x = f.opponents.find((y) => y.seat === o.seat)
+                // `friend` and `blocked` may legitimately turn null (a block hides Add friend).
+                return x ? { ...o, friend: x.friend, blocked: x.blocked } : o
+              }),
             }
           }),
         )
@@ -284,7 +298,7 @@ export function History() {
         ) : (
           <ul className="flex flex-col gap-3" data-testid="match-history">
             {matches.map((m) => (
-              <MatchRow key={m.id} m={m} />
+              <MatchRow key={m.id} m={m} viewerRegistered={!isGuest(session?.user)} />
             ))}
           </ul>
         )}

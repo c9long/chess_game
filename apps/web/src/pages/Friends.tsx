@@ -1,5 +1,10 @@
 import { TIME_CONTROLS } from '@game/config'
-import { CHALLENGE_MAX_INVITEES, type Challenge, type Friend } from '@game/protocol'
+import {
+  type BlockedUser,
+  CHALLENGE_MAX_INVITEES,
+  type Challenge,
+  type Friend,
+} from '@game/protocol'
 import { Swords, UserPlus, Users, UserX } from 'lucide-react'
 import {
   type FormEvent,
@@ -13,10 +18,12 @@ import {
 import { Link, useNavigate } from 'react-router'
 import { MODE_LABEL, relativeTime } from '../components/match/labels.ts'
 import { ConfirmDialog, Dialog, DialogClose } from '../components/overlay.tsx'
+import { PlayerMenu } from '../components/social/PlayerMenu.tsx'
 import { Alert, Button, cx, linkButtonClass, Spinner } from '../components/ui.tsx'
 import { ApiError } from '../lib/api.ts'
 import { isGuest, useAppState } from '../lib/app-state.tsx'
 import { useMatchStore } from '../lib/match.ts'
+import { moderationErrorMessage, unblockPlayer } from '../lib/moderation.ts'
 import {
   acceptFriendRequest,
   cancelChallenge,
@@ -311,6 +318,59 @@ function FriendRow({
         >
           <UserX aria-hidden="true" className="h-4 w-4" />
         </Button>
+        <PlayerMenu
+          name={f.username}
+          target={{ userId: f.userId }}
+          userId={f.userId}
+          viewerRegistered
+          targetRegistered
+          blocked={false}
+          reportable
+          className="h-9 w-9 self-center rounded-lg"
+          testId="friend-menu"
+        />
+      </div>
+    </li>
+  )
+}
+
+/** A blocked player: Unblock (no confirmation needed; blocking again is one click away). */
+function BlockedRow({ b }: { b: BlockedUser }) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string>()
+  return (
+    <li className={rowClass} data-testid="blocked-row">
+      <Avatar name={b.username} />
+      <div className="min-w-0 flex-1">
+        <p className="truncate font-semibold">{b.username}</p>
+        <p className="text-xs text-parchment/55">Blocked · {relativeTime(b.since)}</p>
+      </div>
+      <div className="flex w-full flex-col gap-1 sm:w-auto sm:items-end">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="w-full sm:w-auto"
+          busy={busy}
+          aria-label={`Unblock ${b.username}`}
+          data-testid="blocked-unblock"
+          onClick={async () => {
+            setBusy(true)
+            setError(undefined)
+            try {
+              await unblockPlayer({ userId: b.userId })
+            } catch (err) {
+              setError(moderationErrorMessage(err))
+              setBusy(false)
+            }
+          }}
+        >
+          Unblock
+        </Button>
+        {error ? (
+          <p role="alert" className="text-xs text-seat-south-light">
+            {error}
+          </p>
+        ) : null}
       </div>
     </li>
   )
@@ -663,6 +723,17 @@ export function Friends() {
                         Wants to be friends · {relativeTime(r.createdAt)}
                       </p>
                     </div>
+                    <PlayerMenu
+                      name={r.user.username}
+                      target={{ userId: r.user.userId }}
+                      userId={r.user.userId}
+                      viewerRegistered
+                      targetRegistered
+                      blocked={false}
+                      reportable
+                      className="h-9 w-9 rounded-lg"
+                      testId="request-menu"
+                    />
                     <RequestActions
                       actions={[
                         {
@@ -689,6 +760,17 @@ export function Friends() {
                         Request sent · {relativeTime(r.createdAt)}
                       </p>
                     </div>
+                    <PlayerMenu
+                      name={r.user.username}
+                      target={{ userId: r.user.userId }}
+                      userId={r.user.userId}
+                      viewerRegistered
+                      targetRegistered
+                      blocked={false}
+                      reportable
+                      className="h-9 w-9 rounded-lg"
+                      testId="request-menu"
+                    />
                     <RequestActions
                       actions={[
                         {
@@ -752,6 +834,20 @@ export function Friends() {
               </p>
             ) : null}
           </Section>
+
+          {friends.blocked.length > 0 ? (
+            <Section title="Blocked" count={friends.blocked.length} testId="friends-blocked">
+              <p className="-mt-1 mb-3 text-sm text-parchment/60">
+                Blocked players can’t send you friend requests or challenges, and you don’t see each
+                other online. They aren’t told.
+              </p>
+              <ul className="flex flex-col gap-2">
+                {friends.blocked.map((b) => (
+                  <BlockedRow key={b.userId} b={b} />
+                ))}
+              </ul>
+            </Section>
+          ) : null}
         </>
       )}
 
