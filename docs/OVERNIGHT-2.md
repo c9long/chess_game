@@ -98,6 +98,22 @@ invitees could see the ids of strangers invited with them; the challenge prompt 
 other dialogs. The full check passed on the friends commits on their own (server 319 tests,
 web 57). Commits `ac83876`…`de6617e`.
 
+### 3. England: Prime Ministers
+Built as decided above (piece letter **M**). Rules, bots, the crowned-knight art, the civ
+picker ("Special army" tag and a one-line summary), notes on Play and in the lobby, and docs.
+England opens with 34 possible moves instead of 30.
+
+**Balance warning, worth your attention:** in bot-vs-bot free-for-all games England finishes
+first about **61%** of the time, against about 27% for the same seat with the standard army.
+Changing how much the bots value a Prime Minister barely moves that, so it's the rule itself:
+four leaders that each move like a knight or king are very hard to eliminate. In Teams there's
+no clear effect. I kept your rule as specified; a balance review is on the to-do list. Ideas if
+you want to tone it down: three Prime Ministers (keep one knight), or Prime Ministers that move
+only like a king plus one knight jump per turn, or England loses when any two are captured.
+
+Commits `03a45a1`…`c138851`. The full check passed on these commits on their own (server 356
+tests, web 96). A review pass (rules attack tests + visual check) is still running.
+
 ### 6. Docker (M0 leftover): verified for real
 Both images build, and a local test stack migrated the database, answered `/api/health` and
 played a full solo game against the bot engine in its own container. A real run turned up
