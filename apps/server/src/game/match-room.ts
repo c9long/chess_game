@@ -921,6 +921,17 @@ export class MatchRoom
     return 'abandon'
   }
 
+  /**
+   * Whether this is a singleplayer FFA game, still running, whose player no longer takes
+   * turns (leader captured, stalemated, resigned or abandoned). Teams is left alone: a team
+   * out already ends the game, and a defeated player whose partner plays on hasn't lost.
+   */
+  private soloPlayerOut(game: Game): boolean {
+    if (!this.solo || this.state.mode !== 'ffa' || game.snapshot().isOver) return false
+    const human = this.state.seats.findIndex((s) => s.occupied && !s.isBot)
+    return human !== -1 && !game.drawVoters()[human]
+  }
+
   private takesTurns(seat: SeatNum): boolean {
     const status = this.game?.snapshot().statuses[seat]
     return status === 'active' || status === 'defeated'
@@ -1070,6 +1081,11 @@ export class MatchRoom
     } else {
       events = game.applyAgreedDraw()
     }
+    // Singleplayer FFA: once the player is out, the game ends there instead of being played
+    // out between the bots. It ends as an agreed draw (the bots share 1st, the player keeps
+    // their defeat-order place), recorded with its own end reason.
+    const playerEliminated = kind !== 'agreed_draw' && this.soloPlayerOut(game)
+    if (playerEliminated) events = [...events, ...game.applyAgreedDraw()]
     const snap = game.snapshot()
     // Abandons and resigns can come off-turn: the running clock then keeps running.
     const offTurnKind = kind === 'abandon' || kind === 'resign'
@@ -1092,7 +1108,8 @@ export class MatchRoom
     this.syncClockState(now)
 
     // Persist: one row for the action, plus derived rows (passes, defeats, game end). An
-    // agreed draw's action row is its game_end row (after the deciding draw_response).
+    // agreed draw's action row is its game_end row (after the deciding draw_response); a
+    // solo player's elimination ends the game with such a row too (replayed as a draw).
     const promotion = events.some((e) => e.type === 'promotion')
     if (kind !== 'agreed_draw') {
       const actionType: MatchEventType = kind === 'move' ? (promotion ? 'promotion' : 'move') : kind
@@ -1123,14 +1140,15 @@ export class MatchRoom
         this.record(d, 'defeat', { actionSeq: s.actionSeq, reason: e.reason, derived: true }, null)
       } else if (e.type === 'game_ended') {
         // A Teams resignation ends the game as a team win; say how it was won.
-        endReason =
-          kind === 'resign' && e.outcome.result.type === 'teams_winner'
+        endReason = playerEliminated
+          ? 'player_eliminated'
+          : kind === 'resign' && e.outcome.result.type === 'teams_winner'
             ? 'team_resigned'
             : endReasonOf(e.outcome)
         this.record(
           null,
           'game_end',
-          kind === 'agreed_draw'
+          kind === 'agreed_draw' || playerEliminated
             ? { actionSeq: s.actionSeq, outcome: e.outcome, endReason, agreedDraw: true }
             : { actionSeq: s.actionSeq, outcome: e.outcome, endReason, derived: true },
           null,
@@ -1266,8 +1284,8 @@ export class MatchRoom
    * A bot seat's turn: ask bot-service, with a deadline taken from the bot's own clock; if
    * it fails or the deadline passes, play a quick local move instead, so a slow or hung
    * bot-service never makes a bot lose on time. While a human still takes turns or watches,
-   * bots play at their level with pacing (an eliminated solo player watches the bots finish,
-   * and in Teams their partner's result is still theirs). Once nobody is left, bots play
+   * bots play at their level with pacing (in Teams a knocked-out player's partner's result
+   * is still theirs; a solo FFA game ends when its player is out). Once nobody is left, bots play
    * quick local moves only (no bot-service capacity or waiting spent on a game nobody sees).
    */
   private maybeBotTurn() {

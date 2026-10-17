@@ -442,13 +442,16 @@ describe('solo (untimed) games', () => {
     await p.leave()
   })
 
-  it('a resign removes the player in FFA (4th); the bots finish without them', async () => {
+  it('a resign removes the player in FFA (4th) and ends the game there', async () => {
     const p = await createSolo(await guest(h), { mode: 'ffa' })
     await p.waitState((s) => s.phase === 'in_game', 5_000, 'in game')
     p.send('resign')
     await p.waitState((s) => s.seats[0]?.status === 'removed')
-    const over = await p.waitMessage('gameOver', () => true, 30_000)
-    expect(over.placements[0]).toBe(4)
+    const over = await p.waitMessage('gameOver', () => true, 5_000)
+    expect(over.placements).toEqual([4, 1, 1, 1])
+    expect(over.endReason).toBe('player_eliminated')
+    // Only the resign was played: the bots didn't play the game out.
+    expect(p.of('events').map((e) => e.action)).toEqual(['resign'])
     await p.leave()
   })
 })

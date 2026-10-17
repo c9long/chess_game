@@ -1,12 +1,15 @@
 /**
  * Singleplayer rooms (`kind: 'solo'`): the creator at South against three bots, untimed,
- * unlisted, unrated. Plus bot pacing (BOT_MIN_MOVE_MS) in solo and timed games.
+ * unlisted, unrated; an FFA game ends as soon as its player is out (end reason
+ * 'player_eliminated'). Plus bot pacing (BOT_MIN_MOVE_MS) in solo and timed games.
  */
 import { matchEvents, matches, matchPlayers, ratings } from '@game/db'
 import { CIV_SLUGS, type MatchListResponse, PROTOCOL_VERSION, ROOM_NAMES } from '@game/protocol'
+import { Game } from '@game/rules'
 import { asc, eq } from 'drizzle-orm'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { pickBotCivs } from '../game/match-room.ts'
+import { resimulate } from '../game/persistence.ts'
 import {
   type Browser,
   createLobby,
@@ -25,6 +28,21 @@ import {
   startGameHarness,
   waitFor,
 } from './game-harness.ts'
+
+/** South's leader move furthest up the board, else the greedy move. */
+function recklessMove(position: string): string {
+  const game = Game.fromPosition(position)
+  try {
+    const rank = (sq: string) => Number(sq.slice(1))
+    const leader = game
+      .legalMoves()
+      .filter((m) => m.piece === 'king' && !m.capture)
+      .sort((a, b) => rank(b.to) - rank(a.to))[0]
+    return leader?.notation ?? (greedyMove(position) as string)
+  } finally {
+    game.free()
+  }
+}
 
 /** Arrival time (ms) of each `events` message received so far, by seq. */
 function eventTimes(p: Player): Map<number, number> {
@@ -51,6 +69,53 @@ describe('pickBotCivs', () => {
 describe('solo rooms', () => {
   let h: GameHarness
   const bots = new FakeBotClient()
+  const db = () => h.server.ctx.db
+
+  async function finishedMatch(matchId: string) {
+    let m: typeof matches.$inferSelect | undefined
+    const deadline = Date.now() + 20_000
+    while (m?.status !== 'finished' && m?.status !== 'aborted' && Date.now() < deadline) {
+      await sleep(50)
+      ;[m] = await db().select().from(matches).where(eq(matches.id, matchId))
+    }
+    return m
+  }
+
+  const rowsOf = (matchId: string) =>
+    db()
+      .select()
+      .from(matchEvents)
+      .where(eq(matchEvents.matchId, matchId))
+      .orderBy(asc(matchEvents.seq))
+
+  async function placementsOf(matchId: string) {
+    const rows = await db()
+      .select({ placement: matchPlayers.placement })
+      .from(matchPlayers)
+      .where(eq(matchPlayers.matchId, matchId))
+      .orderBy(asc(matchPlayers.seat))
+    return rows.map((r) => r.placement)
+  }
+
+  /**
+   * Plays South's turns walking its leader up the board (furthest-forward leader move, else
+   * the greedy move) until `done` holds for the state or the game ends. Greedy bots take a
+   * leader whenever they can, so South is knocked out quickly.
+   */
+  async function playRecklessly(p: Player, done: (s: Player['state']) => boolean) {
+    let lastSent = -1
+    const deadline = Date.now() + 30_000
+    while (Date.now() < deadline) {
+      const s = p.state
+      if (s.phase !== 'in_game' || done(s)) return
+      if (s.seatToMove === 0 && s.actionSeq !== lastSent) {
+        lastSent = s.actionSeq
+        p.send('move', { move: recklessMove(s.positionString) })
+      }
+      await sleep(5)
+    }
+    throw new Error('South was not knocked out in time')
+  }
 
   beforeAll(async () => {
     // A tiny dev clock: an untimed game must ignore it (nobody can flag).
@@ -193,26 +258,132 @@ describe('solo rooms', () => {
     await p.leave()
   })
 
-  it('abandons the player after the reconnect grace; the bots finish the game', async () => {
+  it('abandons the player after the reconnect grace, which ends the FFA game there', async () => {
     const p = await createSolo(await guest(h))
     await p.waitState((s) => s.phase === 'in_game')
     const matchId = p.state.matchId
     p.drop()
-    const db = h.server.ctx.db
-    let m: typeof matches.$inferSelect | undefined
-    const deadline = Date.now() + 20_000
-    while (m?.status !== 'finished' && Date.now() < deadline) {
-      await sleep(50)
-      ;[m] = await db.select().from(matches).where(eq(matches.id, matchId))
-    }
-    expect(m).toMatchObject({ status: 'finished', timeControl: 'untimed', rated: false })
-    const rows = await db
-      .select()
-      .from(matchEvents)
-      .where(eq(matchEvents.matchId, matchId))
-      .orderBy(asc(matchEvents.seq))
+    const m = await finishedMatch(matchId)
+    expect(m).toMatchObject({
+      status: 'finished',
+      timeControl: 'untimed',
+      rated: false,
+      endReason: 'player_eliminated',
+    })
+    const rows = await rowsOf(matchId)
     expect(rows.find((r) => r.type === 'abandon')?.seat).toBe(0)
     expect(rows.some((r) => r.type === 'timeout')).toBe(false)
+    // Nothing after the abandon: the bots don't play on.
+    const ab = rows.findIndex((r) => r.type === 'abandon')
+    expect(rows.slice(ab + 1).map((r) => r.type)).toEqual(['defeat', 'game_end'])
+    expect(await placementsOf(matchId)).toEqual([4, 1, 1, 1])
+    // Replaying the rows rebuilds the same ending (the recorder already compared it with the
+    // live position before marking the match finished).
+    const replayed = Game.fromPosition(await resimulate(db(), matchId))
+    expect(replayed.snapshot().outcome).toEqual({
+      result: { type: 'ffa_agreed_draw', survivors: [false, true, true, true] },
+      placements: [4, 1, 1, 1],
+    })
+    replayed.free()
+  })
+
+  it('a resign in FFA ends the game at once: the player is eliminated, the bots share 1st', async () => {
+    const user = await registered(h)
+    const p = await createSolo(user, { mode: 'ffa' })
+    await p.waitState((s) => s.phase === 'in_game' && s.seatToMove === 0, 5_000, 'my turn')
+    const matchId = p.state.matchId
+    p.send('move', { move: greedyMove(p.state.positionString) })
+    await p.waitState((s) => s.seatToMove === 0 && s.actionSeq === 4, 5_000, 'my turn again')
+    const callsBefore = bots.calls
+    p.send('resign')
+    const over = await p.waitMessage('gameOver', () => true, 5_000)
+    expect(over.endReason).toBe('player_eliminated')
+    expect(over.result.type).toBe('ffa_agreed_draw')
+    expect(over.placements).toEqual([4, 1, 1, 1])
+    expect(over.rated).toBe(false)
+    // One `events` message: the resign, with the game end in it.
+    const last = p.of('events').at(-1)
+    expect(last?.action).toBe('resign')
+    expect(last?.seatToMove).toBe(-1)
+    expect(last?.events.map((e) => e.type)).toContain('game_ended')
+    await p.waitState((s) => s.phase === 'finished')
+    expect(p.state.result).toMatchObject({
+      type: 'ffa_agreed_draw',
+      endReason: 'player_eliminated',
+    })
+    // No bot was asked for a move after the resign.
+    await sleep(200)
+    expect(bots.calls).toBe(callsBefore)
+
+    const m = await finishedMatch(matchId)
+    expect(m).toMatchObject({ status: 'finished', endReason: 'player_eliminated' })
+    const rows = await rowsOf(matchId)
+    const end = rows.filter((r) => r.type === 'game_end')
+    expect(end).toHaveLength(1)
+    expect(end[0]?.payload).toMatchObject({
+      agreedDraw: true,
+      endReason: 'player_eliminated',
+      outcome: { result: { type: 'ffa_agreed_draw' }, placements: [4, 1, 1, 1] },
+    })
+    expect(rows.at(-1)?.type).toBe('game_end')
+    const players = await db()
+      .select()
+      .from(matchPlayers)
+      .where(eq(matchPlayers.matchId, matchId))
+      .orderBy(asc(matchPlayers.seat))
+    expect(players.map((x) => x.finalStatus)).toEqual(['removed', 'active', 'active', 'active'])
+    expect(players[0]?.defeatReason).toBe('resign')
+    expect(await resimulate(db(), matchId)).toBe(p.state.positionString)
+
+    const list = (await user.get('/api/matches')).body as unknown as MatchListResponse
+    expect(list.matches.find((x) => x.id === matchId)).toMatchObject({
+      placement: 4,
+      endReason: 'player_eliminated',
+    })
+    await p.leave()
+  })
+
+  it('a captured leader in FFA ends the game at once, with the player’s defeat-order place', async () => {
+    const p = await createSolo(await guest(h), { mode: 'ffa' })
+    await p.waitState((s) => s.phase === 'in_game')
+    const matchId = p.state.matchId
+    await playRecklessly(p, (s) => s.seats[0]?.status !== 'active')
+    const over = await p.waitMessage('gameOver', () => true, 5_000)
+    const defeat = p
+      .of('events')
+      .flatMap((e) => e.events)
+      .find((e) => e.type === 'defeat' && e.seat === 'south')
+    expect(defeat).toMatchObject({ reason: 'leader_captured' })
+    expect(over.endReason).toBe('player_eliminated')
+    expect(over.result.type).toBe('ffa_agreed_draw')
+    // The bots still in play share 1st; the player (and any bot out before them) keep their
+    // reverse-defeat-order places.
+    const myPlace = over.placements[0] ?? 0
+    expect(myPlace).toBeGreaterThan(1)
+    expect(over.placements.filter((x) => x === 1)).toHaveLength(4 - myPlace + 1)
+    await p.waitState((s) => s.phase === 'finished')
+    expect(await finishedMatch(matchId)).toMatchObject({ endReason: 'player_eliminated' })
+    expect(await resimulate(db(), matchId)).toBe(p.state.positionString)
+    await p.leave()
+  })
+
+  it('Teams: a defeated player whose bot partner still plays goes on', async () => {
+    const p = await createSolo(await guest(h), { mode: 'teams' })
+    await p.waitState((s) => s.phase === 'in_game')
+    await playRecklessly(p, (s) => s.seats[0]?.status !== 'active')
+    const st = p.state
+    if (st.phase === 'in_game') {
+      // Knocked out but the team isn't: the game goes on (a DEFEATED seat still takes turns).
+      expect(st.seats[0]?.status).toBe('defeated')
+      const seq = st.actionSeq
+      await playRecklessly(p, (s) => s.actionSeq >= seq + 8)
+      expect(p.state.actionSeq >= seq + 8 || p.state.phase === 'finished').toBe(true)
+      expect(p.of('gameOver').at(0)?.endReason).not.toBe('player_eliminated')
+    } else {
+      // The same capture knocked the whole team out: an ordinary Teams win.
+      expect((await p.waitMessage('gameOver')).endReason).toBe('team_eliminated')
+    }
+    await p.leave()
   })
 
   it('saves an untimed, unrated match with no rating rows, shown in the history', async () => {

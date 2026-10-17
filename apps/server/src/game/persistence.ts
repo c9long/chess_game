@@ -36,8 +36,9 @@ export type MatchEventType =
 
 /**
  * Event types that are game actions; replaying them in seq order rebuilds the game. An
- * agreed draw is replayed from its `game_end` row (payload `agreedDraw: true`); every other
- * `game_end` row is derived from the action before it.
+ * agreed draw is replayed from its `game_end` row (payload `agreedDraw: true`, also used when
+ * a solo FFA game ends at its player's elimination, end reason `player_eliminated`); every
+ * other `game_end` row is derived from the action before it.
  */
 export const ACTION_EVENT_TYPES = ['move', 'promotion', 'timeout', 'abandon', 'resign'] as const
 // A Teams resignation is one `resign` action (seat: the proposer) replayed as

@@ -83,7 +83,10 @@ export const ResultState = schema(
     winnerSeat: t.int8().default(-1),
     /** Teams: 'south_north' or 'west_east'. */
     winnerTeam: t.string().default(''),
-    /** last_standing, team_eliminated, move_limit, agreed_draw, server_shutdown, ... */
+    /**
+     * last_standing, team_eliminated, move_limit, agreed_draw, player_eliminated (a solo FFA
+     * game ended at its player's elimination), server_shutdown, ...
+     */
     endReason: t.string().default(''),
     /** Placement per seat (1 = best; ties share). */
     placements: t.array('uint8'),
