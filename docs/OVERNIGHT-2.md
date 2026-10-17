@@ -205,6 +205,21 @@ old session accepts a password, authenticator code, backup code or passkey. The 
 issues, 3 serious (a stale session on a passwordless account could mint its own two-step proof
 to delete the account; the attempt limit could be raced), all fixed.
 
+### 13. From the to-do list: move log, replays, rematch, spectating
+Commits `5361be1`…`f5a9099`:
+- **Move log:** every move by round, one column per seat, in the engine's notation (captures,
+  checks, passes, defeats, the result); a side panel on wide screens, a "Moves" bar on phones.
+- **Replays:** History → Replay on any finished 16×16 game you played. The browser re-plays it
+  with the rules engine and confirms it ends on the recorded position; step, scrub, play at
+  0.5–4×, keyboard shortcuts. 12×12 games say they can't be replayed.
+- **Rematch:** on the result screen; the other humans have 60 s to accept, bots come along,
+  seats are held for the players who accepted.
+- **Spectating:** "Watch" on lobbies (also before they start) and on friends' games; at most 20
+  accounts per game; **ranked games are shown two rounds late** with live hints hidden, so a
+  watcher can't feed moves to a player.
+- A review found 26 issues; 24 fixed. Left as a to-do: players already knocked out of a ranked
+  game still see the rest of it live (being handled in the next batch).
+
 ### Test-suite fixes along the way
 - The full verification of everything committed (Rust format/lint/tests, `pnpm check`, all
   browser tests, the 49 board specs) found one real flake: the landing page's demo-board test
