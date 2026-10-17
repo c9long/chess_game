@@ -13,7 +13,7 @@ Rules version 2 is version 1 (with resigning and draws by agreement) on a bigger
 - The board has 16 files (columns), **a** to **p**, and 16 ranks (rows), **1** to **16**. Every square is playable, including the empty 4×4 corners. Square a1 is dark, as in normal chess.
 - Four players sit on the four sides: **South** (bottom), **West** (left), **North** (top) and **East** (right).
 - Turns go **clockwise: South → West → North → East**, then back to South. Players who no longer take turns are skipped.
-- Almost every army is the same: 8 pawns, 2 rooks, 2 knights, 2 bishops, 1 queen and 1 king. Your civilization is shown as an emblem next to your name, and for most civilizations that is all it changes. **England** fields a special army (see [Civilizations with special armies](#civilizations-with-special-armies)).
+- Almost every army is the same: 8 pawns, 2 rooks, 2 knights, 2 bishops, 1 queen and 1 king. Your civilization is shown as an emblem next to your name, and for most civilizations that is all it changes. **England** has a civilization ability, Magna Carta (see [Civilization abilities](#civilization-abilities)).
 
 ### Game modes
 
@@ -31,7 +31,7 @@ Each army sits centered on its own edge, with four empty squares at each end of 
 | West | a5 Rook, a6 Knight, a7 Bishop, **a8 Queen**, a9 King, a10 Bishop, a11 Knight, a12 Rook | b5 to b12 | East (file p) |
 | East | p5 Rook, p6 Knight, p7 Bishop, **p8 Queen**, p9 King, p10 Bishop, p11 Knight, p12 Rook | o5 to o12 | West (file a) |
 
-That is the standard army. England's Prime Ministers stand on its king, queen and knight squares instead (see [below](#civilizations-with-special-armies)).
+That is the standard army. England's Prime Ministers stand on its king, queen and knight squares instead (see [below](#civilization-abilities)).
 
 As in normal chess, each queen starts on her own color, so opposite queens face each other. South and West are the "light" armies (queen on a light square); North and East are the "dark" armies.
 
@@ -86,13 +86,13 @@ While the indicator is on, your king's square has a pulsing orange-red ring with
 
 ---
 
-## Civilizations with special armies
+## Civilization abilities
 
-A civilization's rules have a **version**. Most civilizations are at version 1 (the standard army). When a civilization gets new rules it gets a new version, and new games use the newest one; games already played keep the version they were played with, so your match history always replays exactly.
+A civilization may have **abilities** that change how it plays; the rest play the standard army. In the game, the civilization list names each civilization's abilities, and its card (under the picker, and from any seat in the lobby or the game) explains them. A civilization's rules have a **version**. Most civilizations are at version 1 (the standard army). When a civilization gets new rules it gets a new version, and new games use the newest one; games already played keep the version they were played with, so your match history always replays exactly.
 
-### England: Prime Ministers (version 2)
+### England: Magna Carta (version 2)
 
-England has **no king, no queen and no knights**. Instead, **four Prime Ministers** start on the king's, the queen's and both knights' squares. South's England army is: e1 Rook, **f1 Prime Minister**, g1 Bishop, **h1 Prime Minister**, **i1 Prime Minister**, j1 Bishop, **k1 Prime Minister**, l1 Rook, pawns e2 to l2 (the other seats mirror this along their own back line).
+England's ability is called **Magna Carta**. England has **no king, no queen and no knights**. Instead, **four Prime Ministers** start on the king's, the queen's and both knights' squares. South's England army is: e1 Rook, **f1 Prime Minister**, g1 Bishop, **h1 Prime Minister**, **i1 Prime Minister**, j1 Bishop, **k1 Prime Minister**, l1 Rook, pawns e2 to l2 (the other seats mirror this along their own back line).
 
 - **Moves:** a Prime Minister moves like a knight **or** like a king: an L-shaped leap, or one step in any direction. It captures the same way. It never castles and never moves two squares.
 - **Leaders:** all four are leaders. Capturing one is not a defeat; England is knocked out only when the **fourth** is captured (or, as for anyone, by stalemate, running out of time, leaving or resigning). You may leave a Prime Minister under attack, as with a king.
