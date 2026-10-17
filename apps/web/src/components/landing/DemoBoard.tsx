@@ -58,7 +58,13 @@ export default function DemoBoard({ onReady }: { onReady?: () => void }) {
     let round = Math.floor(Math.random() * DEMO_GAMES.length)
     let onScreen = true
     const still = prefersReducedMotion()
-    const view = new BoardView({ sound: false, reducedMotion: still })
+    // Decorative and inert: no zoom button, no live regions.
+    const view = new BoardView({
+      sound: false,
+      reducedMotion: still,
+      zoomButton: false,
+      announce: false,
+    })
 
     const newGame = () => {
       game?.free()

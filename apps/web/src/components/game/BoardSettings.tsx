@@ -54,6 +54,10 @@ export function KeyboardHints({ compact = false }: { compact?: boolean }) {
         <span className="flex items-center gap-1">
           <Kbd>Esc</Kbd> cancel
         </span>
+        <span className="flex items-center gap-1">
+          <Kbd>+</Kbd>
+          <Kbd>−</Kbd> zoom
+        </span>
       </span>
     )
   }

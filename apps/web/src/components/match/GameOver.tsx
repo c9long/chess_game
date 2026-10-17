@@ -102,11 +102,18 @@ export function GameOver({
   defeatReasons,
   defeatLabels = null,
   reduceMotion = false,
+  finalMoves = '',
   onClose,
   onLeave,
   friendAction,
 }: {
   feed: MatchFeed
+  /**
+   * The board's last announcement (the moves that ended the game), repeated as the dialog's
+   * description: a screen reader that silences live regions outside a modal dialog still
+   * hears which move ended the game.
+   */
+  finalMoves?: string
   /** Per seat: how it was knocked out (rules defeat reason), or null. */
   defeatReasons: (string | null)[] | null
   /** Per seat: display text for its defeat (see `defeatReasonLabel`), or null for the default. */
@@ -190,6 +197,8 @@ export function GameOver({
   const delta = myRating ? myRating.after - myRating.before : 0
   const panel = useRef<HTMLElement>(null)
   useDialogFocus(panel, onClose)
+  // The heading already says the result: only the moves (and defeats) are repeated.
+  const lastMoves = finalMoves.replace(/\s*Game over\..*$/s, '').trim()
 
   return (
     <motion.div
@@ -197,6 +206,7 @@ export function GameOver({
       role="dialog"
       aria-modal="true"
       aria-labelledby="game-over-title"
+      aria-describedby={lastMoves ? 'game-over-moves' : undefined}
       data-testid="game-over"
       initial={reduceMotion ? false : { opacity: 0 }}
       animate={{ opacity: 1 }}
@@ -256,6 +266,11 @@ export function GameOver({
             {subline ? (
               <p className="mt-2 text-sm text-parchment/65" data-testid="game-over-subline">
                 {subline}
+              </p>
+            ) : null}
+            {lastMoves ? (
+              <p id="game-over-moves" className="sr-only" data-testid="game-over-moves">
+                Last moves: {lastMoves}
               </p>
             ) : null}
           </div>

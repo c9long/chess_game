@@ -13,12 +13,13 @@ export const SELF_CHECK_TEXT = 'Your leader is in check'
  * Whose turn it is. "Your move" gets a short pop and a gold glow when the turn arrives; when
  * the viewer's leader is under attack at that moment it reads "Check! Your leader is under
  * attack" in the danger colour instead (the check indicator; only ever for the viewer's own
- * seat). An opponent's turn names them in their seat colour (shown, not announced: the board
- * announces every move); after the viewer's own move left
+ * seat). An opponent's turn names them in their seat colour; after the viewer's own move left
  * their leader attacked (`selfCheck`), a "Your leader is in check" pill sits beside it (its own
- * row in the desktop side panel), never over the board. The pill is visual only: the host
- * announces it through its own live region. The texts "Your move", the check text and
- * "Game over" are exact (tests and screen readers rely on them).
+ * row in the desktop side panel), never over the board. The banner is not a live region: the
+ * board's own announcer reads every move, then "Your move" (with the check) when the turn
+ * arrives and the result at the end, in that order, so nothing here runs ahead of the moves
+ * that caused it. The pill is visual only: the host announces it through its own live region.
+ * The texts "Your move", the check text and "Game over" are exact (tests rely on them).
  */
 export function TurnBanner({
   finished,
@@ -118,12 +119,6 @@ export function TurnBanner({
           </>
         ) : null}
       </p>
-      {/* Screen readers hear only the turn arriving, a check and the end here: the board's
-          own live region already says every move, so "<seat> is thinking" for each bot would
-          only add noise. The banner text itself stays readable when browsing. */}
-      <span className="sr-only" aria-live="polite" data-testid="turn-announcer">
-        {finished ? 'Game over' : myTurn ? (inCheck ? CHECK_TEXT : 'Your move') : ''}
-      </span>
       {!finished && !myTurn && selfCheck ? (
         <p
           aria-hidden="true"

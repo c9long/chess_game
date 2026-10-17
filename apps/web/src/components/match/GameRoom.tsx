@@ -218,11 +218,14 @@ function Board({
   room,
   feed,
   check,
+  onFinalMoves,
 }: {
   room: MatchRoom
   feed: MatchFeed
   /** The viewer's check indicator (from `useCheckNotice`). */
   check: CheckNotice
+  /** The board's last announcement once the game is over (repeated in the result dialog). */
+  onFinalMoves: (text: string) => void
 }) {
   const host = useRef<HTMLDivElement>(null)
   const viewRef = useRef<BoardView | null>(null)
@@ -236,6 +239,8 @@ function Board({
   // The keyboard hint shows once, the first time the board gets keyboard focus.
   const [hint, setHint] = useState<'idle' | 'shown' | 'done'>('idle')
   const frame = useRef<HTMLDivElement>(null)
+  const finalMoves = useRef(onFinalMoves)
+  finalMoves.current = onFinalMoves
 
   useEffect(() => {
     const el = frame.current
@@ -264,8 +269,12 @@ function Board({
       sound: usePrefs.getState().sound,
       colorblindPatterns: usePrefs.getState().colorblindPatterns,
       reducedMotion: usePrefs.getState().reducedMotion,
-      // The turn banner and the check announcer say the viewer's own check.
+      // A check made while it isn't the viewer's turn waits for their turn ("Your move. Check:
+      // ..."), and the check announcer says a self-check (docs/RULES.md "Check indicators").
       announceOwnCheck: false,
+      onAnnounce: (text) => {
+        if (view.isOver) finalMoves.current(text)
+      },
     })
     viewRef.current = view
     if (import.meta.env.DEV) {
@@ -363,9 +372,10 @@ function Board({
         </div>
       )}
       {hint === 'shown' ? (
+        // Visual only: the board's own focus announcement already says how to play.
         <div
           className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center px-3"
-          role="status"
+          aria-hidden="true"
         >
           <span className="rounded-full border border-parchment/15 bg-ink/90 px-3 py-1.5 text-xs text-parchment/80 shadow-lg shadow-black/40 backdrop-blur">
             <KeyboardHints compact />
@@ -492,6 +502,7 @@ export function GameRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) {
   const systemReduced = useReducedMotion()
   const reduceMotion = Boolean(systemReduced) || prefs.reducedMotion
   const [showResult, setShowResult] = useState(true)
+  const [finalMoves, setFinalMoves] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [confirmLeave, setConfirmLeave] = useState(false)
   const leaveButton = useRef<HTMLButtonElement>(null)
@@ -610,7 +621,7 @@ export function GameRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) {
     >
       <div className="order-2 flex min-w-0 justify-center wide:order-none">
         {ready ? (
-          <Board room={room} feed={feed} check={check} />
+          <Board room={room} feed={feed} check={check} onFinalMoves={setFinalMoves} />
         ) : (
           <div className="flex aspect-square w-[var(--board)] items-center justify-center gap-3 text-parchment/60">
             <Spinner /> Loading the game engine…
@@ -647,13 +658,12 @@ export function GameRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) {
           />
           {/* Always mounted, so screen readers announce the self-check when its text appears
               (the visual pill beside the banner is aria-hidden), and, for a seat with several
-              leaders, which of them are attacked. */}
+              leaders, which of them are attacked. A check on the viewer's turn is read by the
+              board after the moves that made it ("Your move. Check: ..."). */}
           <p className="sr-only" role="status" aria-live="polite" data-testid="check-announcer">
             {!myTurn && check === 'self_check'
               ? [SELF_CHECK_TEXT, checkLeaders].filter(Boolean).join('. ')
-              : myTurn && check === 'check'
-                ? (checkLeaders ?? '')
-                : ''}
+              : ''}
           </p>
         </div>
 
@@ -732,6 +742,7 @@ export function GameRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) {
           defeatReasons={seatInfo?.defeatReasons ?? null}
           defeatLabels={seatInfo?.defeatLabels ?? null}
           reduceMotion={reduceMotion}
+          finalMoves={finalMoves}
           onClose={() => setShowResult(false)}
           onLeave={leave}
           friendAction={(i) => friendAction(i, false)}
