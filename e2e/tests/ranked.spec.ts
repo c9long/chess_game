@@ -1,7 +1,7 @@
 import { expect, type Page, test } from '@playwright/test'
 import postgres from 'postgres'
 import { E2E_DATABASE_URL } from '../env.ts'
-import { signUpAndVerify, startAsGuest } from './helpers.ts'
+import { chooseCiv, signUpAndVerify, startAsGuest, YOUR_TURN } from './helpers.ts'
 
 const SHOTS = process.env.E2E_SCREENSHOTS
 
@@ -92,12 +92,12 @@ test('four registered players finish a ranked game and see their Elo changes', a
     await expect(p.getByRole('heading', { name: 'Ranked four' })).toBeVisible()
   }
   for (const [i, p] of pages.entries()) {
-    await p.getByTestId(`civ-${civs[i]}`).click()
+    await chooseCiv(p, civs[i] as string)
     await p.getByTestId('ready').click()
   }
   await expect(south.getByTestId('start-game')).toBeEnabled()
   await south.getByTestId('start-game').click()
-  await expect(south.getByTestId('turn-banner')).toHaveText('Your move', { timeout: 20_000 })
+  await expect(south.getByTestId('turn-banner')).toHaveText(YOUR_TURN, { timeout: 20_000 })
   // The game header carries the Ranked badge.
   for (const p of pages) await expect(p.getByTestId('ranked-badge').first()).toBeVisible()
   await south.waitForTimeout(600)

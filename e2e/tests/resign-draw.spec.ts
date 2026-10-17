@@ -1,5 +1,5 @@
 import { expect, type Page, test } from '@playwright/test'
-import { playMove, startAsGuest } from './helpers.ts'
+import { chooseCiv, playMove, startAsGuest, YOUR_TURN } from './helpers.ts'
 
 const SHOTS = process.env.E2E_SCREENSHOTS
 
@@ -8,11 +8,11 @@ async function startSolo(page: Page, mode: 'Free-for-all' | 'Teams 2v2', civ = '
   await startAsGuest(page)
   await page.getByTestId('play-vs-bots').click()
   const panel = page.getByTestId('vs-bots')
-  await panel.getByTestId(`civ-${civ}`).click()
+  await chooseCiv(page, civ, panel)
   await panel.getByRole('button', { name: mode }).click()
   await panel.getByTestId('start-solo').click()
   await expect(page).toHaveURL(/\/match\//)
-  await expect(page.getByTestId('turn-banner')).toHaveText('Your move', { timeout: 20_000 })
+  await expect(page.getByTestId('turn-banner')).toHaveText(YOUR_TURN, { timeout: 20_000 })
   await page.waitForFunction(
     () => 'squareToClient' in ((window as never as { __board?: object }).__board ?? {}),
   )
@@ -58,12 +58,12 @@ test('asking the bot teammate to resign in an even Teams position: it declines a
   // South keeps playing and must make two more moves before asking again.
   await expect(resign).toBeDisabled()
   await expect(page.getByTestId('resign-hint')).toHaveText('You can ask again after 2 more moves.')
-  await expect(page.getByTestId('turn-banner')).toHaveText('Your move')
+  await expect(page.getByTestId('turn-banner')).toHaveText(YOUR_TURN)
   await playMove(page, 'e2', 'e4')
-  await expect(page.getByTestId('turn-banner')).toHaveText('Your move', { timeout: 30_000 })
+  await expect(page.getByTestId('turn-banner')).toHaveText(YOUR_TURN, { timeout: 30_000 })
   await expect(page.getByTestId('resign-hint')).toHaveText('You can ask again after 1 more move.')
   await playMove(page, 'i1', 'h3')
-  await expect(page.getByTestId('turn-banner')).toHaveText('Your move', { timeout: 30_000 })
+  await expect(page.getByTestId('turn-banner')).toHaveText(YOUR_TURN, { timeout: 30_000 })
   await expect(page.getByTestId('resign-hint')).toHaveCount(0)
   await expect(resign).toBeEnabled()
 })
@@ -100,12 +100,12 @@ test('Teams with two people and two bots: the teammate agrees to resign and the 
   const southName =
     (await south.getByTestId('seat-south').getByTestId('seat-name').textContent()) ?? ''
   for (const [i, p] of pages.entries()) {
-    await p.getByTestId(`civ-${['mali', 'japan'][i]}`).click()
+    await chooseCiv(p, ['mali', 'japan'][i] as string)
     await p.getByTestId('ready').click()
   }
   await expect(south.getByTestId('start-game')).toBeEnabled()
   await south.getByTestId('start-game').click()
-  await expect(south.getByTestId('turn-banner')).toHaveText('Your move', { timeout: 20_000 })
+  await expect(south.getByTestId('turn-banner')).toHaveText(YOUR_TURN, { timeout: 20_000 })
   for (const p of pages) await expect(p.getByTestId('board')).toBeVisible()
 
   // North's own request arriving while South's confirm dialog is open closes the dialog (its
@@ -183,13 +183,13 @@ test('offering a draw to bots in an even position: they decline, and the offer c
   await expect(card).toHaveCount(0, { timeout: 10_000 })
   await expect(offer).toBeDisabled()
   await expect(page.getByTestId('draw-hint')).toHaveText('You can offer again after 2 more moves.')
-  await expect(page.getByTestId('turn-banner')).toHaveText('Your move')
+  await expect(page.getByTestId('turn-banner')).toHaveText(YOUR_TURN)
 
   await playMove(page, 'e2', 'e4')
-  await expect(page.getByTestId('turn-banner')).toHaveText('Your move', { timeout: 30_000 })
+  await expect(page.getByTestId('turn-banner')).toHaveText(YOUR_TURN, { timeout: 30_000 })
   await expect(page.getByTestId('draw-hint')).toHaveText('You can offer again after 1 more move.')
   await playMove(page, 'i1', 'h3')
-  await expect(page.getByTestId('turn-banner')).toHaveText('Your move', { timeout: 30_000 })
+  await expect(page.getByTestId('turn-banner')).toHaveText(YOUR_TURN, { timeout: 30_000 })
   await expect(page.getByTestId('draw-hint')).toHaveCount(0)
   await expect(offer).toBeEnabled()
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/draw-ready-again.png` })
@@ -217,12 +217,12 @@ test('four people agree a draw: everyone sees the votes, and the result says "Dr
     await expect(p.getByRole('heading', { name: 'Draw table' })).toBeVisible()
   }
   for (const [i, p] of pages.entries()) {
-    await p.getByTestId(`civ-${civs[i]}`).click()
+    await chooseCiv(p, civs[i] as string)
     await p.getByTestId('ready').click()
   }
   await expect(south.getByTestId('start-game')).toBeEnabled()
   await south.getByTestId('start-game').click()
-  await expect(south.getByTestId('turn-banner')).toHaveText('Your move', { timeout: 20_000 })
+  await expect(south.getByTestId('turn-banner')).toHaveText(YOUR_TURN, { timeout: 20_000 })
   for (const p of pages) await expect(p.getByTestId('board')).toBeVisible()
 
   // West offers off turn; South (to move) sees Accept / Decline and the votes so far.

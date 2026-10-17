@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto'
-import { type APIRequestContext, expect, type Page } from '@playwright/test'
+import { type APIRequestContext, expect, type Locator, type Page } from '@playwright/test'
 import * as OTPAuth from 'otpauth'
 
 export function uniqueUser() {
@@ -101,10 +101,40 @@ export async function startAsGuest(page: Page) {
   await expect(page.getByTestId('signed-in')).toBeVisible()
 }
 
+/**
+ * Chooses a civilization in a civ dropdown (`CivSelect`): opens the trigger (`civ-select`, or
+ * `testId` such as `civ-select-west` for a bot's), clicks the `civ-<slug>` row in the list and
+ * waits until the trigger shows it (in a lobby that means the server accepted the choice).
+ * `scope` narrows where the trigger is looked up (e.g. the "Play vs bots" panel); the list
+ * itself opens in a popover at the end of the page.
+ */
+export async function chooseCiv(
+  page: Page,
+  slug: string,
+  scope: Page | Locator = page,
+  testId = 'civ-select',
+) {
+  const trigger = scope.getByTestId(testId)
+  await trigger.click()
+  const list = page.getByTestId(`${testId}-list`)
+  await expect(list).toBeVisible()
+  await list.getByTestId(`civ-${slug}`).click()
+  await expect(list).toBeHidden()
+  await expect(trigger).toHaveAttribute('data-value', slug)
+}
+
+/**
+ * The turn banner on the viewer's turn: "Your move", or the check indicator's text when their
+ * leader is under attack as the turn starts (a bot can give check in any game).
+ */
+export const YOUR_TURN = /^(Your move|Check! Your leader is under attack)$/
+
 /** The live board's development-only test hook (`window.__board`). */
 export interface BoardHook {
   squareToClient(s: string): { x: number; y: number } | null
   position(): string
+  /** Squares the board draws as in check (the check indicator), e.g. ['g1']. */
+  checkSquares(): string[]
 }
 
 /** The position string the board currently shows. */

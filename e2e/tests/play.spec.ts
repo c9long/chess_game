@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { playMove, position, startAsGuest } from './helpers.ts'
+import { chooseCiv, playMove, position, startAsGuest, YOUR_TURN } from './helpers.ts'
 
 const SHOTS = process.env.E2E_SCREENSHOTS
 
@@ -31,7 +31,7 @@ test('guest creates a lobby, fills it with bots, plays and sees the result', asy
   }
 
   // Choose a civilization: its emblem appears next to the username, then ready up.
-  await page.getByTestId('civ-mali').click()
+  await chooseCiv(page, 'mali')
   await expect(south.getByRole('img', { name: 'Mali' }).first()).toBeVisible()
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/lobby.png`, fullPage: true })
   await page.getByTestId('ready').click()
@@ -40,7 +40,7 @@ test('guest creates a lobby, fills it with bots, plays and sees the result', asy
 
   // Live game: South moves first.
   await expect(page.getByTestId('board')).toBeVisible()
-  await expect(page.getByTestId('turn-banner')).toHaveText('Your move', { timeout: 20_000 })
+  await expect(page.getByTestId('turn-banner')).toHaveText(YOUR_TURN, { timeout: 20_000 })
   await page.waitForFunction(
     () => 'squareToClient' in ((window as never as { __board?: object }).__board ?? {}),
   )
@@ -50,9 +50,9 @@ test('guest creates a lobby, fills it with bots, plays and sees the result', asy
   // Push the e-pawn two squares and develop a knight; after each move the three bots
   // answer and the turn comes back to South.
   await playMove(page, 'e2', 'e4')
-  await expect(page.getByTestId('turn-banner')).toHaveText('Your move', { timeout: 30_000 })
+  await expect(page.getByTestId('turn-banner')).toHaveText(YOUR_TURN, { timeout: 30_000 })
   await playMove(page, 'i1', 'h3')
-  await expect(page.getByTestId('turn-banner')).toHaveText('Your move', { timeout: 30_000 })
+  await expect(page.getByTestId('turn-banner')).toHaveText(YOUR_TURN, { timeout: 30_000 })
   // Both moves are on the board: South's knight now stands on h3, the pawn on e4.
   const pos = await position(page)
   expect(pos).toMatch(/^ffa /)
@@ -131,16 +131,14 @@ test('a player who joins by invite link can pick and change a civilization', asy
   await joiner.goto(host.url())
   await expect(joiner.getByRole('heading', { name: 'Invite table' })).toBeVisible()
 
-  await joiner.getByTestId('civ-france').click()
-  await expect(joiner.getByTestId('civ-france')).toHaveAttribute('aria-checked', 'true')
+  await chooseCiv(joiner, 'france')
   const west = host.getByTestId('seat-west')
   await expect(west).toContainText('France')
 
   // Ready doesn't lock the choice: switching civ still works.
   await joiner.getByTestId('ready').click()
   await expect(west).toContainText('Ready')
-  await joiner.getByTestId('civ-mali').click()
-  await expect(joiner.getByTestId('civ-mali')).toHaveAttribute('aria-checked', 'true')
+  await chooseCiv(joiner, 'mali')
   await expect(west).toContainText('Mali')
   expect(errors).toEqual([])
   await hostCtx.close()

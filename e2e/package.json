@@ -11,6 +11,7 @@
     "@axe-core/playwright": "4.13.0",
     "@game/config": "workspace:*",
     "@game/db": "workspace:*",
+    "@game/rules": "workspace:*",
     "@playwright/test": "1.64.1",
     "otpauth": "9.5.2",
     "postgres": "3.4.9"

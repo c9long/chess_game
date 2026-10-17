@@ -3,7 +3,7 @@
  * Runs only when UX_SHOTS points at a directory; the normal E2E run skips it.
  */
 import { expect, type Page, test } from '@playwright/test'
-import { playMove, startAsGuest } from './helpers.ts'
+import { chooseCiv, playMove, startAsGuest, YOUR_TURN } from './helpers.ts'
 
 const OUT = process.env.UX_SHOTS ?? ''
 const sizes = [
@@ -17,7 +17,7 @@ async function shot(page: Page, name: string, fullPage = false) {
 }
 
 async function turn(page: Page) {
-  await expect(page.getByTestId('turn-banner')).toHaveText('Your move', { timeout: 30_000 })
+  await expect(page.getByTestId('turn-banner')).toHaveText(YOUR_TURN, { timeout: 30_000 })
 }
 
 for (const size of sizes) {
@@ -43,7 +43,7 @@ for (const size of sizes) {
       await expect(p.getByRole('heading', { name: `UX draw ${tag}` })).toBeVisible()
     }
     for (const [i, p] of pages.entries()) {
-      await p.getByTestId(`civ-${civs[i]}`).click()
+      await chooseCiv(p, civs[i] as string)
       await p.getByTestId('ready').click()
     }
     await expect(S.getByTestId('start-game')).toBeEnabled()
@@ -145,7 +145,7 @@ test('ux solo Teams resign dialog + bot teammate declines, 1920', async ({ brows
   await startAsGuest(page)
   await page.getByTestId('play-vs-bots').click()
   const panel = page.getByTestId('vs-bots')
-  await panel.getByTestId('civ-mali').click()
+  await chooseCiv(page, 'mali', panel)
   await panel.getByRole('button', { name: 'Teams 2v2' }).click()
   await panel.getByTestId('start-solo').click()
   await turn(page)

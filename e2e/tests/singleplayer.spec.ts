@@ -1,5 +1,12 @@
 import { expect, type Page, test } from '@playwright/test'
-import { type BoardHook, playMove, position, startAsGuest } from './helpers.ts'
+import {
+  type BoardHook,
+  chooseCiv,
+  playMove,
+  position,
+  startAsGuest,
+  YOUR_TURN,
+} from './helpers.ts'
 
 const SHOTS = process.env.E2E_SCREENSHOTS
 
@@ -46,8 +53,7 @@ test('guest plays an untimed game against three bots', async ({ page }) => {
   await expect(
     panel.getByTestId('bot-level').locator('option', { hasText: 'Max strength' }),
   ).toHaveCount(1)
-  await panel.getByTestId('civ-mali').click()
-  await expect(panel.getByTestId('civ-mali')).toHaveAttribute('aria-checked', 'true')
+  await chooseCiv(page, 'mali', panel)
   await panel.getByTestId('bot-level').selectOption('1500')
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/solo-setup.png`, fullPage: true })
   await expect(start).toBeEnabled()
@@ -60,7 +66,7 @@ test('guest plays an untimed game against three bots', async ({ page }) => {
     await page.screenshot({ path: `${SHOTS}/solo-starting.png` })
   }
   await expect(page.getByTestId('board')).toBeVisible({ timeout: 20_000 })
-  await expect(page.getByTestId('turn-banner')).toHaveText('Your move', { timeout: 20_000 })
+  await expect(page.getByTestId('turn-banner')).toHaveText(YOUR_TURN, { timeout: 20_000 })
   await expect(page.getByText('Free-for-all · Untimed')).toBeVisible()
   await expect(page.getByTestId('clock')).toHaveCount(0)
   await expect(page.getByTestId('start-game')).toHaveCount(0)
@@ -84,7 +90,7 @@ test('guest plays an untimed game against three bots', async ({ page }) => {
   // and the turn comes back.
   await recordPositions(page)
   await playMove(page, 'e2', 'e4')
-  await expect(page.getByTestId('turn-banner')).toHaveText('Your move', { timeout: 30_000 })
+  await expect(page.getByTestId('turn-banner')).toHaveText(YOUR_TURN, { timeout: 30_000 })
   const times = await recorded(page)
   // start, South's move, then West, North and East.
   expect(times.length).toBe(5)
@@ -96,12 +102,13 @@ test('guest plays an untimed game against three bots', async ({ page }) => {
   const pos = await position(page)
   await page.waitForTimeout(1500)
   expect(await position(page)).toBe(pos)
-  await expect(page.getByTestId('turn-banner')).toHaveText('Your move')
+  await expect(page.getByTestId('turn-banner')).toHaveText(YOUR_TURN)
 
   await playMove(page, 'i1', 'h3')
-  await expect(page.getByTestId('turn-banner')).toHaveText('Your move', { timeout: 30_000 })
+  await expect(page.getByTestId('turn-banner')).toHaveText(YOUR_TURN, { timeout: 30_000 })
 
-  // Leaving ends the player's part; the bots finish and the game shows up in the history.
+  // Leaving eliminates the player, which ends the FFA game at once; it shows up in the
+  // history.
   await page.getByRole('button', { name: 'Leave game' }).click()
   await page.getByTestId('leave-confirm').click()
   await expect(page.getByTestId('vs-bots')).toBeVisible()
@@ -110,7 +117,9 @@ test('guest plays an untimed game against three bots', async ({ page }) => {
     await expect(page.getByTestId('match-history')).toContainText('Untimed · vs bots', {
       timeout: 2_000,
     })
-  }).toPass({ timeout: 30_000 })
+  }).toPass({ timeout: 10_000 })
+  await expect(page.getByTestId('match-history')).toContainText('4th place')
+  await expect(page.getByTestId('match-history')).toContainText('You were eliminated')
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/solo-history.png`, fullPage: true })
 })
 
@@ -121,9 +130,9 @@ test('after leaving a solo game the player can start another', async ({ page }) 
   await startAsGuest(page)
   await page.getByTestId('play-vs-bots').click()
   let panel = page.getByTestId('vs-bots')
-  await panel.getByTestId('civ-china').click()
+  await chooseCiv(page, 'china', panel)
   await panel.getByTestId('start-solo').click()
-  await expect(page.getByTestId('turn-banner')).toHaveText('Your move', { timeout: 20_000 })
+  await expect(page.getByTestId('turn-banner')).toHaveText(YOUR_TURN, { timeout: 20_000 })
 
   // The leave confirmation is a modal: Escape cancels and focus goes back to the button.
   const leaveButton = page.getByRole('button', { name: 'Leave game' })
@@ -142,9 +151,48 @@ test('after leaving a solo game the player can start another', async ({ page }) 
   await page.waitForTimeout(2000)
   await expect(page.getByText('You have a seat in')).toHaveCount(0)
 
-  await panel.getByTestId('civ-france').click()
+  await chooseCiv(page, 'france', panel)
   await expect(panel.getByTestId('start-solo')).toBeEnabled()
   await panel.getByTestId('start-solo').click()
-  await expect(page.getByTestId('turn-banner')).toHaveText('Your move', { timeout: 20_000 })
+  await expect(page.getByTestId('turn-banner')).toHaveText(YOUR_TURN, { timeout: 20_000 })
   await expect(page.getByTestId('player-south')).toContainText('France')
+})
+
+// In FFA the game ends as soon as the player is out: no playing it out between the bots.
+test('resigning a solo FFA game ends it at once: "You were eliminated"', async ({ page }) => {
+  test.setTimeout(120_000)
+  await startAsGuest(page)
+  await page.getByTestId('play-vs-bots').click()
+  const panel = page.getByTestId('vs-bots')
+  await chooseCiv(page, 'japan', panel)
+  await panel.getByTestId('start-solo').click()
+  await expect(page.getByTestId('turn-banner')).toHaveText(YOUR_TURN, { timeout: 20_000 })
+
+  await page.getByTestId('resign').click()
+  const dialog = page.getByTestId('resign-dialog')
+  await expect(dialog).toContainText('The game ends there: the bots share 1st place.')
+  await page.getByTestId('resign-confirm').click()
+
+  const over = page.getByTestId('game-over')
+  await expect(over).toBeVisible({ timeout: 10_000 })
+  await expect(over.getByRole('heading', { name: 'You were eliminated' })).toBeVisible()
+  await expect(page.getByTestId('game-over-subline')).toHaveText(
+    'You finished 4th. The game ends here; the bots share 1st place.',
+  )
+  await expect(over).not.toContainText('Draw agreed')
+  await expect(over).not.toContainText('agreed to a draw')
+  await expect(page.getByTestId('placement-south')).toContainText('4th')
+  await expect(page.getByTestId('defeat-south')).toContainText('Resigned')
+  for (const seat of ['west', 'north', 'east']) {
+    await expect(page.getByTestId(`placement-${seat}`)).toContainText('1st')
+  }
+  await page.waitForTimeout(600)
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/solo-eliminated.png` })
+
+  await page.goto('/history')
+  const row = page.getByTestId('match-history').locator(':scope > li').first()
+  await expect(row).toContainText('4th place')
+  await expect(row).toContainText('You were eliminated')
+  await expect(row).not.toContainText('Draw')
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/solo-eliminated-history.png` })
 })

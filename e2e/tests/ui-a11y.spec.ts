@@ -1,6 +1,6 @@
 import { AxeBuilder } from '@axe-core/playwright'
 import { expect, type Page, test } from '@playwright/test'
-import { passAgeScreen, signUpAndVerify } from './helpers.ts'
+import { chooseCiv, passAgeScreen, signUpAndVerify, YOUR_TURN } from './helpers.ts'
 
 /**
  * Accessibility audit: axe-core (WCAG 2.0 A and AA rules) on every main page, as a guest and
@@ -78,11 +78,11 @@ test('a11y: signed-out pages and a guest session', async ({ page }) => {
   await page.goto('/')
   await page.getByTestId('play-vs-bots').click()
   const panel = page.getByTestId('vs-bots')
-  await panel.getByTestId('civ-mali').click()
+  await chooseCiv(page, 'mali', panel)
   await panel.getByTestId('start-solo').click()
   await expect(page).toHaveURL(/\/match\//)
   await expect(page.getByTestId('board')).toBeVisible({ timeout: 20_000 })
-  await expect(page.getByTestId('turn-banner')).toHaveText('Your move', { timeout: 20_000 })
+  await expect(page.getByTestId('turn-banner')).toHaveText(YOUR_TURN, { timeout: 20_000 })
   await audit(page, 'singleplayer game')
 })
 

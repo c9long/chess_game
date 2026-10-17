@@ -1,5 +1,5 @@
 import { expect, type Page, test } from '@playwright/test'
-import { startAsGuest } from './helpers.ts'
+import { chooseCiv, startAsGuest, YOUR_TURN } from './helpers.ts'
 
 /** The game screen and the lobby on a phone (390px) and a tablet (768px). */
 const SIZES = [
@@ -20,9 +20,9 @@ test('game screen fits phones and tablets: board, players and actions without sc
   await startAsGuest(page)
   await page.goto('/play')
   const panel = page.getByTestId('vs-bots')
-  await panel.getByTestId('civ-mali').click()
+  await chooseCiv(page, 'mali', panel)
   await panel.getByTestId('start-solo').click()
-  await expect(page.getByTestId('turn-banner')).toHaveText('Your move', { timeout: 20_000 })
+  await expect(page.getByTestId('turn-banner')).toHaveText(YOUR_TURN, { timeout: 20_000 })
   await page.waitForFunction(
     () => 'squareToClient' in ((window as never as { __board?: object }).__board ?? {}),
   )
@@ -56,7 +56,7 @@ test('game screen fits phones and tablets: board, players and actions without sc
   expect(await horizontalOverflow(page)).toBe(0)
 })
 
-test('lobby room fits phones and tablets: seats, civ picker and Ready/Start reachable', async ({
+test('lobby room fits phones and tablets: seats, civ dropdown and Ready/Start reachable', async ({
   page,
 }) => {
   test.setTimeout(90_000)
@@ -74,7 +74,7 @@ test('lobby room fits phones and tablets: seats, civ picker and Ready/Start reac
     for (const seat of ['south', 'west', 'north', 'east']) {
       await expect(page.getByTestId(`seat-${seat}`)).toBeVisible()
     }
-    await expect(page.getByTestId('civ-mali')).toBeVisible()
+    await expect(page.getByTestId('civ-select')).toBeVisible()
     await page.getByTestId('ready').scrollIntoViewIfNeeded()
     await expect(page.getByTestId('ready')).toBeInViewport()
     await expect(page.getByTestId('start-game')).toBeInViewport()

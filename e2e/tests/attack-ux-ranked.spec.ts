@@ -5,7 +5,7 @@
 import { expect, type Page, test } from '@playwright/test'
 import postgres from 'postgres'
 import { E2E_DATABASE_URL } from '../env.ts'
-import { signUpAndVerify, startAsGuest } from './helpers.ts'
+import { chooseCiv, signUpAndVerify, startAsGuest, YOUR_TURN } from './helpers.ts'
 
 const OUT = process.env.UX_SHOTS ?? ''
 const DB = process.env.UX_DB ?? E2E_DATABASE_URL
@@ -75,12 +75,12 @@ test('ux ranked: create, lobby, guest view, game, game over, history, leaderboar
   }
   await both(W, 'r5-ranked-lobby-member', true)
   for (const [i, p] of pages.entries()) {
-    await p.getByTestId(`civ-${civs[i]}`).click()
+    await chooseCiv(p, civs[i] as string)
     await p.getByTestId('ready').click()
   }
   await expect(S.getByTestId('start-game')).toBeEnabled()
   await S.getByTestId('start-game').click()
-  await expect(S.getByTestId('turn-banner')).toHaveText('Your move', { timeout: 20_000 })
+  await expect(S.getByTestId('turn-banner')).toHaveText(YOUR_TURN, { timeout: 20_000 })
   await S.waitForTimeout(800)
   await both(S, 'r6-ranked-game')
   // Ranked resign dialog
