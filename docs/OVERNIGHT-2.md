@@ -60,7 +60,42 @@ pnpm dev          # applies migrations, rebuilds the rules engine, then open htt
 
 ## Completed
 
-_(Filled in as each piece lands.)_
+### 6. Docker (M0 leftover): verified for real
+Both images build, and a local test stack migrated the database, answered `/api/health` and
+played a full solo game against the bot engine in its own container. A real run turned up
+problems, now fixed: no `.dockerignore` (Docker was uploading the 5.5 GB build folder),
+rollbacks could reuse a newer cached rules engine, the server image carried test tools
+(663 MB → ~470 MB), the restore steps failed on a non-empty database, and the Cloudflare
+Tunnel made every stack without a token fail (it's now optional, on by default in
+production). There's also an optional Docker Postgres on port 5433 for machines without one
+(see README). Commit `527cc56`.
+
+### 5. Hosting on a UWaterloo CSC machine: new guide
+**[docs/DEPLOY-CSCLUB.md](DEPLOY-CSCLUB.md)**. Verdict: **yes, it works without sudo, and
+only the domain costs money** (plus the $2/term CSC membership). The game runs as your normal
+user (Node, PostgreSQL, the bot engine and a Cloudflare Tunnel in `~/game`), kept alive by a
+cron watchdog, with encrypted nightly backups (optionally off-site to Cloudflare R2's free
+tier) and a restore script. No open ports are needed: the tunnel connects outward, so the
+privileged-port problem disappears. Scripts in `infra/csclub/` were run end to end as a
+normal user (setup, install, update, rollback, crash recovery, backup, restore), and a
+skeptical review fixed four bugs in them.
+
+The risks aren't technical:
+- **Policy:** CSC machines are for "personal or course work" and its hosting rules forbid
+  commercial use. A free beta with no ads or payments is probably fine; **email syscom
+  first** (a template is in the guide).
+- **Reliability:** best effort. CSC's cloud failed in Winter 2025 and is being rebuilt on
+  Proxmox; ask what you'd get today.
+- **Membership:** resources are deleted when it lapses, so renew every term.
+Commit `a8140df`.
+
+### 7 (prep). Android and iOS apps: plan
+**[docs/MOBILE.md](MOBILE.md)** recommends wrapping the web app with Capacitor (one codebase;
+the board and rules engine run unchanged), with sign-in done in the phone's browser through
+the device-approval flow built for Unity, then bearer tokens. Costs: Google Play $25 once,
+Apple $99/year (the only subscription; there is no way to ship on iPhone without it).
+**One decision for you:** on iOS, hide the Google/Discord/GitHub/Microsoft buttons or add
+Sign in with Apple (Apple requires one or the other). Commit `b2a56d0`.
 
 ## Not done / left for you
 
