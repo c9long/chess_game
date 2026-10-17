@@ -26,6 +26,7 @@ import { z } from 'zod'
 import type { Auth } from '../auth/auth.ts'
 import { requireSession, sessionOf } from '../http/session.ts'
 import { requireCurrentAcceptance } from '../legal/routes.ts'
+import { blockedAmong } from '../social/blocks.ts'
 import { relationsOf } from '../social/friends.ts'
 
 const leaderboardQuery = z.object({
@@ -189,6 +190,23 @@ export function gameRouter({ db, auth }: { db: Database; auth: Auth }) {
           players.filter(addable).map((p) => p.userId as string),
         )
       : new Map()
+    // Block and report menus: registered viewers can block registered live opponents (any
+    // game status); anyone can report a person (not a bot or a deleted account's placeholder).
+    const blockable = (p: PlayerRow) =>
+      canFriend &&
+      p.userId !== null &&
+      p.userId !== me &&
+      !p.isGuest &&
+      !p.deletedAt &&
+      Boolean(p.username)
+    const reportable = (p: PlayerRow) => p.userId !== null && p.userId !== me && !p.deletedAt
+    const blocked = canFriend
+      ? await blockedAmong(
+          db,
+          me,
+          players.filter(blockable).map((p) => p.userId as string),
+        )
+      : new Set<string>()
     const items: MatchListItem[] = page.map((m) => {
       const seats = players.filter((p) => p.matchId === m.id)
       const mine = seats.find((p) => p.seat === m.seat)
@@ -220,7 +238,12 @@ export function gameRouter({ db, auth }: { db: Database; auth: Auth }) {
             civ: p.civ,
             botLevel: p.botLevel,
             isGuest: Boolean(p.isGuest),
-            friend: addable(p) ? (relations.get(p.userId as string) ?? 'none') : null,
+            friend:
+              addable(p) && !blocked.has(p.userId as string)
+                ? (relations.get(p.userId as string) ?? 'none')
+                : null,
+            blocked: blockable(p) ? blocked.has(p.userId as string) : null,
+            reportable: reportable(p),
           })),
       }
     })

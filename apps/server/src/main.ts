@@ -1,5 +1,6 @@
 import { ConfigError, loadConfig } from './config.ts'
 import { purgeInactiveGuests } from './jobs/guest-purge.ts'
+import { purgeOldReports } from './jobs/moderation-purge.ts'
 import { startServer } from './server.ts'
 
 let config: ReturnType<typeof loadConfig>
@@ -30,11 +31,27 @@ async function runGuestPurge() {
   }
 }
 
+/** Moderation retention: resolved reports go one year after resolution (same schedule). */
+async function runReportPurge() {
+  try {
+    const deleted = await purgeOldReports(ctx.db)
+    if (deleted > 0) logger.info({ deleted }, 'old reports purged')
+  } catch (err) {
+    logger.error({ err: (err as Error).message }, 'report purge failed')
+  }
+}
+
 let purgeTimer: NodeJS.Timeout | undefined
 if (config.guestPurgeIntervalMinutes > 0) {
-  purgeTimer = setInterval(runGuestPurge, config.guestPurgeIntervalMinutes * 60_000)
+  purgeTimer = setInterval(() => {
+    void runGuestPurge()
+    void runReportPurge()
+  }, config.guestPurgeIntervalMinutes * 60_000)
   purgeTimer.unref()
-  setTimeout(runGuestPurge, 30_000).unref()
+  setTimeout(() => {
+    void runGuestPurge()
+    void runReportPurge()
+  }, 30_000).unref()
 }
 
 logger.info(

@@ -6,9 +6,10 @@ import {
   matchPlayers,
   pendingGuestLinks,
   ratings,
+  reports,
   users,
 } from '@game/db'
-import { and, eq, isNull, sql } from 'drizzle-orm'
+import { and, eq, isNull, or, sql } from 'drizzle-orm'
 import type { AppConfig } from '../config.ts'
 import { parseCookieHeader, signValue, verifyValue } from '../legal/signed-cookie.ts'
 
@@ -39,6 +40,30 @@ export async function repointUserRows(tx: Executor, fromUserId: string, toUserId
     where g.user_id = ${fromUserId} and t.user_id = ${toUserId}
       and g.mode = t.mode and g.time_control = t.time_control`)
   await tx.update(eloRatings).set({ userId: toUserId }).where(eq(eloRatings.userId, fromUserId))
+  // Reports (filed and received): a report between the two accounts themselves goes (it would
+  // become a report about oneself), and an open report the target already has about the same
+  // player and game wins over the source's duplicate.
+  await tx
+    .delete(reports)
+    .where(
+      or(
+        and(eq(reports.reporterId, fromUserId), eq(reports.reportedUserId, toUserId)),
+        and(eq(reports.reporterId, toUserId), eq(reports.reportedUserId, fromUserId)),
+      ),
+    )
+  await tx.execute(sql`
+    delete from ${reports} g using ${reports} t
+    where g.status = 'open' and t.status = 'open'
+      and coalesce(g.match_id::text, '') = coalesce(t.match_id::text, '')
+      and ((g.reporter_id = ${fromUserId} and t.reporter_id = ${toUserId}
+            and g.reported_user_id = t.reported_user_id)
+        or (g.reported_user_id = ${fromUserId} and t.reported_user_id = ${toUserId}
+            and g.reporter_id = t.reporter_id))`)
+  await tx.update(reports).set({ reporterId: toUserId }).where(eq(reports.reporterId, fromUserId))
+  await tx
+    .update(reports)
+    .set({ reportedUserId: toUserId })
+    .where(eq(reports.reportedUserId, fromUserId))
 }
 
 /**

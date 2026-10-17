@@ -4,6 +4,7 @@
  * first locks both users' rows (in id order), so concurrent requests can't overshoot a cap.
  */
 import {
+  blocks,
   type Database,
   type Executor,
   friendships,
@@ -188,7 +189,7 @@ export async function socialUser(db: Executor, userId: string): Promise<SocialUs
  * Locks both users' rows (in id order) for the rest of the transaction, and checks both are
  * still live registered accounts (an account deletion may have committed while we waited).
  */
-async function lockPair(tx: Transaction, a: string, b: string) {
+export async function lockPair(tx: Transaction, a: string, b: string) {
   const [lo, hi] = pairOf(a, b)
   const rows = await tx
     .select({
@@ -205,6 +206,34 @@ async function lockPair(tx: Transaction, a: string, b: string) {
   if (live.length !== 2) {
     throw new SocialError('NOT_FOUND', 404, 'That player is no longer there.')
   }
+}
+
+/** The neutral refusal for a player you can't add (also what a player who blocked you gives). */
+export const notEligible = () =>
+  new SocialError(
+    'NOT_ELIGIBLE',
+    403,
+    'You can add players you are playing or have finished a game with (not bots or guests).',
+  )
+
+/**
+ * Refuses a friend request across a block: `BLOCKED` when `me` blocked `target`, and the
+ * neutral NOT_ELIGIBLE when `target` blocked `me` (a block is never revealed).
+ */
+async function refuseIfBlocked(db: Executor, me: string, target: string) {
+  const rows = await db
+    .select({ blocker: blocks.blockerId })
+    .from(blocks)
+    .where(
+      or(
+        and(eq(blocks.blockerId, me), eq(blocks.blockedId, target)),
+        and(eq(blocks.blockerId, target), eq(blocks.blockedId, me)),
+      ),
+    )
+  if (rows.some((r) => r.blocker === me)) {
+    throw new SocialError('BLOCKED', 409, 'You blocked this player. Unblock them first.')
+  }
+  if (rows.length > 0) throw notEligible()
 }
 
 /** Match statuses where the players count as having played together. */
@@ -234,12 +263,6 @@ export async function eligibleTarget(
   const target = rows.find((r) => r.seat === seat)
   if (!mine || !target) throw new SocialError('NOT_FOUND', 404, 'That game was not found.')
   if (target.userId === me) throw new SocialError('SELF', 400, 'That seat is you.')
-  const notEligible = () =>
-    new SocialError(
-      'NOT_ELIGIBLE',
-      403,
-      'You can add players you are playing or have finished a game with (not bots or guests).',
-    )
   if (!(SHARED_STATUSES as readonly string[]).includes(mine.status) || !target.userId) {
     throw notEligible()
   }
@@ -318,6 +341,7 @@ export async function sendRequest(
 ): Promise<'outgoing' | 'friends'> {
   return db.transaction(async (tx) => {
     await lockPair(tx, me, target)
+    await refuseIfBlocked(tx, me, target)
     const [row] = await tx.select().from(friendships).where(pairWhere(me, target))
     if (row?.status === 'accepted') {
       throw new SocialError('ALREADY_FRIENDS', 409, 'You are already friends.')

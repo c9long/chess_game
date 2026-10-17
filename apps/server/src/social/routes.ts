@@ -5,6 +5,7 @@
  */
 import type { Database } from '@game/db'
 import {
+  blockBodySchema,
   CHALLENGES_PER_10_MIN,
   challengeBodySchema,
   FRIEND_REQUESTS_PER_HOUR,
@@ -18,6 +19,8 @@ import type { Auth } from '../auth/auth.ts'
 import { fixedWindowLimiter } from '../http/security.ts'
 import { requireSession, sessionOf } from '../http/session.ts'
 import { requireCurrentAcceptance } from '../legal/routes.ts'
+import { resolveTarget } from '../moderation/targets.ts'
+import { blockedAmong } from './blocks.ts'
 import { countsOf, matchSeatsOf, relationsOf, SocialError, usernameOf } from './friends.ts'
 import type { SocialService } from './service.ts'
 
@@ -87,6 +90,7 @@ export function socialRouter({
     max: FRIEND_REQUESTS_PER_HOUR,
     key: byUser,
   })
+  const blockLimiter = fixedWindowLimiter({ windowMs: 60 * 60_000, max: 60, key: byUser })
   const challengeLimiter = fixedWindowLimiter({
     windowMs: 10 * 60_000,
     max: CHALLENGES_PER_10_MIN,
@@ -116,6 +120,7 @@ export function socialRouter({
       const others: string[] = []
       for (const s of seats) if (s.userId && s.userId !== my) others.push(s.userId)
       const relations = await relationsOf(db, my, others)
+      const blocked = await blockedAmong(db, my, others)
       const counts = await countsOf(db, my)
       const body: MatchRelationsResponse = {
         matchId,
@@ -129,6 +134,7 @@ export function socialRouter({
               : !shared || !s.userId || !s.registered
                 ? 'ineligible'
                 : (relations.get(s.userId) ?? 'none'),
+          blocked: Boolean(s.userId && s.registered && blocked.has(s.userId)),
         })),
       }
       res.setHeader('Cache-Control', 'no-store')
@@ -178,6 +184,49 @@ export function socialRouter({
     ...guard,
     handle(async (req, res) => {
       await social.remove(me(res).userId, idParam.parse(req.params.userId))
+      res.status(204).end()
+    }),
+  )
+
+  /**
+   * Block a player (registered accounts only): the player in a seat of a game you played in,
+   * or someone on your Friends page. Removes your friendship or request; see blocks.ts.
+   */
+  router.post(
+    '/blocks',
+    ...guard,
+    blockLimiter,
+    handle(async (req, res) => {
+      const body = blockBodySchema.parse(req.body)
+      const my = me(res).userId
+      const target = await resolveTarget(db, my, body)
+      if (!target.registered) {
+        throw new SocialError('NOT_ELIGIBLE', 403, 'Only registered players can be blocked.')
+      }
+      res.json(await social.block(my, { userId: target.userId, username: target.name }))
+    }),
+  )
+
+  router.delete(
+    '/blocks/:userId',
+    ...guard,
+    handle(async (req, res) => {
+      await social.unblock(me(res).userId, idParam.parse(req.params.userId))
+      res.status(204).end()
+    }),
+  )
+
+  /** Unblock the player in a seat of a game you played in (menus that know no user id). */
+  router.delete(
+    '/blocks/match/:matchId/:seat',
+    ...guard,
+    handle(async (req, res) => {
+      const my = me(res).userId
+      const target = await resolveTarget(db, my, {
+        matchId: z.uuid().parse(req.params.matchId),
+        seat: z.coerce.number().int().min(0).max(3).parse(req.params.seat) as 0 | 1 | 2 | 3,
+      })
+      await social.unblock(my, target.userId)
       res.status(204).end()
     }),
   )

@@ -605,6 +605,30 @@ export class MatchRoom
     for (const id of userIds) this.invite.userIds.add(id)
   }
 
+  /**
+   * Moderation: an admin suspended `userId`. Before the game their seat is freed as if the host
+   * had kicked them, and they can't come back; a running game goes on (their sessions are
+   * revoked, so after a drop they can't reconnect and the usual abandon rules apply).
+   */
+  removeSuspended(userId: string) {
+    this.kicked.add(userId)
+    this.invite?.userIds.delete(userId)
+    const seat = seatOfUser(this.bindings, userId)
+    const phase = this.state.phase
+    if (seat === -1 || this.starting || !(isLobbyPhase(phase) || phase === 'countdown')) return
+    const binding = this.bindings[seat] as SeatBinding
+    if (this.state.phase === 'countdown') this.cancelCountdown()
+    this.bindings[seat] = null
+    clearSeat(this.state.seats[seat] as SeatState)
+    this.svc.seats.delete(userId)
+    this.svc.releaseClaim(userId, this.roomId)
+    if (userId === this.hostUserId) this.hostUserId = nextHost(this.bindings, userId)
+    const target = this.clients.find((c) => c.sessionId === binding.sessionId)
+    target?.send('kicked', { reason: 'suspended' })
+    target?.leave(CLOSE_CODES.kicked)
+    this.afterSeatsChanged()
+  }
+
   /** One invited player may no longer join (unless already seated). */
   revokeInvite(userId: string) {
     if (!this.invite) return

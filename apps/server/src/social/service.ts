@@ -8,6 +8,7 @@ import { randomBytes } from 'node:crypto'
 import { matchMaker } from '@colyseus/core'
 import { type Database, sessions } from '@game/db'
 import {
+  BLOCKS_MAX,
   CHALLENGE_TTL_MS,
   type Challenge,
   type ChallengeCloseReason,
@@ -24,6 +25,7 @@ import { and, gt, inArray } from 'drizzle-orm'
 import { CLAIM_TTL_MS, MatchRoom } from '../game/match-room.ts'
 import type { GameService } from '../game/service.ts'
 import type { Logger } from '../logger.ts'
+import { blockedList, block as blockUser, unblock as unblockUser } from './blocks.ts'
 import {
   acceptRequest,
   cancelRequest,
@@ -41,6 +43,8 @@ import {
 import { SocialHub } from './hub.ts'
 
 export interface SocialOptions extends SocialLimits {
+  /** Players one account may block. */
+  maxBlocks: number
   /** How long a challenge stays open. */
   challengeTtlMs: number
   /** Offline grace after a user's last connection closes. */
@@ -54,6 +58,7 @@ export interface SocialOptions extends SocialLimits {
 
 export const DEFAULT_SOCIAL_OPTIONS: SocialOptions = {
   ...DEFAULT_LIMITS,
+  maxBlocks: BLOCKS_MAX,
   challengeTtlMs: CHALLENGE_TTL_MS,
   presenceGraceMs: 5_000,
   sessionCheckMs: 60_000,
@@ -149,7 +154,7 @@ export class SocialService {
   // -------------------------------------------------------------------------
 
   async list(me: string): Promise<FriendsResponse> {
-    const rows = await rowsOf(this.db, me)
+    const [rows, blocked] = await Promise.all([rowsOf(this.db, me), blockedList(this.db, me)])
     const newest = (a: { createdAt: Date }, b: { createdAt: Date }) =>
       b.createdAt.getTime() - a.createdAt.getTime()
     return {
@@ -175,7 +180,12 @@ export class SocialService {
           user: { userId: r.userId, username: r.username },
           createdAt: r.createdAt.toISOString(),
         })),
-      limits: { maxFriends: this.options.maxFriends, maxOutgoing: this.options.maxOutgoing },
+      blocked,
+      limits: {
+        maxFriends: this.options.maxFriends,
+        maxOutgoing: this.options.maxOutgoing,
+        maxBlocked: this.options.maxBlocks,
+      },
     }
   }
 
@@ -228,6 +238,35 @@ export class SocialService {
     }
     this.push(otherId, 'friendsChanged', {})
     this.push(me, 'friendsChanged', {})
+  }
+
+  /**
+   * `me` blocks `target`: their friendship or request goes, open challenges between the two
+   * end (as when a friend is removed), and both lists refresh. The other side sees only that
+   * the friendship or request is gone, never that they were blocked.
+   */
+  async block(me: string, target: SocialUser) {
+    const { hadRow } = await blockUser(this.db, me, target.userId, this.options.maxBlocks)
+    for (const c of [...this.#challenges.values()]) {
+      if (c.from.userId === me) this.#withdraw(c, target.userId)
+      else if (c.from.userId === target.userId) this.#withdraw(c, me)
+    }
+    if (hadRow) this.push(target.userId, 'friendsChanged', {})
+    this.push(me, 'friendsChanged', {})
+    return { user: target }
+  }
+
+  async unblock(me: string, otherId: string) {
+    if (!(await unblockUser(this.db, me, otherId))) throw notFound('blocked player')
+    this.push(me, 'friendsChanged', {})
+  }
+
+  /**
+   * An admin suspended the user: their challenges and invitations end and their `social`
+   * connections close (friends see them go offline). Friendships stay, for an unsuspension.
+   */
+  userSuspended(userId: string) {
+    this.accountDeleted(userId, [])
   }
 
   /**

@@ -8,10 +8,12 @@ import {
   matchPlayers,
   passkeys,
   ratings,
+  reports,
   sessions,
   users,
 } from '@game/db'
 import { asc, desc, eq } from 'drizzle-orm'
+import { blocksForExport } from '../social/blocks.ts'
 import { rowsOf } from '../social/friends.ts'
 
 /**
@@ -108,6 +110,21 @@ export async function buildAccountExport(db: Database, userId: string, now: Date
         .where(eq(sessions.userId, userId)),
       rowsOf(db, userId),
     ])
+  const [blocked, filed] = await Promise.all([
+    blocksForExport(db, userId),
+    db
+      .select({
+        reason: reports.reason,
+        note: reports.note,
+        matchId: reports.matchId,
+        status: reports.status,
+        createdAt: reports.createdAt,
+        resolvedAt: reports.resolvedAt,
+      })
+      .from(reports)
+      .where(eq(reports.reporterId, userId))
+      .orderBy(desc(reports.createdAt)),
+  ])
 
   return {
     exportedAt: now.toISOString(),
@@ -125,6 +142,7 @@ export async function buildAccountExport(db: Database, userId: string, now: Date
       ageConfirmedAt: user.ageConfirmedAt,
       twoFactorEnabled: user.twoFactorEnabled,
       deletedAt: user.deletedAt,
+      suspendedAt: user.suspendedAt,
     },
     linkedAccounts: linked,
     passkeys: keys,
@@ -142,6 +160,13 @@ export async function buildAccountExport(db: Database, userId: string, now: Date
       requestedAt: f.createdAt,
       acceptedAt: f.acceptedAt,
     })),
+    /** Players you blocked (usernames only). */
+    blocked,
+    /**
+     * Reports you filed (who they were about is left out: that is another player's data).
+     * Reports about you are kept for moderation and aren't listed, to protect reporters.
+     */
+    reportsFiled: filed,
   }
 }
 

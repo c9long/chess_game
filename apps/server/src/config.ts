@@ -96,6 +96,8 @@ const envSchema = z.object({
   MAX_MATCH_ROOMS: z.coerce.number().int().positive().default(500),
   /** Development/test only: replaces every time control's base time (ms). */
   DEV_CLOCK_BASE_MS: z.coerce.number().int().positive().optional(),
+  /** User ids allowed to use the moderation review queue, comma-separated ('' = nobody). */
+  ADMIN_USER_IDS: z.string().default(''),
 })
 
 export type OAuthProviderId = 'google' | 'discord' | 'github' | 'microsoft'
@@ -136,6 +138,8 @@ export interface AppConfig {
   oauth: Partial<Record<OAuthProviderId, OAuthCredentials>>
   microsoftTenantId: string
   game: GameConfig
+  /** Moderation admins (ADMIN_USER_IDS); empty = nobody can open the review queue. */
+  adminUserIds: string[]
 }
 
 export interface GameConfig {
@@ -280,6 +284,18 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       problems.push('DEV_CLOCK_BASE_MS cannot be set in production')
     }
   }
+  const adminUserIds = [
+    ...new Set(
+      e.ADMIN_USER_IDS.split(',')
+        .map((v) => v.trim())
+        .filter(Boolean),
+    ),
+  ]
+  for (const id of adminUserIds) {
+    if (!/^[A-Za-z0-9_-]{1,64}$/.test(id)) {
+      problems.push(`ADMIN_USER_IDS entry "${id}" is not a user id`)
+    }
+  }
   if (problems.length > 0 || !authSecret || !turnstileSecret || !turnstileSite) {
     throw new ConfigError(`invalid configuration:\n  ${problems.join('\n  ')}`)
   }
@@ -343,5 +359,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       maxMatchRooms: e.MAX_MATCH_ROOMS,
       devClockBaseMs: isProduction ? undefined : e.DEV_CLOCK_BASE_MS,
     },
+    adminUserIds,
   }
 }

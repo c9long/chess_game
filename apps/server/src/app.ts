@@ -11,7 +11,7 @@ import express, {
 } from 'express'
 import { accountRouter } from './account/routes.ts'
 import { createAuth } from './auth/auth.ts'
-import { lengthCharsetPolicy, type NamePolicy } from './auth/name-policy.ts'
+import { defaultNamePolicy, type NamePolicy } from './auth/name-policy.ts'
 import type { AppConfig } from './config.ts'
 import { type EmailSender, MemoryEmailSender, ResendEmailSender } from './email/sender.ts'
 import { type BotClient, createBotClient } from './game/bot-client.ts'
@@ -25,6 +25,8 @@ import { requestLogger } from './http/request-log.ts'
 import { requireTrustedOrigin, securityHeaders } from './http/security.ts'
 import { legalRouter } from './legal/routes.ts'
 import { createLogger, type Logger } from './logger.ts'
+import { moderationRouter } from './moderation/routes.ts'
+import { type ModerationOptions, ModerationService } from './moderation/service.ts'
 import { socialRouter } from './social/routes.ts'
 import { type SocialOptions, SocialService } from './social/service.ts'
 
@@ -36,6 +38,8 @@ export interface AppOverrides {
   botClient?: BotClient
   /** Friends limits and timings (tests shorten them). */
   social?: Partial<SocialOptions>
+  /** Report limits (tests lower them). */
+  moderation?: Partial<ModerationOptions>
 }
 
 /**
@@ -44,7 +48,7 @@ export interface AppOverrides {
  */
 export function createApp(config: AppConfig, overrides: AppOverrides = {}) {
   const logger = overrides.logger ?? createLogger(config.logLevel)
-  const namePolicy = overrides.namePolicy ?? lengthCharsetPolicy
+  const namePolicy = overrides.namePolicy ?? defaultNamePolicy
   const { db, close: closeDb } = createDb(config.databaseUrl)
   const email =
     overrides.email ??
@@ -78,6 +82,14 @@ export function createApp(config: AppConfig, overrides: AppOverrides = {}) {
 
   const social = new SocialService({ db, game, logger, options: overrides.social ?? {} })
   sessionDeleted = (id) => social.sessionEnded(id)
+  const moderation = new ModerationService({
+    db,
+    game,
+    social,
+    logger,
+    adminUserIds: config.adminUserIds,
+    options: overrides.moderation ?? {},
+  })
 
   const app = express()
   app.disable('x-powered-by')
@@ -137,6 +149,7 @@ export function createApp(config: AppConfig, overrides: AppOverrides = {}) {
   app.use('/api/account', accountRouter({ config, db, auth, logger, social }))
   app.use('/api', gameRouter({ db, auth }))
   app.use('/api', socialRouter({ db, auth, social }))
+  app.use('/api', moderationRouter({ db, auth, moderation }))
   // Colyseus matchmaking (the WebSocket side is attached to the http.Server in server.ts).
   app.use(COLYSEUS_PATH, matchmakeRouter(config, game))
   if (devMailbox && email instanceof MemoryEmailSender) {
@@ -166,6 +179,7 @@ export function createApp(config: AppConfig, overrides: AppOverrides = {}) {
     email,
     game,
     social,
+    moderation,
     logger,
     close: async () => {
       social.close()

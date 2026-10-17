@@ -1,9 +1,18 @@
 import { checkLobbyNameFormat } from '@game/protocol'
+import { isProfane, moderateUsername, NAME_UNAVAILABLE } from './name-filter.ts'
+
 /**
- * Pluggable username policy (PLAN §3 "Moderation"). v1 checks length and charset only;
- * the profanity filter and reserved/impersonation names plug in here before release.
+ * Pluggable username policy (PLAN §3 "Moderation"): length and charset, then the profanity
+ * filter and reserved/impersonation names (name-filter.ts).
  */
-export type NameCheck = { ok: true } | { ok: false; reason: string }
+export type NameCheck =
+  | { ok: true }
+  | {
+      ok: false
+      reason: string
+      /** `USERNAME_UNAVAILABLE`: refused by moderation (the reason is deliberately neutral). */
+      code?: 'USERNAME_UNAVAILABLE'
+    }
 
 export interface NamePolicy {
   readonly minLength: number
@@ -44,6 +53,33 @@ export const lengthCharsetPolicy: NamePolicy = {
     // Format rule shared with the web form (@game/protocol); moderation (profanity, reserved
     // names) plugs in here later.
     return checkLobbyNameFormat(raw)
+  },
+}
+
+/**
+ * The default policy: `lengthCharsetPolicy`, plus moderation. Usernames that are profane or
+ * reserved ("admin", "Moderator_1", "Guest4821", "Bot_1500", the app's name) get the neutral
+ * NAME_UNAVAILABLE answer; lobby names are checked for profanity.
+ */
+export const defaultNamePolicy: NamePolicy = {
+  minLength: lengthCharsetPolicy.minLength,
+  maxLength: lengthCharsetPolicy.maxLength,
+  description: lengthCharsetPolicy.description,
+  check(username) {
+    const format = lengthCharsetPolicy.check(username)
+    if (!format.ok) return format
+    if (!moderateUsername(username).ok) {
+      return { ok: false, reason: NAME_UNAVAILABLE, code: 'USERNAME_UNAVAILABLE' }
+    }
+    return { ok: true }
+  },
+  checkLobbyName(raw) {
+    const format = checkLobbyNameFormat(raw)
+    if (!format.ok) return format
+    if (isProfane(format.name)) {
+      return { ok: false, reason: 'That lobby name isn’t allowed. Try another.' }
+    }
+    return format
   },
 }
 

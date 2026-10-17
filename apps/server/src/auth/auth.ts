@@ -95,6 +95,23 @@ const legalRequired = (status: 'FORBIDDEN' | 'BAD_REQUEST') =>
 const badRequest = (code: string, message: string) =>
   APIError.from('BAD_REQUEST', { code, message })
 
+/**
+ * Moderation (profanity, reserved names) answers with its own neutral code and message, before
+ * the username plugin's generic "invalid username"; format problems are left to the plugin.
+ */
+function refuseUnavailableName(namePolicy: NamePolicy, name: string) {
+  const verdict = namePolicy.check(name)
+  if (!verdict.ok && verdict.code === 'USERNAME_UNAVAILABLE') {
+    throw badRequest('USERNAME_UNAVAILABLE', verdict.reason)
+  }
+}
+
+/** The name passes the policy's format rules (length, charset), moderation aside. */
+function formatOk(namePolicy: NamePolicy, name: string) {
+  const verdict = namePolicy.check(name)
+  return verdict.ok || verdict.code === 'USERNAME_UNAVAILABLE'
+}
+
 export interface AuthDeps {
   config: AppConfig
   db: Database
@@ -321,6 +338,7 @@ export function createAuth({ config, db, email, logger, namePolicy, onSessionDel
               'The display name must match the username.',
             )
           }
+          refuseUnavailableName(namePolicy, name)
           return { context: { body: { ...body, name: shown, displayUsername: shown } } }
         }
 
@@ -343,6 +361,7 @@ export function createAuth({ config, db, email, logger, namePolicy, onSessionDel
             }
             if (typeof body.username !== 'string') throw badRequest('INVALID_USERNAME', 'Invalid.')
             name = body.username
+            refuseUnavailableName(namePolicy, name)
           }
           if ('displayUsername' in body) {
             const shown = body.displayUsername
@@ -503,10 +522,18 @@ export function createAuth({ config, db, email, logger, namePolicy, onSessionDel
         create: {
           async before(session) {
             const [row] = await db
-              .select({ deletedAt: users.deletedAt })
+              .select({ deletedAt: users.deletedAt, suspendedAt: users.suspendedAt })
               .from(users)
               .where(eq(users.id, session.userId))
             if (row?.deletedAt) return false
+            // Moderation: a suspended account can't sign in by any method (password, passkey,
+            // OAuth, 2FA, device code) until an admin lifts the suspension.
+            if (row?.suspendedAt) {
+              throw APIError.from('FORBIDDEN', {
+                code: 'ACCOUNT_SUSPENDED',
+                message: 'This account has been suspended.',
+              })
+            }
           },
         },
         delete: {
@@ -520,8 +547,11 @@ export function createAuth({ config, db, email, logger, namePolicy, onSessionDel
       username({
         minUsernameLength: namePolicy.minLength,
         maxUsernameLength: namePolicy.maxLength,
-        usernameValidator: (name) => namePolicy.check(name).ok,
-        displayUsernameValidator: (name) => namePolicy.check(name).ok,
+        // Format only: moderation refuses new names in the before-hook (sign-up, choosing a
+        // username), but must never lock an existing account out of username sign-in, which
+        // runs this validator too.
+        usernameValidator: (name) => formatOk(namePolicy, name),
+        displayUsernameValidator: (name) => formatOk(namePolicy, name),
       }),
       anonymous({
         emailDomainName: 'guest.invalid',

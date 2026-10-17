@@ -198,7 +198,7 @@ describe('friend requests: eligibility', () => {
       expect.objectContaining({ userId: b.userId, username: b.name, online: true }),
     ])
     expect(list.outgoing).toEqual([])
-    expect(list.limits).toEqual({ maxFriends: 50, maxOutgoing: 10 })
+    expect(list.limits).toEqual({ maxFriends: 50, maxOutgoing: 10, maxBlocked: 500 })
     const dup = await a.post('/api/friends/requests', { matchId, seat: 1 })
     expect(dup.body.error).toBe('ALREADY_FRIENDS')
     await aSocial.leave()

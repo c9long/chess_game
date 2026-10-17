@@ -6,6 +6,7 @@ import {
   legalAcceptances,
   matchPlayers,
   ratings,
+  reports,
   type Transaction,
   users,
   verifications,
@@ -42,6 +43,12 @@ async function hasSharedHistory(tx: Transaction, userId: string) {
           exists(tx.select().from(matchPlayers).where(eq(matchPlayers.userId, userId))),
           exists(tx.select().from(ratings).where(eq(ratings.userId, userId))),
           exists(tx.select().from(eloRatings).where(eq(eloRatings.userId, userId))),
+          exists(
+            tx
+              .select()
+              .from(reports)
+              .where(or(eq(reports.reporterId, userId), eq(reports.reportedUserId, userId))),
+          ),
         ),
       ),
     )
@@ -56,8 +63,9 @@ async function hasSharedHistory(tx: Transaction, userId: string) {
  *   acceptances are cleared. Opponents' histories stay intact under "Deleted player #…".
  * - `erase`: the user's acceptances and ratings (OpenSkill and Elo) are deleted outright
  *   (guests with no games).
- * In both modes the user's friendships and friend requests are deleted (personal, not shared
- * history).
+ * In both modes the user's friendships, friend requests and blocks are deleted (personal, not
+ * shared history). Reports filed by or about the user are re-keyed with the shared history
+ * (moderation records), and the reported name is cleared on reports about the user.
  * Then the original users row is deleted, which cascades to sessions, credentials, passkeys,
  * 2FA secrets and device codes.
  */
@@ -69,7 +77,10 @@ async function removeUser(
 ): Promise<string | undefined> {
   let label: string | undefined
   // Friends and friend requests are personal: deleted, never re-keyed to the placeholder.
+  // Blocks go with the users row (ON DELETE CASCADE).
   await deleteFriendships(tx, userId)
+  // Reports stay (re-keyed below) for the review queue, without the name they were about.
+  await tx.update(reports).set({ reportedName: null }).where(eq(reports.reportedUserId, userId))
   if (mode === 'rekey') {
     label = deletedLabel()
     const placeholderId = randomUUID()
