@@ -151,7 +151,7 @@ TODO item.
    `user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent` on the
    board container so a long press doesn't open the text callout. Make tap-tap moves as easy as drag
    (bigger hit targets on small screens). Cap the Pixi `resolution` at 2 on phones to save GPU memory.
-3. **Portrait layout.** The 12×12 board fills the width, with game panels below it. This is the
+3. **Portrait layout.** The 16×16 board fills the width, with game panels below it. This is the
    existing "Responsive layout … portrait board scaling" TODO item.
 4. **Haptics/feedback wrapper** `apps/web/src/lib/feedback.ts`: `feedback('move' | 'capture' |
    'check' | 'yourTurn' | 'gameEnd')`. It calls `navigator.vibrate` where supported (Android Chrome)

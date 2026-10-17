@@ -9,7 +9,7 @@
 
 ## Where things are decided
 
-- [docs/PLAN.md](docs/PLAN.md) is the approved master plan. §2 is the authoritative rules spec ("rules_version 1").
+- [docs/PLAN.md](docs/PLAN.md) is the approved master plan. §2 is the authoritative rules spec (rules version 2: the 16×16 board).
 - Open rules questions are listed in TODO.md. Don't silently decide them in code; keep such behavior behind a rules-config flag.
 - The display name comes only from `APP_NAME` in `packages/config`. Never hard-code the game title.
 - Code and package names stay neutral (`rules-core`, `@game/*`). Don't put the game title in identifiers.

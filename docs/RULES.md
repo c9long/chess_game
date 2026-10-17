@@ -1,16 +1,16 @@
 # How to Play
 
-Four-player chess on a 12×12 board. These are the rules of **rules version 1**. If you know regular chess, most of it will feel familiar. This page covers what is different.
+Four-player chess on a 16×16 board. These are the rules of **rules version 2**. If you know regular chess, most of it will feel familiar. This page covers what is different.
 
 Rules marked **(provisional)** are switched on for now but may still change.
 
-Resigning and draws by agreement are part of rules version 1. They add new ways to leave or end a game; how the pieces move is unchanged.
+Rules version 2 is version 1 (with resigning and draws by agreement) on a bigger board: 16×16 instead of 12×12, with the promotion line moved to match. Everything else is unchanged. Games played on the old 12×12 board stay in your match history.
 
 ---
 
 ## The board and the players
 
-- The board has 12 files (columns), **a** to **l**, and 12 ranks (rows), **1** to **12**. Every square is playable, including the empty 2×2 corners. Square a1 is dark, as in normal chess.
+- The board has 16 files (columns), **a** to **p**, and 16 ranks (rows), **1** to **16**. Every square is playable, including the empty 4×4 corners. Square a1 is dark, as in normal chess.
 - Four players sit on the four sides: **South** (bottom), **West** (left), **North** (top) and **East** (right).
 - Turns go **clockwise: South → West → North → East**, then back to South. Players who no longer take turns are skipped.
 - Everyone gets the same army: 8 pawns, 2 rooks, 2 knights, 2 bishops, 1 queen and 1 king. Your civilization is shown as an emblem next to your name. In this version it is cosmetic only.
@@ -22,18 +22,18 @@ Resigning and draws by agreement are part of rules version 1. They add new ways 
 
 ### Starting position
 
-Each army sits centered on its own edge, with two empty squares at each end of the back line.
+Each army sits centered on its own edge, with four empty squares at each end of its back line and pawn line, so the four 4×4 corners start empty.
 
 | Seat | Back line | Pawns | Pawns move toward |
 |---|---|---|---|
-| South | c1 Rook, d1 Knight, e1 Bishop, **f1 Queen**, g1 King, h1 Bishop, i1 Knight, j1 Rook | c2 to j2 | North (rank 12) |
-| North | c12 Rook, d12 Knight, e12 Bishop, **f12 Queen**, g12 King, h12 Bishop, i12 Knight, j12 Rook | c11 to j11 | South (rank 1) |
-| West | a3 Rook, a4 Knight, a5 Bishop, **a6 Queen**, a7 King, a8 Bishop, a9 Knight, a10 Rook | b3 to b10 | East (file l) |
-| East | l3 Rook, l4 Knight, l5 Bishop, **l6 Queen**, l7 King, l8 Bishop, l9 Knight, l10 Rook | k3 to k10 | West (file a) |
+| South | e1 Rook, f1 Knight, g1 Bishop, **h1 Queen**, i1 King, j1 Bishop, k1 Knight, l1 Rook | e2 to l2 | North (rank 16) |
+| North | e16 Rook, f16 Knight, g16 Bishop, **h16 Queen**, i16 King, j16 Bishop, k16 Knight, l16 Rook | e15 to l15 | South (rank 1) |
+| West | a5 Rook, a6 Knight, a7 Bishop, **a8 Queen**, a9 King, a10 Bishop, a11 Knight, a12 Rook | b5 to b12 | East (file p) |
+| East | p5 Rook, p6 Knight, p7 Bishop, **p8 Queen**, p9 King, p10 Bishop, p11 Knight, p12 Rook | o5 to o12 | West (file a) |
 
 As in normal chess, each queen starts on her own color, so opposite queens face each other. South and West are the "light" armies (queen on a light square); North and East are the "dark" armies.
 
-**Watch your corners:** neighboring armies' corner pawns can capture each other from the very first move (c2 and b3, j2 and k3, c11 and b10, j11 and k10). East moves last, so both of East's corner pawns can be taken before East has moved.
+**Room to develop:** no army starts in contact with another, so nobody can capture on the first move. Knights can hop sideways into the empty margin (South: f1 to d2, k1 to m2) and rooks can slide straight into the empty corners (South: e1 to a1, l1 to p1), where a neighbor's rook can meet them.
 
 ---
 
@@ -64,7 +64,7 @@ While the indicator is on, your king's square has a pulsing orange-red ring with
 
 - A pawn moves one square forward, or **two squares** on its first move (from its starting line) if both squares are empty.
 - It captures one square diagonally forward.
-- **Promotion happens halfway:** when a pawn reaches the first line past the middle of the board, it **must** promote. That line is **rank 7 for South, rank 6 for North, file g for West and file f for East**, five steps from where the pawn started. You choose a queen, rook, bishop or knight. You can never promote to a king.
+- **Promotion happens halfway:** when a pawn reaches the first line past the middle of the board, it **must** promote. That line is **rank 9 for South, rank 8 for North, file i for West and file h for East**, seven steps from where the pawn started. You choose a queen, rook, bishop or knight. You can never promote to a king.
 
 ### En passant (provisional)
 
@@ -72,10 +72,11 @@ While the indicator is on, your king's square has a pulsing orange-red ring with
 - Any opponent's pawn that could capture diagonally onto the square the pawn skipped over may do so, as long as that square is still empty and the pawn that moved two squares hasn't moved or been captured. The capturing pawn lands on the skipped square and the other pawn is removed.
 - The chance lasts until it is the moving player's turn again: once the turn order comes back round to that player (even if their turn is skipped), it's gone. It is also gone if that player leaves the game.
 - Several players' en passant chances can be open at the same time.
+- The armies start four squares apart, so en passant only becomes possible once pawns have captured their way off their starting files.
 
 ### Castling
 
-- Castling works like regular chess, along your own back line: the king moves **two squares toward a rook**, and that rook jumps to the square the king crossed. Example for South: king g1 → i1 with rook j1 → h1, or king g1 → e1 with rook c1 → f1.
+- Castling works like regular chess, along your own back line: the king moves **two squares toward a rook**, and that rook jumps to the square the king crossed. Example for South: king i1 → k1 with rook l1 → j1, or king i1 → g1 with rook e1 → h1.
 - You may castle only if the king and that rook have **never moved** and every square between them is **empty**.
 - **No attack restrictions:** you may castle out of, through or into an attacked square.
 - You can castle only while you are an **active** player (see below).

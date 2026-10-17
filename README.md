@@ -1,12 +1,12 @@
 # LinkedLists's Chess Game
 
-A four-player chess variant on a 12×12 board. Each player picks a civilization before the match. Free-for-All and 2v2 Teams are both supported, with timed games, bots at selectable strength, and accounts shared with a future Unity/Steam client.
+A four-player chess variant on a 16×16 board. Each player picks a civilization before the match. Free-for-All and 2v2 Teams are both supported, with timed games, bots at selectable strength, and accounts shared with a future Unity/Steam client.
 
 > Working title. The display name lives in [`packages/config`](packages/config/src/index.ts) (`APP_NAME`).
 
 ## What's in the game
 
-- **Four players, 12×12 board**, Free-for-All or 2v2 Teams, with the rules in
+- **Four players, 16×16 board**, Free-for-All or 2v2 Teams, with the rules in
   [docs/RULES.md](docs/RULES.md) (leaders can be captured, mid-board promotion, stalemate is a loss).
 - **Nine civilizations**, each shown by an original, flag-free emblem beside the player's name.
 - **Multiplayer lobbies**: public or password-protected, 10+0 or 3+2 clocks, empty seats filled

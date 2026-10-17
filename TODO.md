@@ -1,6 +1,7 @@
 # TODO — single source of truth
 
 Conventions (see [CLAUDE.md](CLAUDE.md)):
+
 - "Add to to-do" means adding an item here.
 - Completed items are struck through in place with the date: `~~item~~ (done YYYY-MM-DD)`. Nothing is deleted. There are no checkboxes.
 - Section references (§) point to [docs/PLAN.md](docs/PLAN.md).
@@ -10,6 +11,7 @@ Conventions (see [CLAUDE.md](CLAUDE.md)):
 ## Now — v1 build
 
 ### M0 — Foundation
+
 - ~~Monorepo: pnpm workspaces + Cargo workspace, shared TS config, Biome lint/format~~ (done 2026-10-14)
 - ~~`packages/config` with `APP_NAME`~~ (done 2026-10-14)
 - ~~README rewritten for the working title (old "Civilization Chess" tagline removed)~~ (done 2026-10-14)
@@ -19,6 +21,7 @@ Conventions (see [CLAUDE.md](CLAUDE.md)):
 - ~~Docker Compose file for the dev/prod stack — `infra/docker-compose.yml` now holds the full production stack (see M7) but is untested: Docker isn't installed on the dev machine (needs sudo). Verify with `docker compose config` and a local `up` once Docker is available.~~ (done 2026-10-17; both images built, a local tunnel-less stack migrated, served /api/health, played a full solo game against the containerized bot-service, and passed a backup dry run plus a restore drill. Fixes: root `.dockerignore`, stale-engine builds from the cargo cache on rollbacks, server image 663 → ~470 MB, server healthcheck, Cloudflare Tunnel behind the `tunnel` profile, `backup.sh --dry-run`, a restore procedure that works. Optional dev Postgres on :5433 in `infra/docker-compose.dev.yml`)
 
 ### M1 — Rules core (Rust) — §2
+
 - ~~Board geometry, coordinates, square colors, seats, turn order~~ (done 2026-10-15)
 - ~~Piece roster + leader roles (data-driven), standard v1 roster for all civs~~ (done 2026-10-15)
 - ~~Starting setup for all four seats (exact squares per §2)~~ (done 2026-10-15)
@@ -33,8 +36,10 @@ Conventions (see [CLAUDE.md](CLAUDE.md)):
 - ~~Perft tests, rule unit tests, randomized self-play fuzzing~~ (done 2026-10-15)
 - ~~WASM bindings (`rules-wasm`) with identical results to native~~ (done 2026-10-15; `crates/rules-wasm` + typed `@game/rules` wrapper, JS-side perft matches native)
 - ~~`docs/RULES.md` player-facing rules~~ (done 2026-10-15)
+- ~~16×16 board (rules v2)~~ (done 2026-10-17; `RULES_VERSION` 2. Each army centred on its edge with four empty squares either side and playable 4×4 corners (South e1–l1, Q h1 light, K i1; West a5–a12; North e16–l16, Q h16 dark; East p5–p12); promotion on the first line past the centre (S rank 9, N rank 8, W file i, E file h); castling on the new back lines; everything else unchanged. Perft from the start: 30, 900, 27,000, 810,000 (no contact for the first round), then 28,561,080 FFA / 28,557,360 Teams at depth 5. Engine, WASM, `@game/rules`, bots (16×16 piece-square tables), board renderer (shader, labels, hit testing), web copy, server, tests and docs updated. Stored 12×12 games (rules version 1) stay in history; re-simulation refuses them with `UnsupportedRulesVersionError` instead of mis-replaying)
 
 ### M2 — Board renderer (web) — §3
+
 - ~~PixiJS board, original piece and board art, seat colors (colorblind-safe)~~ (done 2026-10-15; `packages/board` (`@game/board`): procedural shader board, lit piece atlas from `packages/assets`, CVD-checked palette + optional shape markers)
 - ~~Animations: move, capture particles, FFA army dissolve, Teams grey/freeze~~ (done 2026-10-15)
 - ~~Move hints, drag/click to move, promotion picker, auto-rotation, sounds~~ (done 2026-10-15; basic keyboard control; screen-reader announcements not yet)
@@ -50,6 +55,7 @@ Conventions (see [CLAUDE.md](CLAUDE.md)):
 - Board: install binaryen (wasm-opt) in CI/release builds so the rules wasm ships size-optimized (the build now warns when it is missing)
 
 ### M3 — Accounts + legal — §1, §5, §8
+
 - ~~Better Auth: email/password (argon2id via custom hash/verify), verification and reset via Resend~~ (done 2026-10-15)
 - ~~OAuth: Google, Discord, GitHub, Microsoft~~ (done 2026-10-15) (each provider switches on when its env credentials exist; not yet tried against live providers, see Before public release)
 - ~~Passkeys; TOTP MFA + backup codes (`allowPasswordless: true`)~~ (done 2026-10-15)
@@ -73,6 +79,7 @@ Conventions (see [CLAUDE.md](CLAUDE.md)):
 - Product/legal call: after an under-13 answer, should signing in to an existing, already age-confirmed account stay blocked for 24 h (current behavior) or be allowed?
 
 ### M4 — Lobbies — §3
+
 - ~~Colyseus lobby list + lobby room; create (mode, time control, optional hashed password with attempt limits)~~ (done 2026-10-15; `packages/protocol` (`@game/protocol`) holds the versioned wire contract + JSON Schema export)
 - ~~Seats/teams, host controls, ready/start, session-bound seats~~ (done 2026-10-15)
 - ~~Blind civ pick with emblems beside usernames~~ (done 2026-10-15; server: civ per seat, duplicates allowed; web: civ picker and emblem beside every name in the lobby, game panel, results and history)
@@ -83,6 +90,7 @@ Conventions (see [CLAUDE.md](CLAUDE.md)):
 - Friends: ranked challenges (invite-only ranked lobbies; today challenges are casual only)
 
 ### M5 — Live games — §2, §5
+
 - ~~Authoritative game room, server clocks (10+0, 3+2), reconnect grace + abandon~~ (done 2026-10-15)
 - ~~All defeat paths, end screen~~ (done 2026-10-15; server: leader capture, stalemate, timeout, abandon, `gameOver`; web: result screen with placements and rating changes)
 - ~~Incremental event persistence, abort-on-restart, re-simulation check~~ (done 2026-10-15)
@@ -104,6 +112,7 @@ Conventions (see [CLAUDE.md](CLAUDE.md)):
 - Lobbies: product call on the per-room password limit (PLAN §1: 5/min per IP and per room). Anyone can keep a private lobby locked for everyone, the host's friends included, by guessing wrong 5 times a minute. Options: let a correct password through from an IP or user with no failures, show the host who is guessing, or let the host rotate the password
 
 ### M6 — Bots — §6
+
 - ~~Teams team-signed alpha-beta, FFA BRS+ (Paranoid fallback)~~ (done 2026-10-15; `crates/bot-engine`, BRS+ beat Paranoid in arena tests and is the default)
 - ~~Handcrafted evaluation, strength levels 600–2400 + Max~~ (done 2026-10-15; level parameters calibrated with `bot-arena` 2026-10-15, see [docs/bots-calibration.md](docs/bots-calibration.md))
 - ~~`bot-service` (CPU-limited, deadline-aware, load-shedding)~~ (done 2026-10-15; `crates/bot-service`: axum service, EDF worker pool, 503 + Retry-After fallback contract in its README, Dockerfile + compose service)
@@ -112,6 +121,7 @@ Conventions (see [CLAUDE.md](CLAUDE.md)):
 - ~~Review fixes (bots): BRS/BRS+ default moves save their own leader and take the root's; an interrupted first iteration never leaks move-ordering scores into the result; depth-1 node cap and exact-root window (no more multi-second "node-bound" moves); fail-soft quiescence delta pruning no longer poisons the TT; FFA move-limit tie valued on the evaluation's scale; bot-service gives every search a minimum time or answers 503 (no unsearched moves), honest `degraded`, header/body timeouts and a bounded shutdown drain, listen backlog 1024, abandoned jobs leave the queue, untimed 2400 reproducible, per-status metrics, JS-style numbers accepted and unknown fields rejected~~ (done 2026-10-15; levels re-checked with bot-arena, see [docs/bots-calibration.md](docs/bots-calibration.md))
 
 ### M7 — Deploy — §9
+
 - ~~Production container images and stack: server Dockerfile, `infra/docker-compose.yml` (Postgres, migrations, server, bot-service, Cloudflare Tunnel), SSH-only firewall script~~ (done 2026-10-15; untested locally: Docker isn't installed on the dev machine. Caddy + Cloudflare-only firewall replaced by a Cloudflare Tunnel because Docker's published ports bypass `ufw`)
 - ~~Web deploy to Cloudflare Pages via GitHub Actions (`.github/workflows/deploy-web.yml`, inactive until repo secrets are set)~~ (done 2026-10-15)
 - ~~Draining deploys (45 min stop grace), nightly encrypted 30-day off-site backups (`infra/backup.sh`), restore + `reapply-deletions` steps~~ (done 2026-10-15)
@@ -129,16 +139,18 @@ Conventions (see [CLAUDE.md](CLAUDE.md)):
 ---
 
 ## Open rules questions
+
 - Confirm en passant rule (§2); stays behind a flag until confirmed
 - Confirm "Abandon = timeout" after the 60-second reconnect grace
 - Confirm that a stalemated or timed-out player's leader no longer keeps a Teams team alive
 - ~~Teams resignation: player-only or whole team?~~ (done 2026-10-16; whole team, by teammate vote: the resigner proposes, the teammate agrees (both lose, the other team wins at once) or declines (both play on); a frozen teammate means the team resigns at once. User rule; see PLAN §2 and docs/RULES.md "Resigning")
 - ~~Attacked-leader glow: default on or off, and per-lobby toggle? (decide before M2)~~ (done 2026-10-16; replaced by the check indicator, always on with no setting or lobby toggle: only for the viewer's own seat, when their turn starts with their leader under attack, and right after their own move leaves it attacked (until it no longer is); never prevents or pre-warns a move. User rule; see PLAN §2 and docs/RULES.md "Check indicators")
-- Review corner-pawn opening balance (East exposed on both corners) with bot-arena data (first bot data 2026-10-15 in [docs/bots-calibration.md](docs/bots-calibration.md): FFA East wins 23.0 ± 1.8% vs fair 25%, no Teams bias)
+- ~~Review corner-pawn opening balance (East exposed on both corners) with bot-arena data (first bot data 2026-10-15 in [docs/bots-calibration.md](docs/bots-calibration.md): FFA East wins 23.0 ± 1.8% vs fair 25%, no Teams bias)~~ (done 2026-10-17; moot with the 16×16 board: no army starts in contact, so there are no move-1 corner-pawn captures. Seat bias of the new board is in docs/bots-calibration.md)
 - FFA move-limit tie placements: survivors share 1st and defeated seats keep their reverse-defeat placements (e.g. 1st, 1st, 3rd, 4th) — confirm this is what lobby results and ratings should show
 - Confirm: a Teams seat that was already DEFEATED and then freezes does not reset the move-limit counter (only ACTIVE-seat defeats reset it)
 
 ## Before public release
+
 - Moderation: profanity filter, reserved/impersonation names, report button + review queue, username change policy
 - Process for deleting accounts found to belong to under-13s (COPPA actual knowledge)
 - Attorney review of Terms/Privacy (choose dispute option A or B, confirm minor/guardian language)
@@ -167,9 +179,11 @@ Conventions (see [CLAUDE.md](CLAUDE.md)):
 - Quarterly: check state privacy-law thresholds (e.g. CT 35,000, VA 100,000 consumers) against MAU by state
 
 ## Before marketing in the EU/UK
+
 - Decide on Art. 27 EU and UK representatives; apply UK Children's Code high-privacy defaults for under-18s (attorney confirms)
 
 ## Anti-cheat (not now; ideas kept)
+
 - Statistical engine-match analysis on rated games (compare with bot-engine top choices, weighted by position complexity)
 - Move-time consistency analysis
 - Report-driven review queue
@@ -178,12 +192,15 @@ Conventions (see [CLAUDE.md](CLAUDE.md)):
 - Spectator delay on rated games once spectating exists
 
 ## Monetization (undecided)
+
 - Evaluate: cosmetic piece sets/boards/emblem frames, supporter subscription, paid Steam version alongside a free web version, battle-pass-style progression (no pay-to-win; affects progression data design)
 
 ## Mobile
+
 - Responsive layout, touch drag/tap controls, portrait board scaling, PWA install
 
 ## Designed-for-later features
+
 - Move log UI
 - ~~Resign~~ (done 2026-10-16; `resign` message, any time while still taking turns: FFA removes the army, Teams freezes the seat; a resign on your turn ends it with no increment; the player stays in the room as a spectator; confirm dialog in the game panel; "Resigned" in the player list and the result)
 - ~~Teams resignation by teammate vote~~ (done 2026-10-16; `resign` in Teams proposes resigning the team and the teammate answers with `respondResign` (Agree: `Game.applyResign` resigns both seats, the game ends at once, end reason `team_resigned`, a loss for both in ranked Elo; Decline: both play on). Lapses after one full round or when either teammate stops taking turns; 2-move cooldown after a decline or lapse; a frozen teammate means an immediate team resignation; a bot teammate agrees only when its team is clearly losing (draw heuristic). Protocol v1 additions: `respondResign`, `resignEvent`, `teamResignSeat[2]` and `teamResignCooldowns[4]` state fields, three error codes; `resign_proposal` / `resign_response` match events (migration 0006). Web: Teams resign dialog explains the vote, "Waiting for …" status for the proposer, a request card with "Resign the game" / "Keep playing" for the teammate, toasts on decline and lapse, "Your team resigned" on the result screen)

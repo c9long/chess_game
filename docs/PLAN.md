@@ -4,7 +4,7 @@
 
 ## Context
 
-We are starting from an empty repository (`/home/c9long/chess_game`). The goal is a **4-player chess variant on a 12×12 board**. It runs in the browser first, at high visual quality. Players pick one of 9 civilizations before each game. For now a civ is cosmetic only: an emblem beside the username, never a flag. Later, civs will get abilities that change the rules, including replacing the king with other "leader" pieces or having no single leader at all. The rules engine is designed around that from day one.
+We are starting from an empty repository (`/home/c9long/chess_game`). The goal is a **4-player chess variant on a 16×16 board** (12×12 until rules version 2, 2026-10-17). It runs in the browser first, at high visual quality. Players pick one of 9 civilizations before each game. For now a civ is cosmetic only: an emblem beside the username, never a flag. Later, civs will get abilities that change the rules, including replacing the king with other "leader" pieces or having no single leader at all. The rules engine is designed around that from day one.
 
 Later the game will be ported to a **Unity PC client sold on Steam**. That client must share the *same* accounts, progression, ratings and match history, and must be able to play in the same lobbies as browser players (crossplay). Every decision below is made so that the Unity port is a **new front-end only**: the rules, server, database and bots stay as they are.
 
@@ -17,7 +17,7 @@ Later the game will be ported to a **Unity PC client sold on Steam**. That clien
 - **On defeat:** in FFA the army is removed. In Teams a defeated player's pieces stay in play while their partner is still in the game (see §2).
 - **Move limit:** 25 full rounds with no capture or pawn move ends the game.
 - **Civ picks:** "Blind pick" (duplicates allowed, as in League of Legends' blind mode) now. "Draft" (bans plus pick order, the "serious" mode) is designed now and built later. "Unique-civ matchmaking" comes when there is a player base.
-- **Board:** all 144 squares are playable, including the 2×2 corners that start empty.
+- **Board:** all 256 squares are playable, including the 4×4 corners that start empty.
 - **Disconnects:** the clock keeps running, with a 60-second reconnect grace window shown to others. Optional bot takeover in casual games is designed now and built after v1 (tracked in TODO).
 - **Rated play:** only in **ranked lobbies**, chosen when the lobby is created. Ranked lobbies take registered accounts only (no guests, no bots) and are timed; casual lobbies are never rated, even with four registered players (changed from "rated iff all 4 seats are registered humans", 2026-10-16). Ratings are 4-player **Elo** (§5).
 - **Legal docs:** I draft the Terms, Privacy Policy, account deletion/export and the 13+ age gate (§8). An attorney reviews them before launch.
@@ -31,7 +31,7 @@ Later the game will be ported to a **Unity PC client sold on Steam**. That clien
 | Layer | Choice | Why this one |
 |---|---|---|
 | **Rules engine** (the one true implementation of the rules) | **Rust** library, compiled to **WebAssembly** for browser and server, and to a **native Windows DLL** for Unity | We write the rules once and they run identically everywhere. This matters most when civ abilities change the rules: two separate copies of the rules (e.g. JS + C#) would drift apart and cause "desync" bugs. Rust is also fast enough to power the bots. |
-| **Bot engine** | **Rust** (same codebase as the rules) running as its own small service | No existing engine supports 4-player 12×12 with these rules (see §6). Sharing the rules crate means every new rule or civ ability is automatically understood by the bots. |
+| **Bot engine** | **Rust** (same codebase as the rules) running as its own small service | No existing engine supports 4-player 16×16 with these rules (see §6). Sharing the rules crate means every new rule or civ ability is automatically understood by the bots. |
 | **Web front-end** | **TypeScript + React 19 + Vite**. The board is rendered with **PixiJS 8** (GPU-accelerated WebGL/WebGPU). Menus use **Tailwind CSS** with **Motion** animations. | PixiJS gives game-quality 2D: smooth 60 fps animation, particles, lighting/glow filters, and crisp art at any screen resolution. React handles menus, lobbies and forms. The board renderer sits behind an interface, so a 3D (Three.js) board could be swapped in later. |
 | **Game / API server** | **Node.js 24 LTS + TypeScript** with **Colyseus** for real-time rooms and **Express** for regular web requests | Colyseus is a mature open-source multiplayer framework. It handles lobbies, seat reservation, reconnection and live room lists, and it ships an **official Unity (C#) SDK**. That gives crossplay almost for free. |
 | **Authentication** | **Better Auth** (open-source TypeScript auth library) | One vetted library covers email+password, email verification, password reset, OAuth sign-in, **passkeys** (WebAuthn), **TOTP MFA plus backup codes**, **guest accounts**, and **bearer tokens / device-code login** for Unity. Better Auth hashes with scrypt by default; we plug in **argon2id** (`@node-rs/argon2`, m=19456 KiB, t=2, p=1) through its custom hash/verify option. Steam sign-in needs a small custom plugin (§7). |
@@ -84,25 +84,31 @@ chess_game/
 
 ---
 
-## 2. Game Rules Specification ("rules_version 1")
+## 2. Game Rules Specification (rules version 2)
+
+**Rules version 2 (2026-10-17)** is version 1 on a 16×16 board instead of 12×12: the setup below,
+the promotion line moved to the first line past the new centre, castling along the new back
+lines. Everything else (statuses, move limit, resign and draw rules, ...) is unchanged. Matches
+stored as rules version 1 stay in the history but are not replayed by the current engine
+(re-simulation refuses them with a clear error).
 
 ### Board & seats
-- 12×12 board. Files are **a–l** (left→right from South's view), ranks **1–12** (bottom→top). Square a1 is dark.
+- 16×16 board. Files are **a–p** (left→right from South's view), ranks **1–16** (bottom→top). Square a1 is dark.
 - Four seats, with turn order **clockwise: South → West → North → East**. Seats that no longer take turns (removed or frozen) are skipped.
 - Seat colors are neutral game colors (e.g. Crimson, Azure, Gold, Jade), never national colors. The civ emblem carries identity.
 - **Teams:** South+North vs West+East. Turns alternate teams while all four seats are taking turns. A skipped (frozen) seat can give one team two turns in a row.
 
-### Starting setup ("centered", 2 empty squares at each end, empty 2×2 corners)
+### Starting setup ("centered", 4 empty squares at each end, empty 4×4 corners)
 | Seat | Back line (exact squares) | Pawns | Pawns advance toward |
 |---|---|---|---|
-| South | c1 R, d1 N, e1 B, **f1 Q** (light), g1 K, h1 B, i1 N, j1 R | c2–j2 | north (rank 12) |
-| North | c12 R, d12 N, e12 B, **f12 Q** (dark), g12 K, h12 B, i12 N, j12 R | c11–j11 | south (rank 1) |
-| West | a3 R, a4 N, a5 B, **a6 Q** (light), a7 K, a8 B, a9 N, a10 R | b3–b10 | east (file l) |
-| East | l3 R, l4 N, l5 B, **l6 Q** (dark), l7 K, l8 B, l9 N, l10 R | k3–k10 | west (file a) |
+| South | e1 R, f1 N, g1 B, **h1 Q** (light), i1 K, j1 B, k1 N, l1 R | e2–l2 | north (rank 16) |
+| North | e16 R, f16 N, g16 B, **h16 Q** (dark), i16 K, j16 B, k16 N, l16 R | e15–l15 | south (rank 1) |
+| West | a5 R, a6 N, a7 B, **a8 Q** (light), a9 K, a10 B, a11 N, a12 R | b5–b12 | east (file p) |
+| East | p5 R, p6 N, p7 B, **p8 Q** (dark), p9 K, p10 B, p11 N, p12 R | o5–o12 | west (file a) |
 
 **"Queen on her color":** opposing queens face each other on the same line, as in standard chess. South and West are "light" armies (queen on a light square); North and East are "dark" armies (queen on a dark square). Each Teams pairing has one light and one dark army.
 
-**Heads-up (from the review):** neighbouring armies' corner pawns attack each other from move 1: c2↔b3, j2↔k3, c11↔b10, j11↔k10. With clockwise order, East's two corner pawns can be attacked before East ever moves. This follows directly from your layout and isn't changed. It is a balance item to watch with bot-arena data (TODO).
+**No contact at the start (rules version 2):** the armies start four squares apart, so no piece can capture on move 1 (on the 12×12 board neighbouring corner pawns attacked each other from move 1). Each seat has 30 opening moves: 16 pawn moves, 3 per knight (one into the empty margin) and 4 per rook (into the empty corner). En passant can only arise after pawns have captured their way off their starting files.
 
 ### Pieces, rosters and leaders (the foundation for civ abilities)
 - Each civ has a **piece roster** (data, not hard-coded logic). Each piece type has a movement definition and an optional **`leader`** role.
@@ -121,8 +127,8 @@ chess_game/
   - Several seats' targets may be live at once.
 - **Castling:** only for civs with **exactly one leader**, and only while the seat is ACTIVE.
   - Conditions: the leader and that rook have never moved, and the squares between them are empty. **No attack restrictions.**
-  - The leader moves two squares toward the rook, and the rook lands on the square the leader crossed. It works the same along each player's own back line (rank 1/12, file a/l).
-- **Promotion is mandatory on the first line past the center:** **South on rank 7, North on rank 6, West on file g, East on file f**, 5 steps from the pawn's start. The pawn becomes any **non-leader, non-pawn** piece in that civ's roster (v1: Q, R, B, N).
+  - The leader moves two squares toward the rook, and the rook lands on the square the leader crossed. It works the same along each player's own back line (rank 1/16, file a/p). South: K i1→k1 with R l1→j1, or K i1→g1 with R e1→h1.
+- **Promotion is mandatory on the first line past the center:** **South on rank 9, North on rank 8, West on file i, East on file h**, 7 steps from the pawn's start. The pawn becomes any **non-leader, non-pawn** piece in that civ's roster (v1: Q, R, B, N).
 - Teammates can't capture each other. Their pieces block like your own.
 
 ### Seat status (one definition used everywhere)
@@ -297,7 +303,7 @@ Allowing self-check **helps us**. Move generation doesn't have to check that a m
    - **FFA:** **Best-Reply Search (BRS+)**, a published multiplayer search that performs strongly in multiplayer board games, with **Paranoid** as the fallback. Both reuse the same code.
 2. **Evaluation (no training needed):** handcrafted scoring covering:
    - material (4-player values);
-   - 12×12 piece-square tables rotated per seat;
+   - piece-square tables (generated for 16×16) rotated per seat;
    - mobility;
    - pawn advancement toward the promotion line;
    - **leader safety (heavily weighted, since leaders can be captured outright)**.
@@ -527,12 +533,12 @@ If many players fill seats with strong bots, the next step is a bigger OVH tier 
 
 - **Rules core:**
   - Unit tests for every rule in §2:
-    - setup squares and colors, and the corner-pawn captures available on move 1;
+    - setup squares and colors, and the 30 opening moves per seat (no contact on move 1);
     - leader capture by a non-adjacent seat;
     - stalemate-once, then auto-pass;
     - Teams cases: stalemated A plus B losing its leader → team out; frozen A plus B losing its leader → team out; leaderless teammate timing out → frozen;
     - castling with no attack checks, and only while ACTIVE;
-    - promotion on rank 7/6 and file g/f;
+    - promotion on rank 9/8 and file i/h;
     - en passant expiry when the double-stepper is skipped;
     - the move-limit counter resets on defeat and with a frozen seat.
   - "Perft" move-count tests on hand-verified positions, including frozen or passing seats.
