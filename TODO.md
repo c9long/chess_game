@@ -158,7 +158,8 @@ Conventions (see [CLAUDE.md](CLAUDE.md)):
 - Moderation: appeals process for warnings, username resets and suspensions (Terms §8.2 names an email; decide who answers and how fast)
 - Moderation: "Warn" only records the decision; tell the player (email or an in-app notice)
 - Moderation: let admins open the reported game (players, moves) from the review queue; today they copy the match id
-- Moderation: keep a reset (offensive) username reserved so nobody else can take it right away
+- ~~Moderation: keep a reset (offensive) username reserved so nobody else can take it right away~~ (done 2026-10-17; held for a year in `reserved_names`, migration 0009, purged nightly)
+- Moderation: guests can't be suspended (a new guest session is one click away); if guest abuse shows up, tie a suspension to something durable (e.g. a short-lived IP hash) or require an account for public lobbies
 - Moderation: require two-step verification (or a fresh sign-in) for admin actions, and keep an audit row for unsuspensions (today only the log line)
 - Username changes, if ever offered: at most once per 30 days, and the old name stays reserved for 30 days
 - Process for deleting accounts found to belong to under-13s (COPPA actual knowledge)

@@ -226,6 +226,7 @@ When you delete your account, we remove your email, username, sign-in methods an
 | **Friends lists and friend requests** | Until you (or the other player) remove the friend, decline or cancel the request. **Deleted, not de-identified, when you delete your account.** Online status is never stored; challenges live only in server memory for at most 5 minutes. |
 | **Blocks** | Until you unblock the player. **Deleted when either account is deleted.** |
 | **Reports** | Open reports until a moderator reviews them. Reviewed reports (resolved or dismissed), including who handled them, when, and what was done, are **deleted 1 year after the review**. |
+| **Usernames reset by a moderator** | The old username alone (not linked to any account) for **1 year**, so nobody can register it again straight away. |
 | **Suspensions** | The date and the moderator who suspended the account, until the suspension is lifted or the account is deleted. |
 | **Support, appeal and privacy-request emails** | [2 years] after the matter is closed, or longer if needed for a legal claim. |
 | **Moderation records** (e.g. reasons for a ban) | [For as long as needed to enforce the ban, up to [X] years]. |
