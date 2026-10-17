@@ -127,7 +127,10 @@ describe('resign', () => {
     expect(south.state.seatToMove).toBe(0)
     const startedAt = south.state.clock.turnStartedAt
 
-    // North resigns off turn: its army goes, South keeps the move and its running clock.
+    // North resigns off turn: its army goes, South keeps the move and its running clock. The
+    // pause makes a restarted turn show up as a jump of 200+ ms, well clear of the tolerance
+    // below (which only absorbs timestamp re-anchoring on a loaded machine).
+    await new Promise((resolve) => setTimeout(resolve, 200))
     north.send('resign')
     const off = await south.waitMessage('events', (e) => e.action === 'resign')
     expect(off).toMatchObject({ action: 'resign', seat: 2, notation: null, seatToMove: 0 })
@@ -136,7 +139,7 @@ describe('resign', () => {
       { type: 'army_removed', seat: 'north' },
     ])
     expect(off.clock.runningSeat).toBe(0)
-    expect(Math.abs(off.clock.turnStartedAt - startedAt)).toBeLessThan(5)
+    expect(Math.abs(off.clock.turnStartedAt - startedAt)).toBeLessThan(50)
     await south.waitState((s) => s.seats[2]?.status === 'removed')
 
     // The resigned player stays in the room, watching, and can't resign or offer again.
