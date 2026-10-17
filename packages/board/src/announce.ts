@@ -75,6 +75,37 @@ function teamSeats(team: string): readonly [Seat, Seat] {
   return team === 'south_north' ? ['south', 'north'] : ['west', 'east']
 }
 
+/** "West", "West and North", "you, West and North". */
+function listSeats(seats: readonly Seat[], ctx: AnnounceContext): string {
+  const names = seats.map((seat) => (seat === ctx.localSeat ? 'you' : ctx.seatLabel(seat)))
+  if (names.length <= 1) return names[0] ?? ''
+  return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
+}
+
+/**
+ * The result sentence. `next` and `defeated` (seats knocked out in the same step) tell an
+ * agreed draw apart from a game that a host ends as a draw once a player is out (a solo
+ * game: the remaining seats share first place; nobody offered a draw).
+ */
+export function describeResult(
+  result: GameResult,
+  ctx: AnnounceContext = DEFAULT_ANNOUNCE,
+  next: Snapshot | null = null,
+  defeated: readonly Seat[] = [],
+): string {
+  if (result.type === 'ffa_agreed_draw' && next && defeated.length > 0) {
+    const rest = SEATS.filter((_, s) => next.statuses[s] === 'active')
+    const share = rest.length > 0 ? `${capitalise(listSeats(rest, ctx))} share first place.` : ''
+    const local = ctx.localSeat
+    const head =
+      local !== null && defeated.includes(local)
+        ? 'Game over. You were eliminated, so the game ends here.'
+        : 'Game over. The game ends here.'
+    return share ? `${head} ${share}` : head
+  }
+  return resultText(result, ctx)
+}
+
 function resultText(result: GameResult, ctx: AnnounceContext): string {
   switch (result.type) {
     case 'ffa_winner':
@@ -176,20 +207,39 @@ export function describeStep(
     }
   }
   flush()
-  // Checks that appeared with this step (information only: a leader under attack).
+  // Checks that appeared with this step (information only: a leader under attack). A seat
+  // with several leaders (England) is told again when another of them comes under attack.
   if (!next.isOver) {
     SEATS.forEach((seat, s) => {
-      if (!next.leaderUnderAttack[s] || prev?.leaderUnderAttack[s]) return
+      if (!next.leaderUnderAttack[s]) return
       if (seat === ctx.localSeat && !ctx.ownCheck) return
+      if (prev?.leaderUnderAttack[s]) {
+        const several = (next.leaderSquares[s]?.length ?? 1) > 1
+        const before = prev.attackedLeaderSquares[s] ?? []
+        const now = next.attackedLeaderSquares[s] ?? []
+        if (!several || now.every((sq) => before.includes(sq))) return
+      }
       out.push(`Check: ${whose(seat, ctx)} ${attackedText(next, s)} under attack.`)
     })
   }
   out.push(...tail)
+  const defeated = events.flatMap((e) => (e.type === 'defeat' ? [e.seat] : []))
   const ended = events.find((e) => e.type === 'game_ended')
-  if (ended && ended.type === 'game_ended') out.push(resultText(ended.outcome.result, ctx))
+  if (ended && ended.type === 'game_ended')
+    out.push(describeResult(ended.outcome.result, ctx, next, defeated))
   else if (next.isOver && next.outcome && !prev?.isOver)
-    out.push(resultText(next.outcome.result, ctx))
+    out.push(describeResult(next.outcome.result, ctx, next, defeated))
   return out.map((s) => capitalise(s))
+}
+
+/**
+ * The turn arriving at the viewer's seat (`ctx.localSeat`): "Your move.", with the check
+ * when their leader is under attack ("Your move. Check: your king is under attack.").
+ */
+export function describeTurn(next: Snapshot, ctx: AnnounceContext): string {
+  const s = ctx.localSeat === null ? -1 : SEATS.indexOf(ctx.localSeat)
+  if (s < 0 || !next.leaderUnderAttack[s]) return 'Your move.'
+  return `Your move. Check: your ${attackedText(next, s)} under attack.`
 }
 
 /**
@@ -285,7 +335,10 @@ export class LiveAnnouncer {
   readonly #batch: AnnounceBatcher
   #lastCursor = ''
 
-  constructor(parent: HTMLElement, options: { quietMs?: number; maxWaitMs?: number } = {}) {
+  constructor(
+    parent: HTMLElement,
+    options: { quietMs?: number; maxWaitMs?: number; onLine?: (text: string) => void } = {},
+  ) {
     const doc = parent.ownerDocument
     this.moves = doc.createElement('div')
     this.moves.setAttribute('aria-live', 'polite')
@@ -317,6 +370,7 @@ export class LiveAnnouncer {
       this.moves.appendChild(line)
       // Only additions are read; old lines are kept briefly, then dropped.
       while (this.moves.childElementCount > 4) this.moves.firstElementChild?.remove()
+      options.onLine?.(text)
     }, options)
   }
 

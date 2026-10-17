@@ -57,6 +57,9 @@ test('a whole move by keyboard, every step read out', async ({ page }) => {
   await expect(cursorRegion(page)).toHaveText('Board. Your move. Cursor on i1, South king.')
   const outline = await page.locator('canvas').evaluate((c) => getComputedStyle(c).outlineStyle)
   expect(outline).toBe('solid')
+  // Against the board's edge the cursor stays put, and says so.
+  await press(page, 'ArrowDown')
+  await expect(cursorRegion(page)).toHaveText('Edge of the board. i1, South king')
   await press(page, 'ArrowUp')
   await expect(cursorRegion(page)).toHaveText('i2, South pawn')
   await press(page, 'ArrowLeft', 4)
@@ -73,7 +76,9 @@ test('a whole move by keyboard, every step read out', async ({ page }) => {
   await press(page, 'Space')
   await settle(page)
   expect((await engineBoard(page)).pieces.e4).toBe('south pawn')
-  await expect.poll(() => announcements(page)).toContain('South: pawn e2 to e4.')
+  // The move line is the confirmation (read soon, not batched); no separate "Move sent.".
+  await expect.poll(() => announcements(page), { timeout: 600 }).toContain('South: pawn e2 to e4.')
+  await expect(cursorRegion(page)).not.toHaveText(/Move sent/)
 })
 
 test('Escape cancels a selection; an illegal square says why', async ({ page }) => {
@@ -83,8 +88,9 @@ test('Escape cancels a selection; an illegal square says why', async ({ page }) 
   await expect(cursorRegion(page)).toHaveText(/Picked up pawn on i2/)
   await press(page, 'Escape')
   await expect(cursorRegion(page)).toHaveText('Nothing selected.')
-  // Escape again hides the cursor; Enter shows it first, then picks up.
+  // Escape again hides the cursor (and says so); Enter shows it first, then picks up.
   await press(page, 'Escape')
+  await expect(cursorRegion(page)).toHaveText('Cursor hidden. An arrow key shows it again.')
   await press(page, 'Enter')
   await expect(cursorRegion(page)).toHaveText('Cursor on i2, South pawn.')
   await press(page, 'Enter')

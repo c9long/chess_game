@@ -108,27 +108,42 @@ async function squareAt(page: Page, p: Pt): Promise<string> {
  * (software rendering), too slow for a double tap, so these are synthetic touch pointer
  * events dispatched in one go (PixiJS reads pointerdown on the canvas, pointerup on window).
  */
-async function doubleTap(page: Page, p: Pt) {
-  await page.evaluate((pt) => {
-    const cv = (globalThis as unknown as { __sandbox: { view: { canvas: HTMLCanvasElement } } })
-      .__sandbox.view.canvas
-    const init = (id: number, buttons: number): PointerEventInit => ({
-      pointerId: id,
-      pointerType: 'touch',
-      isPrimary: true,
-      clientX: pt.x,
-      clientY: pt.y,
-      button: 0,
-      buttons,
-      bubbles: true,
-      cancelable: true,
-      composed: true,
-    })
-    for (const id of [901, 902]) {
-      cv.dispatchEvent(new PointerEvent('pointerdown', init(id, 1)))
-      cv.dispatchEvent(new PointerEvent('pointerup', init(id, 0)))
-    }
-  }, p)
+async function doubleTap(page: Page, p: Pt, q: Pt = p) {
+  await page.evaluate(
+    ([p1, p2]) => {
+      const cv = (globalThis as unknown as { __sandbox: { view: { canvas: HTMLCanvasElement } } })
+        .__sandbox.view.canvas
+      const init = (
+        id: number,
+        buttons: number,
+        pt: { x: number; y: number },
+      ): PointerEventInit => ({
+        pointerId: id,
+        pointerType: 'touch',
+        isPrimary: true,
+        clientX: pt.x,
+        clientY: pt.y,
+        button: 0,
+        buttons,
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+      })
+      for (const [id, pt] of [
+        [901, p1],
+        [902, p2],
+      ] as const) {
+        cv.dispatchEvent(new PointerEvent('pointerdown', init(id, 1, pt)))
+        cv.dispatchEvent(new PointerEvent('pointerup', init(id, 0, pt)))
+      }
+    },
+    [p, q] as const,
+  )
+}
+
+/** The element a tap at `p` lands on: 'CANVAS', or 'BUTTON' / 'SPAN' / 'svg' for the zoom button. */
+async function tapTarget(page: Page, p: Pt): Promise<string> {
+  return page.evaluate((pt) => document.elementFromPoint(pt.x, pt.y)?.nodeName ?? '', p)
 }
 
 async function tapSquare(page: Page, sq: string) {
@@ -150,6 +165,10 @@ test('the zoom button zooms to fingertip-sized squares and back', async ({ page 
   const button = page.locator('[data-board-zoom]')
   await expect(button).toBeVisible()
   await expect(button).toHaveAttribute('aria-label', 'Zoom in on the board')
+  // Only the visible disc takes taps; at 1x it sits in the frame strip, off the corner square.
+  expect(await tapTarget(page, await squarePoint(page, 'p1'))).toBe('CANVAS')
+  const box = (await button.boundingBox()) as { x: number; y: number }
+  expect(await tapTarget(page, { x: box.x + 3, y: box.y + 3 })).toBe('CANVAS')
   await shot(page, 'phone-390-zoom1')
   await button.tap()
   await settle(page)
@@ -159,6 +178,9 @@ test('the zoom button zooms to fingertip-sized squares and back', async ({ page 
   expect(sq2).toBeGreaterThanOrEqual(40)
   await expect(button).toHaveAttribute('data-board-zoom', 'out')
   await expect(button).toHaveAttribute('aria-label', 'Zoom out to the whole board')
+  // Zoomed, the button's see-through corner still lets taps through to the squares under it.
+  const zbox = (await button.boundingBox()) as { x: number; y: number }
+  expect(await tapTarget(page, { x: zbox.x + 3, y: zbox.y + 3 })).toBe('CANVAS')
   // Coordinates stay readable: the edge labels show the visible ranks.
   const labels = await page.evaluate(() => {
     type N = { label?: string; visible: boolean; children: (N & { text: string })[] }
@@ -205,6 +227,48 @@ test('pinch zooms around the fingers, and springs back below 1x', async ({ page 
   )
   await settle(page)
   expect(await zoom(page)).toBe(1)
+})
+
+/** The sharpest texture resolution on the stage (it rises when textures are redrawn for a zoom). */
+async function maxTextureRes(page: Page): Promise<number> {
+  return page.evaluate(() => {
+    type N = { children?: N[]; texture?: { source?: { resolution?: number } } }
+    const app = (globalThis as unknown as { __pixiApp: { stage: N } }).__pixiApp
+    let best = 0
+    const walk = (n: N) => {
+      best = Math.max(best, n.texture?.source?.resolution ?? 0)
+      for (const c of n.children ?? []) walk(c)
+    }
+    walk(app.stage)
+    return best
+  })
+}
+
+test('textures are redrawn for a new zoom only after the fingers lift', async ({ page }) => {
+  const before = await maxTextureRes(page)
+  const r = await canvasRect(page)
+  const cx = r.left + r.width / 2
+  const cy = r.top + r.height / 2
+  const cdp = await page.context().newCDPSession(page)
+  await touch(cdp, 'touchStart', [{ x: cx - 30, y: cy }])
+  await touch(cdp, 'touchStart', [
+    { x: cx - 30, y: cy },
+    { x: cx + 30, y: cy },
+  ])
+  for (let i = 1; i <= 6; i++) {
+    await touch(cdp, 'touchMove', [
+      { x: cx - 30 - i * 10, y: cy },
+      { x: cx + 30 + i * 10, y: cy },
+    ])
+  }
+  expect(await zoom(page)).toBeGreaterThan(1.6)
+  // Fingers resting well past the settle time: no redraw mid-gesture.
+  await page.waitForTimeout(700)
+  expect(await maxTextureRes(page)).toBe(before)
+  await touch(cdp, 'touchEnd', [])
+  await cdp.detach()
+  await settle(page)
+  expect(await maxTextureRes(page)).toBeGreaterThan(before)
 })
 
 test('taps and drags hit the right squares at every zoom and pan', async ({ page }) => {
@@ -320,6 +384,50 @@ test('double tap on an empty square zooms in there, and out again', async ({ pag
   await doubleTap(page, p)
   await settle(page)
   expect(await zoom(page)).toBe(1)
+})
+
+test('held sideways, the zoomed button sits at the board corner, not mid-view', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 844, height: 390 })
+  await settle(page)
+  const button = page.locator('[data-board-zoom]')
+  await button.tap()
+  await settle(page)
+  expect(await zoom(page)).toBeGreaterThan(1.9)
+  const r = await canvasRect(page)
+  const box = (await button.boundingBox()) as { x: number; y: number; width: number }
+  // Bottom-right of the zoomed board's footprint, inside the canvas.
+  expect(box.y + box.width).toBeGreaterThan(r.top + r.height - 2)
+  expect(box.x + box.width).toBeLessThanOrEqual(r.left + r.width + 0.5)
+  const p1 = await squarePoint(page, 'p1')
+  expect(box.x + box.width).toBeGreaterThan(Math.min(p1.x, r.left + r.width - 2))
+  await shot(page, 'phone-844-zoomed')
+})
+
+test('only a double tap on one empty square zooms: never pieces or two squares', async ({
+  page,
+}) => {
+  const tap2 = async (a: string, b: string) => {
+    await doubleTap(page, await squarePoint(page, a), await squarePoint(page, b))
+    await settle(page)
+    return zoom(page)
+  }
+  // A blocked piece twice, two blocked pieces, two empty neighbours: no zoom.
+  expect(await tap2('g1', 'g1')).toBe(1)
+  expect(await tap2('g1', 'h1')).toBe(1)
+  expect(await tap2('g7', 'h7')).toBe(1)
+  // Opponents' pieces while it isn't their turn, and taps while the board is view-only.
+  expect(await tap2('b6', 'b7')).toBe(1)
+  await page.evaluate(() =>
+    (
+      globalThis as unknown as { __sandbox: { view: { setInteractive(s: null): void } } }
+    ).__sandbox.view.setInteractive(null),
+  )
+  expect(await tap2('h2', 'h3')).toBe(1)
+  expect(await tap2('h2', 'h2')).toBe(1)
+  // An empty square twice still zooms.
+  expect(await tap2('h5', 'h5')).toBeGreaterThan(1.9)
 })
 
 test('selecting a piece pans to show its moves; zoomed hit areas are big', async ({ page }) => {

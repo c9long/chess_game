@@ -18,7 +18,9 @@ const view = new BoardView({
   sound: true,
   announce: true,                     // screen-reader live regions (default true)
   localSeat: 'west',                  // said as "You" / "your" (also setLocalSeat)
-  announceOwnCheck: true,             // false when the host announces the viewer's check itself
+  announceOwnCheck: true,             // false: the viewer's check is said only on their turn
+  announceTurn: true,                 // "Your move." (with the check) when the turn reaches localSeat
+  onAnnounce: (text) => {},           // each text read in the moves region (e.g. for a result dialog)
   zoomButton: 'auto',                 // magnifier button while squares are < 32 px (true / false)
   onZoomChange: (zoom) => {},
 })
@@ -87,8 +89,8 @@ On a 390 px phone the 16×16 board gets about 21 px squares, so the board zooms 
 | Tap a legal target | Moves there (touch: on release, so a second finger can still cancel it) |
 | One finger dragged anywhere else, when zoomed | Pans the board (a selection is kept) |
 | Two fingers | Pinch to zoom, move to pan; cancels whatever the first finger started (a drag goes home) |
-| Double tap on an empty square (nothing selected) | Zooms in there to the one-tap zoom, or back out |
-| Zoom button (lower-right corner of the board) | One-handed: zoom in toward the selection, the keyboard cursor or your leader; tap again for the whole board |
+| Double tap on one empty square (nothing selected) | Zooms in there to the one-tap zoom, or back out (never on pieces, never across two squares) |
+| Zoom button (lower-right corner of the board) | One-handed: zoom in toward the selection, the keyboard cursor or your leader; tap again for the whole board. Only its visible disc takes taps (at 1x it sits in the frame strip, off the squares) |
 | Ctrl/⌘ + wheel, trackpad pinch | Zoom around the pointer; a plain wheel pans while zoomed |
 | `+` / `-` / `0` | Zoom in toward the cursor / out / whole board |
 
@@ -100,7 +102,7 @@ On a 390 px phone the 16×16 board gets about 21 px squares, so the board zooms 
 
 ## Accessibility
 
-- **Keyboard.** The canvas can take focus (a gold focus ring for keyboard focus, which also shows the cursor on your leader). The arrow keys move a cursor in screen directions (a white ring inside a dark one, drawn above the pieces); Enter or Space picks up a piece and then places it; Escape puts it down (pressed again, it hides the cursor). In the promotion picker the arrow keys choose a piece, Enter confirms and Escape cancels. `+`, `-` and `0` zoom.
+- **Keyboard.** The canvas can take focus (a gold focus ring for keyboard focus, which also shows the cursor on your leader). The arrow keys move a cursor in screen directions (a white ring inside a dark one, drawn above the pieces); Enter or Space picks up a piece and then places it; Escape puts it down (pressed again, it hides the cursor and says so; an arrow key shows it again). Against the board's edge the cursor stays put and says "Edge of the board". In the promotion picker the arrow keys choose a piece, Enter confirms and Escape cancels. `+`, `-` and `0` zoom.
 - **Screen readers.** Two visually hidden polite live regions sit next to the canvas (`announce.ts`):
-  - *Moves* (`data-board-announcer="moves"`): every step from `setSnapshot` in plain words, from the engine's events: "West: knight b7 to c9", "…, takes North's pawn", "…, promotes to queen", "South castled: king i1 to k1, rook l1 to j1", "Check: North's king is under attack.", "East is defeated: out of time.", "Game over. South wins." Steps that arrive close together (bots replying) are read as one announcement (700 ms quiet, 2.5 s at most); the viewer's own move (`localSeat`) is confirmed after 150 ms as "You: …". A step without events (a resync) is described only when it is one move. `view.announcements` reads back what was said.
+  - *Moves* (`data-board-announcer="moves"`): every step from `setSnapshot` in plain words, from the engine's events: "West: knight b7 to c9", "…, takes North's pawn", "…, promotes to queen", "South castled: king i1 to k1, rook l1 to j1", "Check: North's king is under attack.", "East is defeated: out of time.", "Game over. South wins." Steps that arrive close together (bots replying) are read as one announcement (700 ms quiet, 2.5 s at most); a move made on this board (or by `localSeat`) is confirmed after 150 ms ("You: …"; there is no separate "Move sent."). When the turn reaches `localSeat`, the batch is read at once ending with "Your move." (or "Your move. Check: your king is under attack."), and the end of the game is read at once too, so the moves that caused a turn, check or result are always heard first. A seat with several leaders is told again when another one comes under attack. A game that a host ends as a draw the moment a player is knocked out (a solo game) is said as "You were eliminated, so the game ends here. West, North and East share first place.", not as an agreed draw. A step without events (a resync) is described only when it is one move. `view.announcements` reads back what was said.
   - *Cursor* (`data-board-announcer="cursor"`): answers the keyboard at once: the square under the cursor ("e4, empty, move here", "b7, West knight", "i1, your king"), picking up ("Picked up pawn on e2: 2 moves."), refusals ("Not your turn. West to move."), the promotion choices ("rook, 2 of 4") and zoom.

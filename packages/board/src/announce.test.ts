@@ -5,8 +5,10 @@ import {
   type AnnounceContext,
   DEFAULT_ANNOUNCE,
   describeBareMove,
+  describeResult,
   describeSquare,
   describeStep,
+  describeTurn,
   repeatable,
 } from './announce.ts'
 import { indexOf } from './geometry.ts'
@@ -112,6 +114,51 @@ describe('describeStep', () => {
     g.free()
   })
 
+  it('says an elimination that ends a solo game as such, not as an agreed draw', () => {
+    // A host (singleplayer FFA) ends the game as a draw as soon as its player is out.
+    const g = Game.fromPosition(KING_HUNT)
+    const prev = g.snapshot()
+    const events = [...g.applyMove('i1i16'), ...g.applyAgreedDraw()]
+    const next = g.snapshot()
+    const text = describeStep(prev, next, events, you('north'))
+    expect(text).toContain('You are defeated: leader captured.')
+    const last = text[text.length - 1] as string
+    expect(last).toMatch(/^Game over\. You were eliminated, so the game ends here\. /)
+    expect(last).toContain('share first place.')
+    expect(text.join(' ')).not.toContain('agreement')
+    g.free()
+    // A real agreed draw (nobody knocked out in that step) is still one.
+    const d = Game.create({ mode: 'ffa' })
+    const before = d.snapshot()
+    const drawn = d.applyAgreedDraw()
+    expect(describeStep(before, d.snapshot(), drawn).at(-1)).toBe('Game over. A draw by agreement.')
+    const outcome = d.snapshot().outcome
+    expect(outcome).not.toBeNull()
+    if (outcome) expect(describeResult(outcome.result)).toBe('Game over. A draw by agreement.')
+    d.free()
+  })
+
+  it('tells a seat with several leaders when another one comes under attack', () => {
+    const g = Game.create({ mode: 'ffa', civs: ['england', 'mali', 'mali', 'mali'] })
+    const base = g.snapshot()
+    g.free()
+    const at = (squares: string[]): Snapshot =>
+      ({
+        ...base,
+        leaderUnderAttack: [squares.length > 0, false, false, false],
+        attackedLeaderSquares: [squares, [], [], []],
+      }) as unknown as Snapshot
+    const one = describeStep(at([]), at(['f1']), [])
+    expect(one).toEqual(["Check: South's prime minister on f1 is under attack."])
+    // Another Prime Minister attacked too: said again, naming both.
+    expect(describeStep(at(['f1']), at(['f1', 'h1']), [])).toEqual([
+      "Check: South's prime ministers on f1 and h1 are under attack.",
+    ])
+    // The same one still attacked, or one fewer: nothing new.
+    expect(describeStep(at(['f1', 'h1']), at(['f1', 'h1']), [])).toEqual([])
+    expect(describeStep(at(['f1', 'h1']), at(['h1']), [])).toEqual([])
+  })
+
   it('names a winning team and a frozen army in Teams', () => {
     const g = Game.create({ mode: 'teams' })
     const a = step(g, (x) => x.applyTimeout('south'))
@@ -121,6 +168,20 @@ describe('describeStep', () => {
     step(g, (x) => x.applyMove('a6c7'))
     const b = step(g, (x) => x.applyTimeout('north'), you('east'))
     expect(b.text[b.text.length - 1]).toBe('Game over. Your team (West and East) wins.')
+    g.free()
+  })
+})
+
+describe('describeTurn', () => {
+  it("says the viewer's turn, with their check", () => {
+    const g = Game.fromPosition(
+      'ffa 8nK7/16/16/16/16/16/16/wK15/16/16/16/16/16/16/16/sK6sQ7eK S AAAA - - 0 0',
+    )
+    expect(describeTurn(g.snapshot(), you('south'))).toBe('Your move.')
+    g.applyMove('h1i1')
+    expect(describeTurn(g.snapshot(), you('west'))).toBe(
+      'Your move. Check: your king is under attack.',
+    )
     g.free()
   })
 })
