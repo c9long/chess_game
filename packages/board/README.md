@@ -12,8 +12,8 @@ import { BoardView } from '@game/board'
 const view = new BoardView({
   onMoveIntent: (move) => send(move), // engine notation: 'c2c4', 'e6e7q', 'g1i1'
   onSquareHover: (square) => {},      // 'e4' | null
-  showAttackedLeaderGlow: false,      // these four can also be changed later with setOptions()
-  reducedMotion: false,               // defaults to prefers-reduced-motion
+  reducedMotion: false,               // these three can also be changed later with setOptions();
+                                      // defaults to prefers-reduced-motion
   colorblindPatterns: false,
   sound: true,
 })
@@ -22,8 +22,11 @@ view.setPerspective('west')           // animated 90° turns; the local seat is 
 view.setSnapshot(snapshot, { events }) // events from applyMove/applyTimeout/applyAbandon (optional)
 view.setInteractive('west')           // the seat the local user moves for, or null to only watch
 view.setLegalMoves(game.legalMoves())
+view.setCheck('west')                 // check indicator on West's leader square(s); null clears it
 view.destroy()
 ```
+
+- **Check indicator.** `setCheck(seat | null, { sound? })` draws a red ring, a red wash and a pulsing red glow on that seat's leader square(s), which come from the snapshot's `leaderSquares` (the engine's roster leader role, so a civ whose leader isn't a king works too). It follows the leader as it moves; under reduced motion the ring and glow are steady. Turned on right after `setSnapshot`, it waits until that move lands and then plays the `check` sound (pass `sound: false` to skip it). The board never decides when to show it: the host owns that rule (the web app shows it only for the viewer's own seat, see `apps/web/src/lib/check-indicator.ts`). `checkSeat` and `checkSquares` read back what is shown.
 
 - **Rejected intents.** If the host refuses a move, call `setSnapshot` again with the current snapshot and the piece slides back.
 - **Animations.** These come from `planTransition(prev, next, events)` in `plan.ts`, a pure function that turns the board difference (made clearer by the events) into moves, castle rooks, captures (including en passant away from the destination), promotions, dissolving armies and status changes. Their timing comes from `motion.ts` (also pure): `moveTiming`, `scheduleMoves`, `castleTiming`, `contactTime`, `flightLift`, `blendPolicy` and friends.
@@ -41,7 +44,7 @@ view.destroy()
 - **Captures.** The victim is knocked along the attacker's path, tilts, shrinks and fades, and chips in its colour scatter forward. All of this is drawn below the moving layer, so the attacker lands on top. A captured leader adds a brief hit-stop, a shockwave in its colour and a small board shake. Its army then burns away outward from the leader (one filter pass), and a Teams freeze spreads outward from the leader the same way.
 - **Promotion.** The pawn rises and brightens, becomes the new piece at the peak under a ring in its seat's colour, and settles with an overshoot.
 - **Turn.** The seat to move has a pulsing glow along its band and a larger, ringed medallion; the other bands are dimmed. The hand-over cross-fades when the moving piece lands, not when the move is sent. A seat's status change (grey medallion and band) waits until its burn or freeze starts, then cross-fades.
-- **Highlights.** Last move: a warm fill that is lighter on maple and stronger on walnut, with a rounded inset in the mover's light colour. The origin fades in as the piece leaves and the destination as it lands. Move hints are dark translucent dots and light rings. They ripple in from the selected piece and fade out when it is deselected. A movable piece lifts slightly under the pointer, and a selected one gets a soft halo that breathes. An illegal drop flashes the target square red, and the piece returns home still lifted, so it passes over other pieces. An attacked leader (option) gets a hot halo under the piece and a steady red border.
+- **Highlights.** Last move: a warm fill that is lighter on maple and stronger on walnut, with a rounded inset in the mover's light colour. The origin fades in as the piece leaves and the destination as it lands. Move hints are dark translucent dots and light rings. They ripple in from the selected piece and fade out when it is deselected. A movable piece lifts slightly under the pointer, and a selected one gets a soft halo that breathes. An illegal drop flashes the target square red, and the piece returns home still lifted, so it passes over other pieces. A leader in check (`setCheck`) gets a red ring and wash on its square and a pulsing red halo under the piece.
 - **Reduced motion.** Moves cross-fade: the piece fades out where it was and in on its new square, in 100 to 140 ms. Highlight and turn changes are short fades. There are no arcs, particles, shake or hit-stop.
 - **Lighting.** A light pass in screen space, clipped to the board, so it stays put while the board turns.
 

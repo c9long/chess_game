@@ -12,6 +12,7 @@ export type SoundKind =
   | 'defeat'
   | 'freeze'
   | 'turn'
+  | 'check'
   | 'end'
   | 'select'
   | 'illegal'
@@ -109,6 +110,11 @@ export class SoundEngine {
         break
       case 'turn':
         this.#chime(t, [880, 1318.5], 0.05, 0.08)
+        break
+      case 'check':
+        // Two quick, bright alarm strikes: urgent but short.
+        this.#alarm(t, 0.2)
+        this.#alarm(t + 0.13, 0.16)
         break
       case 'end':
         this.#chime(t + 0.25, [523.25, 659.25, 783.99, 1046.5], 0.11, 0.2)
@@ -217,6 +223,30 @@ export class SoundEngine {
         osc.stop(s + 1)
       }
     })
+  }
+
+  /** A short metallic strike (square-ish tone through a band-pass) for the check alert. */
+  #alarm(t: number, gain: number): void {
+    const ctx = this.#ctx as AudioContext
+    const out = this.#out(0.9, 0.3)
+    const bp = ctx.createBiquadFilter()
+    bp.type = 'bandpass'
+    bp.frequency.value = 1400
+    bp.Q.value = 2.2
+    bp.connect(out)
+    for (const f of [987.77, 1479.98]) {
+      const osc = ctx.createOscillator()
+      osc.type = 'square'
+      osc.frequency.setValueAtTime(f, t)
+      osc.frequency.exponentialRampToValueAtTime(f * 0.94, t + 0.12)
+      const g = ctx.createGain()
+      g.gain.setValueAtTime(0.0001, t)
+      g.gain.exponentialRampToValueAtTime(gain, t + 0.004)
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.16)
+      osc.connect(g).connect(bp)
+      osc.start(t)
+      osc.stop(t + 0.18)
+    }
   }
 
   #fall(t: number): void {

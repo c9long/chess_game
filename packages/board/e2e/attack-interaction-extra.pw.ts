@@ -53,7 +53,7 @@ test('keyboard move for West (arrows are relative to the viewer) is animated', a
   expect(pawn?.square === 'd7' && (pawn?.off ?? 0) < 0.02, 'keyboard move teleported').toBe(false)
 })
 
-test('attacked-leader glow only for ACTIVE seats (frozen Teams king not highlighted)', async ({
+test('check indicator only for ACTIVE seats (frozen Teams king not highlighted)', async ({
   page,
 }) => {
   const pos = buildPosition(
@@ -87,7 +87,7 @@ test('attacked-leader glow only for ACTIVE seats (frozen Teams king not highligh
   await sb(page, 'timeout', 'west')
   await settle(page)
   console.log('after freeze', await attacked(), await glows())
-  expect(await glows(), 'frozen West king still glowing').toBe(0)
+  expect(await glows(), 'frozen West king still marked in check').toBe(0)
 })
 
 test('perspective switch during a running move keeps pieces on their squares', async ({ page }) => {

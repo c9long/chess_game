@@ -54,11 +54,12 @@ const rulesReady = initRules()
 let mode: GameMode = 'ffa'
 let civs: CivId[] = ['canada', 'japan', 'france', 'mali']
 let followTurn = false
+/** Hot seat: mark the seat to move when its leader is under attack (the web app's rule is per viewer). */
+let showCheck = true
 let perspective: Seat = 'south'
 const history: string[] = []
 const log: { ply: number; seat: Seat | null; text: string; major: boolean }[] = []
 let options: BoardOptions = {
-  showAttackedLeaderGlow: true,
   reducedMotion: globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false,
   colorblindPatterns: false,
   sound: true,
@@ -145,6 +146,12 @@ function sync(events: readonly GameEvent[] | null, animate = true): void {
   view.setSnapshot(snapshot, events ? { animate, events } : { animate })
   view.setInteractive(snapshot.isOver ? null : snapshot.seatToMove)
   view.setLegalMoves(snapshot.isOver ? [] : game.legalMoves())
+  const toMove = SEAT_INDEX[snapshot.seatToMove]
+  view.setCheck(
+    showCheck && !snapshot.isOver && snapshot.leaderUnderAttack[toMove]
+      ? snapshot.seatToMove
+      : null,
+  )
   if (followTurn && !snapshot.isOver && snapshot.seatToMove !== perspective) {
     perspective = snapshot.seatToMove
     view.setPerspective(perspective)
@@ -253,6 +260,17 @@ function toggle(label: string, key: keyof BoardOptions): HTMLLabelElement {
   })
   return el('label', { className: 'toggle' }, input, label)
 }
+
+function checkToggle(): HTMLLabelElement {
+  const input = el('input', { type: 'checkbox', checked: showCheck })
+  input.addEventListener('change', () => {
+    showCheck = input.checked
+    sync(null, false)
+  })
+  return el('label', { className: 'toggle' }, input, 'Check indicator')
+}
+
+const SEAT_INDEX: Record<Seat, number> = { south: 0, west: 1, north: 2, east: 3 }
 
 const statusEl = el('div', { className: 'status' })
 const seatsEl = el('div', { className: 'seats' })
@@ -417,7 +435,7 @@ panel.append(
     el(
       'div',
       { className: 'row' },
-      toggle('Leader glow', 'showAttackedLeaderGlow'),
+      checkToggle(),
       toggle('Reduced motion', 'reducedMotion'),
       toggle('Colour-blind marks', 'colorblindPatterns'),
       toggle('Sound', 'sound'),

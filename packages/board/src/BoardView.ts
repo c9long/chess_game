@@ -78,8 +78,6 @@ import { Animator, ease, outBackWith, type Tween } from './tween.ts'
 
 /** Display options (all can change at runtime through `setOptions`). */
 export interface BoardOptions {
-  /** Pulse a glow under an ACTIVE seat's attacked leader (information only). Default false. */
-  readonly showAttackedLeaderGlow: boolean
   /** Replace motion with short fades; no rotation spin, particles or pulsing. Default: the OS setting. */
   readonly reducedMotion: boolean
   /** Per-seat shape markers on pieces (circle, square, triangle, diamond). Default false. */
@@ -95,6 +93,11 @@ export interface SetSnapshotOptions {
   readonly animate?: boolean
   /** Events returned by `applyMove` / `applyTimeout` / `applyAbandon` for this step. */
   readonly events?: readonly GameEvent[]
+}
+
+export interface SetCheckOptions {
+  /** Play the check sound when the indicator turns on. Default true. */
+  readonly sound?: boolean
 }
 
 export interface BoardViewInit extends Partial<BoardOptions> {
@@ -129,6 +132,9 @@ const PROMO_EASE = outBackWith(1.5)
 const HINT_EASE = outBackWith(1.7)
 /** Highlight colour of the last move (both square shades). */
 const LAST_MOVE_FILL = 0xffd66e
+/** Check indicator: the ring and square wash, and the tint of the glow under the leader. */
+const CHECK_RED = 0xff3b30
+const CHECK_GLOW = 0xff5a4a
 /** Hover and selection lift. */
 const HOVER_LIFT = 0.22
 const SELECT_LIFT = 0.3
@@ -288,6 +294,8 @@ export class BoardView {
   readonly #hintLayer = new Container()
   readonly #hints = new Graphics()
   readonly #leaderGlows: Sprite[] = []
+  /** Red ring around each checked leader's square (pulses in `#tick`, steady under reduced motion). */
+  readonly #checkRing = new Graphics()
   readonly #shadowLayer = new Container()
   readonly #pieceLayer = new Container()
   /** Captured pieces reacting and their debris: above resting pieces, below the attacker. */
@@ -338,8 +346,15 @@ export class BoardView {
   // Leader-capture moment.
   #hitStop = 0
   #shakeLeft = 0
-  /** Kings of active seats under attack (for the glow and its border). */
-  #attackedLeaders: number[] = []
+  /** The seat whose leader the host marks as in check (`setCheck`). */
+  #checkSeat: Seat | null = null
+  /** What the board shows: `#checkSeat` once the move that caused it has landed. */
+  #checkShown: Seat | null = null
+  #checkTween: Tween | null = null
+  /** Squares of the checked leader(s), from the snapshot's `leaderSquares`. */
+  #checkSquares: number[] = []
+  /** Animation clock when the last snapshot was applied (to time the check after its move). */
+  #snapshotClock = 0
 
   readonly #pieces: (PieceNode | null)[] = new Array(144).fill(null)
   readonly #anim = new Animator()
@@ -369,7 +384,6 @@ export class BoardView {
     this.onMoveIntent = init.onMoveIntent ?? null
     this.onSquareHover = init.onSquareHover ?? null
     this.#options = {
-      showAttackedLeaderGlow: init.showAttackedLeaderGlow ?? false,
       reducedMotion: init.reducedMotion ?? defaultReducedMotion(),
       colorblindPatterns: init.colorblindPatterns ?? false,
       sound: init.sound ?? true,
@@ -451,6 +465,7 @@ export class BoardView {
     const prev = this.#snapshot
     this.#snapshot = snapshot
     if (!this.#ready) return
+    this.#snapshotClock = this.#clock
     this.#closePromo(false)
     this.#endDrag(false)
     const events = options.events ?? []
@@ -581,6 +596,49 @@ export class BoardView {
     this.#refreshFx()
   }
 
+  /**
+   * Marks `seat`'s leader square(s) as in check: a red ring and a pulsing red glow under the
+   * piece (both steady under reduced motion), following the leader as it moves. `null` clears
+   * it. The board never decides when a check is shown (that is the host's rule, e.g. only for
+   * the local player); the squares come from the snapshot's `leaderSquares`, so a civ whose
+   * leader is not a king works the same. Turning it on right after `setSnapshot` waits until
+   * that move has landed, then plays the check sound (unless `sound: false`).
+   */
+  setCheck(seat: Seat | null, options: SetCheckOptions = {}): void {
+    if (seat === this.#checkSeat) return
+    this.#checkSeat = seat
+    this.#anim.cancel(this.#checkTween)
+    this.#checkTween = null
+    if (seat === null || !this.#ready) {
+      this.#checkShown = seat
+      this.#refreshCheck()
+      return
+    }
+    const show = () => {
+      this.#checkTween = null
+      if (this.#checkSeat !== seat) return
+      this.#checkShown = seat
+      this.#refreshCheck()
+      if (options.sound ?? true) this.#playLater('check', 0)
+    }
+    // The move that gave check hands the turn over when it lands: show the check then.
+    const wait = this.#handoverAt - (this.#clock - this.#snapshotClock)
+    this.#checkShown = null
+    this.#refreshCheck()
+    if (wait <= 0) show()
+    else this.#checkTween = this.#anim.add(0, () => {}, { delay: wait, done: show })
+  }
+
+  /** The seat whose leader is marked in check (`setCheck`), or null. */
+  get checkSeat(): Seat | null {
+    return this.#checkSeat
+  }
+
+  /** Squares currently drawn as in check (empty until the move that caused it has landed). */
+  get checkSquares(): Square[] {
+    return this.#checkSquares.map((i) => nameOf(i) as Square)
+  }
+
   setOptions(options: Partial<BoardOptions>): void {
     this.#options = { ...this.#options, ...options }
     this.#sound.setEnabled(this.#options.sound)
@@ -696,6 +754,7 @@ export class BoardView {
     for (let i = 0; i < 4; i++) {
       const g = new Sprite(fxTex.halo)
       g.anchor.set(0.5)
+      g.tint = CHECK_GLOW
       g.visible = false
       this.#leaderGlows.push(g)
     }
@@ -785,6 +844,7 @@ export class BoardView {
       [this.#fx, 'fx'],
       [this.#selectLayer, 'select'],
       ...this.#leaderGlows.map((g, i) => [g, `leaderGlow${i}`] as [Container, string]),
+      [this.#checkRing, 'checkRing'],
       [this.#hintLayer, 'hints'],
       [this.#shadowLayer, 'shadows'],
       [this.#pieceLayer, 'pieces'],
@@ -2323,7 +2383,7 @@ export class BoardView {
       }
       this.#applyNodeTextures(n)
     }
-    this.#refreshLeaderGlows()
+    this.#refreshCheck()
     this.#syncTurn(0, false)
     this.#refreshFx()
   }
@@ -2617,26 +2677,36 @@ export class BoardView {
     if (on) m.glow.tint = hexToNumber(mixHex(bandColor(SEATS[i] as Seat), '#fff4d6', 0.3))
   }
 
-  #refreshLeaderGlows(): void {
+  /** Check indicator: glow and ring on the shown seat's leader squares (from the snapshot). */
+  #refreshCheck(): void {
     const snap = this.#snapshot
+    const ring = this.#checkRing
     for (const g of this.#leaderGlows) g.visible = false
-    this.#attackedLeaders = []
-    if (!snap || !this.#options.showAttackedLeaderGlow) return
-    let k = 0
-    for (let s = 0; s < 4; s++) {
-      if (!snap.leaderUnderAttack[s]) continue
-      const seat = SEATS[s] as Seat
-      for (let i = 0; i < 144 && k < 4; i++) {
-        const p = snap.board[i]
-        if (!p || p.owner !== seat || p.kind !== 'king') continue
-        const g = this.#leaderGlows[k++] as Sprite
-        squareCenter(i, this.#layout, this.#tmpVec)
-        g.position.set(this.#tmpVec.x, this.#tmpVec.y)
-        g.visible = true
-        g.alpha = 0.85
-        this.#attackedLeaders.push(i)
-      }
+    ring.clear()
+    this.#checkSquares = []
+    const seat = this.#checkShown
+    if (!snap || !this.#ready || seat === null) return
+    const squares = snap.leaderSquares[SEATS.indexOf(seat)] ?? []
+    const sq = this.#layout.square
+    const w = Math.max(2.5, sq * 0.075)
+    for (const name of squares) {
+      const i = indexOf(name)
+      const g = this.#leaderGlows[this.#checkSquares.length]
+      if (!g) break
+      squareCenter(i, this.#layout, this.#tmpVec)
+      g.position.set(this.#tmpVec.x, this.#tmpVec.y)
+      g.visible = true
+      g.alpha = 0.85
+      this.#squareOrigin(i, this.#tmpVec)
+      const x = this.#tmpVec.x
+      const y = this.#tmpVec.y
+      ring.rect(x, y, sq, sq).fill({ color: CHECK_RED, alpha: 0.22 })
+      ring
+        .roundRect(x + w / 2, y + w / 2, sq - w, sq - w, sq * 0.08)
+        .stroke({ color: CHECK_RED, width: w, alpha: 1 })
+      this.#checkSquares.push(i)
     }
+    ring.alpha = 1
   }
 
   /** Top-left corner of a square in board-local coordinates. */
@@ -2744,15 +2814,6 @@ export class BoardView {
     h.clear()
     if (!this.#ready) return
     const sq = this.#layout.square
-    // Attacked leader: a steady red border (the halo under the piece pulses).
-    for (const i of this.#attackedLeaders) {
-      this.#squareOrigin(i, this.#tmpVec)
-      const w = Math.max(2, sq * 0.04)
-      h.rect(this.#tmpVec.x + w / 2, this.#tmpVec.y + w / 2, sq - w, sq - w).stroke({
-        color: 0xff4d3d,
-        width: w,
-      })
-    }
     if (this.#cursorVisible && this.#cursor >= 0) {
       this.#squareOrigin(this.#cursor, this.#tmpVec)
       const inset = sq * 0.06
@@ -3095,12 +3156,16 @@ export class BoardView {
       const hp = reduced ? 0.5 : 0.5 + 0.5 * Math.sin(this.#time * Math.PI * 2 * 1.6)
       this.#halo.alpha = (0.3 + 0.2 * hp) * this.#selFade
     }
-    const lp = reduced ? 0.6 : 0.5 + 0.5 * Math.sin(this.#time * 5.5)
-    for (const g of this.#leaderGlows) {
-      if (!g.visible) continue
-      g.alpha = 0.6 + 0.4 * lp
-      const s = (this.#layout.square * 1.5 * (0.95 + 0.1 * lp)) / Math.max(1, g.texture.width)
-      g.scale.set(s)
+    // Check: the glow under the leader and its ring pulse together (steady under reduced motion).
+    if (this.#checkSquares.length > 0) {
+      const lp = reduced ? 0.75 : 0.5 + 0.5 * Math.sin(this.#time * 5.5)
+      for (const g of this.#leaderGlows) {
+        if (!g.visible) continue
+        g.alpha = 0.55 + 0.45 * lp
+        const s = (this.#layout.square * 1.5 * (0.92 + 0.14 * lp)) / Math.max(1, g.texture.width)
+        g.scale.set(s)
+      }
+      this.#checkRing.alpha = reduced ? 1 : 0.55 + 0.45 * lp
     }
     // devicePixelRatio can change with no event at all (some zoom paths, emulation):
     // one property read per frame catches what the media query misses.

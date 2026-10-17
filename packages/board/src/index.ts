@@ -19,6 +19,7 @@ export {
   type BoardOptions,
   BoardView,
   type BoardViewInit,
+  type SetCheckOptions,
   type SetSnapshotOptions,
 } from './BoardView.ts'
 export * from './geometry.ts'

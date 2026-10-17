@@ -461,7 +461,7 @@ export interface EffectTextures {
   readonly ring: Texture
   /** Soft horizontal light bar (turn indicator), fades at both ends. */
   readonly bar: Texture
-  /** Hot halo (attacked leader): white-yellow core, red rim, transparent edge. Not tinted. */
+  /** Hot halo (check indicator, tinted red by the board): white-yellow core, red rim, transparent edge. */
   readonly halo: Texture
   /** Small irregular shard with a lit edge (capture debris, tinted with the victim's colour). */
   readonly chip: Texture
