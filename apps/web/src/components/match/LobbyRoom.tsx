@@ -10,6 +10,7 @@ import type { MatchFeed } from '../../pages/Match.tsx'
 import { CivEmblem, civName } from '../CivEmblem.tsx'
 import { CIV_SELECT_CONTENT_ATTR, CivSelect } from '../CivSelect.tsx'
 import { CheckIcon, CopyIcon, CrownIcon, DotsIcon, PlusIcon } from '../game/icons.tsx'
+import { LobbyInvite } from '../social/LobbyInvite.tsx'
 import { Button } from '../ui.tsx'
 import { RankedBadge } from './RankedBadge.tsx'
 import {
@@ -597,7 +598,11 @@ export function LobbyRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) 
       <header className="mb-6 flex flex-wrap items-end justify-between gap-4 sm:mb-8">
         <div className="min-w-0">
           <p className="flex items-center gap-3 text-xs font-semibold tracking-[0.3em] text-gold uppercase">
-            {state.hasPassword ? 'Private lobby' : 'Public lobby'}
+            {state.inviteOnly
+              ? 'Friends challenge'
+              : state.hasPassword
+                ? 'Private lobby'
+                : 'Public lobby'}
             {state.ranked ? <RankedBadge /> : null}
           </p>
           <h1 className="mt-1 truncate font-display text-3xl font-semibold tracking-tight">
@@ -608,11 +613,20 @@ export function LobbyRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) 
             {state.ranked ? 'Elo-rated · ' : 'Casual · '}
             {seated}/4 seated
           </p>
+          {state.inviteOnly ? (
+            <p className="mt-1 text-xs text-parchment/60" data-testid="invite-only-note">
+              Invite-only: just the friends who were challenged can join. Fill empty seats with
+              bots.
+            </p>
+          ) : null}
+          {state.inviteOnly && viewerIsHost ? <LobbyInvite roomId={room.roomId} /> : null}
         </div>
         <div className="flex gap-2">
-          <Button variant="secondary" className="h-10 min-w-44" onClick={() => copy(inviteUrl)}>
-            <CopiedLabel copied={copied} idle="Copy invite link" />
-          </Button>
+          {state.inviteOnly ? null : (
+            <Button variant="secondary" className="h-10 min-w-44" onClick={() => copy(inviteUrl)}>
+              <CopiedLabel copied={copied} idle="Copy invite link" />
+            </Button>
+          )}
           <Button variant="ghost" className="h-10" onClick={leave} data-testid="leave-lobby">
             Leave
           </Button>
@@ -678,9 +692,11 @@ export function LobbyRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) 
               <CrownIcon className="h-4 w-4 text-gold" /> You’re the host
             </h2>
             <p className="mb-4 text-xs text-parchment/60">
-              {state.ranked
-                ? 'Share the invite link with players who have accounts. Swap seats to set teams. Start when the list is complete.'
-                : 'Invite friends or fill empty seats with bots. Swap seats to set teams. Start when the list is complete.'}
+              {state.inviteOnly
+                ? 'Your challenged friends can join while the invitation is open. Fill empty seats with bots, swap seats to set teams, and start when the list is complete.'
+                : state.ranked
+                  ? 'Share the invite link with players who have accounts. Swap seats to set teams. Start when the list is complete.'
+                  : 'Invite friends or fill empty seats with bots. Swap seats to set teams. Start when the list is complete.'}
             </p>
             <ul className="flex flex-col gap-2" data-testid="start-checklist">
               <ChecklistRow done={seated === 4} label="Seats filled" value={`${seated}/4`} />
@@ -695,7 +711,7 @@ export function LobbyRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) 
                 value={`${humansReady}/${humans.length}`}
               />
             </ul>
-            {seated < 4 ? (
+            {seated < 4 && !state.inviteOnly ? (
               <div className="mt-4 flex min-w-0 items-center gap-2 rounded-lg border border-parchment/15 bg-ink/50 p-1 pl-3">
                 <input
                   readOnly

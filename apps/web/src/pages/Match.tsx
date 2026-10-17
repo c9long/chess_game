@@ -11,6 +11,7 @@ import {
   errorCodeMessage,
   forgetRoom,
   joinMatch,
+  leaveMatch,
   type MatchRoom,
   matchErrorCode,
   matchErrorMessage,
@@ -43,8 +44,13 @@ function useRoomFor(roomId: string): [Connection, (password: string) => Promise<
       setConn({ kind: 'ready' })
       return
     }
-    // A live seat elsewhere blocks joining; a room that already closed doesn't.
+    // A live seat elsewhere blocks joining; a room that already closed doesn't, and neither
+    // does a finished game still on screen (e.g. accepting a challenge from its result).
     if (room && closed?.roomId !== room.roomId) {
+      if (stateJson(room)?.phase === 'finished') {
+        void leaveMatch()
+        return
+      }
       setConn({ kind: 'other-room', otherId: room.roomId })
       return
     }

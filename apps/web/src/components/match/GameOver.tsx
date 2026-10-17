@@ -1,6 +1,8 @@
 import { isUntimed } from '@game/protocol'
 import { animate, motion } from 'motion/react'
-import { type RefObject, useEffect, useRef, useState } from 'react'
+import { type ReactNode, type RefObject, useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router'
+import { isGuest, useAppState } from '../../lib/app-state.tsx'
 import type { MatchFeed } from '../../pages/Match.tsx'
 import { CivEmblem, civName } from '../CivEmblem.tsx'
 import { Confetti } from '../game/Confetti.tsx'
@@ -90,6 +92,7 @@ export function GameOver({
   reduceMotion = false,
   onClose,
   onLeave,
+  friendAction,
 }: {
   feed: MatchFeed
   /** Per seat: how it was knocked out (rules defeat reason), or null. */
@@ -97,8 +100,16 @@ export function GameOver({
   reduceMotion?: boolean
   onClose: () => void
   onLeave: () => void
+  /** Per seat: the "Add friend" button for another registered player, or null. */
+  friendAction?: (seat: number) => ReactNode
 }) {
   const { state, gameOver, mySeat } = feed
+  const { session } = useAppState()
+  // Guests who played with other people: say how to add them.
+  const guestHint =
+    isGuest(session?.user) &&
+    !isUntimed(state.timeControl) &&
+    state.seats.some((s, i) => i !== mySeat && s.occupied && !s.isBot)
   const result = state.result
   const placements = gameOver?.placements ?? result.placements
   const aborted = result.type === 'aborted'
@@ -327,6 +338,7 @@ export function GameOver({
                       ) : null}
                     </span>
                   </span>
+                  {friendAction?.(i) ?? null}
                   {rating && d !== null ? (
                     <span
                       className="shrink-0 text-right text-sm tabular-nums"
@@ -346,6 +358,17 @@ export function GameOver({
           </ol>
         )}
 
+        {guestHint ? (
+          <p
+            className="relative mt-4 text-center text-xs text-parchment/60"
+            data-testid="friends-guest-hint"
+          >
+            <Link to="/sign-up" className="font-semibold text-gold hover:underline">
+              Create an account
+            </Link>{' '}
+            to add the people you played with as friends.
+          </p>
+        ) : null}
         <div className="relative mt-6 flex flex-wrap justify-end gap-2">
           <Button variant="ghost" onClick={onClose}>
             View board

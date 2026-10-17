@@ -1,11 +1,36 @@
 import { APP_NAME } from '@game/config'
 import { MotionConfig, useAnimate, useReducedMotion } from 'motion/react'
-import { type ReactNode, Suspense, useEffect, useRef, useState } from 'react'
+import { lazy, type ReactNode, Suspense, useEffect, useRef, useState } from 'react'
 import { Link, Outlet, useLocation } from 'react-router'
 import { displayName, isGuest, useAppState } from '../lib/app-state.tsx'
 import { usePrefs } from '../lib/prefs.ts'
+import { useSocial } from '../lib/social.ts'
 import { MenuIcon } from './game/icons.tsx'
 import { Spinner } from './ui.tsx'
+
+// Friends' presence, notifications and challenge prompts (Colyseus client + overlays): loaded
+// only for signed-in registered players.
+const SocialLayer = lazy(() =>
+  import('./social/SocialLayer.tsx').then((m) => ({ default: m.SocialLayer })),
+)
+
+/** Friend requests and challenges waiting for your answer. */
+function useSocialBadge(): number {
+  return useSocial((s) => (s.friends?.incoming.length ?? 0) + s.challenges.incoming.length)
+}
+
+function Badge({ count }: { count: number }) {
+  if (count <= 0) return null
+  return (
+    <span
+      className="ml-1.5 inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-gold px-1 text-[11px] leading-none font-bold text-ink tabular-nums"
+      data-testid="friends-badge"
+    >
+      {count > 9 ? '9+' : count}
+      <span className="sr-only"> waiting</span>
+    </span>
+  )
+}
 
 function Emblem() {
   return (
@@ -58,6 +83,7 @@ function PageTransition({ children }: { children: ReactNode }) {
 /** Phones and tablets: the pages that don't fit in the header, in a dropdown. */
 function MobileMenu({ onSignOut }: { onSignOut: () => void }) {
   const [open, setOpen] = useState(false)
+  const badge = useSocialBadge()
   const { pathname } = useLocation()
   const ref = useRef<HTMLDivElement>(null)
   // biome-ignore lint/correctness/useExhaustiveDependencies: close on every page change
@@ -84,10 +110,18 @@ function MobileMenu({ onSignOut }: { onSignOut: () => void }) {
         className="flex h-10 w-10 items-center justify-center rounded-lg text-parchment/80 hover:bg-parchment/5 hover:text-parchment"
         aria-expanded={open}
         aria-controls="mobile-menu"
-        aria-label="Menu"
+        aria-label={badge > 0 ? `Menu (${badge} waiting)` : 'Menu'}
         onClick={() => setOpen((o) => !o)}
       >
-        <MenuIcon />
+        <span className="relative">
+          <MenuIcon />
+          {badge > 0 ? (
+            <span
+              aria-hidden="true"
+              className="absolute -top-1 -right-1.5 h-2.5 w-2.5 rounded-full border-2 border-ink bg-gold"
+            />
+          ) : null}
+        </span>
       </button>
       {open ? (
         <div
@@ -96,6 +130,10 @@ function MobileMenu({ onSignOut }: { onSignOut: () => void }) {
         >
           <Link to="/history" className={item}>
             History
+          </Link>
+          <Link to="/friends" className={item} data-testid="menu-friends">
+            Friends
+            <Badge count={badge} />
           </Link>
           <Link to="/leaderboard" className={item}>
             Leaderboard
@@ -115,6 +153,7 @@ function MobileMenu({ onSignOut }: { onSignOut: () => void }) {
 
 export function Shell() {
   const { session, ageGate, signOut } = useAppState()
+  const badge = useSocialBadge()
   const { pathname } = useLocation()
   const user = session?.user
   const age = ageGate(true)
@@ -131,7 +170,8 @@ export function Shell() {
         >
           Skip to content
         </a>
-        <header className="border-b border-parchment/10 bg-ink/70 backdrop-blur">
+        {/* Above the page (its menu drops over the content). */}
+        <header className="relative z-40 border-b border-parchment/10 bg-ink/70 backdrop-blur">
           <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-4">
             <Link to="/" className="flex min-w-0 items-center gap-3">
               <Emblem />
@@ -158,6 +198,14 @@ export function Shell() {
                     className="hidden rounded-lg px-3 py-2 text-parchment/85 hover:bg-parchment/5 hover:text-parchment lg:inline-block"
                   >
                     History
+                  </Link>
+                  <Link
+                    to="/friends"
+                    className="hidden items-center rounded-lg px-3 py-2 text-parchment/85 hover:bg-parchment/5 hover:text-parchment lg:inline-flex"
+                    data-testid="nav-friends"
+                  >
+                    Friends
+                    <Badge count={badge} />
                   </Link>
                   <Link
                     to="/leaderboard"
@@ -234,6 +282,11 @@ export function Shell() {
             </Suspense>
           </PageTransition>
         </main>
+        {user && !isGuest(user) ? (
+          <Suspense fallback={null}>
+            <SocialLayer userId={user.id} />
+          </Suspense>
+        ) : null}
         {inMatch ? null : (
           <footer className="border-t border-parchment/10 py-6 text-center text-xs text-parchment/65">
             <Link to="/terms" className="hover:text-parchment">

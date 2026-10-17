@@ -67,6 +67,10 @@ test('a11y: signed-out pages and a guest session', async ({ page }) => {
   await page.getByTestId('guest-continue').click()
   await expect(page.getByTestId('signed-in')).toBeVisible()
   await audit(page, 'landing (guest)')
+  await page.goto('/friends')
+  await expect(page.getByTestId('friends-guest')).toBeVisible()
+  await audit(page, 'friends (guest)')
+  await page.goto('/')
 
   // Lobby browser, then a lobby room.
   await page.getByTestId('play').click()
@@ -119,6 +123,10 @@ test('a11y: registered user pages', async ({ page }) => {
   await page.goto('/leaderboard')
   await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
   await audit(page, 'leaderboard')
+
+  await page.goto('/friends')
+  await expect(page.getByTestId('friends-empty')).toBeVisible()
+  await audit(page, 'friends')
 
   await page.goto('/account')
   await expect(page.getByRole('heading', { level: 1 })).toBeVisible()

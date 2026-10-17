@@ -23,6 +23,7 @@ import { ExitIcon, GearIcon } from '../game/icons.tsx'
 import { PlayerCard } from '../game/PlayerCard.tsx'
 import { SELF_CHECK_TEXT, TurnBanner } from '../game/TurnBanner.tsx'
 import { ConfirmDialog } from '../overlay.tsx'
+import { useSeatFriendActions } from '../social/SeatFriendButton.tsx'
 import { Alert, Spinner } from '../ui.tsx'
 import { DrawOfferCard, GameActions, TeamResignCard } from './GameActions.tsx'
 import { GameOver } from './GameOver.tsx'
@@ -383,6 +384,7 @@ export function GameRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) {
     [ready, state.positionString],
   )
   const stillPlaying = mySeat >= 0 && seatInfo?.voters[mySeat] === true
+  const friendAction = useSeatFriendActions(state, untimed)
   const check = useCheckNotice(
     ready,
     shown.ps,
@@ -541,6 +543,7 @@ export function GameRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) {
                   defeatReason={seatInfo?.defeatReasons[i] ?? null}
                   material={seatInfo?.material?.[i] ?? null}
                   reduceMotion={reduceMotion}
+                  friendAction={friendAction(i, true)}
                 />
               )
             })}
@@ -583,6 +586,7 @@ export function GameRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) {
           reduceMotion={reduceMotion}
           onClose={() => setShowResult(false)}
           onLeave={leave}
+          friendAction={(i) => friendAction(i, false)}
         />
       ) : null}
 

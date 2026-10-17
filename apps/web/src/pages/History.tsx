@@ -4,7 +4,7 @@ import {
   type MatchListResponse,
   type RatingsResponse,
 } from '@game/protocol'
-import { type ReactNode, useCallback, useEffect, useState } from 'react'
+import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
 import { CivEmblem, civName } from '../components/CivEmblem.tsx'
 import { ClockIcon } from '../components/game/icons.tsx'
@@ -19,9 +19,14 @@ import {
 } from '../components/match/labels.ts'
 import { EloDelta, RankedBadge } from '../components/match/RankedBadge.tsx'
 import { seatHex } from '../components/match/seats.ts'
+import { FriendButton } from '../components/social/FriendButton.tsx'
 import { Alert, Button, Spinner } from '../components/ui.tsx'
 import { api } from '../lib/api.ts'
 import { isGuest, useAppState } from '../lib/app-state.tsx'
+import { capsFrom, sendFriendRequest, useSocial } from '../lib/social.ts'
+
+const pageQuery = (before?: string) =>
+  before ? `?limit=20&before=${encodeURIComponent(before)}` : '?limit=20'
 
 function when(iso: string): string {
   return new Date(iso).toLocaleString(undefined, {
@@ -41,6 +46,7 @@ function HistoryChip({ children }: { children: ReactNode }) {
 }
 
 function MatchRow({ m }: { m: MatchListItem }) {
+  const caps = capsFrom(useSocial((s) => s.friends))
   const delta = m.ratingDelta
   const aborted = m.status === 'aborted'
   const place = aborted ? null : m.placement
@@ -112,6 +118,18 @@ function MatchRow({ m }: { m: MatchListItem }) {
                 <CivEmblem civ={o.civ} className="h-3.5 w-3.5" />
               </span>
               <span className="truncate">{o.name}</span>
+              {o.friend ? (
+                <FriendButton
+                  name={o.name}
+                  relation={o.friend}
+                  capReached={caps.capReached}
+                  outgoingFull={caps.outgoingFull}
+                  onAdd={() => sendFriendRequest(m.id, o.seat)}
+                  onAccept={() => sendFriendRequest(m.id, o.seat)}
+                  className="ml-1"
+                  testId="history-friend"
+                />
+              ) : null}
             </span>
           ))}
         </p>
@@ -147,11 +165,15 @@ export function History() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
 
+  // The cursor of every loaded page, so friend buttons can be refreshed in place.
+  const pages = useRef<(string | undefined)[]>([])
+  const socialVersion = useSocial((s) => s.version)
+
   const load = useCallback(async (before?: string) => {
     setLoading(true)
     try {
-      const q = before ? `?limit=20&before=${encodeURIComponent(before)}` : '?limit=20'
-      const page = await api<MatchListResponse>(`/api/matches${q}`)
+      const page = await api<MatchListResponse>(`/api/matches${pageQuery(before)}`)
+      pages.current = before ? [...pages.current, before] : [undefined]
       setMatches((prev) => (before ? [...prev, ...page.matches] : page.matches))
       setCursor(page.nextCursor)
     } catch {
@@ -160,6 +182,35 @@ export function History() {
       setLoading(false)
     }
   }, [])
+
+  // A friend change anywhere (a request from another row or device, an answer, a removal):
+  // refresh every opponent's friend state, since the same player can appear in many rows.
+  useEffect(() => {
+    if (socialVersion === 0 || pages.current.length === 0) return
+    let cancelled = false
+    Promise.all(pages.current.map((b) => api<MatchListResponse>(`/api/matches${pageQuery(b)}`)))
+      .then((fresh) => {
+        if (cancelled) return
+        const byMatch = new Map(fresh.flatMap((p) => p.matches).map((m) => [m.id, m]))
+        setMatches((prev) =>
+          prev.map((m) => {
+            const f = byMatch.get(m.id)
+            if (!f) return m
+            return {
+              ...m,
+              opponents: m.opponents.map((o) => ({
+                ...o,
+                friend: f.opponents.find((x) => x.seat === o.seat)?.friend ?? o.friend,
+              })),
+            }
+          }),
+        )
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [socialVersion])
 
   useEffect(() => {
     void load()

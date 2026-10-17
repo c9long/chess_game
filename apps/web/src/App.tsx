@@ -23,6 +23,7 @@ import { VerifyEmail } from './pages/VerifyEmail.tsx'
 const Match = lazy(() => import('./pages/Match.tsx').then((m) => ({ default: m.Match })))
 const Play = lazy(() => import('./pages/Play.tsx').then((m) => ({ default: m.Play })))
 const History = lazy(() => import('./pages/History.tsx').then((m) => ({ default: m.History })))
+const Friends = lazy(() => import('./pages/Friends.tsx').then((m) => ({ default: m.Friends })))
 const Leaderboard = lazy(() =>
   import('./pages/Leaderboard.tsx').then((m) => ({ default: m.Leaderboard })),
 )
@@ -81,6 +82,7 @@ const PAGE_TITLES: [prefix: string, title: string][] = [
   ['/play', 'Lobbies'],
   ['/match/', 'Game'],
   ['/history', 'Match history'],
+  ['/friends', 'Friends'],
   ['/leaderboard', 'Leaderboard'],
   ['/account', 'Account'],
   ['/sign-in', 'Sign in'],
@@ -178,6 +180,14 @@ export function App() {
                   element={
                     <RequireAuth>
                       <History />
+                    </RequireAuth>
+                  }
+                />
+                <Route
+                  path="friends"
+                  element={
+                    <RequireAuth>
+                      <Friends />
                     </RequireAuth>
                   }
                 />

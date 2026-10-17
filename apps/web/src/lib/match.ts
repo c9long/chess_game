@@ -171,6 +171,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   account_required:
     'Ranked games are for registered players. Create a free account (your guest games come with you) to play ranked.',
   ranked_no_bots: 'Bots can’t play in ranked games. Wait for players with an account to join.',
+  not_invited: 'That lobby is a friends challenge: only invited players can join.',
   not_your_turn: 'It is not your turn.',
   illegal_move: 'That move is not legal.',
   not_host: 'Only the host can do that.',

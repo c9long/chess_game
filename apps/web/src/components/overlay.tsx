@@ -248,7 +248,7 @@ export interface ToastInput {
   title: string
   description?: ReactNode
   tone?: 'info' | 'success' | 'error'
-  /** Milliseconds; default 5000. */
+  /** Milliseconds; default 4000 (errors 6000). */
   duration?: number
 }
 
@@ -275,7 +275,11 @@ export function ToastViewport({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<ToastItem[]>([])
   const push = useCallback((t: ToastInput) => {
     const id = nextToastId++
-    setItems((list) => [...list.slice(-3), { ...t, id }])
+    // Phones show one toast at a time (a newer one replaces it), so a burst doesn't cover the
+    // lobby or game controls; wider screens stack up to four.
+    const narrow =
+      typeof window !== 'undefined' && window.matchMedia?.('(max-width: 639px)').matches
+    setItems((list) => [...(narrow ? [] : list.slice(-3)), { ...t, id }])
   }, [])
   const value = useMemo(() => push, [push])
   const accents = {
@@ -291,7 +295,7 @@ export function ToastViewport({ children }: { children: ReactNode }) {
           <Toast.Root
             key={t.id}
             type={t.tone === 'error' ? 'foreground' : 'background'}
-            duration={t.duration ?? 5000}
+            duration={t.duration ?? (t.tone === 'error' ? 6000 : 4000)}
             onOpenChange={(open) => {
               if (!open) setItems((list) => list.filter((x) => x.id !== t.id))
             }}

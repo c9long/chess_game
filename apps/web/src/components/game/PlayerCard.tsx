@@ -1,7 +1,7 @@
 import type { ClockSync } from '@game/protocol'
 import type { SeatStateJson } from '@game/protocol/state'
 import { AnimatePresence, motion } from 'motion/react'
-import { memo } from 'react'
+import { memo, type ReactNode } from 'react'
 import { formatClock, useClocks } from '../../lib/clock.ts'
 import type { SeatMaterial } from '../../lib/material.ts'
 import { CivEmblem, civName } from '../CivEmblem.tsx'
@@ -112,6 +112,7 @@ export const PlayerCard = memo(function PlayerCard({
   defeatReason,
   material,
   reduceMotion,
+  friendAction,
 }: {
   index: number
   seat: SeatStateJson
@@ -128,6 +129,8 @@ export const PlayerCard = memo(function PlayerCard({
   /** Pieces lost so far (null while unknown, or when the army was removed). */
   material: SeatMaterial | null
   reduceMotion: boolean
+  /** "Add friend" (and what became of it) for another registered player, if any. */
+  friendAction?: ReactNode
 }) {
   const name = seatName(index)
   const out = seat.status === 'removed' || seat.status === 'frozen'
@@ -186,6 +189,9 @@ export const PlayerCard = memo(function PlayerCard({
             <span className="hidden shrink-0 rounded border border-parchment/20 bg-parchment/[0.06] px-1 text-[10px] leading-4 font-bold tracking-wider text-parchment/65 uppercase lg:inline-block">
               Bot · {botLevelText(seat.botLevel)}
             </span>
+          ) : null}
+          {friendAction ? (
+            <span className="ml-auto flex shrink-0 pl-0.5">{friendAction}</span>
           ) : null}
         </p>
         {/* Full rows: civ and seat (a bot's civ is already its name). */}
