@@ -131,16 +131,23 @@ export function fold(s: string): string {
 
 /**
  * Leetspeak undone; `1` is read as `i` in one variant and `l` in the other. A run of six or
- * more digits alone is a number, not a word ("Fan_88800828" stays usable).
+ * more digits alone is a number, not a word ("Fan_88800828" stays usable). A digit with no
+ * letter reading (2, 6) becomes a word break (`|`), not nothing: dropping it would glue its
+ * neighbours into words that aren't there ("b0208b66" read as "boobgg").
  */
 function unleet(s: string, one: 'i' | 'l'): string {
   if (/^[0-9]{6,}$/.test(s)) return s
   let out = ''
-  for (const ch of s) out += ch === '1' ? one : (LEET_COMMON[ch] ?? ch)
+  for (const ch of s) {
+    if (ch === '1') out += one
+    else if (LEET_COMMON[ch]) out += LEET_COMMON[ch]
+    else out += /[0-9]/.test(ch) ? '|' : ch
+  }
   return out
 }
 
-const lettersOnly = (s: string) => s.replace(/[^a-z]/g, '')
+/** Letters only, plus the `|` word breaks from `unleet` (no term contains one). */
+const lettersOnly = (s: string) => s.replace(/[^a-z|]/g, '')
 
 /**
  * Regex for a term with repeated letters allowed: each run of k equal letters needs at least
