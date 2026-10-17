@@ -114,6 +114,28 @@ only like a king plus one knight jump per turn, or England loses when any two ar
 Commits `03a45a1`…`c138851`. The full check passed on these commits on their own (server 356
 tests, web 96). A review pass (rules attack tests + visual check) is still running.
 
+### 7. From the to-do list: basic moderation (needed for the app stores)
+Apple and Google require blocking and reporting in apps where players interact, and friend
+requests now count. Built for the beta, not for scale (commits `ab5b63c`…`39e411b`):
+- **Usernames:** a small profanity/slur filter that sees through capitals, accents, "l33t"
+  spellings and separators, with an allowlist so ordinary names aren't caught, plus reserved
+  names (admin, moderator, support, the game's name, "Guest-…", bot names…). Username changes
+  stay unavailable in the beta.
+- **Block:** from a player's menu in a game, on the result screen, in history or on the Friends
+  page. It ends the friendship, cancels requests, hides online status both ways, and refuses
+  their requests and challenges with the same message as any ineligible request, so they
+  can't tell they're blocked. A "Blocked" list has Unblock. It doesn't remove anyone from a
+  public game already in progress.
+- **Report:** offensive username, harassment (for chat later), cheating or other, with an
+  optional note; rate limited. The reported player never learns who reported them.
+- **Review queue:** user ids listed in `ADMIN_USER_IDS` can open `/admin/reports` (not linked
+  anywhere) to dismiss, warn, reset a username or suspend/unsuspend an account. To use it, put
+  your own user id there.
+- Terms and Privacy Policy drafts say what's kept and for how long.
+- The full check passed on these commits on their own (server 392 tests; one clock-timing test
+  missed its 5 ms tolerance by 0.2 ms while three workflows were running, and passed 5 of 5 on
+  rerun). A review pass (abuse tests + UX check) is still running.
+
 ### 6. Docker (M0 leftover): verified for real
 Both images build, and a local test stack migrated the database, answered `/api/health` and
 played a full solo game against the bot engine in its own container. A real run turned up
