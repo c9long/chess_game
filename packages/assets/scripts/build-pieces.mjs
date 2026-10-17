@@ -359,14 +359,16 @@ pieces.knight = {
   ],
 }
 
-// Prime Minister (England): the knight's head, a little smaller, wearing the
-// king's crown (band, cup, dome and cross) between its ears. The crown is
-// drawn in front of the head, so the head's detail lines stop at its edge.
-const KM = 0.8
+// Prime Minister (England): the knight's head, smaller, wearing the king's
+// crown (band, cup, dome and cross) between its ears. The crown is drawn in
+// front of the head, so the head's detail lines stop at its edge. It is wider
+// than the king's and about a third of the piece's height, so on a phone's
+// ~20 px square it still reads as a coloured crown, not a dark bump.
+const KM = 0.74
 const PMX = 124 // crown centre line (over the poll, between the ears)
-const PM_CROWN_X = 0.95 // crown size relative to the king's: a little narrower,
-const PM_CROWN_Y = 0.75 // and squatter, so it fits above the head
-const PM_CROWN_DY = 7
+const PM_CROWN_X = 1.15 // crown size relative to the king's: wider,
+const PM_CROWN_Y = 0.9 // a little squatter, so it fits above the head
+const PM_CROWN_DY = 12
 const crown = (d) =>
   d.replace(/(-?\d*\.?\d+)\s+(-?\d*\.?\d+)/g, (_, x, y) => {
     const nx = Math.round((PMX + (Number(x) - CX) * PM_CROWN_X) * 100) / 100
@@ -415,8 +417,9 @@ pieces['prime-minister'] = {
       ]),
     ),
   ],
-  // the knight's eye, nostril, mouth, cheek and mane, rescaled with the head
-  details: pieces.knight.details.map((dd) => ({ ...dd, d: tf(dd.d, KM / KN) })),
+  // the knight's eye, nostril, mouth and cheek, rescaled with the head (no
+  // mane line: at small sizes it merges with the crown's outline)
+  details: pieces.knight.details.slice(0, 4).map((dd) => ({ ...dd, d: tf(dd.d, KM / KN) })),
   // details never cross the crown (components 4.. are the crown)
   detailClipFrom: 4,
 }
