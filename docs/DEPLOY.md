@@ -10,6 +10,9 @@ behind each choice are in [PLAN.md §9](PLAN.md).
 > the DMCA agent, upgrading Resend, and so on. You can follow this guide earlier for a
 > private test with friends.
 
+> **No monthly bill?** [DEPLOY-CSCLUB.md](DEPLOY-CSCLUB.md) runs the same game on a
+> UWaterloo CSC machine without sudo or Docker; only the domain costs money.
+
 ## How the pieces fit
 
 ```
@@ -180,12 +183,16 @@ docker compose -f infra/docker-compose.yml --env-file infra/.env exec -T postgre
   createdb -U game game
 docker compose -f infra/docker-compose.yml --env-file infra/.env exec -T postgres \
   psql -q -U game -d game -v ON_ERROR_STOP=1 < restore.sql
+# Apply database changes from updates made after the backup (only the missing ones).
+docker compose -f infra/docker-compose.yml --env-file infra/.env run --rm migrate
 docker compose -f infra/docker-compose.yml --env-file infra/.env run --rm --no-deps server \
   node apps/server/src/jobs/reapply-deletions-cli.ts
 docker compose -f infra/docker-compose.yml --env-file infra/.env start server
 ```
 
 (`game` is the default `DB_USER` and `DB_NAME`; use yours if you changed them.) The
+`migrate` step matters when the backup is older than the running version: without it the
+server would find tables from before the update. The
 `reapply-deletions` step matters: it deletes again any account that was deleted after
 the backup was taken (a privacy-law requirement). Practise a restore once before launch, as
 TODO.md asks. A backup you have never restored is a hope, not a backup.
