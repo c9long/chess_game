@@ -29,6 +29,8 @@ function useAfterFirstPaint(): boolean {
     let idle: number | undefined
     let timer: ReturnType<typeof setTimeout> | undefined
     const raf = requestAnimationFrame(() => {
+      // The first frame is on its way: deferred work starts after this mark (the E2E check).
+      performance.mark?.('landing:first-frame')
       if ('requestIdleCallback' in window) {
         idle = window.requestIdleCallback(() => setReady(true), { timeout: 1200 })
       } else {

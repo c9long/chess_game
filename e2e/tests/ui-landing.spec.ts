@@ -37,15 +37,19 @@ test('landing: demo board loads after first paint, emblems, CTAs, no console err
   // The board renderer arrives after first paint, then draws into a canvas.
   await expect(board(page)).toHaveAttribute('data-ready', 'true', { timeout: 30_000 })
   await expect(board(page).locator('canvas')).toHaveCount(1)
+  // Its code is requested only after the page's first frame. (Chrome's first-contentful-paint
+  // time is no use here: on a loaded machine it is reported seconds late, after the idle
+  // fallback has already started the download.)
   const timing = await page.evaluate(() => {
-    const fcp = performance.getEntriesByName('first-contentful-paint')[0]?.startTime ?? 0
+    const firstFrame = performance.getEntriesByName('landing:first-frame')[0]?.startTime
     const chunk = performance
       .getEntriesByType('resource')
       .find((r) => r.name.includes('DemoBoard'))?.startTime
-    return { fcp, chunk }
+    return { firstFrame, chunk }
   })
+  expect(timing.firstFrame).toBeDefined()
   expect(timing.chunk).toBeDefined()
-  expect(timing.chunk as number).toBeGreaterThan(timing.fcp)
+  expect(timing.chunk as number).toBeGreaterThan(timing.firstFrame as number)
 
   // Decorative and watch-only: the canvas is out of the tab order and the a11y tree.
   await expect(board(page).locator('canvas')).toHaveAttribute('tabindex', '-1')
