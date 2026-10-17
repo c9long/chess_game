@@ -193,6 +193,32 @@ To roll back, check out the previous version (`git checkout <commit>`) and run t
 `up -d --build`. The images always rebuild the rules engine and bots from the checked-out
 code, so an older checkout really gives you the older engine.
 
+### PostgreSQL extensions
+
+Player search (Friends page) uses the `pg_trgm` extension. Migration 0011 runs `CREATE
+EXTENSION IF NOT EXISTS pg_trgm` and adds a trigram index on usernames. `pg_trgm` ships with
+PostgreSQL's contrib modules, which the `postgres:16-alpine` image includes, and it is a
+"trusted" extension (PostgreSQL 13 and later), so the database owner can create it without
+superuser rights. A managed database (or the CSC's `ceo postgresql` one) must allow it: check
+with `SELECT * FROM pg_available_extensions WHERE name = 'pg_trgm';`.
+
+If it isn't available, the migration still succeeds: it creates a plain prefix index
+(`lower(username) text_pattern_ops`) instead, and search matches only the start of usernames
+(no fuzzy matches). The server checks for the extension at the first search after it starts.
+To get fuzzy search later, install the extension and then, in `psql`:
+
+```sql
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE INDEX IF NOT EXISTS users_username_trgm_idx ON users
+  USING gin (lower(username) gin_trgm_ops) WHERE username IS NOT NULL;
+DROP INDEX IF EXISTS users_username_prefix_idx;
+VACUUM ANALYZE users;
+```
+
+and restart the server. The trigram index only gets used once `VACUUM` (or autovacuum, soon
+after the migration) has filled in its statistics; until then searches fall back to scanning
+the table, which is still fine at a few thousand players.
+
 ## Restoring a backup
 
 ```sh

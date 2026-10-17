@@ -49,6 +49,10 @@ I couldn't log in to a CSC machine, so these facts come from the CSC's public pa
 - **Databases.** Members can create a PostgreSQL database with `ceo postgresql create`. It
   lives on caffeine, the CSC web server. This guide runs a private PostgreSQL instead (see
   below for why), but the scripts can use the CSC one.
+  Player search needs the `pg_trgm` extension (part of PostgreSQL's contrib modules, which the
+  conda-forge build the scripts install includes). On the CSC database, ask syscom whether
+  `pg_trgm` is available; without it search still works, matching only the start of usernames
+  ([DEPLOY.md, PostgreSQL extensions](DEPLOY.md#postgresql-extensions)).
 - **Disk on general-use machines.** Members get "4 GB of disk quota that is accessible across
   all of our machines" (home directories are on NFS, a network filesystem). That's tight and
   slow for a database. **Use a VM** if you can; if all you get is a general-use machine, read

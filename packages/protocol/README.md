@@ -239,7 +239,8 @@ protocol v1; older decoders ignore them). `inviteOnly`: a challenge lobby (see b
   defaults FFA, 10+0, 50): top registered players with at least `LEADERBOARD_MIN_GAMES` (5)
   ranked games in that rating, by Elo; `{ mode, timeControl, minGames, entries: [{ rank,
   username, rating, gamesPlayed, peak }] }` (`LeaderboardResponse`; equal ratings share a
-  rank). Usernames only; deleted accounts and guests never appear. Encode `+` in `tc` (`%2B`);
+  rank). Usernames only; deleted and suspended accounts and guests never appear (every listed
+  name opens its public profile). Encode `+` in `tc` (`%2B`);
   a bare `+` (decoded as a space) is accepted too.
 
 Ratings: only ranked lobbies are rated, with 4-player Elo per mode × time control (start
@@ -259,10 +260,32 @@ the session cookie (web) or `Authorization: Bearer <token>` (native apps); limit
 `social.ts` (`FRIENDS_MAX` 50, `FRIEND_REQUESTS_OUTGOING_MAX` 10, `FRIEND_REQUESTS_PER_HOUR` 20,
 `CHALLENGE_MAX_INVITEES` 3, `CHALLENGE_TTL_MS` 5 min).
 
-**Who can be added:** only someone you are playing with right now (a running game) or finished a
-game with: both seated in the same match. A lobby that never started doesn't count, nor do
-aborted games, bots, guests or deleted accounts. Requests name the other player by match and
-seat, so user ids are never needed to add someone (and can't be guessed to spam strangers).
+**Who can be added** (since 2026-10-17): any registered player, by exact username (any case) or
+by match and seat (someone you are playing with or finished a game with). Bots, guests, deleted
+and suspended accounts can't be added. A player may choose **"Who can send me friend
+requests"**: `anyone` (the default) or `played_with` (only players they are playing with or
+finished a game with; a lobby that never started and aborted games don't count). Every refusal
+about the other player is one neutral `403 { error: 'NOT_ELIGIBLE', message: 'We couldn’t send
+that request.' }`: no such username, a guest, a deleted or suspended account, a player who
+blocked you, or one whose setting refuses you. It never says which. Refusals about you (your
+caps, your own block: `BLOCKED`, `SELF`) keep their own codes. Every cap (`FRIEND_CAP`,
+`OUTGOING_CAP`, `TARGET_FRIEND_CAP`) is checked before the other player's block and setting, so
+a sender at a cap gets the same cap error for everyone and can't use it to probe. User ids are
+never needed to add someone.
+
+**Player search and profiles** (limits in `social.ts`: `PLAYER_SEARCH_MIN_CHARS` 3,
+`PLAYER_SEARCH_MAX_RESULTS` 10, `PLAYER_SEARCHES_PER_MIN` 30 per user, `PROFILE_VIEWS_PER_MIN`
+60 per registered user, or per client IP for guests). Search lists live registered players
+only: never yourself, guests, deleted or suspended accounts, or players you blocked. Players who
+blocked you are listed like anyone else, since their profile and leaderboard row are public
+anyway and hiding them would reveal the block; a request to them gets the neutral
+`NOT_ELIGIBLE`. Prefix matches come first (shortest
+first), then fuzzy matches by trigram similarity. Results and profiles carry `userId` only when
+there is a friendship or a request either way (or, on a profile, a block of yours): the ids the
+Friends page already shows you. Emails are never shown. `relation` is `none` \| `outgoing` \|
+`incoming` \| `friends` \| `unavailable` ("can't add": you have `FRIENDS_MAX` friends or
+`FRIEND_REQUESTS_OUTGOING_MAX` requests waiting; `capReached` / `outgoingFull` say which); it
+never reflects the other player's blocks or setting.
 
 ### REST
 
@@ -270,7 +293,11 @@ seat, so user ids are never needed to add someone (and can't be guessed to spam 
 |---|---|
 | `GET /api/friends` | `FriendsResponse`: `{ friends: [{ userId, username, online, since }], incoming: [{ user, createdAt }], outgoing: [...], blocked: [{ userId, username, since }], limits: { maxFriends, maxOutgoing, maxBlocked } }` |
 | `GET /api/friends/match/:matchId` | participants only: `MatchRelationsResponse` `{ matchId, capReached, outgoingFull, seats: [{ seat, relation, blocked, blockable }] }`, relation `self` \| `ineligible` \| `none` \| `outgoing` \| `incoming` \| `friends` (`ineligible` also when that player blocked you, so the block isn't revealed); `blocked`: you blocked that player; `blockable`: another registered player (the menu offers Block / Unblock) |
-| `POST /api/friends/requests` | `{ matchId, seat }` → `{ relation: 'outgoing' \| 'friends', user }` (`friends`: they had asked you, so it is accepted at once) |
+| `POST /api/friends/requests` | `{ matchId, seat }` or `{ username }` (exact, any case; the other player's setting applies) → `{ relation: 'outgoing' \| 'friends', user }` (`friends`: they had asked you, so it is accepted at once, whatever their setting). `FRIEND_REQUESTS_PER_HOUR` counts both forms |
+| `GET /api/players?q=` | 3-20 username characters (`[A-Za-z0-9_]`, including 3 letters or digits in a row, so the trigram index always applies) → `PlayerSearchResponse` `{ query, results: [{ username, rating: { rating, mode, timeControl } \| null, gamesPlayed, relation, userId? }], capReached, outgoingFull }`; `rating` is the Elo of the mode × time control with the most ranked games; `gamesPlayed` counts finished games. `400 BAD_REQUEST` for a shorter or invalid query, `429 RATE_LIMITED` past 30 a minute |
+| `GET /api/players/:username` | any signed-in viewer (guests too; guests have no profile themselves) → `PublicProfileResponse` `{ username, memberSince: 'YYYY-MM', gamesPlayed, ratings: [{ mode, timeControl, rating, gamesPlayed, peak, provisional }], favoriteCiv: { slug, games } \| null, relation: … \| 'self', userId?, blockedByYou, capReached, outgoingFull }` (`provisional`: fewer ranked games than the leaderboard needs; `favoriteCiv`: most played in finished games). `404 { error: 'NOT_FOUND', message: 'Player not found.' }` alike for unknown, guest, deleted and suspended accounts. Match history stays private (participants only) |
+| `GET /api/friends/settings` | → `{ friendRequests: 'anyone' \| 'played_with' }` |
+| `PUT /api/friends/settings` | `{ friendRequests: 'anyone' \| 'played_with' }` → the same (included in the account export as `settings`) |
 | `POST /api/friends/requests/:userId/accept` | → `{ relation: 'friends', user }` |
 | `POST /api/friends/requests/:userId/decline` | → 204 |
 | `DELETE /api/friends/requests/:userId` | cancel your own request → 204 |
@@ -309,6 +336,38 @@ Server → client messages (`socialMessageSchemas`):
 | `challengeUpdate` | to the challenger: `{ challengeId, user, status: 'declined' \| 'joined' \| 'expired' }` |
 | `challengeClosed` | `{ challengeId, reason }`: `expired`, `started` (its game began), `closed` (the lobby closed), `cancelled` (withdrawn, or replaced by a newer challenge), or `answered` (only to an invitee whose other tab or device joined or declined: drop the prompt) |
 
+### Account security
+
+Session (cookie or bearer) required for each of these.
+
+- `GET /api/account/two-factor/backup-codes`: `{ enabled, remaining, total }`, how many of the
+  account's two-step backup codes are unused (`total` is the size of a set, 10). Never the codes
+  themselves. `enabled: false` (and `remaining: 0`) without two-step verification;
+  `remaining: null` when the stored codes can't be read (the count is unknown, not zero). The web
+  app warns at 3 or fewer.
+- With two-step verification managed by Better Auth (`/api/auth/two-factor/enable`, `disable`,
+  `get-totp-uri`, `generate-backup-codes`): an account without a password needs a session less
+  than a day old for these, else `403 { code: 'SESSION_NOT_FRESH' }` (sign in again). Accounts
+  with a password confirm with it instead, as before.
+- `DELETE /api/account` with `{ confirm: 'DELETE' }` deletes the account. A registered account
+  whose session is more than a day old must also confirm it's the owner with exactly one of:
+  `password`, `totpCode` (6 digits), `backupCode` (used up; any case, spaces or hyphen), or
+  `passkey`: a WebAuthn assertion (`AuthenticationResponseJSON`) for a challenge from
+  `GET /api/auth/passkey/generate-authenticate-options`, sent from the same browser (the
+  challenge cookie). Without one it answers `403 { error: 'SESSION_NOT_FRESH', methods }`, with
+  the methods the account has (`'password' | 'passkey' | 'totp'`, `totp` covering backup codes;
+  empty means only signing in again works). Refusals: `400 ONE_METHOD`, `400
+  METHOD_UNAVAILABLE` (the account has no such method), `403 INVALID_PASSWORD`, `403
+  INVALID_CODE`, `403 INVALID_BACKUP_CODE`, `403 PASSKEY_FAILED`, `403 PASSKEY_MISMATCH`
+  (another account's passkey), and `429 STEP_UP_LOCKED` with `Retry-After` once 10 proofs in 15
+  minutes have been tried without one succeeding (each attempt is counted as it arrives, so
+  parallel requests can't exceed it). Guests need only the confirmation.
+
+Password sign-in (`/api/auth/sign-in/email`, `/api/auth/sign-in/username`) is locked per
+account for 15 minutes after 10 wrong passwords in 15 minutes: `429 { code: 'ACCOUNT_LOCKED',
+retryAfter }` with `X-Retry-After`. When a lock starts, the owner of a verified address gets one
+email (at most one an hour) saying when it ends; the response doesn't change either way.
+
 ### Usernames
 
 Better Auth's sign-up (`/api/auth/sign-up/email`) and choosing a username (`/api/auth/update-user`
@@ -322,9 +381,11 @@ Usernames can't be changed during the beta. A suspended account's sign-in answer
 ### Blocking and reporting
 
 Types and limits in `moderation.ts` (`BLOCKS_MAX` 500, `REPORTS_PER_DAY` 10, `REPORT_NOTE_MAX`
-500). A target (`PlayerTarget`) is either `{ matchId, seat }` (a game you played in: live card,
-result screen, history row) or `{ userId }` (someone on your Friends page: a friend, a request
-either way, or a player you blocked). Any other user id gets `404 NOT_FOUND`.
+500). A target (`PlayerTarget`) is `{ matchId, seat }` (a game you played in: live card,
+result screen, history row), `{ userId }` (someone on your Friends page: a friend, a request
+either way, or a player you blocked), or `{ username }` (any case: a live registered player's
+public profile; suspended accounts read as not found). Any other user id or username gets
+`404 NOT_FOUND`.
 
 | Call | Body / answer |
 |---|---|
