@@ -20,7 +20,7 @@ test('the civ dropdown works from the keyboard (ARIA combobox + listbox)', async
   await expect(trigger).toHaveAttribute('aria-expanded', 'false')
   await expect(trigger).toHaveAttribute('aria-haspopup', 'listbox')
   const list = page.getByRole('listbox', { name: 'Your civilization' })
-  const search = page.getByRole('combobox', { name: 'Search civilizations' })
+  const search = page.getByRole('combobox', { name: 'Search civilizations or abilities' })
 
   // Arrow Down opens the list with the search box focused and the first civ highlighted.
   await trigger.focus()
@@ -63,11 +63,13 @@ test('the civ dropdown works from the keyboard (ARIA combobox + listbox)', async
   // Typing filters by name (case- and accent-insensitive); Enter picks the best match.
   await page.keyboard.type('ÉNG')
   await expect(list.getByRole('option')).toHaveCount(1)
-  // England fields a special army: its row says so under the name.
+  // England has a civilization ability: its row names it under the name, and screen readers
+  // hear the ability and its summary as the option's description.
   await expect(list.getByRole('option')).toContainText('England')
-  await expect(list.getByRole('option')).toContainText('Special army')
-  await expect(list.getByRole('option')).toContainText(
-    'Four Prime Ministers replace the king, queen and knights',
+  await expect(list.getByRole('option')).toContainText('Magna Carta')
+  await expect(list.getByRole('option').getByTestId('civ-ability-line')).toHaveCount(1)
+  await expect(list.getByRole('option')).toHaveAccessibleDescription(
+    'Ability: Magna Carta. Four Prime Ministers replace the king, queen and knights.',
   )
   await page.keyboard.press('Backspace')
   await page.keyboard.press('Backspace')
@@ -77,6 +79,15 @@ test('the civ dropdown works from the keyboard (ARIA combobox + listbox)', async
   await page.keyboard.type('zz')
   await expect(list.getByRole('option')).toHaveCount(0)
   await expect(list).toContainText('No civilization matches “anzz”')
+  // The search also finds civs by ability and emblem, with the match marked.
+  await search.fill('magna')
+  await expect(list.getByRole('option')).toHaveCount(1)
+  await expect(list.getByTestId('civ-england').locator('mark')).toHaveText('Magna')
+  await search.fill('eagle')
+  await expect(list.getByRole('option')).toHaveCount(1)
+  await expect(list.getByTestId('civ-usa')).toContainText('Bald eagle')
+  await expect(list.getByTestId('civ-usa')).toHaveAccessibleDescription('Standard army.')
+  await expect(search).toHaveAttribute('placeholder', 'Search civilizations or abilities')
   await search.fill('fr')
   await page.keyboard.press('Enter')
   await expect(trigger).toHaveAttribute('data-value', 'france')
