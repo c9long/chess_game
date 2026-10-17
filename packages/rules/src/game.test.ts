@@ -129,6 +129,9 @@ describe('Game', () => {
     expect(attack.leaderUnderAttack('west')).toBe(true)
     expect(attack.leaderUnderAttack('south')).toBe(false)
     expect(snap(attack).leaderUnderAttack).toEqual([false, true, false, false])
+    // Leader squares come from the civ roster's leader role, not from looking for kings.
+    expect(snap(attack).leaderSquares).toEqual([['g1'], ['a7'], ['g12'], ['l7']])
+    expect(attack.leaderSquares('west')).toEqual(['a7'])
     const [kill] = play(attack, ['a1a7'])
     expect(kill?.slice(1)).toEqual([
       { type: 'capture', seat: 'south', square: 'a7', captured: { kind: 'king', owner: 'west' } },
@@ -136,6 +139,7 @@ describe('Game', () => {
       { type: 'army_removed', seat: 'west' },
     ])
     expect(snap(attack).statuses).toEqual(['active', 'removed', 'active', 'active'])
+    expect(snap(attack).leaderSquares).toEqual([['g1'], [], ['g12'], ['l7']])
     for (const g of [game, castle, attack]) g.free()
   })
 

@@ -120,6 +120,7 @@ export function validateSnapshot(v: unknown): asserts v is Snapshot {
       'isOver',
       'hash',
       'leaderUnderAttack',
+      'leaderSquares',
     ],
     'snapshot',
   )
@@ -174,6 +175,12 @@ export function validateSnapshot(v: unknown): asserts v is Snapshot {
   if ((s.outcome === null) === s.isOver) fail('outcome', 'must be set exactly when isOver', s)
   if (typeof s.hash !== 'string' || !/^[0-9a-f]{16}$/.test(s.hash)) fail('hash', 'hex16', s.hash)
   tuple4(s.leaderUnderAttack, 'leaderUnderAttack', bool)
+  tuple4(s.leaderSquares, 'leaderSquares', (x, p) => {
+    if (!Array.isArray(x)) fail(p, 'expected array', x)
+    x.forEach((sq, i) => {
+      square(sq, `${p}[${i}]`)
+    })
+  })
 }
 
 export function validateMove(v: unknown, path = 'move'): asserts v is MoveView {

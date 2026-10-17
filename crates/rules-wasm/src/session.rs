@@ -138,6 +138,16 @@ impl Session {
         Ok(leader_under_attack(&self.state, parse_seat(seat)?))
     }
 
+    /// Squares of a seat's leader pieces (its civ's leader role), as names.
+    pub fn leader_squares(&self, seat: &str) -> Result<Vec<String>, String> {
+        let seat = parse_seat(seat)?;
+        Ok(self
+            .state
+            .leader_squares(seat)
+            .map(|sq| sq.to_string())
+            .collect())
+    }
+
     /// Native perft (for parity checks against the JS-side perft).
     pub fn perft(&self, depth: u32) -> Result<u64, String> {
         if depth > 6 {
@@ -239,6 +249,7 @@ mod tests {
                 "epTargets",
                 "hash",
                 "isOver",
+                "leaderSquares",
                 "leaderUnderAttack",
                 "moveLimit",
                 "noProgress",
@@ -277,6 +288,12 @@ mod tests {
             snap["leaderUnderAttack"],
             json!([false, false, false, false])
         );
+        assert_eq!(
+            snap["leaderSquares"],
+            json!([["g1"], ["a7"], ["g12"], ["l7"]])
+        );
+        assert_eq!(s.leader_squares("east").unwrap(), ["l7"]);
+        assert_eq!(s.leader_squares("up").unwrap_err(), "invalid seat \"up\"");
         let hash = snap["hash"].as_str().unwrap();
         assert_eq!(hash.len(), 16);
         assert_eq!(hash, format!("{:016x}", s.state().hash()));

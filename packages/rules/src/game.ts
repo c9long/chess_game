@@ -1,6 +1,14 @@
 import { WasmGame } from '../wasm/rules_wasm.js'
 import { assertRulesReady } from './init.ts'
-import type { GameConfigInput, GameEvent, MoveView, Seat, SeatTuple, Snapshot } from './types.ts'
+import type {
+  GameConfigInput,
+  GameEvent,
+  MoveView,
+  Seat,
+  SeatTuple,
+  Snapshot,
+  Square,
+} from './types.ts'
 
 /**
  * A game, backed by the Rust rules engine. Every rule decision is made by the
@@ -104,6 +112,14 @@ export class Game {
   /** Whether an ACTIVE seat's leader is attacked (information only; self-check is legal). */
   leaderUnderAttack(seat: Seat): boolean {
     return this.#inner.leaderUnderAttack(seat)
+  }
+
+  /**
+   * Squares of `seat`'s leader pieces (its civ's leader role, not necessarily a king), in square
+   * order, whatever its status. Also in `snapshot().leaderSquares`.
+   */
+  leaderSquares(seat: Seat): Square[] {
+    return this.#inner.leaderSquares(seat) as Square[]
   }
 
   /** Engine-side perft (move-tree leaf count), depth at most 6. For tests and benchmarks. */

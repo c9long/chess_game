@@ -128,6 +128,12 @@ impl WasmGame {
         self.inner.leader_under_attack(seat).map_err(js_err)
     }
 
+    /// Squares of a seat's leader pieces (its civ's leader role), any status.
+    #[wasm_bindgen(js_name = leaderSquares)]
+    pub fn leader_squares(&self, seat: &str) -> Result<Vec<String>, JsError> {
+        self.inner.leader_squares(seat).map_err(js_err)
+    }
+
     /// Native (in-WASM) perft, depth at most 6.
     pub fn perft(&self, depth: u32) -> Result<f64, JsError> {
         // Counts up to depth 6 are far below 2^53, so f64 is exact.

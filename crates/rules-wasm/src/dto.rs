@@ -274,6 +274,9 @@ pub struct SnapshotView {
     pub hash: String,
     /// Per seat: an ACTIVE seat's leader is attacked (information only).
     pub leader_under_attack: [bool; 4],
+    /// Per seat: squares of its leader pieces (its civ's leader role), in
+    /// square order; empty once it holds none.
+    pub leader_squares: [Vec<Square>; 4],
 }
 
 impl From<&GameState> for SnapshotView {
@@ -312,6 +315,7 @@ impl From<&GameState> for SnapshotView {
             is_over: s.is_over(),
             hash: format!("{:016x}", s.hash()),
             leader_under_attack: Seat::ALL.map(|seat| leader_under_attack(s, seat)),
+            leader_squares: Seat::ALL.map(|seat| s.leader_squares(seat).collect()),
         }
     }
 }

@@ -186,6 +186,11 @@ export interface Snapshot {
   readonly hash: string
   /** Per seat: an ACTIVE seat's leader is attacked (information only). */
   readonly leaderUnderAttack: SeatTuple<boolean>
+  /**
+   * Per seat: squares of its leader pieces (the kinds its civ's roster gives the leader role,
+   * not necessarily a king), in square order; empty once it holds none. Any status.
+   */
+  readonly leaderSquares: SeatTuple<readonly Square[]>
 }
 
 // ---------------------------------------------------------------------------

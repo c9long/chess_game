@@ -422,6 +422,16 @@ impl GameState {
             .sum()
     }
 
+    /// Squares of `seat`'s leader pieces (the kinds its civ's roster gives
+    /// the leader role), in square order. Any status: a seat that is no
+    /// longer ACTIVE may still hold a leader piece on the board.
+    pub fn leader_squares(&self, seat: Seat) -> impl Iterator<Item = Square> + '_ {
+        let roster = self.roster(seat);
+        self.pieces_of(seat)
+            .filter(move |(_, p)| roster.is_leader(p.kind))
+            .map(|(sq, _)| sq)
+    }
+
     /// Whether `seat`'s defeat condition holds (default: no leader pieces).
     pub fn defeat_condition_met(&self, seat: Seat) -> bool {
         match self.civ(seat).hooks.defeat_condition {
@@ -772,6 +782,10 @@ mod tests {
             assert_eq!(s.ep_target(seat), None);
             assert_eq!(s.piece_count(seat, PieceKind::Pawn), 8);
             assert_eq!(s.leader_count(seat), 1);
+            assert_eq!(
+                s.leader_squares(seat).collect::<Vec<_>>(),
+                [setup::leader_home(seat)]
+            );
             assert!(!s.defeat_condition_met(seat));
         }
         assert_eq!(s.move_limit(), 100);
