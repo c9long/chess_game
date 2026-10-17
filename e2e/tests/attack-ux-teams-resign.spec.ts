@@ -151,9 +151,9 @@ for (const size of sizes) {
     await shot(N, `${tag}-d1b-north-waiting-plus-draw`)
     await playMove(S, 'e2', 'e4')
     await turn(N)
-    await playMove(N, 'e11', 'e9')
+    await playMove(N, 'e15', 'e13')
     await turn(S)
-    await playMove(S, 'i1', 'h3')
+    await playMove(S, 'k1', 'j3')
     await turn(N)
     await expect(N.getByTestId('team-resign-outcome')).toContainText('full round', {
       timeout: 15_000,

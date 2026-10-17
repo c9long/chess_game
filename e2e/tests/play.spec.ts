@@ -51,7 +51,7 @@ test('guest creates a lobby, fills it with bots, plays and sees the result', asy
   // answer and the turn comes back to South.
   await playMove(page, 'e2', 'e4')
   await expect(page.getByTestId('turn-banner')).toHaveText(YOUR_TURN, { timeout: 30_000 })
-  await playMove(page, 'i1', 'h3')
+  await playMove(page, 'k1', 'j3')
   await expect(page.getByTestId('turn-banner')).toHaveText(YOUR_TURN, { timeout: 30_000 })
   // Both moves are on the board: South's knight now stands on h3, the pawn on e4.
   const pos = await position(page)

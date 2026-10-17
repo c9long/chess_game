@@ -214,7 +214,7 @@
     background-repeat: no-repeat;
     background-size: 1rem;
   }
-  /* Fixed-size stand-in for the landing demo board while its chunk loads: a faint 12x12
+  /* Fixed-size stand-in for the landing demo board while its chunk loads: a faint 16x16
      field inside a dark frame, so nothing moves when the real board fades in. */
   .board-placeholder {
     background-color: #2a221b;
@@ -233,10 +233,10 @@
         transparent 75%,
         rgb(244 239 230 / 0.06) 75%
       );
-    background-size: calc(100% / 6) calc(100% / 6);
+    background-size: calc(100% / 8) calc(100% / 8);
     background-position:
       0 0,
-      calc(100% / 12) calc(100% / 12);
+      calc(100% / 16) calc(100% / 16);
     box-shadow:
       0 0 0 10px #3a2a20,
       0 0 0 11px rgb(201 165 90 / 0.35),

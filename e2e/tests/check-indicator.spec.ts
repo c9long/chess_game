@@ -86,12 +86,12 @@ test('singleplayer: self-check is allowed and shows the check indicator', async 
   await panel.getByTestId('start-solo').click()
   await expect(page.getByTestId('board')).toBeVisible({ timeout: 20_000 })
 
-  // South walks its leader toward East's pawns (h2h4, g1h2, h2i3), then steps into an attack
-  // as soon as the engine offers a move that does. The bots play as they like in between,
-  // so every turn checks what the engine says first.
-  const walk = ['h2h4', 'g1h2', 'h2i3']
+  // South walks its leader toward East's pawns and knights (j2j4, i1j2, j2k3, k3l4, l4m4),
+  // then steps into an attack as soon as the engine offers a move that does. The bots play as
+  // they like in between, so every turn checks what the engine says first.
+  const walk = ['j2j4', 'i1j2', 'j2k3', 'k3l4', 'l4m4']
   let selfChecked = false
-  for (let turn = 0; turn < 10 && !selfChecked; turn++) {
+  for (let turn = 0; turn < 12 && !selfChecked; turn++) {
     await expect(page.getByTestId('turn-banner')).toHaveText(YOUR_TURN, { timeout: 30_000 })
     const game = await engineAt(page)
     try {
@@ -126,7 +126,7 @@ test('singleplayer: self-check is allowed and shows the check indicator', async 
       game.free()
     }
   }
-  expect(selfChecked, 'found a self-check move within 10 turns').toBe(true)
+  expect(selfChecked, 'found a self-check move within 12 turns').toBe(true)
 
   // It stays until the leader is no longer attacked. Then either a bot took it (the game
   // ends and the indicator goes with it), a bot blocked or chased off the attacker (South's
@@ -184,18 +184,18 @@ test('check indicators are only for the viewer, from their turn or after their o
   await south.getByTestId('start-game').click()
   for (const p of [south, east]) await expect(p.getByTestId('board')).toBeVisible()
 
-  // Round 1: South opens h2 (still covered by East's k5 pawn); East then moves that pawn,
-  // so East's queen on l6 attacks South's leader on g1 just as South's turn starts.
+  // Round 1: South opens j2 (the p8-i1 diagonal is still closed by East's o7 pawn); East then
+  // moves that pawn, so East's queen on p8 attacks South's leader on i1 as South's turn starts.
   await expect(south.getByTestId('turn-banner')).toHaveText('Your move', { timeout: 20_000 })
-  await playMove(south, 'h2', 'h4')
+  await playMove(south, 'j2', 'j4')
   await expect(east.getByTestId('turn-banner')).toHaveText('Your move', { timeout: 30_000 })
-  await playMove(east, 'k5', 'j5')
+  await playMove(east, 'o7', 'n7')
 
-  // (a) Someone else put South in check: South's banner says so and g1 is marked. East (the
+  // (a) Someone else put South in check: South's banner says so and i1 is marked. East (the
   // attacker, another player) sees no check indicator at all.
   await expect(south.getByTestId('turn-banner')).toHaveText(CHECK_TEXT)
   await expect(south.getByTestId('turn-banner')).toHaveAttribute('data-check', 'true')
-  await expect.poll(() => checkSquares(south)).toEqual(['g1'])
+  await expect.poll(() => checkSquares(south)).toEqual(['i1'])
   await expect(south.getByTestId('self-check-notice')).toHaveCount(0)
   await expectNoIndicator(east)
   if (SHOTS) {
@@ -205,10 +205,10 @@ test('check indicators are only for the viewer, from their turn or after their o
 
   // (b) South ignores it (allowed: nothing stops the move): a self-check, so South now sees
   // "Your leader is in check" while the others move; still nothing for East.
-  await playMove(south, 'd2', 'd3')
+  await playMove(south, 'e2', 'e3')
   await expect(south.getByTestId('self-check-notice')).toHaveText('Your leader is in check')
   await expect(south.getByTestId('turn-banner')).not.toHaveAttribute('data-check', 'true')
-  await expect.poll(() => checkSquares(south)).toEqual(['g1'])
+  await expect.poll(() => checkSquares(south)).toEqual(['i1'])
   await expectNoIndicator(east)
   // The live region announces the self-check (the visual pill is aria-hidden).
   await expect(south.getByTestId('check-announcer')).toHaveText('Your leader is in check')
@@ -223,13 +223,15 @@ test('check indicators are only for the viewer, from their turn or after their o
   // East leaves the leader be; South's turn comes round with it still attacked: banner check.
   await expect(east.getByTestId('turn-banner')).toHaveText('Your move', { timeout: 30_000 })
   await expectNoIndicator(east)
-  await playMove(east, 'k6', 'j6')
+  await playMove(east, 'o5', 'n5')
   await expect(south.getByTestId('turn-banner')).toHaveText(CHECK_TEXT)
   await expect(south.getByTestId('self-check-notice')).toHaveCount(0)
-  await expect.poll(() => checkSquares(south)).toEqual(['g1'])
+  await expect.poll(() => checkSquares(south)).toEqual(['i1'])
 
-  // South blocks on i3: the leader is safe and every indicator goes away.
-  await playMove(south, 'i2', 'i3')
+  // South blocks on k3: the leader is safe and every indicator goes away.
+  await playMove(south, 'k2', 'k3')
   await expectNoIndicator(south)
-  await expectNoIndicator(east)
+  // East never sees South's leader marked. (The random bots may by now have attacked East's
+  // own leader, which East's indicator would then rightly show.)
+  expect(await checkSquares(east)).not.toContain('i1')
 })

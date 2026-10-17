@@ -92,7 +92,7 @@ describe('the landing page demo games', () => {
     for (const g of DEMO_GAMES) {
       const game = Game.create({ mode: 'ffa', civs: g.civs })
       try {
-        playStillPosition(game, { start: game.snapshot(), random: seededRandom(g.seed) }, 44)
+        playStillPosition(game, { start: game.snapshot(), random: seededRandom(g.seed) }, 60)
         const snap = game.snapshot()
         expect(snap.ply).toBeGreaterThan(20)
         expect(snap.statuses).toEqual(['active', 'active', 'active', 'active'])

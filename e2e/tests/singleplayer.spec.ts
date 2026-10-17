@@ -106,7 +106,7 @@ test('guest plays an untimed game against three bots', async ({ page }) => {
   expect(await position(page)).toBe(pos)
   await expect(page.getByTestId('turn-banner')).toHaveText(YOUR_TURN)
 
-  await playMove(page, 'i1', 'h3')
+  await playMove(page, 'k1', 'j3')
   await expect(page.getByTestId('turn-banner')).toHaveText(YOUR_TURN, { timeout: 30_000 })
 
   // Leaving eliminates the player, which ends the FFA game at once; it shows up in the

@@ -24,9 +24,9 @@ const MOVE_MS = 900
 /** Pause on the final position before a new game starts. */
 const RESTART_MS = 3500
 /** Very long games restart anyway (the demo is decoration, not a tournament). */
-const MAX_PLY = 400
-/** Plies played instantly for the still (reduced motion) position. */
-const STILL_PLY = 44
+const MAX_PLY = 500
+/** Plies played instantly for the still (reduced motion) position (16×16: armies meet later). */
+const STILL_PLY = 60
 /**
  * Still mode: how long the renderer runs after mounting or a resize before it is stopped
  * (BoardView re-rasterises 150 ms after a resize settles, plus the atlas build).

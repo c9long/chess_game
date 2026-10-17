@@ -55,8 +55,8 @@ const VALUE_PROPS: { icon: ReactNode; title: string; text: string }[] = [
   },
   {
     icon: <Grid3x3 aria-hidden="true" className="h-[18px] w-[18px]" />,
-    title: '12×12 board',
-    text: '144 squares, four armies',
+    title: '16×16 board',
+    text: '256 squares, four armies',
   },
   {
     icon: <Landmark aria-hidden="true" className="h-[18px] w-[18px]" />,

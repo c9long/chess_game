@@ -133,7 +133,7 @@ export const YOUR_TURN = /^(Your move|Check! Your leader is under attack)$/
 export interface BoardHook {
   squareToClient(s: string): { x: number; y: number } | null
   position(): string
-  /** Squares the board draws as in check (the check indicator), e.g. ['g1']. */
+  /** Squares the board draws as in check (the check indicator), e.g. ['i1']. */
   checkSquares(): string[]
 }
 

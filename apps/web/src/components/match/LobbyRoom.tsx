@@ -742,7 +742,7 @@ export function LobbyRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) 
 
 /** A small decorative board with the four seat colours on their home edges and their emblems. */
 function MiniBoard({ seats }: { seats: readonly SeatStateJson[] }) {
-  const cells = Array.from({ length: 144 }, (_, i) => i)
+  const cells = Array.from({ length: 256 }, (_, i) => i)
   // Emblem spots: South bottom, West left, North top, East right.
   const spots = [
     'bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2',
@@ -752,10 +752,10 @@ function MiniBoard({ seats }: { seats: readonly SeatStateJson[] }) {
   ]
   return (
     <div className="relative aspect-square w-full max-w-52 rounded-lg border border-parchment/15 p-2 shadow-2xl shadow-black/50">
-      <div className="grid h-full w-full grid-cols-12 overflow-hidden rounded">
+      <div className="grid h-full w-full grid-cols-16 overflow-hidden rounded">
         {cells.map((i) => {
-          const f = i % 12
-          const r = Math.floor(i / 12)
+          const f = i % 16
+          const r = Math.floor(i / 16)
           return (
             <span
               key={i}

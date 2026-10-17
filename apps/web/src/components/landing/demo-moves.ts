@@ -51,7 +51,7 @@ export const DEMO_GAMES: readonly {
   { civs: ['france', 'japan', 'mali', 'canada'], seed: 7936 },
   { civs: ['england', 'china', 'usa', 'germany'], seed: 15855 },
   { civs: ['russia', 'mali', 'japan', 'england'], seed: 23774 },
-  { civs: ['canada', 'germany', 'china', 'france'], seed: 31693 },
+  { civs: ['canada', 'germany', 'china', 'france'], seed: 31694 },
   { civs: ['usa', 'russia', 'england', 'mali'], seed: 39612 },
 ]
 
