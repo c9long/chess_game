@@ -18,7 +18,9 @@ Colyseus runs on the API's own server under `COLYSEUS_PATH = /api/colyseus`
 forwards `/api`, WebSockets included). Matchmaking is `POST /api/colyseus/matchmake/...`.
 
 Authentication is the Better Auth session: the cookie (web; the SDK sends credentials) or
-`client.auth.token = <bearer token>` (native clients). Players must have confirmed their age,
+`Authorization: Bearer <token>` on the matchmaking request (native clients;
+`client.auth.token = <token>` does this, but also copies the token into the WebSocket URL, so
+the web app's mobile build sets the header on `client.http.options.headers` instead). Players must have confirmed their age,
 accepted the current Terms/Privacy versions and (registered accounts) chosen a username.
 
 | Room | Call | Options |
@@ -28,7 +30,13 @@ accepted the current Terms/Privacy versions and (registered accounts) chosen a u
 | `match` | `create('match', CreateOptions)` | solo: `{ protocolVersion: 1, kind: 'solo', name?, mode, timeControl: 'untimed', civ, botLevel }` |
 | `match` | `joinById(roomId, JoinOptions)` | `{ protocolVersion: 1, password? }` |
 | `social` | `joinOrCreate('social')` | none. Registered accounts only: friends' presence and notifications (see "Friends and challenges") |
-| any | `reconnect(room.reconnectionToken)` | within the reconnect grace (60 s) |
+| any | `reconnect(room.reconnectionToken)` | within the reconnect grace (`reconnectGraceMs`, 60 s by default) |
+
+A `match` reconnect through matchmaking also needs the session of the account that holds the
+seat (cookie or bearer, as for joining): the token alone is refused (`unauthorized`, or
+`not_seated` for another account), so a token left behind in a shared browser can't take the
+seat over. The SDK's automatic reconnection of a dropped socket goes straight to the WebSocket
+and isn't affected.
 
 Listing metadata (`listing.metadata`): `{ name, mode, timeControl, seatsFilled, locked, phase,
 pickMode, ranked, civs, occupied }` (`locked` = password-protected; `civs` = the civ slug of each
@@ -59,8 +67,10 @@ it, and connecting with the replaced one is refused (`already_in_room`; an expir
 Pending reservations count toward a lobby's free seats. The creator stays host (and gets seat
 0) while their own reservation is pending, even if someone else connects first.
 
-WebSocket upgrades carrying an `Origin` other than the web origin are refused (403); native
-clients send no `Origin`.
+WebSocket upgrades carrying an `Origin` other than the web origin (or one of the mobile app
+origins in the server's `NATIVE_ORIGINS`, e.g. `capacitor://localhost`, `https://localhost`)
+are refused (403); native desktop clients send no `Origin`. `NATIVE_ORIGINS` is empty by
+default.
 
 Refused matchmaking answers HTTP 4xx/5xx with `{ error: <code> }`; the SDK's `MatchMakeError`
 message is the code: `unauthorized`, `age_confirmation_required`, `legal_acceptance_required`,

@@ -91,6 +91,20 @@ pnpm --filter @game/web dev             # web on http://localhost:5173 (proxies 
 pnpm test:e2e                           # starts its own API (:3100) and web (:5174)
 ```
 
+### Mobile app build
+
+The Android and iOS apps (planned, see [docs/MOBILE.md](docs/MOBILE.md)) will wrap the web app.
+Their bundle is built with the API's full address and bearer-token sign-in:
+
+```sh
+VITE_API_URL=https://api.example.com pnpm --filter @game/web build:native   # → apps/web/dist-native
+```
+
+The server must then list the app origins in `NATIVE_ORIGINS` (see `apps/server/.env.example`).
+The regular web build also ships a web manifest and icons (installable, no service worker),
+generated from `APP_NAME` and the emblem in `packages/assets/app-icon`; after changing the
+emblem, re-render the icons with `node packages/assets/scripts/render-app-icons.mjs`.
+
 ### Lobbies, live games and bots
 
 Colyseus (lobbies and live games) runs on the same server under `/api/colyseus`; the wire

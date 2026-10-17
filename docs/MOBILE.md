@@ -1,6 +1,8 @@
 # Mobile apps (Android + iOS): plan for the PoC beta
 
-Status: proposal (researched 2026-10-17). Nothing here is implemented yet. Scope is a **proof-of-concept
+Status: proposal (researched 2026-10-17). The web and server preparation is in (2026-10-17):
+phase 1 items 1 and 4–8, phase 2 rows 1–5 and 7–10, and the token wipe on account deletion
+(each marked **Done** below). There is no Capacitor project yet. Scope is a **proof-of-concept
 beta** for a small group of testers. Nothing below is sized for a big user base.
 
 The short version:
@@ -129,7 +131,8 @@ Two things to know about this approach:
 
 ### Phase 0: one-day spike (no production code)
 
-- Create `apps/mobile` (neutral name), a Capacitor 8 project with `webDir: '../web/dist'`. Run
+- Create `apps/mobile` (neutral name), a Capacitor 8 project with `webDir: '../web/dist-native'`
+  (built by `VITE_API_URL=https://api.<domain> pnpm --filter @game/web build:native`). Run
   `npx cap add android` (works on Windows/WSL with Android Studio) and test the board on a real
   mid-range Android phone. Check frame rate, drag, sound, and memory use with
   `devicePixelRatio` at 3.
@@ -141,11 +144,14 @@ Two things to know about this approach:
 All of these help the website on phones too, and none needs the native project. Each is one small
 TODO item.
 
-1. **Safe areas.** In `apps/web/index.html` set
+1. **Done.** **Safe areas.** In `apps/web/index.html` set
    `<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">`. In
    `apps/web/src/index.css`, pad the shell's header, footer and game panels with
    `env(safe-area-inset-top/right/bottom/left)` (notch, home indicator, Android edge-to-edge;
    Capacitor 8 has a built-in `SystemBars` for edge-to-edge on Android).
+   *Done:* the insets are `--safe-top/right/bottom/left` CSS variables in `index.css`; the
+   header, footer, game page, toasts, dialogs, the reconnecting bar and the lobby's fixed bars
+   use them, and the game board's height budget subtracts them.
 2. **Touch on the board** (`packages/board/src/BoardView.ts`, already Pixi pointer events). Confirm the
    canvas keeps `touch-action: none` (Pixi's EventSystem sets it), and add
    `user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent` on the
@@ -153,14 +159,17 @@ TODO item.
    (bigger hit targets on small screens). Cap the Pixi `resolution` at 2 on phones to save GPU memory.
 3. **Portrait layout.** The 16×16 board fills the width, with game panels below it. This is the
    existing "Responsive layout … portrait board scaling" TODO item.
-4. **Haptics/feedback wrapper** `apps/web/src/lib/feedback.ts`: `feedback('move' | 'capture' |
+4. **Done.** **Haptics/feedback wrapper** `apps/web/src/lib/feedback.ts`: `feedback('move' | 'capture' |
    'check' | 'yourTurn' | 'gameEnd')`. It calls `navigator.vibrate` where supported (Android Chrome)
    and does nothing elsewhere. Phase 3 swaps in `@capacitor/haptics`. Add an on/off setting in
    `apps/web/src/lib/prefs.ts`.
-5. **Keep the screen awake during a game.** Use the Screen Wake Lock API in `GameRoom.tsx` while
+   *Done:* "Vibration" board setting (default on, shown on touch devices that can vibrate),
+   wired in `GameRoom.tsx` at the points the board plays sounds (one vibration per position
+   change). Phase 3 installs the native driver with `setFeedbackDriver`.
+5. **Done** (`lib/wake-lock.ts`). **Keep the screen awake during a game.** Use the Screen Wake Lock API in `GameRoom.tsx` while
    `phase === 'in_game'`, and re-acquire it on `visibilitychange` (the browser drops it when hidden).
    Phase 3 uses `@capacitor-community/keep-awake` in the app.
-6. **Reconnect on resume.** When the page becomes visible again (or the network comes back), rejoin
+6. **Done** (except a longer grace, still open). **Reconnect on resume.** When the page becomes visible again (or the network comes back), rejoin
    right away with the stored reconnection token instead of waiting. Keep that token in
    `localStorage` as well as `sessionStorage` (`apps/web/src/lib/match.ts`), because a phone OS may
    kill a background WebView, and sessionStorage dies with it. The server keeps a seat for 60 s
@@ -168,31 +177,50 @@ TODO item.
    timeout. Show a short "Leaving the app for more than a minute forfeits" hint on phones. Whether to
    lengthen the grace on mobile is a product question, so put it behind config and don't decide it
    silently.
-7. **PWA manifest and icons.** Add a web manifest (name and short name from `APP_NAME` in
+   *Done:* `lib/reconnect-store.ts` keeps the token in both storages (pruned after 6 h, the
+   long-lived copy cleared at game end). On `visibilitychange`/`pageshow`/`online`,
+   `checkConnection` restarts the SDK's retry budget, or pings the socket and drops it after
+   3 s without an answer so the SDK rejoins at once. If the SDK gives up, the match page keeps
+   trying with the saved token until 15 s after the grace (75 s by default). The automatic
+   retries are tuned (≤ 2 s apart, for the same window) to outlast the server's grace. The hint "Leaving the app for more than 60 s forfeits" shows
+   on touch screens during a game (dismissible, remembered). The grace, the hint's number and
+   the retry budget all follow the server's `reconnectGraceMs`. Signing out or deleting the
+   account leaves the match room and forgets every saved token, and a matchmaking reconnect
+   needs the seat owner's session, so a token left in a shared browser can't take a seat. A
+   second tab or the relaunched app taking the seat over keeps its own saved token, and the
+   old one says the game continues elsewhere.
+7. **Done** (orientation `any`, not portrait: the game screen switches to the side-panel layout
+   on a phone held sideways, the `wide:` variant in `index.css`). **PWA manifest and icons.** Add a web manifest (name and short name from `APP_NAME` in
    `@game/config`, generated at build time by a small Vite plugin, never hard-coded), plus
    `theme_color` `#1d1b19`, `display: standalone`, portrait, and 192/512 px plus maskable icons from
    one 1024 px source in `packages/assets`. Add `apple-touch-icon`. Leave out a service worker for now
    (it risks stale builds against the server's `protocolVersion`).
-8. **A platform module** `apps/web/src/lib/platform.ts`: `isNative()` (later
+   *Done:* `apps/web/plugins/app-manifest.ts` serves and emits `manifest.webmanifest`,
+   `favicon.svg`, `apple-touch-icon.png` and `icons/{icon,maskable}-{192,512}.png`. The source
+   is `packages/assets/app-icon/emblem.svg` (the header emblem); the PNGs are rendered by
+   `packages/assets/scripts/render-app-icons.mjs` and committed. `short_name` is
+   `APP_SHORT_NAME` in `@game/config` (equal to `APP_NAME` until a shorter one is chosen).
+8. **Done.** **A platform module** `apps/web/src/lib/platform.ts`: `isNative()` (later
    `Capacitor.isNativePlatform()`), `platform()` returning `'web' | 'ios' | 'android'`. Every
-   native-only branch goes through it.
+   native-only branch goes through it. *Done:* reads `window.Capacitor` (no dependency); a
+   `VITE_NATIVE` build counts as native.
 
 ### Phase 2: server and web changes for the app (checklist with files)
 
 | # | Change | File(s) |
 |---|---|---|
-| 1 | Native build uses a full API URL. `API_ORIGIN` already reads `VITE_API_URL` (`auth-client.ts`), and `match.ts` / `api.ts` use it. Add a `build:native` script with `VITE_API_URL=https://api.<domain>` and the native flag. The `/api/dev/mail` calls in `DevMail.tsx` are dev-only and can stay relative | `apps/web/package.json`, `apps/web/src/lib/auth-client.ts` |
-| 2 | New env `NATIVE_ORIGINS` (comma list, default empty; prod `capacitor://localhost,https://localhost`; dev adds `http://localhost` for live reload) | `apps/server/src/config.ts`, `infra/.env.example`, `docs/DEPLOY.md` |
-| 3 | CORS: allow `[webOrigin, ...nativeOrigins]` (today `cors({ origin: config.webOrigin })`) | `apps/server/src/app.ts` |
-| 4 | Better Auth `trustedOrigins`: add the native origins (and the app-link or scheme callback for 2b) | `apps/server/src/auth/auth.ts` |
-| 5 | Colyseus WebSocket origin check: `originAllowed` accepts only no Origin or `webOrigin`, but a WebView sends `capacitor://localhost` / `https://localhost`. Add the native origins | `apps/server/src/game/colyseus.ts` (~line 119), update `packages/protocol/README.md` |
+| 1 | **Done.** Native build uses a full API URL. `API_ORIGIN` already reads `VITE_API_URL` (`auth-client.ts`), and `match.ts` / `api.ts` use it. Add a `build:native` script with `VITE_API_URL=https://api.<domain>` and the native flag. The `/api/dev/mail` calls in `DevMail.tsx` are dev-only and can stay relative | `apps/web/package.json`, `apps/web/src/lib/auth-client.ts` |
+| 2 | **Done.** New env `NATIVE_ORIGINS` (comma list, default empty; prod `capacitor://localhost,https://localhost`; dev adds `http://localhost` for live reload) | `apps/server/src/config.ts`, `infra/.env.example`, `docs/DEPLOY.md` |
+| 3 | **Done.** CORS: allow `[webOrigin, ...nativeOrigins]` (today `cors({ origin: config.webOrigin })`). The web origin keeps credentials; the native origins get CORS without credentials | `apps/server/src/app.ts` |
+| 4 | **Done.** Better Auth `trustedOrigins`: add the native origins (and the app-link or scheme callback for 2b) | `apps/server/src/auth/auth.ts` |
+| 5 | **Done.** Colyseus WebSocket origin check: `originAllowed` accepts only no Origin or `webOrigin`, but a WebView sends `capacitor://localhost` / `https://localhost`. Add the native origins | `apps/server/src/game/colyseus.ts` (~line 119), update `packages/protocol/README.md` |
 | 6 | `requireTrustedOrigin` needs no change: bearer requests carry no cookie, so it lets them through. Keep it strict | `apps/server/src/http/security.ts` (no change) |
-| 7 | Device client id `game-mobile-client` plus a friendly name ("the mobile app") on the approval page | `auth.ts` (`DEVICE_CLIENT_IDS`), `apps/web/src/pages/Device.tsx` (`CLIENT_NAMES`) |
-| 8 | Bearer mode in the auth client: when native, `fetchOptions: { auth: { type: 'Bearer', token: () => storedToken } }` (the [bearer plugin docs](https://www.better-auth.com/docs/plugins/bearer) form). `credentials: 'include'` can stay; it's ignored | `apps/web/src/lib/auth-client.ts` |
-| 9 | `api()` adds `Authorization: Bearer …` when native. So does the account export fetch | `apps/web/src/lib/api.ts`, `apps/web/src/pages/Account.tsx` |
-| 10 | Colyseus: set `client.auth.token = storedToken` before matchmaking (the README already documents this for native clients; `resolvePlayer` reads it) | `apps/web/src/lib/match.ts` |
-| 11 | Native sign-in screen: one "Sign in or play as guest" button that runs the device flow (§2), stores the token, and refreshes session state. Sign-out deletes the token and calls `/sign-out` with it | new `apps/web/src/pages/NativeSignIn.tsx`, `apps/web/src/lib/app-state.tsx` |
-| 12 | Token storage: Keychain/Keystore through a free plugin (e.g. `@aparajita/capacitor-secure-storage`), not plain `localStorage` | `apps/mobile` |
+| 7 | **Done.** Device client id `game-mobile-client` plus a friendly name ("the mobile app") on the approval page | `auth.ts` (`DEVICE_CLIENT_IDS`), `apps/web/src/pages/Device.tsx` (`CLIENT_NAMES`) |
+| 8 | **Done.** Bearer mode in the auth client: when native, `fetchOptions: { auth: { type: 'Bearer', token: () => storedToken } }` (the [bearer plugin docs](https://www.better-auth.com/docs/plugins/bearer) form). *Done with* `credentials: 'omit'` in bearer mode (auth client, `api()`, the export fetch, Colyseus matchmaking), and the server's CORS grant for `NATIVE_ORIGINS` carries no credentials, so a cookie session can never be set or used from an app origin | `apps/web/src/lib/auth-client.ts` |
+| 9 | **Done.** `api()` adds `Authorization: Bearer …` when native. So does the account export fetch | `apps/web/src/lib/api.ts`, `apps/web/src/pages/Account.tsx` |
+| 10 | **Done** (as a matchmaking `Authorization` header on `client.http.options.headers`: `client.auth.token` would also put the token in the WebSocket URL, where proxies log it). Colyseus: set `client.auth.token = storedToken` before matchmaking (the README already documents this for native clients; `resolvePlayer` reads it) | `apps/web/src/lib/match.ts` |
+| 11 | Native sign-in screen (*placeholder in:* a native build shows `NativeSignIn.tsx` instead of the sign-in, sign-up and guest forms, which can't work there): one "Sign in or play as guest" button that runs the device flow (§2), stores the token, and refreshes session state. Sign-out deletes the token and calls `/sign-out` with it | new `apps/web/src/pages/NativeSignIn.tsx`, `apps/web/src/lib/app-state.tsx` |
+| 12 | Token storage (the pluggable `lib/token-store.ts` exists, with a localStorage stub; install the secure store with `setTokenStore`): Keychain/Keystore through a free plugin (e.g. `@aparajita/capacitor-secure-storage`), not plain `localStorage` | `apps/mobile` |
 | 13 | Hide or redirect web-only UI in the app: OAuth sign-in and "link account" (`callbackURL` uses `window.location.origin`, which is `capacitor://localhost` in the app), "Add passkey", and the JSON export download (WebViews don't save `Content-Disposition` downloads; open it in the browser or use the Share sheet) | `SignIn.tsx`, `SignUp.tsx`, `Account.tsx` |
 | 14 | External links (legal pages, emails, help) open in the system browser, not inside the app's WebView | `apps/web/src/components/*` (via `platform.ts`) |
 | 15 | OAuth redirect URIs need no change for 2a, because OAuth runs on the website as today | none |
@@ -234,7 +262,7 @@ flow already fits:
 
 App work still needed:
 
-- After a successful delete, wipe the stored token.
+- **Done:** after a successful delete, the stored token is wiped (`endBearerSession`).
 - For an OAuth-only account whose session is older than 24 h, "sign in again" means re-running the
   device flow. Make sure that path is offered.
 

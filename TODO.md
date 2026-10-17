@@ -198,7 +198,34 @@ Conventions (see [CLAUDE.md](CLAUDE.md)):
 
 ## Mobile
 
-- Responsive layout, touch drag/tap controls, portrait board scaling, PWA install
+Plan: [docs/MOBILE.md](docs/MOBILE.md) (Capacitor shells around the web build, sign-in through the website's device flow, bearer tokens in the apps).
+
+- Responsive layout, touch drag/tap controls, portrait board scaling, ~~PWA install~~ (PWA install done 2026-10-17 as the web manifest item below)
+- ~~Platform module `apps/web/src/lib/platform.ts` (`isNative()`, `platform()`)~~ (done 2026-10-17; reads `window.Capacitor` without a dependency, a `VITE_NATIVE` build counts as native)
+- ~~Phone safe areas (viewport-fit=cover, notch and home-indicator padding)~~ (done 2026-10-17; `--safe-*` CSS variables from `env(safe-area-inset-*)` on the header, footer, game page and board height, toasts, dialogs, the reconnecting bar and lobby bars; theme-color, color-scheme and Apple web-app meta tags)
+- ~~Web manifest and icons (installable, no service worker)~~ (done 2026-10-17; Vite plugin `apps/web/plugins/app-manifest.ts` builds the manifest from `APP_NAME`/`APP_SHORT_NAME`, orientation any; favicon, apple-touch-icon and 192/512 any + maskable PNGs rendered from `packages/assets/app-icon/emblem.svg` by `render-app-icons.mjs`; E2E checks Chrome's parsed manifest and installability; the game screen uses the side-panel layout on phones held sideways)
+- Decide: a short home-screen name (`APP_SHORT_NAME` in `@game/config`, about 12 characters; today it equals `APP_NAME`, which launchers cut off)
+- ~~Haptic feedback wrapper `lib/feedback.ts` with a Vibration board setting~~ (done 2026-10-17; `navigator.vibrate` for your own move, captures by or of you, check, your turn and game end at the board's sound points, default on, shown on touch devices; a native driver can be installed later)
+- ~~Keep the screen awake during a live game~~ (done 2026-10-17; Screen Wake Lock, re-acquired on visibilitychange, released when the game ends or the page closes)
+- ~~Reconnect on resume, reconnection token in localStorage too, "leaving forfeits" hint~~ (done 2026-10-17; on visibilitychange/pageshow/online the connection is pinged and a dead socket dropped so the SDK rejoins at once; tokens kept per match in sessionStorage and localStorage, the long-lived copy cleared at game end; rejoin with the saved token until 15 s after the grace if the SDK gives up; SDK retries tuned to outlast the grace; dismissible "Leaving the app for more than 60 s forfeits" hint on touch screens; the hint and retry budget follow the server's `reconnectGraceMs`; sign-out and account deletion leave the room and forget every saved token; a matchmaking reconnect needs the seat owner's session; a seat taken over by another tab keeps that tab's token)
+- Decide: a longer reconnect grace on phones than 60 s (product setting, behind config; MOBILE.md §4)
+- ~~Server `NATIVE_ORIGINS` (CORS, Better Auth trusted origins, WebSocket origin check)~~ (done 2026-10-17; comma list, empty by default = unchanged behavior, plain http refused in production; documented in the env examples, DEPLOY.md and the protocol README)
+- ~~Device flow client id `game-mobile-client`, shown as "the mobile app" on the approval page~~ (done 2026-10-17)
+- ~~Bearer-token mode in the web client for the apps~~ (done 2026-10-17; only when `isNative()`: Better Auth `fetchOptions.auth`, `api()` and the account export send `Authorization: Bearer` from a pluggable token store (localStorage stub); Colyseus matchmaking gets the header, not `client.auth.token`, which would put the token in the WebSocket URL; no cookies in bearer mode (`credentials: 'omit'`) and CORS without credentials for the app origins; a `VITE_NATIVE` outside `build:native` is ignored; sign-out and account deletion wipe the token)
+- ~~`pnpm --filter @game/web build:native` (VITE_NATIVE, VITE_API_URL required)~~ (done 2026-10-17; output `apps/web/dist-native`, absolute base kept so deep links load in the shells)
+- Phase 0 spike: `apps/mobile` Capacitor 8 project (`webDir: '../web/dist-native'`), test the board on a mid-range Android phone and on iOS (frame rate, drag, sound, memory at devicePixelRatio 3)
+- Board touch polish: `user-select`/`-webkit-touch-callout`/tap-highlight off on the board, tap-tap as easy as drag (bigger hit targets on phones), Pixi resolution capped at 2 on phones
+- Native sign-in screen (a native build shows a placeholder, `pages/NativeSignIn.tsx`, on the sign-in, sign-up and guest routes until then): "Sign in or play as guest" runs the device flow (`game-mobile-client`), stores the token, refreshes the session; check that a guest can approve a device request
+- Secure token storage in the apps (Keychain/Keystore plugin) installed with `setTokenStore`
+- Hide or redirect web-only UI in the apps: OAuth sign-in and account linking, "Add passkey", the JSON export download
+- External links (legal pages, emails, help) open in the system browser in the apps
+- Phase 2b: skip the Approve tap with a one-time token and an app link (verify the verify response carries the session token)
+- Capacitor shell: `capacitor.config.ts` (appName from `APP_NAME`, permanent neutral bundle id), plugins (app, browser, haptics, keep-awake, splash screen, network, secure storage), icons and splash from the emblem with `@capacitor/assets`, Android back button, orientation
+- Builds: Android `bundleRelease` (upload key out of git), iOS through Codemagic's free tier; DEPLOY.md section
+- Decide: iOS in the first beta ($99/yr) or Android + iOS PWA first; hide third-party OAuth on iOS (option A) or add Sign in with Apple (B); bundle id and store name; iPhone-only or universal
+- Store submission: in-app account deletion check (OAuth-only accounts re-run the device flow), Google Play deletion web link, age ratings (13+), privacy labels / Data safety, privacy-policy and support URLs, demo account for Apple review
+- Google Play closed test (12 testers for 14 days) and TestFlight beta
+- Push notifications (FCM for both platforms) once friends challenges need them; `push_tokens` table, privacy policy update first
 
 ## Designed-for-later features
 

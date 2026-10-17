@@ -156,6 +156,22 @@ age-keygen -o ~/backup-key.txt     # prints "Public key: age1..."
 - The nightly run deletes backups older than `BACKUP_RETENTION_DAYS` (30) from the remote. It
   only touches its own `game-*.sql.gz.age` files.
 
+## Later: the Android and iOS apps
+
+Not needed for the website. When the mobile apps ([MOBILE.md](MOBILE.md)) are being tested:
+
+1. In `infra/.env` set `NATIVE_ORIGINS=capacitor://localhost,https://localhost` (the iOS and
+   Android app origins), then restart: `docker compose -f infra/docker-compose.yml --env-file
+   infra/.env up -d`. Left empty (the default), the server behaves exactly as before.
+2. Build the bundle the apps load: `VITE_API_URL=https://api.yourdomain.com pnpm --filter
+   @game/web build:native` (output in `apps/web/dist-native`).
+
+The apps will sign in through the website's device-approval page and then use a bearer token,
+so Turnstile, OAuth and passkeys need no changes for them (the app's own sign-in screen is
+still to come; until then a native build shows a placeholder instead of the web forms). The
+server answers the app origins with CORS but without credentials, so no cookie session can be
+made from them.
+
 ## Updating the game
 
 ```sh
@@ -230,3 +246,4 @@ keys; the point is to check that everything builds, migrates and starts.
 | No verification emails                 | Resend dashboard → Logs. Is the domain verified? The free tier allows 100 emails per day                                                                     |
 | Bots play weak or random-looking moves | `docker compose ... logs bot-service`: when it is down, the server falls back to simple moves (still paced by `BOT_MIN_MOVE_MS`, so they don't look instant) |
 | Signing in fails on the live site      | `WEB_ORIGIN`, `API_PUBLIC_URL` and `PASSKEY_RP_ID` must match your real domains exactly                                                                      |
+| The mobile app can't reach the server  | `NATIVE_ORIGINS` must list `capacitor://localhost,https://localhost`, and the app must be built with `build:native` and the real `VITE_API_URL`               |
