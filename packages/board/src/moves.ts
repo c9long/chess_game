@@ -26,6 +26,7 @@ export const PROMOTION_ORDER: readonly PieceKind[] = [
   'rook',
   'bishop',
   'knight',
+  'prime_minister',
   'king',
   'pawn',
 ]

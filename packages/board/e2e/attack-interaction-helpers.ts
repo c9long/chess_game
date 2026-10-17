@@ -89,7 +89,7 @@ export async function renderedBoard(page: Page): Promise<RenderedPiece[]> {
     const a = centres[0] as { x: number; y: number }
     const b = centres[1] as { x: number; y: number }
     const sq = Math.hypot(a.x - b.x, a.y - b.y)
-    const KINDS = ['king', 'queen', 'rook', 'bishop', 'knight', 'pawn']
+    const KINDS = ['king', 'queen', 'rook', 'bishop', 'knight', 'pawn', 'prime_minister']
     const VARIANTS = ['south', 'west', 'north', 'east', 'frozen']
     const out: {
       square: string
@@ -300,6 +300,7 @@ const KIND_LETTER: Record<string, string> = {
   rook: 'R',
   queen: 'Q',
   king: 'K',
+  prime_minister: 'M',
 }
 
 /**
@@ -350,7 +351,7 @@ export async function promoPicker(page: Page) {
     const c = overlay.children[0]
     if (!c) return null
     const r = g.__pixiApp.canvas.getBoundingClientRect()
-    const KINDS = ['king', 'queen', 'rook', 'bishop', 'knight', 'pawn']
+    const KINDS = ['king', 'queen', 'rook', 'bishop', 'knight', 'pawn', 'prime_minister']
     const VARIANTS = ['south', 'west', 'north', 'east', 'frozen']
     // children: backdrop, panel, tiles...
     return c.children.slice(2).map((t) => {

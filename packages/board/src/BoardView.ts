@@ -374,7 +374,7 @@ export class BoardView {
   /** What the board shows: `#checkSeat` once the move that caused it has landed. */
   #checkShown: Seat | null = null
   #checkTween: Tween | null = null
-  /** Squares of the checked leader(s), from the snapshot's `leaderSquares`. */
+  /** Squares of the checked leader(s), from the snapshot's `attackedLeaderSquares`. */
   #checkSquares: number[] = []
   /** Animation clock when the last snapshot was applied (to time the check after its move). */
   #snapshotClock = 0
@@ -528,7 +528,7 @@ export class BoardView {
       if (plan.statusChanges.length > 0 && prev && !this.#statusTrigger?.alive) {
         this.#shownStatuses = [...prev.statuses]
       }
-      this.#applyPlan(snapshot, plan, keep, start)
+      this.#applyPlan(snapshot, plan, keep, start, prev)
     } else {
       this.#applyInstant(snapshot, canAnimate && policy.mode === 'instant' ? policy.fadeMs : 0)
     }
@@ -556,8 +556,8 @@ export class BoardView {
     const checked = this.#checkSeat
     if (checked !== null && this.#checkShown === checked && prev && willAnimate) {
       const s = SEATS.indexOf(checked)
-      const before = prev.leaderSquares[s] ?? []
-      const after = snapshot.leaderSquares[s] ?? []
+      const before = prev.attackedLeaderSquares[s] ?? []
+      const after = snapshot.attackedLeaderSquares[s] ?? []
       const moved = before.length !== after.length || before.some((sq, k) => sq !== after[k])
       if (moved) this.#showCheckAtHandover(checked, false)
     }
@@ -634,8 +634,9 @@ export class BoardView {
    * Marks `seat`'s leader square(s) as in check: a red ring and a pulsing red glow under the
    * piece (both steady under reduced motion), following the leader as it moves. `null` clears
    * it. The board never decides when a check is shown (that is the host's rule, e.g. only for
-   * the local player); the squares come from the snapshot's `leaderSquares`, so a civ whose
-   * leader is not a king works the same. Turning it on right after `setSnapshot` waits until
+   * the local player); the squares come from the snapshot's `attackedLeaderSquares`, so a civ
+   * whose leader is not a king works the same, and with several leaders (England's Prime
+   * Ministers) only the attacked ones are marked. Turning it on right after `setSnapshot` waits until
    * that move has landed, then plays the check sound (unless `sound: false`).
    */
   setCheck(seat: Seat | null, options: SetCheckOptions = {}): void {
@@ -1415,7 +1416,9 @@ export class BoardView {
       n.shadow.texture = atlas.shadow(n.shown)
       n.marker.texture = atlas.marker(n.owner)
     }
-    const mirrored = n.shown === 'knight' && relativeSeat(n.owner, this.#perspective) >= 2
+    const mirrored =
+      (n.shown === 'knight' || n.shown === 'prime_minister') &&
+      relativeSeat(n.owner, this.#perspective) >= 2
     n.body.width = size
     n.body.height = size
     n.body.scale.x = Math.abs(n.body.scale.x) * (mirrored ? -1 : 1)
@@ -1783,8 +1786,21 @@ export class BoardView {
     plan: AnimationPlan,
     keep: { node: PieceNode; tween: Tween } | null = null,
     start = 0,
+    prev: Snapshot | null = null,
   ): void {
     const reduced = this.#options.reducedMotion
+    // Leader pieces before the step (any civ: a king, or each of England's Prime Ministers).
+    const prevLeaders = new Set((prev?.leaderSquares ?? []).flat().map(indexOf))
+    // Seats knocked out by a leader capture in this step: the capture of their last leader
+    // gets the leader-capture moment (taking one of several Prime Ministers does not).
+    const leaderLoss = new Set(
+      plan.statusChanges
+        .filter((ch) => ch.status !== 'active')
+        .map((ch) => ch.seat)
+        .filter((seat) =>
+          next.defeats.some((d) => d.seat === seat && d.reason === 'leader_captured'),
+        ),
+    )
     const sq = this.#layout.square
     const now = this.#anim.now
 
@@ -1913,7 +1929,9 @@ export class BoardView {
         if (len > 0) dir = { x: ax / len, y: ay / len }
       }
       this.#captureEffect(c.n, c.square, at, dir)
-      if (c.n.kind === 'king') leaderHit = { square: c.square, at, owner: c.n.owner }
+      if (prevLeaders.has(c.square) && leaderLoss.has(c.n.owner)) {
+        leaderHit = { square: c.square, at, owner: c.n.owner }
+      }
     }
     if (leaderHit && !reduced) this.#leaderMoment(leaderHit.square, leaderHit.owner, leaderHit.at)
 
@@ -1922,7 +1940,7 @@ export class BoardView {
     if (dissolving.length > 0) {
       const lead =
         leaderHit?.square ??
-        dissolving.find((d) => d.n.kind === 'king')?.square ??
+        dissolving.find((d) => prevLeaders.has(d.square))?.square ??
         dissolving[0]?.square ??
         0
       this.#dissolve(dissolving, lead, effectAt)
@@ -1947,11 +1965,8 @@ export class BoardView {
     // Status changes: freeze cross-fades to frosted grey, sweeping out from the leader.
     for (const ch of plan.statusChanges) {
       if (ch.status !== 'frozen') continue
-      let lead = -1
-      for (let i = 0; i < NUM_SQUARES; i++) {
-        const p = next.board[i]
-        if (p && p.owner === ch.seat && p.kind === 'king') lead = i
-      }
+      const leaders = next.leaderSquares[SEATS.indexOf(ch.seat)] ?? []
+      const lead = leaders.length > 0 ? indexOf(leaders[0] as Square) : -1
       this.#freezeSeat(ch.seat, effectAt, lead)
     }
     // Bands and medallions change when the effect that explains them plays.
@@ -2772,7 +2787,10 @@ export class BoardView {
     return this.#leaderGlows[n] ?? null
   }
 
-  /** Check indicator: glow and ring on the shown seat's leader squares (from the snapshot). */
+  /**
+   * Check indicator: glow and ring on the shown seat's attacked leader squares (from the
+   * snapshot): with several leaders, only those under attack.
+   */
   #refreshCheck(): void {
     const snap = this.#snapshot
     const ring = this.#checkRing
@@ -2781,13 +2799,13 @@ export class BoardView {
     this.#checkSquares = []
     const seat = this.#checkShown
     if (!snap || !this.#ready || seat === null) return
-    const squares = snap.leaderSquares[SEATS.indexOf(seat)] ?? []
+    const squares = snap.attackedLeaderSquares[SEATS.indexOf(seat)] ?? []
     const sq = this.#layout.square
     const w = Math.max(2.5, sq * 0.075)
     for (const name of squares) {
       const i = indexOf(name)
-      // Every leader square gets a ring; the glow sprites grow with the roster (a civ may
-      // have more than four leader pieces).
+      // Every attacked leader square gets a ring; the glow sprites grow with the roster (a
+      // civ may have more than four leader pieces).
       const g = this.#leaderGlowAt(this.#checkSquares.length)
       if (g) {
         squareCenter(i, this.#layout, this.#tmpVec)
@@ -3753,12 +3771,8 @@ export class BoardView {
   #defaultCursor(): number {
     const s = this.#snapshot
     const seat = this.#interactive ?? this.#perspective
-    if (s) {
-      for (let i = 0; i < NUM_SQUARES; i++) {
-        const p = s.board[i]
-        if (p && p.owner === seat && p.kind === 'king') return i
-      }
-    }
+    const leader = s?.leaderSquares[SEATS.indexOf(seat)]?.[0]
+    if (leader) return indexOf(leader)
     return (BOARD_SIZE / 2) * BOARD_SIZE + BOARD_SIZE / 2
   }
 }

@@ -22,7 +22,15 @@ import { type PieceShading, shadePieceSvg, svgDataUrl, tintEmblemSvg } from './s
 
 export type PieceVariant = Seat | 'frozen'
 
-const KINDS: readonly PieceKind[] = ['king', 'queen', 'rook', 'bishop', 'knight', 'pawn']
+const KINDS: readonly PieceKind[] = [
+  'king',
+  'queen',
+  'rook',
+  'bishop',
+  'knight',
+  'pawn',
+  'prime_minister',
+]
 const VARIANTS: readonly PieceVariant[] = ['south', 'west', 'north', 'east', 'frozen']
 const SEATS: readonly Seat[] = ['south', 'west', 'north', 'east']
 

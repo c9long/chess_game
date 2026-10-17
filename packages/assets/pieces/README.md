@@ -1,6 +1,6 @@
 # Chess pieces
 
-One SVG per piece type: `king`, `queen`, `rook`, `bishop`, `knight`, `pawn`. The board renderer tints each piece with its seat colour (or the frozen grey) and adds its own lighting and shadow.
+One SVG per piece type: `king`, `queen`, `rook`, `bishop`, `knight`, `pawn`, plus `prime-minister` (England's special piece, civ version 2: the knight's head wearing the king's crown). The board renderer tints each piece with its seat colour (or the frozen grey) and adds its own lighting and shadow.
 
 These are **original works** drawn for this project, in a classic Staunton-inspired style. They are not traced from or copied from any existing piece set.
 
@@ -35,8 +35,8 @@ Both tokens appear only in the two `fill` attributes, so the replacement is safe
 ## Geometry
 
 - All pieces share one base: a two-tier plinth spanning x ≈ 59–197 (54% of the canvas) with its bottom edge at y ≈ 228. Base width and baseline are identical across the set, so pieces line up on a rank.
-- Heights follow Staunton order. Ink tops are king 13, queen 26, bishop 42, knight 47, rook 67 and pawn 78 (y, out of 256).
-- The **knight faces right**. To make it face left, mirror it with `scaleX(-1)` about the centre (x = 128).
+- Heights follow Staunton order. Ink tops are king 13, queen 26, bishop 42, knight 47, rook 67 and pawn 78 (y, out of 256); the Prime Minister's cross tops out near the queen (about 21).
+- The **knight faces right**. To make it face left, mirror it with `scaleX(-1)` about the centre (x = 128). The same goes for the **Prime Minister**, which reuses the knight's head (scaled to 80% about its foot) under a squat copy of the king's crown and cross. Its crown is drawn in front of the head, so the head's detail lines stop at the crown's edge; the crown has no upper band so the seat colour still shows in the cup at 19 px (a phone's square size).
 - The king, queen, rook and pawn are **exactly mirror-symmetric** about x = 128: every coordinate has a mirror twin. The bishop's silhouette is symmetric too; only its diagonal slit, which is a separate path in `detail`, is not.
 - The outline is 7 units wide, centred on the body edge, which is about 1 px at 40 px. Interior lines are 4.5–7 units wide.
 
@@ -55,6 +55,8 @@ Geometry operations use Skia (`canvaskit-wasm`). It is deliberately not a worksp
 npm install --prefix /tmp/ck canvaskit-wasm@0.40.0
 cd packages/assets
 CANVASKIT_DIR=/tmp/ck node scripts/build-pieces.mjs
+# or only some pieces:
+PIECES=prime-minister CANVASKIT_DIR=/tmp/ck node scripts/build-pieces.mjs
 ```
 
 ## Review
@@ -66,6 +68,6 @@ cd packages/assets
 node scripts/render-pieces.mjs /tmp/pieces.png /tmp/pieces-board.png
 ```
 
-The first sheet shows every piece tinted by string replacement and rasterised through `<img>`, the same way the game does it. It covers the four seat colours plus frozen grey, on light and dark squares, at 40, 80 and 256 px. The second sheet is the 16×16 starting position with 40 px squares, with the North and East knights mirrored.
+The first sheet shows every piece tinted by string replacement and rasterised through `<img>`, the same way the game does it. It covers the four seat colours plus frozen grey, on light and dark squares, at 19, 40, 80 and 256 px. The second sheet is the 16×16 starting position with 40 px squares (South as England, with Prime Ministers), with the North and East knights mirrored.
 
 Don't use `scripts/render-svg.mjs` to review pieces. That sheet is built for single-colour emblems: it puts the near-black outline on near-black backgrounds, so it can't show the two-tone result.

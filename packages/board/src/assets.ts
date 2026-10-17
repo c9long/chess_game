@@ -11,6 +11,7 @@ import bishop from '@game/assets/pieces/bishop.svg?raw'
 import king from '@game/assets/pieces/king.svg?raw'
 import knight from '@game/assets/pieces/knight.svg?raw'
 import pawn from '@game/assets/pieces/pawn.svg?raw'
+import primeMinister from '@game/assets/pieces/prime-minister.svg?raw'
 import queen from '@game/assets/pieces/queen.svg?raw'
 import rook from '@game/assets/pieces/rook.svg?raw'
 import type { CivId, PieceKind } from '@game/rules'
@@ -26,6 +27,7 @@ export const PIECE_SVGS: Readonly<Record<PieceKind, string>> = {
   bishop,
   knight,
   pawn,
+  prime_minister: primeMinister,
 }
 
 export const EMBLEM_SVGS: Readonly<Record<CivId, string>> = {

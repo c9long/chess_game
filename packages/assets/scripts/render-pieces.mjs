@@ -1,8 +1,9 @@
 // Renders the piece set into PNG review sheets. Each piece is tinted by string
 // replacement (the same way the game recolours it) and rasterised through an
 // <img>, in the four seat colours plus frozen grey, on light and dark squares,
-// at 40, 80 and 256 px. The optional second sheet is a 16x16 starting position
-// with 40 px squares.
+// at 19 (a phone's square), 40, 80 and 256 px. The optional second sheet is a
+// 16x16 starting position with 40 px squares, with England's Prime Ministers
+// (civ version 2) in the South army.
 // Usage: node scripts/render-pieces.mjs out.png [board.png] [piecesDir]
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -13,7 +14,7 @@ if (!out) {
   console.error('usage: render-pieces.mjs out.png [board.png] [piecesDir]')
   process.exit(1)
 }
-const NAMES = ['king', 'queen', 'rook', 'bishop', 'knight', 'pawn']
+const NAMES = ['king', 'queen', 'rook', 'bishop', 'knight', 'pawn', 'prime-minister']
 const COLORS = ['#c0392b', '#2e6fd8', '#d4a017', '#1f9e6e', '#8f8b86']
 const LIGHT = '#e8d9b5'
 const DARK = '#8a6a45'
@@ -26,7 +27,7 @@ const img = (n, c, s, bg, flip) =>
 let html = '<div class="row">'
 for (const n of NAMES) {
   html += '<div class="col">'
-  for (const s of [40, 80]) {
+  for (const s of [19, 40, 80]) {
     html += '<div class="line">'
     for (const c of COLORS) html += img(n, c, s, LIGHT) + img(n, c, s, DARK)
     html += '</div>'
@@ -63,9 +64,11 @@ if (boardOut) {
   const N = 16 // board size (rules version 2)
   const M = 4 // empty squares either side of each army
   const back = ['rook', 'knight', 'bishop', 'queen', 'king', 'bishop', 'knight', 'rook']
+  // England (civ v2): Prime Ministers on the K, Q and both N squares.
+  const england = back.map((p) => (['king', 'queen', 'knight'].includes(p) ? 'prime-minister' : p))
   const at = {}
   back.forEach((p, i) => {
-    at[`${M + i},0`] = [p, COLORS[0]]
+    at[`${M + i},0`] = [england[i], COLORS[0]]
     at[`${M + i},1`] = ['pawn', COLORS[0]]
     at[`${M + i},${N - 1}`] = [p, COLORS[2]]
     at[`${M + i},${N - 2}`] = ['pawn', COLORS[2]]
@@ -85,7 +88,14 @@ if (boardOut) {
       const bg = (f + r) % 2 === 0 ? DARK : LIGHT
       const p = at[`${f},${r}`]
       b += p
-        ? img(p[0], p[1], S, bg, p[0] === 'knight' && (p[1] === COLORS[2] || p[1] === COLORS[3]))
+        ? img(
+            p[0],
+            p[1],
+            S,
+            bg,
+            ['knight', 'prime-minister'].includes(p[0]) &&
+              (p[1] === COLORS[2] || p[1] === COLORS[3]),
+          )
         : `<div style="background:${bg};width:${S}px;height:${S}px"></div>`
     }
   b += '</div>'

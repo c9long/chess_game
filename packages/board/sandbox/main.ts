@@ -224,11 +224,21 @@ function setCiv(seat: Seat, civ: CivId): void {
   const list = [...snapshot.config.civs.map((c) => c.id)] as CivId[]
   list[SEATS.indexOf(seat)] = civ
   civs = list
-  const pos = game.positionString().replace(/civ=\S+/, `civ=${list.map((c) => `${c}.1`).join(',')}`)
-  const g = Game.fromPosition(pos)
-  game.free()
-  game = g
-  sync(null, false)
+  // Latest civ versions, as the engine resolves them for a new game.
+  const probe = Game.create({ mode, civs: list as unknown as [CivId, CivId, CivId, CivId] })
+  const versions = probe.snapshot().config.civs.map((c) => `${c.id}.${c.version}`)
+  probe.free()
+  const pos = game.positionString().replace(/civ=\S+/, `civ=${versions.join(',')}`)
+  try {
+    const g = Game.fromPosition(pos)
+    game.free()
+    game = g
+    sync(null, false)
+  } catch {
+    // A civ with a different army (England's Prime Ministers) can't take over the
+    // position: start a new game with the chosen civs.
+    newGame()
+  }
 }
 
 // ---------------------------------------------------------------------------

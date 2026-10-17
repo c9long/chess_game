@@ -359,6 +359,68 @@ pieces.knight = {
   ],
 }
 
+// Prime Minister (England): the knight's head, a little smaller, wearing the
+// king's crown (band, cup, dome and cross) between its ears. The crown is
+// drawn in front of the head, so the head's detail lines stop at its edge.
+const KM = 0.8
+const PMX = 124 // crown centre line (over the poll, between the ears)
+const PM_CROWN_X = 0.95 // crown size relative to the king's: a little narrower,
+const PM_CROWN_Y = 0.75 // and squatter, so it fits above the head
+const PM_CROWN_DY = 7
+const crown = (d) =>
+  d.replace(/(-?\d*\.?\d+)\s+(-?\d*\.?\d+)/g, (_, x, y) => {
+    const nx = Math.round((PMX + (Number(x) - CX) * PM_CROWN_X) * 100) / 100
+    const ny = Math.round((Number(y) * PM_CROWN_Y + PM_CROWN_DY) * 100) / 100
+    return `${nx} ${ny}`
+  })
+pieces['prime-minister'] = {
+  title: 'Prime Minister',
+  symmetric: false,
+  comps: [
+    ...base(),
+    // the knight's head and neck (same outline as the knight), scaled about its foot
+    tf(pieces.knight.comps[2], KM / KN),
+    band(46, 190, 203, 6.5),
+    // crown: cup, rim band sitting on the head, dome, cross (no upper band:
+    // fewer outlines keep the seat colour visible at 19 px)
+    crown(
+      sym([
+        ['M', CX, 50],
+        ['L', X(42), 50],
+        ['C', X(32), 66, X(25), 78, X(24), 92],
+        ['L', CX, 92],
+      ]),
+    ),
+    crown(band(30, 86, 100, 6)),
+    crown(
+      sym([
+        ['M', CX, 36],
+        ['C', X(14), 36, X(24), 42, X(24), 52],
+        ['L', CX, 52],
+      ]),
+    ),
+    crown(
+      sym([
+        ['M', CX, 9],
+        ['L', X(6), 9],
+        ['C', X(8), 9, X(9), 10, X(9), 12],
+        ['L', X(9), 19],
+        ['L', X(19), 19],
+        ['C', X(21), 19, X(22), 20, X(22), 22],
+        ['L', X(22), 30],
+        ['C', X(22), 32, X(21), 33, X(19), 33],
+        ['L', X(9), 33],
+        ['L', X(9), 44],
+        ['L', CX, 44],
+      ]),
+    ),
+  ],
+  // the knight's eye, nostril, mouth, cheek and mane, rescaled with the head
+  details: pieces.knight.details.map((dd) => ({ ...dd, d: tf(dd.d, KM / KN) })),
+  // details never cross the crown (components 4.. are the crown)
+  detailClipFrom: 4,
+}
+
 // ---------- validation: emitted path must match the Skia geometry ---------------
 function check(name, what, src, d) {
   const got = P(d)
@@ -403,9 +465,12 @@ function build(name, def) {
     const front = comps.slice(i + 1)
     parts.push(front.length ? op(s, union(front), 'Difference') : s)
   }
+  const front = def.detailClipFrom ? union(comps.slice(def.detailClipFrom)) : null
   for (const dd of def.details ?? []) {
     const { d, w, fill } = typeof dd === 'string' ? { d: dd, w: DW } : dd
-    parts.push(op(fill ? fit(union([d])) : strokeOf(fit(P(d)), w), body, 'Intersect'))
+    let part = op(fill ? fit(union([d])) : strokeOf(fit(P(d)), w), body, 'Intersect')
+    if (front) part = op(part, front, 'Difference')
+    parts.push(part)
   }
   const detail = union(parts)
   const symmetric = def.symmetric !== false
@@ -419,7 +484,7 @@ function build(name, def) {
     extra += `<path fill-rule="evenodd" d="${plain(s)}"/>`
   }
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
-<title>${name[0].toUpperCase()}${name.slice(1)}</title>
+<title>${def.title ?? `${name[0].toUpperCase()}${name.slice(1)}`}</title>
 <g id="body" fill="currentColor"><path fill-rule="evenodd" d="${bodyD}"/></g>
 <g id="detail" fill="${DETAIL}"><path fill-rule="evenodd" d="${detailD}"/>${extra}</g>
 </svg>
@@ -429,7 +494,10 @@ function build(name, def) {
   return svg.length
 }
 
+// Optional: build only some pieces, e.g. `PIECES=prime-minister`.
+const only = process.env.PIECES?.split(',')
 mkdirSync(out, { recursive: true })
 for (const [name, def] of Object.entries(pieces)) {
+  if (only && !only.includes(name)) continue
   console.log(`${name}.svg`, build(name, def), 'bytes')
 }
