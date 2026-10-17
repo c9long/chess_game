@@ -22,15 +22,24 @@ export const REPORT_RESOLUTIONS = ['warn', 'rename', 'suspend'] as const
 export type ReportResolution = (typeof REPORT_RESOLUTIONS)[number]
 
 const userIdSchema = z.string().regex(/^[A-Za-z0-9_-]{1,64}$/)
+/** A username as typed (any case), e.g. from a public profile. */
+const usernameSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(20)
+  .regex(/^[A-Za-z0-9_]+$/)
 
 /**
  * Who an action is about: the player in `seat` of match `matchId` (a game you played in: live
- * card, result screen, history row), or `userId` of someone on your Friends page (a friend, a
- * request either way, or a player you blocked).
+ * card, result screen, history row), `userId` of someone on your Friends page (a friend, a
+ * request either way, or a player you blocked), or `username` of a registered player (their
+ * public profile).
  */
 export const playerTargetSchema = z.union([
   z.strictObject({ matchId: z.uuid(), seat: seatSchema }),
   z.strictObject({ userId: userIdSchema }),
+  z.strictObject({ username: usernameSchema }),
 ])
 export type PlayerTarget = z.input<typeof playerTargetSchema>
 
@@ -48,6 +57,11 @@ export const reportBodySchema = z.union([
   }),
   z.strictObject({
     userId: userIdSchema,
+    reason: z.enum(REPORT_REASONS),
+    note: z.string().trim().max(REPORT_NOTE_MAX).optional(),
+  }),
+  z.strictObject({
+    username: usernameSchema,
     reason: z.enum(REPORT_REASONS),
     note: z.string().trim().max(REPORT_NOTE_MAX).optional(),
   }),

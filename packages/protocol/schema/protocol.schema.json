@@ -1056,7 +1056,11 @@
       "outgoingRequestsMax": 10,
       "requestsPerHour": 20,
       "challengeMaxInvitees": 3,
-      "challengeTtlMs": 300000
+      "challengeTtlMs": 300000,
+      "playerSearchMinChars": 3,
+      "playerSearchMaxResults": 10,
+      "playerSearchesPerMin": 30,
+      "profileViewsPerMin": 60
     },
     "errorCodes": [
       "ACCOUNT_REQUIRED",
@@ -1079,39 +1083,57 @@
       "RATE_LIMITED",
       "MAINTENANCE"
     ],
+    "friendRequestPolicies": ["anyone", "played_with"],
     "restBodies": {
       "friendRequest": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "matchId": {
-            "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-          },
-          "seat": {
-            "anyOf": [
-              {
-                "type": "number",
-                "const": 0
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "matchId": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
               },
-              {
-                "type": "number",
-                "const": 1
-              },
-              {
-                "type": "number",
-                "const": 2
-              },
-              {
-                "type": "number",
-                "const": 3
+              "seat": {
+                "anyOf": [
+                  {
+                    "type": "number",
+                    "const": 0
+                  },
+                  {
+                    "type": "number",
+                    "const": 1
+                  },
+                  {
+                    "type": "number",
+                    "const": 2
+                  },
+                  {
+                    "type": "number",
+                    "const": 3
+                  }
+                ]
               }
-            ]
+            },
+            "required": ["matchId", "seat"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "username": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 20,
+                "pattern": "^[A-Za-z0-9_]+$"
+              }
+            },
+            "required": ["username"],
+            "additionalProperties": false
           }
-        },
-        "required": ["matchId", "seat"],
-        "additionalProperties": false
+        ]
       },
       "challenge": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -1142,6 +1164,34 @@
           }
         },
         "required": ["friendIds", "mode", "timeControl"],
+        "additionalProperties": false
+      },
+      "socialSettings": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "friendRequests": {
+            "type": "string",
+            "enum": ["anyone", "played_with"]
+          }
+        },
+        "required": ["friendRequests"],
+        "additionalProperties": false
+      }
+    },
+    "restQueries": {
+      "playerSearch": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 20,
+            "pattern": "^[A-Za-z0-9_]+$"
+          }
+        },
+        "required": ["q"],
         "additionalProperties": false
       }
     },
@@ -1389,6 +1439,19 @@
             },
             "required": ["userId"],
             "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "username": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 20,
+                "pattern": "^[A-Za-z0-9_]+$"
+              }
+            },
+            "required": ["username"],
+            "additionalProperties": false
           }
         ]
       },
@@ -1452,6 +1515,27 @@
               }
             },
             "required": ["userId", "reason"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "username": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 20,
+                "pattern": "^[A-Za-z0-9_]+$"
+              },
+              "reason": {
+                "type": "string",
+                "enum": ["offensive_username", "harassment", "cheating", "other"]
+              },
+              "note": {
+                "type": "string",
+                "maxLength": 500
+              }
+            },
+            "required": ["username", "reason"],
             "additionalProperties": false
           }
         ]

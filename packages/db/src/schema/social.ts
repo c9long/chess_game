@@ -44,3 +44,18 @@ export const friendships = pgTable(
     ),
   ],
 )
+
+/** "Who can send me friend requests": anyone (default) or only players you played with. */
+export const friendRequestPolicy = pgEnum('friend_request_policy', ['anyone', 'played_with'])
+
+/**
+ * Per-user social settings (Account page), one row per user who changed one; no row means
+ * every default. Deleted with the account (ON DELETE CASCADE), included in the export.
+ */
+export const userSettings = pgTable('user_settings', {
+  userId: text('user_id')
+    .primaryKey()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  friendRequests: friendRequestPolicy('friend_requests').notNull().default('anyone'),
+  updatedAt: ts('updated_at').notNull().defaultNow(),
+})

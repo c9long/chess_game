@@ -11,17 +11,32 @@ import {
   FRIEND_REQUESTS_PER_HOUR,
   friendRequestBodySchema,
   type MatchRelationsResponse,
+  PLAYER_SEARCHES_PER_MIN,
+  type PlayerSearchResponse,
+  PROFILE_VIEWS_PER_MIN,
+  playerSearchQuerySchema,
+  type SocialSettingsResponse,
   type SocialUser,
+  socialSettingsBodySchema,
+  usernameQuerySchema,
 } from '@game/protocol'
 import { type NextFunction, type Request, type Response, Router } from 'express'
 import { z } from 'zod'
 import type { Auth } from '../auth/auth.ts'
+import type { AppConfig } from '../config.ts'
+import { clientIp } from '../http/client-ip.ts'
 import { fixedWindowLimiter } from '../http/security.ts'
 import { requireSession, sessionOf } from '../http/session.ts'
 import { requireCurrentAcceptance } from '../legal/routes.ts'
 import { resolveTarget } from '../moderation/targets.ts'
 import { blockedAmong, blockedByAmong } from './blocks.ts'
 import { countsOf, matchSeatsOf, relationsOf, SocialError, usernameOf } from './friends.ts'
+import {
+  friendRequestPolicyOf,
+  profileOf,
+  searchPlayers,
+  setFriendRequestPolicy,
+} from './profiles.ts'
 import type { SocialService } from './service.ts'
 
 /** Ids in paths: Better Auth ids (letters, digits, `-`, `_`). */
@@ -75,10 +90,12 @@ function handle(fn: (req: Request, res: Response) => Promise<unknown> | unknown)
 const byUser = (req: Request) => (req.res?.locals.session?.user.id as string | undefined) ?? 'anon'
 
 export function socialRouter({
+  config,
   db,
   auth,
   social,
 }: {
+  config: AppConfig
   db: Database
   auth: Auth
   social: SocialService
@@ -91,6 +108,24 @@ export function socialRouter({
     key: byUser,
   })
   const blockLimiter = fixedWindowLimiter({ windowMs: 60 * 60_000, max: 60, key: byUser })
+  const searchLimiter = fixedWindowLimiter({
+    windowMs: 60_000,
+    max: PLAYER_SEARCHES_PER_MIN,
+    key: byUser,
+  })
+  // Registered viewers count per account; guests per client IP, since a guest session costs
+  // nothing (otherwise one IP could mint a guest every few seconds and read ~5x as many).
+  const profileLimiter = fixedWindowLimiter({
+    windowMs: 60_000,
+    max: PROFILE_VIEWS_PER_MIN,
+    key: (req) => {
+      const user = req.res?.locals.session?.user as
+        | { id: string; isAnonymous?: boolean | null }
+        | undefined
+      if (user && !user.isAnonymous) return `user:${user.id}`
+      return `ip:${clientIp(req, config) ?? 'unknown'}`
+    },
+  })
   const challengeLimiter = fixedWindowLimiter({
     windowMs: 10 * 60_000,
     max: CHALLENGES_PER_10_MIN,
@@ -150,7 +185,73 @@ export function socialRouter({
     requestLimiter,
     handle(async (req, res) => {
       const body = friendRequestBodySchema.parse(req.body)
-      res.json(await social.request(me(res), body.matchId, body.seat))
+      res.json(await social.request(me(res), body))
+    }),
+  )
+
+  /** Your "who can send me friend requests" setting (Account page). */
+  router.get(
+    '/friends/settings',
+    ...guard,
+    handle(async (_req, res) => {
+      const body: SocialSettingsResponse = {
+        friendRequests: await friendRequestPolicyOf(db, me(res).userId),
+      }
+      res.setHeader('Cache-Control', 'no-store')
+      res.json(body)
+    }),
+  )
+
+  router.put(
+    '/friends/settings',
+    ...guard,
+    handle(async (req, res) => {
+      const body = socialSettingsBodySchema.parse(req.body)
+      await setFriendRequestPolicy(db, me(res).userId, body.friendRequests)
+      const out: SocialSettingsResponse = { friendRequests: body.friendRequests }
+      res.json(out)
+    }),
+  )
+
+  /**
+   * Player search (registered accounts): prefix, then fuzzy matches on usernames. See
+   * PlayerSearchResponse in @game/protocol for what is listed and what never is. On the
+   * collection path (`/players?q=`), not `/players/search`, so it can never shadow the
+   * profile of a player whose username is "search".
+   */
+  router.get(
+    '/players',
+    ...guard,
+    searchLimiter,
+    handle(async (req, res) => {
+      const { q } = playerSearchQuerySchema.parse(req.query)
+      const out = await searchPlayers(db, social.options, me(res).userId, q, {
+        trigram: social.options.searchTrigram,
+      })
+      const body: PlayerSearchResponse = { query: q, ...out }
+      res.setHeader('Cache-Control', 'no-store')
+      res.json(body)
+    }),
+  )
+
+  /**
+   * A player's public profile (any signed-in viewer, guests included). Unknown, guest,
+   * deleted and suspended accounts all answer the same 404.
+   */
+  router.get(
+    '/players/:username',
+    requireSession(auth),
+    requireCurrentAcceptance(db),
+    profileLimiter,
+    handle(async (req, res) => {
+      const name = usernameQuerySchema.safeParse(req.params.username)
+      const viewer = sessionOf(res).user as { id: string; isAnonymous?: boolean | null }
+      const profile = name.success
+        ? await profileOf(db, social.options, viewer.isAnonymous ? undefined : viewer.id, name.data)
+        : undefined
+      if (!profile) throw new SocialError('NOT_FOUND', 404, 'Player not found.')
+      res.setHeader('Cache-Control', 'no-store')
+      res.json(profile)
     }),
   )
 

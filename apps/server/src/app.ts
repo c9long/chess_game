@@ -149,7 +149,7 @@ export function createApp(config: AppConfig, overrides: AppOverrides = {}) {
   app.use('/api/legal', legalRouter({ config, db, auth }))
   app.use('/api/account', accountRouter({ config, db, auth, logger, social }))
   app.use('/api', gameRouter({ db, auth }))
-  app.use('/api', socialRouter({ db, auth, social }))
+  app.use('/api', socialRouter({ config, db, auth, social }))
   app.use('/api', moderationRouter({ db, auth, moderation }))
   // Colyseus matchmaking (the WebSocket side is attached to the http.Server in server.ts).
   app.use(COLYSEUS_PATH, matchmakeRouter(config, game))

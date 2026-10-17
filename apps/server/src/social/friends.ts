@@ -21,6 +21,7 @@ import {
   type SocialUser,
 } from '@game/protocol'
 import { and, asc, count, eq, inArray, or, sql } from 'drizzle-orm'
+import { friendRequestPolicyOf, playedTogether } from './profiles.ts'
 
 /** A refused social action: the route answers `{ error: code, message }` with `status`. */
 export class SocialError extends Error {
@@ -208,19 +209,21 @@ export async function lockPair(tx: Transaction, a: string, b: string) {
   }
 }
 
-/** The neutral refusal for a player you can't add (also what a player who blocked you gives). */
+/**
+ * The one neutral refusal for a player you can't add: no such username, a bot, a guest, a
+ * deleted or suspended account, a player who blocked you, or one who only takes requests from
+ * players they played with. It never says which.
+ */
 export const notEligible = () =>
-  new SocialError(
-    'NOT_ELIGIBLE',
-    403,
-    'You can add players you are playing or have finished a game with (not bots or guests).',
-  )
+  new SocialError('NOT_ELIGIBLE', 403, 'We couldn’t send that request.')
 
 /**
- * Refuses a friend request across a block: `BLOCKED` when `me` blocked `target`, and the
- * neutral NOT_ELIGIBLE when `target` blocked `me` (a block is never revealed).
+ * Who blocked whom between `me` and `target`. `byMe` refuses with `BLOCKED` (about the sender);
+ * `byThem` becomes the neutral NOT_ELIGIBLE, checked only after the sender's caps so a block
+ * is never revealed (not even to a sender at a cap, who would otherwise get a cap error for
+ * everyone else).
  */
-async function refuseIfBlocked(db: Executor, me: string, target: string) {
+async function blocksBetween(db: Executor, me: string, target: string) {
   const rows = await db
     .select({ blocker: blocks.blockerId })
     .from(blocks)
@@ -230,14 +233,14 @@ async function refuseIfBlocked(db: Executor, me: string, target: string) {
         and(eq(blocks.blockerId, target), eq(blocks.blockedId, me)),
       ),
     )
-  if (rows.some((r) => r.blocker === me)) {
-    throw new SocialError('BLOCKED', 409, 'You blocked this player. Unblock them first.')
+  return {
+    byMe: rows.some((r) => r.blocker === me),
+    byThem: rows.some((r) => r.blocker === target),
   }
-  if (rows.length > 0) throw notEligible()
 }
 
 /** Match statuses where the players count as having played together. */
-const SHARED_STATUSES = ['in_progress', 'finished'] as const
+export const SHARED_STATUSES = ['in_progress', 'finished'] as const
 
 /**
  * Resolves "the player in `seat` of match `matchId`" for a friend request by `me`. Refuses
@@ -331,17 +334,30 @@ async function acceptRow(tx: Transaction, limits: SocialLimits, me: string, othe
 
 /**
  * Sends a friend request from `me` to `target` (already checked eligible). A pending request
- * the other way is accepted instead. Returns the relation afterwards.
+ * the other way is accepted instead. With `respectPolicy` (requests by username), a target
+ * who only takes requests from players they played with refuses with the neutral NOT_ELIGIBLE
+ * unless the two shared a running or finished game (a request they sent you still counts).
+ * Returns the relation afterwards.
+ *
+ * Order matters for privacy: every cap (yours and theirs) is checked before the other
+ * player's block and setting, so the answer is the same whatever they chose. Otherwise a
+ * sender at a cap would get a cap error for everyone except players who blocked them or
+ * only take requests from people they played with: a free, repeatable probe.
  */
 export async function sendRequest(
   db: Database,
   limits: SocialLimits,
   me: string,
   target: string,
+  options: { respectPolicy?: boolean } = {},
 ): Promise<'outgoing' | 'friends'> {
   return db.transaction(async (tx) => {
     await lockPair(tx, me, target)
-    await refuseIfBlocked(tx, me, target)
+    const blocked = await blocksBetween(tx, me, target)
+    if (blocked.byMe) {
+      throw new SocialError('BLOCKED', 409, 'You blocked this player. Unblock them first.')
+    }
+    // A block (either way) deletes the pair's row, so any row here is between unblocked players.
     const [row] = await tx.select().from(friendships).where(pairWhere(me, target))
     if (row?.status === 'accepted') {
       throw new SocialError('ALREADY_FRIENDS', 409, 'You are already friends.')
@@ -349,7 +365,7 @@ export async function sendRequest(
     if (row && row.requestedBy === me) {
       throw new SocialError('ALREADY_REQUESTED', 409, 'Your request is already waiting.')
     }
-    if (row) {
+    if (row && !blocked.byThem) {
       // They asked first: sending one back accepts theirs.
       await acceptRow(tx, limits, me, target)
       return 'friends'
@@ -363,6 +379,14 @@ export async function sendRequest(
         409,
         `You have ${limits.maxOutgoing} friend requests waiting. Cancel one or wait for answers.`,
       )
+    }
+    if (blocked.byThem) throw notEligible()
+    if (
+      options.respectPolicy &&
+      (await friendRequestPolicyOf(tx, target)) === 'played_with' &&
+      !(await playedTogether(tx, me, target))
+    ) {
+      throw notEligible()
     }
     const [lo, hi] = pairOf(me, target)
     await tx.insert(friendships).values({ userA: lo, userB: hi, requestedBy: me })

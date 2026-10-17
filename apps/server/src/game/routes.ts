@@ -344,7 +344,8 @@ export function gameRouter({ db, auth }: { db: Database; auth: Auth }) {
   /**
    * Public leaderboard (no session needed): the top registered players by Elo in one
    * mode x time control, with at least LEADERBOARD_MIN_GAMES ranked games. Usernames only;
-   * deleted accounts (their re-keyed placeholders) and guests are never listed.
+   * deleted accounts (their re-keyed placeholders), suspended accounts and guests are never
+   * listed.
    */
   router.get('/leaderboard', async (req, res) => {
     const q = leaderboardQuery.safeParse(req.query)
@@ -369,6 +370,9 @@ export function gameRouter({ db, auth }: { db: Database; auth: Auth }) {
           eq(eloRatings.timeControl, tc),
           gte(eloRatings.games, LEADERBOARD_MIN_GAMES),
           isNull(users.deletedAt),
+          // Suspended accounts have no public profile (and no search result), so the board
+          // leaves them out too: a listed name always opens its profile.
+          isNull(users.suspendedAt),
           eq(users.isAnonymous, false),
           isNotNull(users.username),
         ),

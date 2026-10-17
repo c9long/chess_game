@@ -33,14 +33,17 @@ import {
   declineRequest,
   eligibleTarget,
   friendIdsOf,
+  notEligible,
   removeFriend,
   rowsOf,
   SocialError,
   type SocialLimits,
   sendRequest,
   socialUser,
+  usernameOf,
 } from './friends.ts'
 import { SocialHub } from './hub.ts'
+import { findByUsername } from './profiles.ts'
 
 export interface SocialOptions extends SocialLimits {
   /** Players one account may block. */
@@ -54,6 +57,11 @@ export interface SocialOptions extends SocialLimits {
    * net: sign-out and revocation close them at once through the session-delete hook).
    */
   sessionCheckMs: number
+  /**
+   * Player search with pg_trgm (true) or prefix matching only (false); undefined checks
+   * whether the extension is installed. Tests force the fallback with false.
+   */
+  searchTrigram?: boolean | undefined
 }
 
 export const DEFAULT_SOCIAL_OPTIONS: SocialOptions = {
@@ -189,10 +197,24 @@ export class SocialService {
     }
   }
 
-  /** A friend request to the player in `seat` of `matchId`. */
-  async request(me: SocialUser, matchId: string, seat: number) {
-    const target = await eligibleTarget(this.db, me.userId, matchId, seat)
-    const relation = await sendRequest(this.db, this.options, me.userId, target.userId)
+  /**
+   * A friend request to the player in `seat` of `matchId`, or to `username` (exact, any case;
+   * the target's "who can send me friend requests" setting applies). Every refusal about the
+   * other player is the neutral NOT_ELIGIBLE.
+   */
+  async request(me: SocialUser, to: { matchId: string; seat: number } | { username: string }) {
+    let target: SocialUser
+    if ('username' in to) {
+      const found = await findByUsername(this.db, to.username)
+      if (found?.id === me.userId) throw new SocialError('SELF', 400, 'That’s you.')
+      if (!found) throw notEligible()
+      target = { userId: found.id, username: usernameOf(found) }
+    } else {
+      target = await eligibleTarget(this.db, me.userId, to.matchId, to.seat)
+    }
+    const relation = await sendRequest(this.db, this.options, me.userId, target.userId, {
+      respectPolicy: 'username' in to,
+    })
     if (relation === 'friends') {
       this.push(target.userId, 'friendAccepted', {
         user: me,

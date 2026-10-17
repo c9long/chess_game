@@ -78,6 +78,13 @@
       "when": 1792266081190,
       "tag": "0010_security_notices",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1792267625834,
+      "tag": "0011_profile_search",
+      "breakpoints": true
     }
   ]
 }

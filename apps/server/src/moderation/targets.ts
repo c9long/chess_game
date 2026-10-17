@@ -1,12 +1,14 @@
 /**
  * Resolves who a block or a report is about. Clients never need arbitrary user ids: a target is
- * "the player in seat N of a game you played in", or the id of someone already on your Friends
- * page (a friend, a request either way, or a player you blocked).
+ * "the player in seat N of a game you played in", the id of someone already on your Friends
+ * page (a friend, a request either way, or a player you blocked), or the username of a live
+ * registered player (their public profile).
  */
 import { blocks, type Executor, friendships, matchPlayers, users } from '@game/db'
 import type { PlayerTarget } from '@game/protocol'
 import { and, eq } from 'drizzle-orm'
 import { pairOf, SocialError, usernameOf } from '../social/friends.ts'
+import { findByUsername } from '../social/profiles.ts'
 
 export interface ResolvedTarget {
   userId: string
@@ -54,6 +56,12 @@ export async function resolveTarget(
     if (seat.userId === me) throw new SocialError('SELF', 400, 'That seat is you.')
     userId = seat.userId
     matchId = target.matchId
+  } else if ('username' in target) {
+    // Public profiles: any live registered player (suspended accounts read as not found).
+    const found = await findByUsername(db, target.username)
+    if (!found) throw notFound()
+    if (found.id === me) throw new SocialError('SELF', 400, 'That is you.')
+    userId = found.id
   } else {
     userId = target.userId
     if (userId === me) throw new SocialError('SELF', 400, 'That is you.')
