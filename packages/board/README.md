@@ -16,6 +16,11 @@ const view = new BoardView({
                                       // defaults to prefers-reduced-motion
   colorblindPatterns: false,
   sound: true,
+  announce: true,                     // screen-reader live regions (default true)
+  localSeat: 'west',                  // said as "You" / "your" (also setLocalSeat)
+  announceOwnCheck: true,             // false when the host announces the viewer's check itself
+  zoomButton: 'auto',                 // magnifier button while squares are < 32 px (true / false)
+  onZoomChange: (zoom) => {},
 })
 await view.mount(element)             // fills the element and follows its size and devicePixelRatio
 view.setPerspective('west')           // animated 90° turns; the local seat is always at the bottom
@@ -23,8 +28,12 @@ view.setSnapshot(snapshot, { events }) // events from applyMove/applyTimeout/app
 view.setInteractive('west')           // the seat the local user moves for, or null to only watch
 view.setLegalMoves(game.legalMoves())
 view.setCheck('west')                 // check indicator on West's leader square(s); null clears it
+view.setZoom(2, { focus: 'e4' })      // 1 = whole board; clamped to view.zoomRange.max
+view.toggleZoom()                     // the zoom button: one step in (squares ~44 px) or back out
 view.destroy()
 ```
+
+- **CSP.** The package imports `pixi.js/unsafe-eval` once (top of `BoardView.ts`), PixiJS 8's CSP-safe path: shaders and uniform uploads without `new Function`, so a page's Content-Security-Policy needs no `'unsafe-eval'` (the rules engine still needs `'wasm-unsafe-eval'`).
 
 - **Check indicator.** `setCheck(seat | null, { sound? })` draws a vermilion ring with a light inner line, a vermilion wash and a pulsing glow on that seat's leader square(s) (a colour no seat uses, plus a cue that doesn't depend on hue), which come from the snapshot's `leaderSquares` (the engine's roster leader role, so a civ whose leader isn't a king works too). It follows the leader as it moves (when the leader itself moves, the marking moves to the new square once the slide lands, without a second sound); a glow is drawn for every leader square, however many; under reduced motion the ring and glow are steady. Turned on right after `setSnapshot`, it waits until that move lands and then plays the `check` sound (pass `sound: false` to skip it). The board never decides when to show it: the host owns that rule (the web app shows it only for the viewer's own seat, see `apps/web/src/lib/check-indicator.ts`). `checkSeat` and `checkSquares` read back what is shown.
 
@@ -68,7 +77,30 @@ pnpm --filter @game/board sandbox  # http://localhost:5180
 
 The sandbox gives you hot-seat play for all four seats, an FFA/Teams switch, a perspective switcher (with an optional "follow turn"), and timeout and abandon buttons for each seat. It also has a civ picker per seat, the option toggles, an event log, seat statuses, undo, and loading or copying a position string. `window.__sandbox` exposes helpers for scripted checks: `play`, `playAll`, `timeout`, `abandon`, `loadPosition`, `setPerspective`, `setOptions`, and `view.timeScale` to slow animations down for screenshots.
 
+## Zoom and touch (phones)
+
+On a 390 px phone the 16×16 board gets about 21 px squares, so the board zooms and pans itself (a camera in `camera.ts`, pure and unit-tested; hit testing goes through the same transform, so taps and drops land right at every zoom).
+
+| Input | Does |
+| --- | --- |
+| One finger (or the mouse) on a movable piece | Selects it; dragging carries it (never pans) |
+| Tap a legal target | Moves there (touch: on release, so a second finger can still cancel it) |
+| One finger dragged anywhere else, when zoomed | Pans the board (a selection is kept) |
+| Two fingers | Pinch to zoom, move to pan; cancels whatever the first finger started (a drag goes home) |
+| Double tap on an empty square (nothing selected) | Zooms in there to the one-tap zoom, or back out |
+| Zoom button (lower-right corner of the board) | One-handed: zoom in toward the selection, the keyboard cursor or your leader; tap again for the whole board |
+| Ctrl/⌘ + wheel, trackpad pinch | Zoom around the pointer; a plain wheel pans while zoomed |
+| `+` / `-` / `0` | Zoom in toward the cursor / out / whole board |
+
+- **Limits.** The one-tap zoom aims for squares of about 44 px (at least 1.5×); zooming stops at about 76 px squares (2× to 4×). A pinch past either limit meets a rubber band and springs back when the fingers lift; the board edge never comes inside the viewport.
+- **Staying oriented.** Selecting a piece pans just enough to show its legal targets (the piece itself always stays in view); dragging a piece near the viewport edge pans that way; the keyboard cursor is kept in view. While the board's own edge coordinates are out of view, small coordinates follow the visible columns and rows along the bottom and left edges. Turning to another perspective keeps the same board point in the middle.
+- **Sharpness.** Once the zoom has been still for 220 ms the board surface, pieces, labels and medallions are re-rasterised for it (no layout change, animations keep running; the surface stays within 4096 device px).
+- **Motion.** Zoom and pan animate for 260 ms (instant under reduced motion); pinch and pan follow the fingers directly.
+- **Touch polish.** No text selection, callout menu, tap highlight or browser zoom on the board; taps and drops just off a legal target count as that target, and a tap just off one of your movable pieces selects it (`TOUCH_SLOP_PX`). The renderer's resolution is capped at 2 on phones and tablets (coarse pointer), 3 elsewhere.
+
 ## Accessibility
 
-- **Keyboard.** The canvas can take focus. Arrow keys move a cursor in screen directions, Enter or Space selects a piece and then moves it, and Escape cancels. In the promotion picker, the arrow keys choose a piece and Enter confirms.
-- **Screen readers.** There is no announcer yet: the canvas only has an `aria-label`.
+- **Keyboard.** The canvas can take focus (a gold focus ring for keyboard focus, which also shows the cursor on your leader). The arrow keys move a cursor in screen directions (a white ring inside a dark one, drawn above the pieces); Enter or Space picks up a piece and then places it; Escape puts it down (pressed again, it hides the cursor). In the promotion picker the arrow keys choose a piece, Enter confirms and Escape cancels. `+`, `-` and `0` zoom.
+- **Screen readers.** Two visually hidden polite live regions sit next to the canvas (`announce.ts`):
+  - *Moves* (`data-board-announcer="moves"`): every step from `setSnapshot` in plain words, from the engine's events: "West: knight b7 to c9", "…, takes North's pawn", "…, promotes to queen", "South castled: king i1 to k1, rook l1 to j1", "Check: North's king is under attack.", "East is defeated: out of time.", "Game over. South wins." Steps that arrive close together (bots replying) are read as one announcement (700 ms quiet, 2.5 s at most); the viewer's own move (`localSeat`) is confirmed after 150 ms as "You: …". A step without events (a resync) is described only when it is one move. `view.announcements` reads back what was said.
+  - *Cursor* (`data-board-announcer="cursor"`): answers the keyboard at once: the square under the cursor ("e4, empty, move here", "b7, West knight", "i1, your king"), picking up ("Picked up pawn on e2: 2 moves."), refusals ("Not your turn. West to move."), the promotion choices ("rook, 2 of 4") and zoom.

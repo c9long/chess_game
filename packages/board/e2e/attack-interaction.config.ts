@@ -4,7 +4,7 @@ import { defineConfig, devices } from '@playwright/test'
 // (default http://localhost:5237): `pnpm --filter @game/board exec vite --config sandbox/vite.config.ts --port 5237`.
 export default defineConfig({
   testDir: '.',
-  testMatch: /attack-interaction-.*\.pw\.ts/,
+  testMatch: /(attack-interaction|board)-.*\.pw\.ts/,
   outputDir:
     '/tmp/claude-1000/-home-c9long-chess-game/bb6dac1d-5690-4e27-9699-e9c91353b39a/scratchpad/m2/attack-int-results',
   workers: 2,

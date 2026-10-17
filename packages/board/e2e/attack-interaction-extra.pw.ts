@@ -20,6 +20,8 @@ test('keyboard move for West (arrows are relative to the viewer) is animated', a
   await settle(page)
   await setPerspective(page, 'west')
   await page.locator('canvas').focus()
+  // Keyboard focus may already show the cursor; Escape hides it (it stays on West's king).
+  await page.keyboard.press('Escape')
   // First arrow shows the cursor on West's king (a9). In West's view, "up" is toward file p.
   await page.keyboard.press('ArrowUp') // cursor appears on a9
   // Move cursor to b9 (one step "up" for West = +1 file), select the pawn, then up twice -> d9.

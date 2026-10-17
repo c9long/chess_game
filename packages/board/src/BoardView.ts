@@ -1,4 +1,7 @@
 import type { GameEvent, MoveView, Piece, PieceKind, Seat, Snapshot, Square } from '@game/rules'
+// PixiJS's CSP-safe path: uniforms and shaders without `new Function`, so the page's
+// Content-Security-Policy needs no 'unsafe-eval' (apps/server/src/http/static-web.ts).
+import 'pixi.js/unsafe-eval'
 import {
   Application,
   Container,
@@ -18,6 +21,30 @@ import {
   Texture,
   UniformGroup,
 } from 'pixi.js'
+import {
+  type AnnounceContext,
+  defaultSeatLabel,
+  describeBareMove,
+  describeSquare,
+  describeStep,
+  LiveAnnouncer,
+  pieceWord,
+} from './announce.ts'
+import {
+  anchorCamera,
+  type Camera,
+  type CameraViewport,
+  clampCamera,
+  IDENTITY_CAMERA,
+  panBy,
+  revealPoints,
+  rubberZoom,
+  sameCamera,
+  screenToBoard,
+  type Vec,
+  zoomAround,
+  zoomLimits,
+} from './camera.ts'
 import { hexToNumber, hexToRgb, mixHex, shadeHex } from './color.ts'
 import {
   BOARD_SIZE,
@@ -102,9 +129,36 @@ export interface SetCheckOptions {
   readonly sound?: boolean
 }
 
+export interface SetZoomOptions {
+  /** Animate the change (never under reduced motion). Default true. */
+  readonly animate?: boolean
+  /** The square to zoom toward (kept in view). Default: the view centre. */
+  readonly focus?: Square
+}
+
 export interface BoardViewInit extends Partial<BoardOptions> {
   onMoveIntent?: (move: string) => void
   onSquareHover?: (square: Square | null) => void
+  /** The zoom level changed (1 = the whole board). */
+  onZoomChange?: (zoom: number) => void
+  /**
+   * Screen-reader announcements in polite live regions next to the canvas: every move,
+   * capture, promotion, check, defeat and the result (bots' replies read together), and
+   * answers to the keyboard cursor. Default true.
+   */
+  announce?: boolean
+  /** How seats are named in announcements. Default: South, West, North, East. */
+  seatLabel?: (seat: Seat) => string
+  /** The viewer's own seat, said as "You" / "your" (also `setLocalSeat`). Default none. */
+  localSeat?: Seat | null
+  /** Announce the viewer's own check (turn off when the host says it elsewhere). Default true. */
+  announceOwnCheck?: boolean
+  /**
+   * A round zoom button in the board's lower-right corner, for one-handed play on phones.
+   * 'auto' (default) shows it while squares are smaller than 32 px; pinch, double-tap,
+   * Ctrl+wheel and the + / - keys work either way.
+   */
+  zoomButton?: boolean | 'auto'
 }
 
 const SEATS: readonly Seat[] = ['south', 'west', 'north', 'east']
@@ -179,6 +233,28 @@ const TOUCH_EDGE_PX = 6
 const HINT_DOT_MIN_PX = 9
 /** The hint dot's diameter as a fraction of its texture (see `hintDot` in textures.ts). */
 const HINT_DOT_FRACTION = 0.28
+/** Zoom and pan animations (zoom button, double tap, keeping a selection in view), ms. */
+const CAMERA_MS = 260
+/** A touch press that moves this far (CSS px) pans the zoomed board instead of tapping. */
+const PAN_THRESHOLD = 8
+/** Two taps within this time and distance are a double tap (zoom in or out). */
+const DOUBLE_TAP_MS = 350
+const DOUBLE_TAP_PX = 32
+/** Dragging a piece this close to the viewport edge pans the zoomed board, at up to this speed. */
+const EDGE_PAN_PX = 40
+const EDGE_PAN_SPEED = 520
+/** Zooming re-rasterises textures for the new scale once it has been still this long, ms. */
+const RASTER_SETTLE_MS = 220
+/** Largest texture side the zoomed board surface may use (device px). */
+const MAX_RASTER_PX = 4096
+/** Squares that small (CSS px at zoom 1) show the zoom button ('auto'). */
+const ZOOM_BUTTON_BELOW = 32
+/**
+ * The zoom button: a 40 px touch target whose visible disc (28 px) sits in the board's
+ * corner, clear of the corner coordinates.
+ */
+const ZOOM_BUTTON_PX = 40
+const ZOOM_DISC_PX = 28
 
 interface PieceNode {
   readonly node: Container
@@ -232,6 +308,31 @@ interface Hint {
   delay: number
 }
 
+/** What a press of one finger (or the mouse) will do. */
+type PressKind = 'piece' | 'commit' | 'inert'
+
+interface Press {
+  kind: PressKind
+  readonly pointerId: number
+  /** piece: the pressed piece; commit: the selected piece. */
+  readonly square: number
+  /** commit: the legal target it moves to on release (touch). */
+  readonly to: number
+  readonly x: number
+  readonly y: number
+  /** piece: it was already selected (a tap puts it down again). */
+  readonly wasSelected: boolean
+  readonly touch: boolean
+  /** The selection when the press started (restored if a pinch takes over). */
+  readonly before: number
+  /** inert: deselect on release (touch), unless the press became a pan. */
+  readonly deselect: boolean
+  /** inert: an occupied non-target square while a piece was selected (refused on release). */
+  readonly illegal: boolean
+  /** inert with nothing selected: may be half of a double tap. */
+  readonly tapZoom: boolean
+}
+
 interface Promo {
   readonly from: number
   readonly to: number
@@ -239,6 +340,21 @@ interface Promo {
   readonly container: Container
   readonly tiles: Container[]
   focus: number
+}
+
+/**
+ * The renderer's resolution: the device pixel ratio, capped at 3, and at 2 on phones and
+ * tablets (a coarse pointer), where 3x costs memory and fill rate for nothing visible.
+ */
+function deviceResolution(): number {
+  const dpr = globalThis.devicePixelRatio || 1
+  let cap = 3
+  try {
+    if (globalThis.matchMedia?.('(pointer: coarse)').matches) cap = 2
+  } catch {
+    // No matchMedia: keep the desktop cap.
+  }
+  return Math.max(1, Math.min(cap, dpr))
 }
 
 function defaultReducedMotion(): boolean {
@@ -263,6 +379,8 @@ export class BoardView {
   onMoveIntent: ((move: string) => void) | null
   /** The square under the pointer changed (`null` when off the field). */
   onSquareHover: ((square: Square | null) => void) | null
+  /** The zoom level changed (1 = the whole board). */
+  onZoomChange: ((zoom: number) => void) | null
 
   #options: BoardOptions
   #app: Application | null = null
@@ -308,6 +426,8 @@ export class BoardView {
   readonly #lastMoveLayer = new Container()
   readonly #medalLayer = new Container()
   readonly #fx = new Graphics()
+  /** The keyboard cursor, above the pieces so it is never hidden by a piece or a highlight. */
+  readonly #cursorGfx = new Graphics()
   readonly #selectLayer = new Container()
   readonly #selGfx = new Graphics()
   readonly #targetGfx = new Graphics()
@@ -388,7 +508,7 @@ export class BoardView {
   #hover = -1
   #cursor = -1
   #cursorVisible = false
-  #press: { square: number; x: number; y: number; wasSelected: boolean } | null = null
+  #press: Press | null = null
   #drag: { square: number; node: PieceNode } | null = null
   #promo: Promo | null = null
   #lastMove: { from: number; to: number; seat: Seat } | null = null
@@ -403,9 +523,52 @@ export class BoardView {
   readonly #tmpVec2 = { x: 0, y: 0 }
   #shadowLocal = { x: 0, y: 0 }
 
+  // Camera (zoom and pan). The root sits at `#base` (the viewport centre) when not zoomed.
+  #camera: Camera = IDENTITY_CAMERA
+  readonly #base = { x: 0, y: 0 }
+  #camTween: Tween | null = null
+  /** Zoom factor the textures are rasterised for (follows the zoom once it settles). */
+  #rasterZoom = 1
+  #rasterTimer: ReturnType<typeof setTimeout> | 0 = 0
+  /** Touch and pen pointers that are down, by pointer id (screen position, CSS px). */
+  readonly #pointers = new Map<number, Vec>()
+  #gesture:
+    | {
+        kind: 'pinch'
+        a: number
+        b: number
+        dist: number
+        zoom: number
+        anchor: Vec
+      }
+    | { kind: 'pan'; id: number; x: number; y: number }
+    | null = null
+  /** Pointers that took part in a gesture: ignored until they lift. */
+  readonly #spent = new Set<number>()
+  #lastTap: { time: number; x: number; y: number } | null = null
+  /** Screen position of the pointer dragging a piece (edge auto-pan). */
+  #dragAt: Vec | null = null
+  #zoomButtonMode: boolean | 'auto'
+  #zoomButton: HTMLButtonElement | null = null
+  readonly #edgeLabels = new Container()
+  #edgeTexts: Text[] = []
+  // Screen reader.
+  readonly #announce: boolean
+  #announcer: LiveAnnouncer | null = null
+  #seatLabel: (seat: Seat) => string
+  #localSeat: Seat | null
+  readonly #announceOwnCheck: boolean
+  #keyboardFocus = false
+
   constructor(init: BoardViewInit = {}) {
     this.onMoveIntent = init.onMoveIntent ?? null
     this.onSquareHover = init.onSquareHover ?? null
+    this.onZoomChange = init.onZoomChange ?? null
+    this.#announce = init.announce ?? true
+    this.#seatLabel = init.seatLabel ?? defaultSeatLabel
+    this.#localSeat = init.localSeat ?? null
+    this.#announceOwnCheck = init.announceOwnCheck ?? true
+    this.#zoomButtonMode = init.zoomButton ?? 'auto'
     this.#options = {
       reducedMotion: init.reducedMotion ?? defaultReducedMotion(),
       colorblindPatterns: init.colorblindPatterns ?? false,
@@ -428,7 +591,7 @@ export class BoardView {
     const app = new Application()
     this.#app = app
     const rect = parent.getBoundingClientRect()
-    this.#res = Math.max(1, Math.min(3, globalThis.devicePixelRatio || 1))
+    this.#res = deviceResolution()
     await app.init({
       width: Math.max(1, rect.width),
       height: Math.max(1, rect.height),
@@ -451,21 +614,31 @@ export class BoardView {
     cv.style.display = 'block'
     cv.style.width = '100%'
     cv.style.height = '100%'
+    // The board owns every touch: no scrolling, page zoom, text selection, callout menu or
+    // tap flash (pinch and double tap zoom the board itself).
     cv.style.touchAction = 'none'
+    cv.style.userSelect = 'none'
+    cv.style.setProperty('-webkit-user-select', 'none')
+    cv.style.setProperty('-webkit-touch-callout', 'none')
+    cv.style.setProperty('-webkit-tap-highlight-color', 'transparent')
     cv.style.outline = 'none'
     cv.tabIndex = 0
     cv.setAttribute('role', 'application')
+    cv.setAttribute('aria-roledescription', 'game board')
     cv.setAttribute(
       'aria-label',
-      'Game board. Arrow keys move the cursor, Enter selects and moves.',
+      'Game board, 16 by 16. Arrow keys move the cursor, Enter or Space picks up and places a piece, Escape cancels, plus and minus zoom.',
     )
     parent.appendChild(cv)
+    if (this.#announce) this.#announcer = new LiveAnnouncer(parent)
+    this.#mountZoomButton(parent)
 
     this.#effects = createEffectTextures()
     this.#particles = new Particles(320)
     this.#chips = new Particles(96)
     this.#buildScene()
     this.#bindInput(cv)
+    this.#buildEdgeLabels()
     cv.addEventListener('webglcontextlost', this.#onContextLost)
     cv.addEventListener('webglcontextrestored', this.#onContextRestored)
 
@@ -562,6 +735,28 @@ export class BoardView {
       if (moved) this.#showCheckAtHandover(checked, false)
     }
     this.#refreshAll()
+    if (this.#announcer && prev && !resync) this.#announceStep(prev, snapshot, events)
+  }
+
+  /** Queues the step's announcement (the viewer's own move is confirmed soon). */
+  #announceStep(prev: Snapshot, next: Snapshot, events: readonly GameEvent[]): void {
+    const ctx = this.#ctx()
+    let lines: string[] = []
+    if (events.length > 0) lines = describeStep(prev, next, events, ctx)
+    else if (next.ply === prev.ply + 1 && this.#lastMove) {
+      const m = this.#lastMove
+      lines = [describeBareMove(next, m.from, m.to, m.seat, ctx)]
+    }
+    const own =
+      this.#localSeat !== null &&
+      events.some((e) => e.type === 'move_made' && e.seat === this.#localSeat)
+    this.#announcer?.queue(lines, own)
+  }
+
+  /** The text announced so far in the moves live region (tests and devtools). */
+  get announcements(): string[] {
+    const el = this.#announcer?.moves
+    return el ? [...el.children].map((c) => c.textContent ?? '') : []
   }
 
   /**
@@ -598,6 +793,7 @@ export class BoardView {
     if (!animate) {
       this.#setAngle(target)
       this.#refreshPieceFacing()
+      if (this.#camera.zoom > 1) this.#moveCamera(clampCamera(this.#camera, this.#viewport()))
       return
     }
     const from = this.#angle
@@ -605,6 +801,8 @@ export class BoardView {
       ease: ease.inOutCubic,
       done: () => {
         this.#rotTween = null
+        // The same board point stayed in the middle; re-fit it to the turned viewport.
+        if (this.#camera.zoom > 1) this.#moveCamera(clampCamera(this.#camera, this.#viewport()))
       },
     })
     // Knights turn to face the centre halfway through.
@@ -713,6 +911,7 @@ export class BoardView {
       this.#shakeLeft > 0 ||
       this.#dissolveLayer.children.length > 0 ||
       this.#relayoutTimer !== 0 ||
+      this.#rasterTimer !== 0 ||
       this.#rebuilding
     )
   }
@@ -739,6 +938,12 @@ export class BoardView {
     this.#relayoutTimer = 0
     this.#anim.clear()
     this.#sound.destroy()
+    if (this.#rasterTimer) clearTimeout(this.#rasterTimer)
+    this.#rasterTimer = 0
+    this.#announcer?.destroy()
+    this.#announcer = null
+    this.#zoomButton?.remove()
+    this.#zoomButton = null
     const app = this.#app
     if (app?.renderer) {
       app.canvas.removeEventListener('webglcontextlost', this.#onContextLost)
@@ -892,6 +1097,7 @@ export class BoardView {
       [this.#hintLayer, 'hints'],
       [this.#shadowLayer, 'shadows'],
       [this.#pieceLayer, 'pieces'],
+      [this.#cursorGfx, 'cursor'],
       [this.#captureLayer, 'captures'],
       [chips, 'chips'],
       [this.#movingLayer, 'moving'],
@@ -934,7 +1140,7 @@ export class BoardView {
     }
     const w = Math.floor(rect.width)
     const h = Math.floor(rect.height)
-    const res = Math.max(1, Math.min(3, globalThis.devicePixelRatio || 1))
+    const res = deviceResolution()
     if (res !== this.#res || w !== app.screen.width || h !== app.screen.height || force) {
       this.#res = res
       app.renderer.resize(w, h, res)
@@ -943,8 +1149,14 @@ export class BoardView {
     const sq = Math.max(8, Math.floor((Math.min(w, h) / units) * res) / res)
     const changed = force || res !== this.#builtRes || Math.abs(sq - this.#layout.square) > 0.01
     this.#targetSq = changed ? sq : this.#layout.square
-    this.#root.position.set(Math.round((w / 2) * res) / res, Math.round((h / 2) * res) / res)
+    this.#base.x = Math.round((w / 2) * res) / res
+    this.#base.y = Math.round((h / 2) * res) / res
     this.#setAngle(this.#angle)
+    // A new viewport: keep the board covering it (and the zoom within its new limits).
+    if (this.#camera.zoom > 1) {
+      const z = Math.min(this.#camera.zoom, this.#zoomLimits.max)
+      this.#moveCamera(clampCamera({ ...this.#camera, zoom: z }, this.#viewport()))
+    }
     if (this.#relayoutTimer) clearTimeout(this.#relayoutTimer)
     this.#relayoutTimer = 0
     if (!changed) return
@@ -978,25 +1190,58 @@ export class BoardView {
       this.#renderSurface()
       this.#layoutStatic()
       this.#layoutPieces()
-      const pieceSize = Math.ceil((sq * PIECE_SCALE * res) / 8) * 8
-      if (pieceSize !== this.#atlasSize) {
-        const atlas = await PieceAtlas.build(pieceSize)
-        if (gen !== this.#generation || this.#destroyed) {
-          atlas.destroy()
-          return
-        }
-        const old = this.#atlas
-        this.#atlas = atlas
-        this.#atlasSize = pieceSize
-        this.#refreshPieceTextures()
-        old?.destroy()
-      }
+      if (!(await this.#ensureAtlas(gen))) return
       await this.#refreshMedallions(true)
     } finally {
       if (gen === this.#generation) this.#rebuilding = false
     }
     if (gen !== this.#generation || this.#destroyed) return
     this.#refreshAll()
+  }
+
+  /**
+   * Rebuilds the piece atlas when the rasterised piece size changed. Resolves false when a
+   * newer rebuild took over (or the view was destroyed) meanwhile.
+   */
+  async #ensureAtlas(gen: number): Promise<boolean> {
+    const pieceSize = Math.ceil((this.#layout.square * PIECE_SCALE * this.#rasterRes) / 8) * 8
+    if (pieceSize === this.#atlasSize) return true
+    const atlas = await PieceAtlas.build(pieceSize)
+    if (gen !== this.#generation || this.#destroyed) {
+      atlas.destroy()
+      return false
+    }
+    const old = this.#atlas
+    this.#atlas = atlas
+    this.#atlasSize = pieceSize
+    this.#refreshPieceTextures()
+    old?.destroy()
+    return true
+  }
+
+  /**
+   * Device px per CSS px that textures are rasterised at: the renderer's resolution times the
+   * settled zoom, so a zoomed board stays sharp (limited by MAX_RASTER_PX for the surface).
+   */
+  get #rasterRes(): number {
+    const side = boardExtent(this.#layout) + 2 * RT_PAD
+    return Math.max(this.#res, Math.min(this.#res * this.#rasterZoom, MAX_RASTER_PX / side))
+  }
+
+  /** Re-rasterises the textures for a new zoom (no layout change, animations keep running). */
+  async #reraster(): Promise<void> {
+    const app = this.#app
+    if (!app || this.#destroyed || this.#hidden) return
+    const gen = ++this.#generation
+    this.#rebuilding = true
+    try {
+      this.#renderSurface()
+      for (const t of this.#labelTexts) t.resolution = this.#rasterRes
+      if (!(await this.#ensureAtlas(gen))) return
+      await this.#refreshMedallions(true)
+    } finally {
+      if (gen === this.#generation) this.#rebuilding = false
+    }
   }
 
   readonly #onWindowResize = (): void => {
@@ -1056,7 +1301,7 @@ export class BoardView {
       uSize: { value: new Float32Array([extent, extent]), type: 'vec2<f32>' },
       uSq: { value: square, type: 'f32' },
       uFrame: { value: frame, type: 'f32' },
-      uPx: { value: 1 / (square * this.#res), type: 'f32' },
+      uPx: { value: 1 / (square * this.#rasterRes), type: 'f32' },
       uLight: { value: new Float32Array(hexToRgb('#e2c89a')), type: 'vec3<f32>' },
       uDark: { value: new Float32Array(hexToRgb('#8c5633')), type: 'vec3<f32>' },
       uWood: { value: new Float32Array(hexToRgb('#4a2617')), type: 'vec3<f32>' },
@@ -1098,12 +1343,13 @@ export class BoardView {
     mesh.position.set(RT_PAD, RT_PAD)
     const size = Math.ceil(extent) + 2 * RT_PAD
     let rt = this.#boardRT
-    if (!rt || rt.width !== size || rt.height !== size || rt.source.resolution !== this.#res) {
+    const rasterRes = this.#rasterRes
+    if (!rt || rt.width !== size || rt.height !== size || rt.source.resolution !== rasterRes) {
       const old = rt
       rt = RenderTexture.create({
         width: size,
         height: size,
-        resolution: this.#res,
+        resolution: rasterRes,
         antialias: false,
       })
       this.#boardRT = rt
@@ -1154,7 +1400,7 @@ export class BoardView {
       const side = Math.floor(i / BOARD_SIZE)
       const k = i % BOARD_SIZE
       t.style.fontSize = fontSize
-      t.resolution = this.#res
+      t.resolution = this.#rasterRes
       // Upright labels turn with the perspective, so allow for either orientation.
       const labelR = Math.max(t.width, t.height) / 2
       // Out from the field far enough that two-digit ranks don't reach into it.
@@ -1291,7 +1537,6 @@ export class BoardView {
     const pending = this.#targetSq / this.#layout.square
     this.#fitScale = pending * Math.min(1, avail / Math.max(1, need * pending))
     this.#root.rotation = angle
-    this.#root.scale.set(this.#fitScale)
     // Upright children.
     const counter = -angle
     for (const t of this.#labelTexts) t.rotation = counter
@@ -1314,16 +1559,368 @@ export class BoardView {
       this.#drag.node.shadow.rotation = counter
       this.#placeShadow(this.#drag.node)
     }
-    // Screen-space lighting follows the board footprint.
-    const ext = boardExtent(this.#layout) * this.#fitScale
-    this.#light.position.copyFrom(this.#root.position)
     this.#light.alpha = Math.max(0, 1 - 6 * Math.abs(Math.sin(angle) * Math.cos(angle)))
-    this.#light.width = ext
-    this.#light.height = ext
     this.#boardShadow.position.set(0, 0)
     rotateVector(0, this.#layout.square * 0.32, counter, this.#tmpVec2)
     this.#boardShadow.position.set(this.#tmpVec2.x, this.#tmpVec2.y)
     if (this.#promo) this.#closePromo(true)
+    this.#applyCamera()
+  }
+
+  // ---------------------------------------------------------------------------
+  // Camera: zoom and pan
+  // ---------------------------------------------------------------------------
+
+  /** Root scale on screen: fit to the viewport times the zoom. */
+  get #viewScale(): number {
+    return this.#fitScale * this.#camera.zoom
+  }
+
+  #viewport(): CameraViewport {
+    const app = this.#app
+    const sq = this.#layout.square
+    return {
+      width: app?.screen.width ?? 1,
+      height: app?.screen.height ?? 1,
+      unit: sq * this.#fitScale,
+      half: boardExtent(this.#layout) / 2 / sq + MARGIN,
+      angle: this.#angle,
+    }
+  }
+
+  /** Places the root for the camera (and the lighting, zoom button and edge coordinates). */
+  #applyCamera(): void {
+    const app = this.#app
+    if (!app) return
+    const k = this.#viewScale
+    const sq = this.#layout.square
+    const v = this.#tmpVec2
+    rotateVector(this.#camera.x * sq * k, this.#camera.y * sq * k, this.#angle, v)
+    this.#root.position.set(this.#base.x - v.x, this.#base.y - v.y)
+    this.#root.scale.set(k)
+    // Screen-space lighting follows the board footprint.
+    const ext = boardExtent(this.#layout) * k
+    this.#light.position.copyFrom(this.#root.position)
+    this.#light.width = ext
+    this.#light.height = ext
+    this.#syncZoomButton()
+    this.#syncEdgeLabels()
+  }
+
+  /** Zoom limits for the current square size (the one-tap zoom gives squares of about 44 px). */
+  get #zoomLimits(): { max: number; step: number } {
+    return zoomLimits(this.#layout.square * this.#fitScale)
+  }
+
+  /**
+   * Moves the camera (clamped so the board always covers the viewport), animated unless
+   * `animate` is false or motion is reduced.
+   */
+  #setCamera(target: Camera, animate: boolean): void {
+    const to = clampCamera(target, this.#viewport())
+    this.#anim.cancel(this.#camTween)
+    this.#camTween = null
+    if (!animate || this.#options.reducedMotion || sameCamera(to, this.#camera)) {
+      this.#moveCamera(to)
+      return
+    }
+    const from = this.#camera
+    this.#camTween = this.#anim.add(
+      CAMERA_MS,
+      (k) => {
+        // Zoom eases geometrically, so zooming in and out feel the same speed.
+        const zoom = from.zoom * (to.zoom / from.zoom) ** k
+        this.#moveCamera({
+          zoom,
+          x: from.x + (to.x - from.x) * k,
+          y: from.y + (to.y - from.y) * k,
+        })
+      },
+      {
+        ease: ease.outCubic,
+        done: () => {
+          this.#camTween = null
+        },
+      },
+    )
+  }
+
+  #moveCamera(cam: Camera): void {
+    const zoomed = Math.abs(cam.zoom - this.#camera.zoom) > 1e-4
+    this.#camera = cam
+    this.#applyCamera()
+    if (!zoomed) return
+    this.#scheduleRaster()
+    this.onZoomChange?.(cam.zoom)
+  }
+
+  /** Re-rasterises for the new zoom once it has settled (only when the needed scale changed). */
+  #scheduleRaster(): void {
+    const z = this.#camera.zoom
+    const want = z <= 1.01 ? 1 : Math.min(4, Math.ceil(z * 2) / 2)
+    if (this.#rasterTimer) clearTimeout(this.#rasterTimer)
+    this.#rasterTimer = 0
+    if (want === this.#rasterZoom) return
+    this.#rasterTimer = setTimeout(() => {
+      this.#rasterTimer = 0
+      if (this.#destroyed) return
+      this.#rasterZoom = want
+      for (const h of this.#hintPool) this.#sizeHint(h)
+      void this.#reraster()
+    }, RASTER_SETTLE_MS)
+  }
+
+  /** The current zoom (1 = the whole board fits). */
+  get zoom(): number {
+    return this.#camera.zoom
+  }
+
+  /** The largest zoom for the current size, and the zoom the button and a double tap use. */
+  get zoomRange(): { min: number; max: number; step: number } {
+    const l = this.#zoomLimits
+    return { min: 1, max: l.max, step: l.step }
+  }
+
+  /**
+   * Zooms to `zoom` (clamped to 1..zoomRange.max), toward `focus` when given, else around the
+   * view centre. `setZoom(1)` shows the whole board again.
+   */
+  setZoom(zoom: number, options: SetZoomOptions = {}): void {
+    if (!this.#ready) return
+    const z = Math.min(this.#zoomLimits.max, Math.max(1, zoom))
+    const animate = options.animate ?? true
+    if (z <= 1) {
+      this.#setCamera(IDENTITY_CAMERA, animate)
+      return
+    }
+    let cam: Camera = { ...this.#camera, zoom: z }
+    if (options.focus) {
+      const i = indexOf(options.focus)
+      if (i >= 0) {
+        const p = this.#squarePoint(i)
+        cam = { zoom: z, x: p.x, y: p.y }
+      }
+    }
+    this.#setCamera(cam, animate)
+  }
+
+  /** Zooms in one step (toward the selection, the keyboard cursor or your leader), or back out. */
+  toggleZoom(options: { animate?: boolean } = {}): void {
+    if (!this.#ready || this.#promo) return
+    const animate = options.animate ?? true
+    if (this.#camera.zoom > 1.01) {
+      this.#setCamera(IDENTITY_CAMERA, animate)
+      return
+    }
+    const focus =
+      this.#selected >= 0
+        ? this.#selected
+        : this.#cursorVisible && this.#cursor >= 0
+          ? this.#cursor
+          : this.#defaultCursor()
+    const p = this.#squarePoint(focus)
+    this.#setCamera({ zoom: this.#zoomLimits.step, x: p.x, y: p.y }, animate)
+  }
+
+  /** A square's centre in board squares from the board centre (camera units). */
+  #squarePoint(i: number): Vec {
+    squareCenter(i, this.#layout, this.#tmpVec)
+    const sq = this.#layout.square
+    return { x: this.#tmpVec.x / sq, y: this.#tmpVec.y / sq }
+  }
+
+  /**
+   * While zoomed in, pans just enough to show `squares` (the first one, e.g. the selected
+   * piece, always stays in view).
+   */
+  #reveal(squares: readonly number[], animate = true): void {
+    if (this.#camera.zoom <= 1.01 || squares.length === 0 || !this.#ready) return
+    const pts = squares.map((i) => this.#squarePoint(i))
+    const cam = revealPoints(this.#camera, this.#viewport(), pts, 0.6, 0)
+    if (cam !== this.#camera) this.#setCamera(cam, animate)
+  }
+
+  /** Shows the selected piece and its legal targets (zoomed in only). */
+  #revealSelection(): void {
+    if (this.#selected < 0) return
+    this.#reveal([this.#selected, ...this.#moves.targetsFrom(this.#selected).map((t) => t.to)])
+  }
+
+  /** Screen position relative to the viewport centre. */
+  #rel(x: number, y: number): Vec {
+    return { x: x - this.#base.x, y: y - this.#base.y }
+  }
+
+  #mountZoomButton(parent: HTMLElement): void {
+    if (this.#zoomButtonMode === false) return
+    try {
+      if (globalThis.getComputedStyle?.(parent).position === 'static') {
+        parent.style.position = 'relative'
+      }
+    } catch {
+      // Not in a document yet: the host positions it.
+    }
+    const b = parent.ownerDocument.createElement('button')
+    b.type = 'button'
+    b.dataset.boardZoom = 'in'
+    Object.assign(b.style, {
+      position: 'absolute',
+      left: '0px',
+      top: '0px',
+      width: `${ZOOM_BUTTON_PX}px`,
+      height: `${ZOOM_BUTTON_PX}px`,
+      padding: '2px',
+      margin: '0',
+      display: 'none',
+      alignItems: 'flex-end',
+      justifyContent: 'flex-end',
+      border: '0',
+      background: 'transparent',
+      color: '#f1d58f',
+      cursor: 'pointer',
+      touchAction: 'manipulation',
+      userSelect: 'none',
+      zIndex: '1',
+    })
+    b.style.setProperty('-webkit-tap-highlight-color', 'transparent')
+    b.style.setProperty('-webkit-user-select', 'none')
+    b.addEventListener('click', () => {
+      this.#sound.unlock()
+      this.toggleZoom()
+    })
+    parent.appendChild(b)
+    this.#zoomButton = b
+    this.#syncZoomButton()
+  }
+
+  /** The zoom button: lower-right corner of the board, a "+" or "-" magnifier. */
+  #syncZoomButton(): void {
+    const b = this.#zoomButton
+    const app = this.#app
+    if (!b || !app?.renderer) return
+    const unit = this.#layout.square * this.#fitScale
+    const zoomed = this.#camera.zoom > 1.01
+    const show =
+      this.#zoomButtonMode === true ||
+      zoomed ||
+      (this.#zoomButtonMode === 'auto' && unit < ZOOM_BUTTON_BELOW)
+    b.style.display = show ? 'flex' : 'none'
+    if (!show) return
+    // The corner of the board as it fits at zoom 1 (the canvas may be wider than the board).
+    const half = (boardExtent(this.#layout) / 2 + MARGIN * this.#layout.square) * this.#fitScale
+    const right = Math.min(app.screen.width, this.#base.x + half)
+    const bottom = Math.min(app.screen.height, this.#base.y + half)
+    b.style.left = `${Math.round(right - ZOOM_BUTTON_PX)}px`
+    b.style.top = `${Math.round(bottom - ZOOM_BUTTON_PX)}px`
+    const state = zoomed ? 'out' : 'in'
+    if (b.dataset.boardZoom !== state || !b.firstChild) {
+      b.dataset.boardZoom = state
+      const label = zoomed ? 'Zoom out to the whole board' : 'Zoom in on the board'
+      b.setAttribute('aria-label', label)
+      b.title = label
+      const bar = zoomed ? '' : '<path d="M10 7v6"/>'
+      const disc = [
+        `width:${ZOOM_DISC_PX}px`,
+        `height:${ZOOM_DISC_PX}px`,
+        'display:flex',
+        'align-items:center',
+        'justify-content:center',
+        'box-sizing:border-box',
+        'border-radius:50%',
+        'border:1px solid rgba(210,171,95,0.65)',
+        'background:rgba(22,15,11,0.85)',
+        'box-shadow:0 2px 6px rgba(0,0,0,0.5)',
+      ].join(';')
+      b.innerHTML = `<span style="${disc}"><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="10" cy="10" r="5.5"/><path d="M7 10h6"/>${bar}<path d="m14.5 14.5 3.5 3.5"/></svg></span>`
+    }
+  }
+
+  /**
+   * Coordinates along the viewport's bottom and left edges while zoomed in, when the board's
+   * own edge labels are out of view: the files (or ranks) of the visible columns and rows.
+   */
+  #buildEdgeLabels(): void {
+    const texts: Text[] = []
+    for (let i = 0; i < BOARD_SIZE * 2; i++) {
+      const t = new Text({
+        text: '',
+        style: {
+          fontFamily: 'Georgia, "Palatino Linotype", "Book Antiqua", Palatino, serif',
+          fontSize: 11,
+          fontWeight: '700',
+          fill: '#f3e3b8',
+          stroke: { color: '#1a110b', width: 3, join: 'round' },
+        },
+      })
+      t.anchor.set(0.5)
+      t.resolution = this.#res
+      t.visible = false
+      texts.push(t)
+      this.#edgeLabels.addChild(t)
+    }
+    this.#edgeTexts = texts
+    this.#edgeLabels.label = 'edgeLabels'
+    this.#edgeLabels.eventMode = 'none'
+    this.#edgeLabels.visible = false
+    // Last on the stage, so `stage.children` keeps its order (root, light, overlay) for tools;
+    // hidden while the promotion picker (the overlay) is open.
+    ;(this.#app as Application).stage.addChild(this.#edgeLabels)
+  }
+
+  #syncEdgeLabels(): void {
+    const layer = this.#edgeLabels
+    const app = this.#app
+    if (!app?.renderer || this.#edgeTexts.length === 0) return
+    const quarter = Math.abs(this.#angle / (Math.PI / 2) - Math.round(this.#angle / (Math.PI / 2)))
+    layer.visible = this.#camera.zoom > 1.02 && quarter < 1e-3 && !this.#promo
+    if (!layer.visible) return
+    const W = app.screen.width
+    const H = app.screen.height
+    const k = this.#viewScale
+    const half = (this.#layout.square * BOARD_SIZE) / 2
+    const frame = this.#layout.frame * k
+    // Field edges on screen (axis-aligned at a quarter turn).
+    const corner = (x: number, y: number) => {
+      this.#tmpPoint.set(x, y)
+      return this.#root.toGlobal(this.#tmpPoint)
+    }
+    const c1 = corner(-half, -half)
+    const c2 = corner(half, half)
+    const fieldBottom = Math.max(c1.y, c2.y)
+    const fieldLeft = Math.min(c1.x, c2.x)
+    // Which board axis runs along the screen x axis.
+    const a = this.#squareScreen(0)
+    const b = this.#squareScreen(1)
+    const filesAcross = Math.abs(b.x - a.x) > Math.abs(b.y - a.y)
+    const btn = this.#zoomButton?.style.display === 'flex' ? ZOOM_DISC_PX + 8 : 0
+    const showBottom = fieldBottom + frame * 0.5 > H
+    const showLeft = fieldLeft - frame * 0.5 < 0
+    for (let i = 0; i < BOARD_SIZE; i++) {
+      // Bottom: one label per column, named by the axis that runs across the screen.
+      const tb = this.#edgeTexts[i] as Text
+      const sqAcross = filesAcross ? i : i * BOARD_SIZE
+      const p = this.#squareScreen(sqAcross)
+      const bt = filesAcross ? fileLetter(i) : String(i + 1)
+      if (tb.text !== bt) tb.text = bt
+      tb.position.set(p.x, H - 8)
+      tb.visible = showBottom && p.x > (showLeft ? 22 : 8) && p.x < W - 8 - btn
+      // Left: one label per row.
+      const tl = this.#edgeTexts[BOARD_SIZE + i] as Text
+      const sqDown = filesAcross ? i * BOARD_SIZE : i
+      const q = this.#squareScreen(sqDown)
+      const lt = filesAcross ? String(i + 1) : fileLetter(i)
+      if (tl.text !== lt) tl.text = lt
+      tl.position.set(9, q.y)
+      tl.visible = showLeft && q.y > 8 && q.y < H - (showBottom ? 18 : 8)
+    }
+  }
+
+  /** Screen position (canvas CSS px) of a square's centre. */
+  #squareScreen(i: number): Vec {
+    squareCenter(i, this.#layout, this.#tmpVec)
+    this.#tmpPoint.set(this.#tmpVec.x, this.#tmpVec.y)
+    const g = this.#root.toGlobal(this.#tmpPoint)
+    return { x: g.x, y: g.y }
   }
 
   // ---------------------------------------------------------------------------
@@ -2383,7 +2980,7 @@ export class BoardView {
     squareCenter(leader, this.#layout, this.#tmpVec)
     this.#tmpPoint.set(this.#tmpVec.x, this.#tmpVec.y)
     const centre = this.#root.toGlobal(this.#tmpPoint)
-    const sqGlobal = sq * this.#fitScale
+    const sqGlobal = sq * this.#viewScale
     if (!reduced) {
       uniforms = new UniformGroup({
         uProgress: { value: 0, type: 'f32' },
@@ -2550,7 +3147,7 @@ export class BoardView {
 
   async #refreshMedallions(force: boolean, fadeMs = 0): Promise<void> {
     const snap = this.#snapshot
-    const sizePx = Math.ceil(this.#layout.square * MEDALLION * this.#res)
+    const sizePx = Math.ceil(this.#layout.square * MEDALLION * this.#rasterRes)
     const gen = this.#generation
     await Promise.all(
       SEATS.map(async (seat, i) => {
@@ -2928,25 +3525,31 @@ export class BoardView {
 
   /** Static highlights (keyboard cursor, attacked leaders) and the selection/hint state. */
   #refreshFx(): void {
-    const g = this.#fx
     const h = this.#hints
+    const g = this.#cursorGfx
+    this.#fx.clear()
     g.clear()
     h.clear()
     if (!this.#ready) return
     const sq = this.#layout.square
     if (this.#cursorVisible && this.#cursor >= 0) {
+      // Keyboard cursor: a white ring inside a dark one, visible on both square shades and on
+      // any piece, with at least 2 screen px per line at every zoom.
       this.#squareOrigin(this.#cursor, this.#tmpVec)
-      const inset = sq * 0.06
-      g.roundRect(
-        this.#tmpVec.x + inset,
-        this.#tmpVec.y + inset,
-        sq - inset * 2,
-        sq - inset * 2,
-        sq * 0.08,
-      ).stroke({
+      const px = 1 / Math.max(0.01, this.#viewScale)
+      const outer = Math.max(3 * px, sq * 0.07)
+      const inner = Math.max(2 * px, sq * 0.045)
+      const x = this.#tmpVec.x
+      const y = this.#tmpVec.y
+      g.roundRect(x + outer / 2, y + outer / 2, sq - outer, sq - outer, sq * 0.1).stroke({
+        color: 0x140c06,
+        alpha: 0.85,
+        width: outer,
+      })
+      g.roundRect(x + outer, y + outer, sq - outer * 2, sq - outer * 2, sq * 0.08).stroke({
         color: 0xffffff,
-        alpha: 0.95,
-        width: Math.max(2, sq * 0.05),
+        alpha: 1,
+        width: inner,
       })
     }
     this.#syncSelection()
@@ -3265,7 +3868,7 @@ export class BoardView {
     if (this.#shakeLeft > 0) {
       this.#shakeLeft = Math.max(0, this.#shakeLeft - step)
       const t = 1 - this.#shakeLeft / SHAKE_MS
-      const amp = (this.#options.reducedMotion ? 0 : SHAKE_PX / this.#fitScale) * (1 - t) ** 2
+      const amp = (this.#options.reducedMotion ? 0 : SHAKE_PX / this.#viewScale) * (1 - t) ** 2
       this.#root.pivot.set(Math.sin(t * Math.PI * 7) * amp, Math.cos(t * Math.PI * 5.2) * amp * 0.7)
     } else if (this.#root.pivot.x !== 0 || this.#root.pivot.y !== 0) {
       this.#root.pivot.set(0, 0)
@@ -3298,13 +3901,15 @@ export class BoardView {
     }
     // devicePixelRatio can change with no event at all (some zoom paths, emulation):
     // one property read per frame catches what the media query misses.
-    const dpr = Math.max(1, Math.min(3, globalThis.devicePixelRatio || 1))
-    if (dpr !== this.#res) void this.#relayout()
+    if (deviceResolution() !== this.#res) void this.#relayout()
+    // Dragging a piece near the edge of the zoomed board pans toward that edge.
+    if (this.#drag && this.#dragAt && this.#camera.zoom > 1.01 && raw > 0) this.#edgePan(raw)
     // Idle (only the turn glow pulses): cap the frame rate to save power.
     const busy =
       this.animating ||
       this.#drag !== null ||
       this.#press !== null ||
+      this.#gesture !== null ||
       this.#promo !== null ||
       this.#rotTween !== null
     if (busy === this.#idleCapped) {
@@ -3336,19 +3941,32 @@ export class BoardView {
     stage.on('globalpointermove', (e) => this.#onMove(e))
     stage.on('pointerup', (e) => this.#onUp(e))
     stage.on('pointerupoutside', (e) => this.#onUp(e))
+    // PixiJS doesn't forward pointercancel (the browser took the pointer away).
+    cv.addEventListener('pointercancel', (e) => this.#onCancel(e.pointerId))
     cv.addEventListener('keydown', (e) => this.#onKey(e))
+    cv.addEventListener('focus', this.#onFocus)
+    cv.addEventListener('blur', this.#onBlur)
+    cv.addEventListener('wheel', (e) => this.#onWheel(e), { passive: false })
     cv.addEventListener('pointerleave', () => {
       this.#setHover(-1)
       this.#setHoverPiece(null)
     })
     cv.addEventListener('contextmenu', (e) => {
-      if (this.#drag) e.preventDefault()
+      if (this.#drag || this.#gesture || this.#pointers.size > 0) e.preventDefault()
     })
   }
 
   #hit(e: FederatedPointerEvent): number {
     this.#root.toLocal(e.global, undefined, this.#tmpPoint)
     return pointToSquare(this.#tmpPoint.x, this.#tmpPoint.y, this.#layout)
+  }
+
+  /** Fingertip slop in board-local px (see TOUCH_SLOP_PX), at the current zoom. */
+  #touchSlop(): number {
+    const wt = this.#root.worldTransform
+    const scale = Math.hypot(wt.a, wt.b) || 1
+    const sq = this.#layout.square
+    return Math.min(TOUCH_SLOP_PX / scale, sq * 0.5 + TOUCH_EDGE_PX / scale)
   }
 
   /**
@@ -3358,12 +3976,28 @@ export class BoardView {
   #touchTarget(e: FederatedPointerEvent, from: number): number {
     if (e.pointerType === 'mouse' || from < 0) return -1
     this.#root.toLocal(e.global, undefined, this.#tmpPoint)
-    const wt = this.#root.worldTransform
-    const scale = Math.hypot(wt.a, wt.b) || 1
-    const sq = this.#layout.square
-    const slop = Math.min(TOUCH_SLOP_PX / scale, sq * 0.5 + TOUCH_EDGE_PX / scale)
     const targets = this.#moves.targetsFrom(from).map((m) => m.to)
-    return nearestTarget(this.#tmpPoint.x, this.#tmpPoint.y, targets, this.#layout, slop)
+    return nearestTarget(
+      this.#tmpPoint.x,
+      this.#tmpPoint.y,
+      targets,
+      this.#layout,
+      this.#touchSlop(),
+    )
+  }
+
+  /** For touch or pen, the movable piece a tap just off it meant (same slop), or -1. */
+  #touchPiece(e: FederatedPointerEvent): number {
+    if (e.pointerType === 'mouse') return -1
+    this.#root.toLocal(e.global, undefined, this.#tmpPoint)
+    const pieces = this.#moves.movableSquares()
+    return nearestTarget(
+      this.#tmpPoint.x,
+      this.#tmpPoint.y,
+      pieces,
+      this.#layout,
+      this.#touchSlop(),
+    )
   }
 
   #canAct(): boolean {
@@ -3377,75 +4011,178 @@ export class BoardView {
     )
   }
 
+  /**
+   * One finger (or the mouse) picks pieces: a press on a movable piece selects it and a drag
+   * carries it; a tap on a legal target moves there (with touch, on release, so a second
+   * finger arriving for a pinch can still cancel it). A press on anything else pans the
+   * zoomed board when it moves, and a double tap there zooms in or out. Two fingers always
+   * zoom and pan, and undo whatever the first finger had started.
+   */
   #onDown(e: FederatedPointerEvent): void {
     this.#sound.unlock()
+    const touch = e.pointerType !== 'mouse'
+    if (touch) this.#pointers.set(e.pointerId, { x: e.global.x, y: e.global.y })
     if (this.#promo) return
-    if (e.button !== 0 && e.pointerType === 'mouse') {
+    if (touch && this.#pointers.size >= 2) {
+      if (this.#gesture?.kind !== 'pinch') this.#startPinch()
+      return
+    }
+    if (this.#gesture || this.#spent.has(e.pointerId)) return
+    if (e.button !== 0 && !touch) {
       this.#select(-1)
       return
     }
-    this.#cursorVisible = false
+    this.#hideKeyboardCursor()
     const sq = this.#hit(e)
+    const before = this.#selected
+    const press = {
+      kind: 'inert' as PressKind,
+      pointerId: e.pointerId,
+      square: sq,
+      to: -1,
+      x: e.global.x,
+      y: e.global.y,
+      wasSelected: false,
+      touch,
+      before,
+      deselect: false,
+      illegal: false,
+      tapZoom: false,
+    }
     if (sq < 0 || !this.#canAct()) {
+      // Nothing to act on: a drag pans a zoomed board, a double tap zooms.
       this.#select(-1)
+      this.#press = { ...press, tapZoom: before < 0 }
       return
     }
     if (this.#selected >= 0 && this.#selected !== sq && this.#moves.target(this.#selected, sq)) {
+      this.#lastTap = null
+      if (touch) {
+        this.#press = { ...press, kind: 'commit', square: this.#selected, to: sq }
+        return
+      }
       this.#commit(this.#selected, sq, false)
-      return
-    }
-    if (this.#moves.canMoveFrom(sq)) {
-      const wasSelected = this.#selected === sq
-      this.#select(sq)
-      this.#press = { square: sq, x: e.global.x, y: e.global.y, wasSelected }
       return
     }
     // A fingertip just off a legal target on a small board: that target was meant.
     const near = this.#selected >= 0 ? this.#touchTarget(e, this.#selected) : -1
     if (near >= 0 && near !== this.#selected) {
-      this.#commit(this.#selected, near, false)
+      this.#lastTap = null
+      this.#press = { ...press, kind: 'commit', square: this.#selected, to: near }
       return
     }
-    if (this.#selected >= 0 && this.#snapshot?.board[sq]) this.#sound.play('illegal')
+    // A movable piece, or (touch) one just beside the fingertip.
+    const piece = this.#moves.canMoveFrom(sq) ? sq : this.#touchPiece(e)
+    if (piece >= 0) {
+      this.#lastTap = null
+      const wasSelected = this.#selected === piece
+      this.#select(piece)
+      this.#press = { ...press, kind: 'piece', square: piece, wasSelected }
+      return
+    }
+    const illegal = this.#selected >= 0 && !!this.#snapshot?.board[sq]
+    if (touch) {
+      // Decided on release: a tap deselects, a drag pans the zoomed board instead.
+      this.#press = { ...press, deselect: true, illegal, tapZoom: before < 0 }
+      return
+    }
+    if (illegal) this.#sound.play('illegal')
     this.#select(-1)
+    this.#press = press
   }
 
   #onMove(e: FederatedPointerEvent): void {
+    const p = this.#pointers.get(e.pointerId)
+    if (p) {
+      p.x = e.global.x
+      p.y = e.global.y
+    }
+    const g = this.#gesture
+    if (g) {
+      if (g.kind === 'pinch' && (e.pointerId === g.a || e.pointerId === g.b)) this.#updatePinch()
+      else if (g.kind === 'pan' && e.pointerId === g.id) this.#updatePan(e.global.x, e.global.y)
+      return
+    }
+    if (this.#spent.has(e.pointerId)) return
+    const press = this.#press
+    if (press && press.pointerId !== e.pointerId) return
     const sq = this.#hit(e)
     this.#setHover(sq)
     const cv = this.#app?.canvas
-    if (this.#press && !this.#drag) {
-      const d = Math.hypot(e.global.x - this.#press.x, e.global.y - this.#press.y)
-      if (d > DRAG_THRESHOLD) this.#beginDrag(this.#press.square)
+    if (press && !this.#drag) {
+      const d = Math.hypot(e.global.x - press.x, e.global.y - press.y)
+      if (press.kind === 'piece') {
+        if (d > DRAG_THRESHOLD) this.#beginDrag(press.square)
+      } else if (d > PAN_THRESHOLD && this.#camera.zoom > 1.01) {
+        // A drag that didn't start on a piece moves the zoomed board (selection kept).
+        this.#press = null
+        this.#lastTap = null
+        this.#gesture = { kind: 'pan', id: e.pointerId, x: press.x, y: press.y }
+        this.#setHover(-1)
+        this.#updatePan(e.global.x, e.global.y)
+        if (cv) cv.style.cursor = 'grabbing'
+        return
+      }
     }
     if (this.#drag) {
-      this.#root.toLocal(e.global, undefined, this.#tmpPoint)
-      const n = this.#drag.node
-      n.node.position.set(this.#tmpPoint.x, this.#tmpPoint.y - this.#layout.square * 0.08)
-      this.#placeShadow(n)
-      // Fade a piece about to be captured so the lifted piece reads on top of it.
-      const t = sq >= 0 ? this.#moves.target(this.#drag.square, sq) : null
-      const victim = t?.capture ? (this.#pieces[sq] ?? null) : null
-      this.#fadeNode(victim && victim !== n ? victim : null)
+      this.#moveDragNode(e.global.x, e.global.y)
       if (cv) cv.style.cursor = 'grabbing'
       return
     }
     const act = this.#canAct()
     const movable = act && sq >= 0 && this.#moves.canMoveFrom(sq)
-    this.#setHoverPiece(movable && !this.#press ? (this.#pieces[sq] ?? null) : null)
-    if (cv) {
+    const mouse = e.pointerType === 'mouse'
+    this.#setHoverPiece(movable && !press && mouse ? (this.#pieces[sq] ?? null) : null)
+    if (cv && mouse) {
       if (movable) cv.style.cursor = 'grab'
       else if (act && this.#selected >= 0 && sq >= 0 && this.#moves.target(this.#selected, sq))
         cv.style.cursor = 'pointer'
-      else cv.style.cursor = 'default'
+      else cv.style.cursor = this.#camera.zoom > 1.01 ? 'grab' : 'default'
     }
   }
 
+  /** Puts the dragged piece under the pointer (screen px) and fades a piece it would capture. */
+  #moveDragNode(x: number, y: number): void {
+    const d = this.#drag
+    if (!d) return
+    if (this.#dragAt) {
+      this.#dragAt.x = x
+      this.#dragAt.y = y
+    } else this.#dragAt = { x, y }
+    this.#tmpPoint.set(x, y)
+    this.#root.toLocal(this.#tmpPoint, undefined, this.#tmpPoint)
+    const n = d.node
+    n.node.position.set(this.#tmpPoint.x, this.#tmpPoint.y - this.#layout.square * 0.08)
+    this.#placeShadow(n)
+    // Fade a piece about to be captured so the lifted piece reads on top of it.
+    const sq = pointToSquare(this.#tmpPoint.x, this.#tmpPoint.y, this.#layout)
+    const t = sq >= 0 ? this.#moves.target(d.square, sq) : null
+    const victim = t?.capture ? (this.#pieces[sq] ?? null) : null
+    this.#fadeNode(victim && victim !== n ? victim : null)
+  }
+
   #onUp(e: FederatedPointerEvent): void {
+    const id = e.pointerId
+    this.#pointers.delete(id)
+    const g = this.#gesture
+    if (g?.kind === 'pinch' && (id === g.a || id === g.b)) {
+      this.#spent.delete(id)
+      this.#endPinch(id === g.a ? g.b : g.a)
+      return
+    }
+    if (g?.kind === 'pan' && g.id === id) {
+      this.#gesture = null
+      const cv = this.#app?.canvas
+      if (cv) cv.style.cursor = 'default'
+      return
+    }
+    if (this.#spent.delete(id)) return
     const press = this.#press
+    if (press && press.pointerId !== id) return
     this.#press = null
     if (this.#drag) {
       const from = this.#drag.square
+      this.#dragAt = null
       let to = this.#hit(e)
       if (to !== from && !(to >= 0 && this.#moves.target(from, to))) {
         const near = this.#touchTarget(e, from)
@@ -3465,7 +4202,182 @@ export class BoardView {
       }
       return
     }
-    if (press?.wasSelected && this.#hit(e) === press.square) this.#select(-1)
+    if (!press) return
+    if (press.kind === 'commit') {
+      if (this.#selected === press.square) this.#commit(press.square, press.to, false)
+      return
+    }
+    if (press.kind === 'piece') {
+      if (press.wasSelected && this.#hit(e) === press.square) this.#select(-1)
+      else if (this.#selected === press.square) this.#revealSelection()
+      return
+    }
+    if (press.illegal) this.#sound.play('illegal')
+    if (press.deselect) this.#select(-1)
+    if (press.touch && press.tapZoom) this.#doubleTap(e.global.x, e.global.y)
+  }
+
+  /** The browser took a pointer away (a system gesture, a palm): forget it. */
+  #onCancel(id: number): void {
+    this.#pointers.delete(id)
+    this.#spent.delete(id)
+    const g = this.#gesture
+    if (g?.kind === 'pinch' && (id === g.a || id === g.b)) this.#endPinch(-1)
+    else if (g?.kind === 'pan' && g.id === id) this.#gesture = null
+    if (this.#press?.pointerId === id) {
+      this.#press = null
+      this.#dragAt = null
+      if (this.#drag) this.#endDrag(false)
+    }
+  }
+
+  /** The second tap of a double tap (on nothing actionable) zooms in there, or back out. */
+  #doubleTap(x: number, y: number): void {
+    const now = performance.now()
+    const last = this.#lastTap
+    if (
+      last &&
+      now - last.time < DOUBLE_TAP_MS &&
+      Math.hypot(x - last.x, y - last.y) < DOUBLE_TAP_PX
+    ) {
+      this.#lastTap = null
+      if (this.#camera.zoom > 1.01) this.#setCamera(IDENTITY_CAMERA, true)
+      else {
+        const step = this.#zoomLimits.step
+        this.#setCamera(zoomAround(this.#camera, this.#viewport(), step, this.#rel(x, y)), true)
+      }
+      return
+    }
+    this.#lastTap = { time: now, x, y }
+  }
+
+  /** Two fingers are down: undo the first finger's press or drag and start zooming. */
+  #startPinch(): void {
+    const press = this.#press
+    this.#press = null
+    this.#dragAt = null
+    if (this.#drag) this.#endDrag(false)
+    if (press?.kind === 'piece' && !press.wasSelected) {
+      // The first finger's fresh selection was the start of a pinch, not a choice.
+      this.#selected = press.before
+      this.#refreshFx()
+    }
+    this.#lastTap = null
+    this.#anim.cancel(this.#camTween)
+    this.#camTween = null
+    const ids = [...this.#pointers.keys()]
+    const a = ids[0] as number
+    const b = ids[1] as number
+    const pa = this.#pointers.get(a) as Vec
+    const pb = this.#pointers.get(b) as Vec
+    const mid = this.#rel((pa.x + pb.x) / 2, (pa.y + pb.y) / 2)
+    this.#gesture = {
+      kind: 'pinch',
+      a,
+      b,
+      dist: Math.max(1, Math.hypot(pa.x - pb.x, pa.y - pb.y)),
+      zoom: this.#camera.zoom,
+      anchor: screenToBoard(this.#camera, this.#viewport(), mid.x, mid.y),
+    }
+    for (const id of ids) this.#spent.add(id)
+    this.#setHover(-1)
+    this.#setHoverPiece(null)
+  }
+
+  #updatePinch(): void {
+    const g = this.#gesture
+    if (g?.kind !== 'pinch') return
+    const pa = this.#pointers.get(g.a)
+    const pb = this.#pointers.get(g.b)
+    if (!pa || !pb) return
+    const dist = Math.max(1, Math.hypot(pa.x - pb.x, pa.y - pb.y))
+    const mid = this.#rel((pa.x + pb.x) / 2, (pa.y + pb.y) / 2)
+    const z = rubberZoom((g.zoom * dist) / g.dist, 1, this.#zoomLimits.max)
+    const vp = this.#viewport()
+    // The board point that was between the fingers stays between them.
+    this.#moveCamera(clampCamera(anchorCamera(z, g.anchor, mid, vp), vp))
+  }
+
+  /** A pinch ended: spring back inside the zoom limits; the finger still down may pan on. */
+  #endPinch(remaining: number): void {
+    this.#gesture = null
+    const lim = this.#zoomLimits
+    const z = this.#camera.zoom
+    if (z < 1.04) this.#setCamera(IDENTITY_CAMERA, true)
+    else if (z > lim.max) this.#setCamera({ ...this.#camera, zoom: lim.max }, true)
+    const p = remaining >= 0 ? this.#pointers.get(remaining) : undefined
+    if (p && z >= 1.04) {
+      this.#spent.delete(remaining)
+      this.#gesture = { kind: 'pan', id: remaining, x: p.x, y: p.y }
+    }
+  }
+
+  #updatePan(x: number, y: number): void {
+    const g = this.#gesture
+    if (g?.kind !== 'pan') return
+    const dx = x - g.x
+    const dy = y - g.y
+    g.x = x
+    g.y = y
+    if (dx === 0 && dy === 0) return
+    this.#anim.cancel(this.#camTween)
+    this.#camTween = null
+    this.#moveCamera(panBy(this.#camera, this.#viewport(), dx, dy))
+  }
+
+  /** A dragged piece near the viewport edge pans the zoomed board that way (`ms` since last frame). */
+  #edgePan(ms: number): void {
+    const at = this.#dragAt
+    const app = this.#app
+    if (!at || !app) return
+    const W = app.screen.width
+    const H = app.screen.height
+    const push = (d: number) => (d < EDGE_PAN_PX ? 1 - Math.max(0, d) / EDGE_PAN_PX : 0)
+    const vx = push(at.x) - push(W - at.x)
+    const vy = push(at.y) - push(H - at.y)
+    if (vx === 0 && vy === 0) return
+    const step = (EDGE_PAN_SPEED * Math.min(50, ms)) / 1000
+    const before = this.#camera
+    const next = panBy(before, this.#viewport(), vx * step, vy * step)
+    if (sameCamera(next, before)) return
+    this.#anim.cancel(this.#camTween)
+    this.#camTween = null
+    this.#moveCamera(next)
+    this.#moveDragNode(at.x, at.y)
+    this.#setHover(pointToSquare(this.#tmpPoint.x, this.#tmpPoint.y, this.#layout))
+  }
+
+  /** Ctrl/⌘ + wheel (and trackpad pinch) zooms around the pointer; a plain wheel pans when zoomed. */
+  #onWheel(e: WheelEvent): void {
+    if (!this.#ready || this.#promo || this.#gesture) return
+    const cv = this.#app?.canvas
+    if (!cv) return
+    const rect = cv.getBoundingClientRect()
+    const x = e.clientX - rect.left
+    const y = e.clientY - rect.top
+    const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? rect.height : 1
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault()
+      const dy = Math.max(-60, Math.min(60, e.deltaY * unit))
+      const z = Math.min(
+        this.#zoomLimits.max,
+        Math.max(1, this.#camera.zoom * Math.exp(-dy * 0.01)),
+      )
+      this.#anim.cancel(this.#camTween)
+      this.#camTween = null
+      this.#moveCamera(
+        z <= 1.0001
+          ? IDENTITY_CAMERA
+          : zoomAround(this.#camera, this.#viewport(), z, this.#rel(x, y)),
+      )
+      return
+    }
+    if (this.#camera.zoom > 1.01) {
+      e.preventDefault()
+      this.#anim.cancel(this.#camTween)
+      this.#camTween = null
+      this.#moveCamera(panBy(this.#camera, this.#viewport(), -e.deltaX * unit, -e.deltaY * unit))
+    }
   }
 
   #setHover(sq: number): void {
@@ -3580,12 +4492,18 @@ export class BoardView {
     const choices = target.promotions
     const container = new Container()
     const app = this.#app
-    const sq = this.#layout.square * this.#fitScale
-    const ext = boardExtent(this.#layout) * this.#fitScale
+    const k = this.#viewScale
+    const sq = this.#layout.square * k
+    const ext = boardExtent(this.#layout) * k
     const cx = this.#root.x
     const cy = this.#root.y
+    const W = app.screen.width
+    const H = app.screen.height
+    // Zoomed in, the board reaches past the viewport: the picker stays on the visible part.
+    const bx0 = Math.max(0, cx - ext / 2)
+    const by0 = Math.max(0, cy - ext / 2)
     const backdrop = new Graphics()
-      .rect(cx - ext / 2, cy - ext / 2, ext, ext)
+      .rect(bx0, by0, Math.min(W, cx + ext / 2) - bx0, Math.min(H, cy + ext / 2) - by0)
       .fill({ color: 0x07050a, alpha: 0.5 })
     backdrop.eventMode = 'static'
     backdrop.on('pointertap', () => this.#closePromo(true))
@@ -3594,15 +4512,19 @@ export class BoardView {
     squareCenter(to, this.#layout, this.#tmpVec)
     this.#tmpPoint.set(this.#tmpVec.x, this.#tmpVec.y)
     const g = this.#root.toGlobal(this.#tmpPoint)
-    const dir = g.y < cy ? 1 : -1
+    const halfField = (BOARD_SIZE * sq) / 2
+    const left = Math.max(0, cx - halfField)
+    const right = Math.min(W, cx + halfField)
+    const top = Math.max(0, cy - halfField)
+    const bottom = Math.min(H, cy + halfField)
+    const dir = g.y < (top + bottom) / 2 ? 1 : -1
     const tile = sq * 1.12
     const gap = sq * 0.1
     const total = choices.length * tile + (choices.length - 1) * gap
     let x = g.x
-    const halfField = (BOARD_SIZE * sq) / 2
-    x = Math.min(cx + halfField - tile / 2, Math.max(cx - halfField + tile / 2, x))
+    x = Math.min(right - tile / 2, Math.max(left + tile / 2, x))
     const startY = dir > 0 ? g.y - tile / 2 : g.y + tile / 2 - total
-    const startClamped = Math.min(cy + halfField - total, Math.max(cy - halfField, startY))
+    const startClamped = Math.min(bottom - total, Math.max(top, startY))
     const panel = new Graphics()
       .roundRect(x - tile / 2 - gap, startClamped - gap, tile + gap * 2, total + gap * 2, sq * 0.22)
       .fill({ color: 0x17110d, alpha: 0.94 })
@@ -3667,8 +4589,13 @@ export class BoardView {
       container.addChild(t)
     })
     this.#overlay.addChild(container)
-    this.#promo = { from, to, choices, container, tiles, focus: 0 }
+    const promo: Promo = { from, to, choices, container, tiles, focus: 0 }
+    this.#promo = promo
+    this.#edgeLabels.visible = false
     this.#focusPromo(0)
+    this.#say(
+      `Promote to: ${this.#promoText(promo)}. Arrow keys choose, Enter confirms, Escape cancels.`,
+    )
     container.alpha = 0
     this.#anim.add(this.#options.reducedMotion ? 0 : 140, (k) => {
       container.alpha = k
@@ -3707,11 +4634,118 @@ export class BoardView {
     if (!p) return
     this.#promo = null
     p.container.destroy({ children: true })
+    this.#syncEdgeLabels()
     if (revert) this.#settleAll()
+  }
+
+  // ---------------------------------------------------------------------------
+  // Keyboard and screen reader
+  // ---------------------------------------------------------------------------
+
+  #ctx(): AnnounceContext {
+    return {
+      seatLabel: this.#seatLabel,
+      localSeat: this.#localSeat,
+      ownCheck: this.#announceOwnCheck,
+    }
+  }
+
+  #say(text: string): void {
+    this.#announcer?.say(text)
+  }
+
+  /** The viewer's own seat, said as "You" / "your" in announcements (`null`: none). */
+  setLocalSeat(seat: Seat | null): void {
+    this.#localSeat = seat
+  }
+
+  /** The visible focus ring (keyboard use only). */
+  #showFocusRing(): void {
+    const cv = this.#app?.canvas
+    if (!cv || this.#keyboardFocus) return
+    this.#keyboardFocus = true
+    cv.style.outline = '3px solid #f1d58f'
+    cv.style.outlineOffset = '-3px'
+  }
+
+  #hideKeyboardCursor(): void {
+    const cv = this.#app?.canvas
+    if (cv && this.#keyboardFocus) {
+      cv.style.outline = 'none'
+      this.#keyboardFocus = false
+    }
+    if (this.#cursorVisible) {
+      this.#cursorVisible = false
+      this.#refreshFx()
+    }
+  }
+
+  readonly #onFocus = (): void => {
+    const cv = this.#app?.canvas
+    let keyboard = false
+    try {
+      keyboard = cv?.matches(':focus-visible') ?? false
+    } catch {
+      keyboard = false
+    }
+    // A pointer focuses the canvas too; only a keyboard user gets the cursor and the ring.
+    if (!keyboard) return
+    this.#showFocusRing()
+    if (this.#cursor < 0) this.#cursor = this.#defaultCursor()
+    this.#cursorVisible = true
+    this.#hover = this.#cursor
+    this.#refreshFx()
+    this.#reveal([this.#cursor], false)
+    this.#say(`Board. ${this.#turnText()} Cursor on ${this.#cursorText(this.#cursor)}.`)
+  }
+
+  readonly #onBlur = (): void => {
+    const cv = this.#app?.canvas
+    if (cv) cv.style.outline = 'none'
+    this.#keyboardFocus = false
+  }
+
+  /** "Your move." / "West to move." / "The game is over." */
+  #turnText(): string {
+    const s = this.#snapshot
+    if (!s) return ''
+    if (s.isOver) return 'The game is over.'
+    if (this.#canAct()) return 'Your move.'
+    if (s.seatToMove === this.#localSeat) return 'Your turn is coming.'
+    return `${this.#seatLabel(s.seatToMove)} to move.`
+  }
+
+  /** What the cursor square holds, and what the selected piece could do there. */
+  #cursorText(i: number): string {
+    let text = describeSquare(this.#snapshot, i, this.#ctx())
+    if (this.#selected >= 0) {
+      if (i === this.#selected) text += ', selected'
+      else {
+        const t = this.#moves.target(this.#selected, i)
+        if (t) {
+          text += t.castle
+            ? ', castle here'
+            : t.promotions.length > 0
+              ? t.capture
+                ? ', capture and promote'
+                : ', move and promote'
+              : t.capture
+                ? ', capture'
+                : ', move here'
+        }
+      }
+    }
+    return text
+  }
+
+  #promoText(p: Promo): string {
+    const k = p.choices[p.focus]
+    return `${k ? pieceWord(k) : ''}, ${p.focus + 1} of ${p.choices.length}`
   }
 
   #onKey(e: KeyboardEvent): void {
     this.#sound.unlock()
+    if (e.altKey || e.ctrlKey || e.metaKey) return
     const p = this.#promo
     if (p) {
       if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') this.#focusPromo(p.focus - 1)
@@ -3719,9 +4753,32 @@ export class BoardView {
       else if (e.key === 'Enter' || e.key === ' ') {
         const k = p.choices[p.focus]
         if (k) this.#choosePromo(k)
-      } else if (e.key === 'Escape') this.#closePromo(true)
-      else return
+        e.preventDefault()
+        return
+      } else if (e.key === 'Escape') {
+        this.#closePromo(true)
+        this.#say('Promotion cancelled.')
+        e.preventDefault()
+        return
+      } else return
       e.preventDefault()
+      this.#showFocusRing()
+      this.#say(this.#promoText(p))
+      return
+    }
+    // Zoom: + and - step in and out (toward the cursor), 0 shows the whole board.
+    if (e.key === '+' || e.key === '=' || e.key === '-' || e.key === '_' || e.key === '0') {
+      e.preventDefault()
+      const lim = this.#zoomLimits
+      const z = this.#camera.zoom
+      const focusSq = this.#cursor >= 0 ? this.#cursor : this.#defaultCursor()
+      const focus = nameOf(focusSq) as Square
+      let target = 1
+      if (e.key === '+' || e.key === '=') {
+        target = z < lim.step - 0.01 ? lim.step : Math.min(lim.max, z * 1.5)
+      } else if (e.key !== '0') target = z / 1.5 < 1.1 ? 1 : z / 1.5
+      this.setZoom(target, target > 1 ? { focus } : {})
+      this.#say(target > 1.01 ? `Zoomed in, ${target.toFixed(1)} times.` : 'Whole board.')
       return
     }
     const dirs: Record<string, readonly [number, number]> = {
@@ -3733,37 +4790,72 @@ export class BoardView {
     const d = dirs[e.key]
     if (d) {
       e.preventDefault()
+      this.#showFocusRing()
       if (this.#cursor < 0) this.#cursor = this.#defaultCursor()
-      else this.#cursor = stepCursor(this.#cursor, d[0], d[1], this.#perspective)
+      else if (this.#cursorVisible)
+        this.#cursor = stepCursor(this.#cursor, d[0], d[1], this.#perspective)
       this.#cursorVisible = true
       this.#hover = this.#cursor
       this.onSquareHover?.(nameOf(this.#cursor) as Square)
       this.#refreshFx()
+      this.#reveal([this.#cursor])
+      this.#say(this.#cursorText(this.#cursor))
       return
     }
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault()
-      if (this.#cursor < 0) {
-        this.#cursor = this.#defaultCursor()
+      this.#showFocusRing()
+      if (this.#cursor < 0 || !this.#cursorVisible) {
+        if (this.#cursor < 0) this.#cursor = this.#defaultCursor()
         this.#cursorVisible = true
+        this.#hover = this.#cursor
         this.#refreshFx()
+        this.#reveal([this.#cursor])
+        this.#say(`Cursor on ${this.#cursorText(this.#cursor)}.`)
         return
       }
-      this.#cursorVisible = true
-      if (!this.#canAct()) return
+      if (!this.#canAct()) {
+        this.#say(
+          this.#snapshot?.isOver ? 'The game is over.' : `Not your turn. ${this.#turnText()}`,
+        )
+        return
+      }
       const c = this.#cursor
       if (this.#selected >= 0 && this.#moves.target(this.#selected, c)) {
         this.#commit(this.#selected, c, false)
+        if (!this.#promo) this.#say('Move sent.')
       } else if (this.#moves.canMoveFrom(c)) {
-        this.#select(c === this.#selected ? -1 : c)
+        if (c === this.#selected) {
+          this.#select(-1)
+          this.#say('Put down. Nothing selected.')
+        } else {
+          this.#select(c)
+          const n = this.#moves.targetsFrom(c).length
+          const kind = this.#snapshot?.board[c]?.kind
+          this.#say(
+            `Picked up ${kind ? pieceWord(kind) : 'piece'} on ${nameOf(c)}: ${n} ${n === 1 ? 'move' : 'moves'}. Arrow to a square and press Enter.`,
+          )
+          this.#revealSelection()
+        }
       } else {
+        const had = this.#selected >= 0
         this.#select(-1)
+        const own = this.#snapshot?.board[c]?.owner === this.#interactive
+        this.#say(
+          had
+            ? `${this.#cursorText(c)}. Not a legal move; nothing selected.`
+            : own
+              ? `${this.#cursorText(c)}. That piece has no legal move.`
+              : `${this.#cursorText(c)}. Nothing to pick up.`,
+        )
       }
       return
     }
     if (e.key === 'Escape') {
-      this.#select(-1)
-      this.#cursorVisible = false
+      if (this.#selected >= 0) {
+        this.#select(-1)
+        this.#say('Nothing selected.')
+      } else this.#cursorVisible = false
       this.#refreshFx()
     }
   }

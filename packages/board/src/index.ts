@@ -16,12 +16,20 @@
  */
 
 export {
+  type AnnounceContext,
+  describeSquare,
+  describeStep,
+  pieceWord,
+} from './announce.ts'
+export {
   type BoardOptions,
   BoardView,
   type BoardViewInit,
   type SetCheckOptions,
   type SetSnapshotOptions,
+  type SetZoomOptions,
 } from './BoardView.ts'
+export { type Camera, zoomLimits } from './camera.ts'
 export * from './geometry.ts'
 export { MoveIndex, type MoveTarget, PROMOTION_ORDER } from './moves.ts'
 export {
