@@ -125,11 +125,29 @@ for (const size of [
     await B.getByTestId('team-resign-accept').click()
     await expect(A.getByTestId('placement-north')).toBeVisible({ timeout: 20_000 })
 
-    // Result screen: A reports B.
+    // Result screen: Escape in the menu or the report dialog closes only that layer, and Tab
+    // moves through the dialog (the result screen's own focus trap leaves it alone).
+    const backToLobbies = A.getByTestId('back-to-lobbies')
+    await A.getByTestId('result-menu-north').click()
+    await expect(A.getByTestId('player-menu')).toBeVisible()
+    await A.keyboard.press('Escape')
+    await expect(A.getByTestId('player-menu')).toHaveCount(0)
+    await expect(backToLobbies).toBeVisible()
+    await A.getByTestId('result-menu-north').click()
+    await A.getByTestId('player-menu').getByTestId('menu-report').click()
+    const report = A.getByTestId('report-dialog')
+    await expect(report).toBeVisible()
+    await A.getByTestId('report-reason-offensive_username').focus()
+    await A.keyboard.press('Tab')
+    await expect(report.getByTestId('report-note')).toBeFocused()
+    await A.keyboard.press('Escape')
+    await expect(report).toHaveCount(0)
+    await expect(backToLobbies).toBeVisible()
+
+    // A reports B.
     await A.getByTestId('result-menu-north').click()
     await shot(A, `${tag}-mod-result-menu`)
     await A.getByTestId('player-menu').getByTestId('menu-report').click()
-    const report = A.getByTestId('report-dialog')
     await expect(report).toBeVisible()
     await expect(report).toContainText(`Report ${b.name}`)
     await report.getByTestId('report-send').click()
@@ -142,6 +160,12 @@ for (const size of [
     await expect(sent).toContainText('Report sent')
     await sent.getByTestId('report-done').click()
     await expect(sent).toHaveCount(0)
+    // The menu now says "Reported" instead of offering a form the server would refuse.
+    await A.getByTestId('result-menu-north').click()
+    await expect(A.getByTestId('player-menu').getByTestId('menu-reported')).toBeVisible()
+    await expect(A.getByTestId('player-menu').getByTestId('menu-report')).toHaveCount(0)
+    await A.keyboard.press('Escape')
+    await expect(backToLobbies).toBeVisible()
 
     // B asks A to be friends from their result screen.
     const add = B.getByTestId('result-friend-south')
@@ -173,6 +197,10 @@ for (const size of [
     await expect(A.getByTestId('request-incoming')).toHaveCount(0)
     const blocked = A.getByTestId('friends-blocked')
     await expect(blocked.getByTestId('blocked-row')).toContainText(b.name)
+    // The row is gone, but focus stays on the page instead of falling to <body>.
+    await expect
+      .poll(() => A.evaluate(() => document.activeElement?.tagName ?? 'BODY'))
+      .not.toBe('BODY')
     await shot(A, `${tag}-mod-friends-blocked`, true)
 
     // B's request is gone too, without saying why.
@@ -209,6 +237,7 @@ for (const size of [
     await expect(B.getByRole('heading', { name: 'Friends', exact: true })).toHaveCount(0)
     await signInWithPassword(B, b.name, b.creds.password)
     await expect(B.getByText('This account has been suspended.')).toBeVisible()
+    await expect(B.getByTestId('suspended-help')).toContainText('Appeals')
     await shot(B, `${tag}-mod-suspended-sign-in`)
 
     // Lifting the suspension lets B back in.

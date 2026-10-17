@@ -14,10 +14,14 @@ import { ApiError, api } from './api.ts'
 import { socialChanged } from './social.ts'
 
 export {
+  markReported,
   playerMenuItems,
   REPORT_REASON_LABEL,
   REPORT_REASON_OPTIONS,
   reportCountsText,
+  reportedVersion,
+  subscribeReported,
+  wasReported,
 } from './moderation-labels.ts'
 export { REPORT_NOTE_MAX }
 

@@ -23,6 +23,19 @@ export const PROVIDER_LABELS: Record<OAuthProvider, string> = {
   microsoft: 'Microsoft',
 }
 
+/** Under a "This account has been suspended." error: where to appeal (Terms §8.2). */
+function SuspendedHelp() {
+  return (
+    <p className="text-sm text-parchment/70" data-testid="suspended-help">
+      If you think this is a mistake, see “Appeals” (section 8.2) in the{' '}
+      <Link to="/terms" className="text-gold underline-offset-2 hover:underline">
+        Terms of Service
+      </Link>
+      .
+    </p>
+  )
+}
+
 export function SignIn() {
   const { config, session, refreshSession, ageGate } = useAppState()
   const navigate = useNavigate()
@@ -34,6 +47,7 @@ export function SignIn() {
   const [token, setToken] = useState<string | null>(null)
   const [widgetKey, setWidgetKey] = useState(0)
   const [busy, setBusy] = useState<'password' | 'passkey' | OAuthProvider>()
+  const [suspended, setSuspended] = useState(false)
   const [error, setError] = useState<string | undefined>(() =>
     oauthErrorMessage(params.get('error'), ageGate(true) === 'ok'),
   )
@@ -67,6 +81,7 @@ export function SignIn() {
     setBusy('password')
     setError(undefined)
     setPasskeyError(undefined)
+    setSuspended(false)
     try {
       await declareGuestIntent()
     } catch {
@@ -80,6 +95,7 @@ export function SignIn() {
     resetCaptcha()
     if (err) {
       setError(authErrorMessage(err))
+      setSuspended(err.code === 'ACCOUNT_SUSPENDED')
       return
     }
     if (data && 'twoFactorRedirect' in data && data.twoFactorRedirect) {
@@ -93,12 +109,14 @@ export function SignIn() {
     setBusy('passkey')
     setError(undefined)
     setPasskeyError(undefined)
+    setSuspended(false)
     await declareGuestIntent().catch(() => {})
     const res = await authClient.signIn.passkey()
     setBusy(undefined)
     if (res?.error) {
       const code = 'code' in res.error ? res.error.code : undefined
       setPasskeyError(code ? authErrorMessage(res.error) : 'Passkey sign-in was cancelled.')
+      setSuspended(code === 'ACCOUNT_SUSPENDED')
       return
     }
     await finish()
@@ -182,6 +200,7 @@ export function SignIn() {
           <KeyRound aria-hidden="true" className="h-4 w-4" /> Sign in with a passkey
         </Button>
         {passkeyError ? <Alert>{passkeyError}</Alert> : null}
+        {passkeyError && suspended ? <SuspendedHelp /> : null}
       </div>
       <Divider label="or" />
       <form onSubmit={submit} className="flex flex-col gap-4">
@@ -207,6 +226,7 @@ export function SignIn() {
         </div>
         <Turnstile key={widgetKey} siteKey={config?.turnstileSiteKey} onToken={setToken} />
         {error ? <Alert>{error}</Alert> : null}
+        {error && suspended ? <SuspendedHelp /> : null}
         <Button
           type="submit"
           disabled={!token || !identifier || !password}

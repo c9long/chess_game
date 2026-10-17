@@ -56,6 +56,17 @@ function useDialogFocus(panel: RefObject<HTMLElement | null>, onClose: () => voi
     const onKey = (e: KeyboardEvent) => {
       const root = panel.current
       if (!root) return
+      // A menu or dialog opened from the panel (player menu, report, block) handles its own
+      // keys: its Escape closes only that layer, and Tab stays inside it.
+      if (e.defaultPrevented) return
+      const t = e.target
+      if (
+        t instanceof Element &&
+        !root.contains(t) &&
+        t.closest('[role="dialog"],[role="alertdialog"],[role="menu"]')
+      ) {
+        return
+      }
       if (e.key === 'Escape') {
         e.preventDefault()
         close.current()

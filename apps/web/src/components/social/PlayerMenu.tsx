@@ -9,15 +9,29 @@
 import type { PlayerTarget, ReportReasonId } from '@game/protocol'
 import { Ban, EllipsisVertical, Flag, ShieldCheck } from 'lucide-react'
 import { DropdownMenu } from 'radix-ui'
-import { type FormEvent, type RefObject, useId, useRef, useState } from 'react'
+import {
+  type FormEvent,
+  type RefObject,
+  useId,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react'
+import { ApiError } from '../../lib/api.ts'
+import { useAppState } from '../../lib/app-state.tsx'
+import { keepFocusNear } from '../../lib/focus-fallback.ts'
 import {
   blockPlayer,
+  markReported,
   moderationErrorMessage,
   playerMenuItems,
   REPORT_NOTE_MAX,
   REPORT_REASON_OPTIONS,
+  reportedVersion,
   reportPlayer,
+  subscribeReported,
   unblockPlayer,
+  wasReported,
 } from '../../lib/moderation.ts'
 import { socialNotice } from '../../lib/social.ts'
 import { ConfirmDialog, Dialog, DialogClose } from '../overlay.tsx'
@@ -58,13 +72,19 @@ export function PlayerMenu({
   const [dialog, setDialog] = useState<'block' | 'report'>()
   const [busy, setBusy] = useState(false)
   const [blockError, setBlockError] = useState<string>()
+  const viewerId = useAppState().session?.user.id ?? ''
+  useSyncExternalStore(subscribeReported, reportedVersion, reportedVersion)
+  // Already reported in this tab: the server allows one open report per player and game.
+  const reported = Boolean(viewerId) && wasReported(viewerId, target)
   const items = playerMenuItems({ viewerRegistered, targetRegistered, blocked, reportable })
   if (items.length === 0) return null
 
   async function unblock() {
+    const restoreFocus = keepFocusNear(trigger.current)
     try {
       await unblockPlayer(userId ? { userId } : target)
       socialNotice({ title: `You unblocked ${name}`, tone: 'success' })
+      restoreFocus()
     } catch (err) {
       socialNotice({ title: moderationErrorMessage(err), tone: 'error' })
     }
@@ -72,16 +92,20 @@ export function PlayerMenu({
 
   return (
     <>
-      <DropdownMenu.Root>
+      {/* Not modal: a modal menu hides the rest of the page from screen readers while it
+          still holds focusable controls (axe aria-hidden-focus). */}
+      <DropdownMenu.Root modal={false}>
         <DropdownMenu.Trigger asChild>
           <button
             ref={trigger}
             type="button"
             className={cx(
-              'inline-flex shrink-0 items-center justify-center border text-parchment/65 transition-colors hover:text-parchment data-[state=open]:bg-parchment/10 data-[state=open]:text-parchment',
+              // The hit area reaches about 44px tall (and a little wider) for touch, beyond
+              // the small visible button.
+              'relative inline-flex shrink-0 items-center justify-center border text-parchment/65 transition-colors before:absolute before:-inset-x-0.5 hover:text-parchment data-[state=open]:bg-parchment/10 data-[state=open]:text-parchment',
               compact
-                ? 'h-6 w-6 rounded-md border-parchment/15 hover:border-parchment/35'
-                : 'h-7 w-7 rounded-full border-parchment/15 hover:border-parchment/35',
+                ? 'h-6 w-6 rounded-md border-parchment/15 before:-inset-y-2.5 hover:border-parchment/35'
+                : 'h-7 w-7 rounded-full border-parchment/15 before:-inset-y-2 hover:border-parchment/35',
               className,
             )}
             aria-label={`More for ${name}`}
@@ -99,7 +123,7 @@ export function PlayerMenu({
             className="z-50 min-w-48 rounded-xl border border-parchment/10 bg-panel p-1.5 text-parchment shadow-xl shadow-black/50 data-[state=closed]:animate-overlay-out data-[state=open]:animate-pop-in"
             data-testid="player-menu"
           >
-            <DropdownMenu.Label className="truncate px-3 pt-1.5 pb-1 text-xs text-parchment/50">
+            <DropdownMenu.Label className="truncate px-3 pt-1.5 pb-1 text-xs text-parchment/65">
               {name}
             </DropdownMenu.Label>
             {items.includes('block') ? (
@@ -126,14 +150,21 @@ export function PlayerMenu({
               </DropdownMenu.Item>
             ) : null}
             {items.includes('report') ? (
-              <DropdownMenu.Item
-                className={cx(itemClass, 'text-seat-south-light')}
-                onSelect={() => setDialog('report')}
-                data-testid="menu-report"
-              >
-                <Flag aria-hidden="true" className="h-4 w-4" />
-                Report
-              </DropdownMenu.Item>
+              reported ? (
+                <DropdownMenu.Item className={itemClass} disabled data-testid="menu-reported">
+                  <Flag aria-hidden="true" className="h-4 w-4 text-parchment/60" />
+                  Reported
+                </DropdownMenu.Item>
+              ) : (
+                <DropdownMenu.Item
+                  className={cx(itemClass, 'text-seat-south-light')}
+                  onSelect={() => setDialog('report')}
+                  data-testid="menu-report"
+                >
+                  <Flag aria-hidden="true" className="h-4 w-4" />
+                  Report
+                </DropdownMenu.Item>
+              )
             ) : null}
           </DropdownMenu.Content>
         </DropdownMenu.Portal>
@@ -157,10 +188,13 @@ export function PlayerMenu({
         confirmTestId="block-confirm"
         onConfirm={async () => {
           setBusy(true)
+          // Blocking from a Friends row removes the row and this menu with it.
+          const restoreFocus = keepFocusNear(trigger.current)
           try {
             await blockPlayer(target)
             setDialog(undefined)
             socialNotice({ title: `You blocked ${name}`, tone: 'success' })
+            restoreFocus()
           } catch (err) {
             setBlockError(moderationErrorMessage(err))
           } finally {
@@ -176,6 +210,9 @@ export function PlayerMenu({
         name={name}
         target={target}
         returnFocusTo={trigger}
+        onSent={() => {
+          if (viewerId) markReported(viewerId, target)
+        }}
       />
     </>
   )
@@ -188,12 +225,15 @@ export function ReportDialog({
   name,
   target,
   returnFocusTo,
+  onSent,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   name: string
   target: PlayerTarget
   returnFocusTo: RefObject<HTMLElement | null>
+  /** The report was accepted (or one was already open): the menu then shows "Reported". */
+  onSent?: () => void
 }) {
   const [reason, setReason] = useState<ReportReasonId>()
   const [note, setNote] = useState('')
@@ -202,6 +242,9 @@ export function ReportDialog({
   const [sent, setSent] = useState(false)
   const noteId = useId()
   const groupId = useId()
+  const errorId = useId()
+  const firstReason = useRef<HTMLInputElement>(null)
+  const reasonMissing = error !== undefined && !reason
   const inGame = 'matchId' in target
 
   function reset() {
@@ -215,6 +258,7 @@ export function ReportDialog({
     e.preventDefault()
     if (!reason) {
       setError('Choose a reason.')
+      firstReason.current?.focus()
       return
     }
     setBusy(true)
@@ -222,7 +266,9 @@ export function ReportDialog({
     try {
       await reportPlayer(target, reason, note)
       setSent(true)
+      onSent?.()
     } catch (err) {
+      if (err instanceof ApiError && err.code === 'ALREADY_REPORTED') onSent?.()
       setError(moderationErrorMessage(err))
     } finally {
       setBusy(false)
@@ -252,12 +298,15 @@ export function ReportDialog({
     >
       {sent ? null : (
         <form className="flex flex-col gap-4" onSubmit={submit}>
-          <fieldset aria-labelledby={groupId}>
+          <fieldset
+            aria-labelledby={groupId}
+            {...(reasonMissing ? { 'aria-describedby': errorId } : {})}
+          >
             <legend id={groupId} className="mb-2 text-sm font-semibold">
               What’s wrong?
             </legend>
             <div className="flex flex-col gap-2">
-              {REPORT_REASON_OPTIONS.map((o) => (
+              {REPORT_REASON_OPTIONS.map((o, i) => (
                 <label
                   key={o.id}
                   className={cx(
@@ -268,6 +317,7 @@ export function ReportDialog({
                   )}
                 >
                   <input
+                    ref={i === 0 ? firstReason : undefined}
                     type="radio"
                     name="report-reason"
                     value={o.id}
@@ -276,6 +326,8 @@ export function ReportDialog({
                       setReason(o.id)
                       setError(undefined)
                     }}
+                    aria-invalid={reasonMissing || undefined}
+                    {...(reasonMissing ? { 'aria-describedby': errorId } : {})}
                     className="mt-1 accent-[var(--color-gold)]"
                     data-testid={`report-reason-${o.id}`}
                   />
@@ -290,9 +342,9 @@ export function ReportDialog({
           <div>
             <label htmlFor={noteId} className="mb-1.5 flex justify-between text-sm font-semibold">
               <span>
-                Note <span className="font-normal text-parchment/50">(optional)</span>
+                Note <span className="font-normal text-parchment/65">(optional)</span>
               </span>
-              <span className="font-normal text-parchment/50 tabular-nums">
+              <span className="font-normal text-parchment/65 tabular-nums">
                 {note.length}/{REPORT_NOTE_MAX}
               </span>
             </label>
@@ -307,7 +359,11 @@ export function ReportDialog({
               data-testid="report-note"
             />
           </div>
-          {error ? <Alert>{error}</Alert> : null}
+          {error ? (
+            <div id={errorId}>
+              <Alert>{error}</Alert>
+            </div>
+          ) : null}
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <DialogClose>
               <Button variant="ghost">Cancel</Button>

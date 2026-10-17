@@ -52,7 +52,7 @@ export function useSeatFriendActions(
           name={info.displayName}
           target={{ matchId: state.matchId, seat: seat as 0 | 1 | 2 | 3 }}
           viewerRegistered={registered}
-          targetRegistered={!info.isGuest && rel?.relation !== 'ineligible'}
+          targetRegistered={rel ? rel.blockable : !info.isGuest}
           blocked={blocked}
           reportable
           compact={compact}

@@ -22,6 +22,7 @@ import { PlayerMenu } from '../components/social/PlayerMenu.tsx'
 import { Alert, Button, cx, linkButtonClass, Spinner } from '../components/ui.tsx'
 import { ApiError } from '../lib/api.ts'
 import { isGuest, useAppState } from '../lib/app-state.tsx'
+import { keepFocusNear } from '../lib/focus-fallback.ts'
 import { useMatchStore } from '../lib/match.ts'
 import { moderationErrorMessage, unblockPlayer } from '../lib/moderation.ts'
 import {
@@ -37,6 +38,7 @@ import {
   refreshFriends,
   removeFriend,
   socialErrorMessage,
+  socialNotice,
   useSocial,
 } from '../lib/social.ts'
 
@@ -84,7 +86,7 @@ function Section({
 }) {
   const id = useId()
   return (
-    <section className="mt-8" aria-labelledby={id} data-testid={testId}>
+    <section className="mt-8" aria-labelledby={id} data-testid={testId} data-focus-fallback>
       <div className="mb-3 flex min-h-9 items-center justify-between gap-3">
         <h2 id={id} className="font-display text-lg font-semibold">
           {title}
@@ -353,11 +355,15 @@ function BlockedRow({ b }: { b: BlockedUser }) {
           busy={busy}
           aria-label={`Unblock ${b.username}`}
           data-testid="blocked-unblock"
-          onClick={async () => {
+          onClick={async (e) => {
             setBusy(true)
             setError(undefined)
+            // The row (and maybe the whole Blocked section) goes away: keep focus nearby.
+            const restoreFocus = keepFocusNear(e.currentTarget)
             try {
               await unblockPlayer({ userId: b.userId })
+              socialNotice({ title: `You unblocked ${b.username}`, tone: 'success' })
+              restoreFocus()
             } catch (err) {
               setError(moderationErrorMessage(err))
               setBusy(false)

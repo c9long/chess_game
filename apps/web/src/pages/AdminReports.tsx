@@ -3,6 +3,7 @@
  * Open reports, oldest first, with how often the player was reported; dismiss, or resolve
  * with Warn (recorded only), Reset username, or Suspend. Suspended accounts can be restored.
  */
+import { APP_NAME } from '@game/config'
 import type { AdminReport, AdminReportsResponse, ReportResolution } from '@game/protocol'
 import { Ban, Check, Copy, Flag, RotateCcw, ShieldCheck, TriangleAlert } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -10,6 +11,7 @@ import { relativeTime } from '../components/match/labels.ts'
 import { ConfirmDialog } from '../components/overlay.tsx'
 import { Alert, Button, CenteredPage, cx, PageTitle, Pill, Spinner } from '../components/ui.tsx'
 import { ApiError } from '../lib/api.ts'
+import { keepFocusNear } from '../lib/focus-fallback.ts'
 import {
   dismissReport,
   fetchReportQueue,
@@ -22,23 +24,39 @@ import {
 
 type Pending = { report: AdminReport; action: 'rename' | 'suspend' }
 
-const CONFIRM: Record<Pending['action'], { title: (n: string) => string; body: string }> = {
+/** The confirm text: `suspended` is a report about a player who is already suspended. */
+type ConfirmKind = Pending['action'] | 'suspended'
+
+const CONFIRM: Record<
+  ConfirmKind,
+  { title: (n: string) => string; body: string; confirm: string }
+> = {
   rename: {
     title: (n) => `Reset ${n}’s username?`,
-    body: 'They show as “Player-1234” until they choose a new username, which they are asked to do at their next visit. Their games and friends stay.',
+    body: 'They show as “Player-1234” until they choose a new username, which they are asked to do at their next visit. Nobody can take the old name for a year. Their games and friends stay. Their other open username reports are closed too.',
+    confirm: 'Reset username',
   },
   suspend: {
     title: (n) => `Suspend ${n}?`,
-    body: 'They are signed out everywhere, removed from any lobby, and can’t sign in until you lift the suspension. A game already running goes on. Their match history stays.',
+    body: 'They are signed out everywhere, removed from any lobby, and can’t sign in until you lift the suspension. A game already running goes on. Their match history stays. Their other open reports are closed too.',
+    confirm: 'Suspend',
+  },
+  suspended: {
+    title: () => 'Close this report?',
+    body: 'They are already suspended. The report is closed as “suspended”; nothing else changes.',
+    confirm: 'Close report',
   },
 }
+
+const confirmKind = (p: Pending): ConfirmKind =>
+  p.action === 'suspend' && p.report.reported.suspendedAt ? 'suspended' : p.action
 
 function CopyId({ id }: { id: string }) {
   const [copied, setCopied] = useState(false)
   return (
     <button
       type="button"
-      className="inline-flex items-center gap-1 rounded-md border border-parchment/15 px-1.5 py-0.5 font-mono text-[11px] text-parchment/70 hover:border-parchment/35 hover:text-parchment"
+      className="inline-flex min-h-7 items-center gap-1 rounded-md border border-parchment/15 px-2 py-1 font-mono text-[11px] text-parchment/70 hover:border-parchment/35 hover:text-parchment"
       title="Copy the match id"
       onClick={() => {
         void navigator.clipboard?.writeText(id).then(() => {
@@ -66,7 +84,7 @@ function ReportCard({
 }: {
   r: AdminReport
   busy: string | undefined
-  onDismiss: () => void
+  onDismiss: (opener: HTMLElement) => void
   onResolve: (action: ReportResolution, opener: HTMLElement) => void
 }) {
   const u = r.reported
@@ -118,7 +136,7 @@ function ReportCard({
           size="sm"
           busy={busy === 'dismiss'}
           disabled={locked}
-          onClick={onDismiss}
+          onClick={(e) => onDismiss(e.currentTarget)}
           data-testid="admin-dismiss"
         >
           Dismiss
@@ -145,16 +163,34 @@ function ReportCard({
           <RotateCcw aria-hidden="true" className="h-4 w-4" />
           Reset username
         </Button>
-        <Button
-          variant="danger"
-          size="sm"
-          disabled={locked || u.deleted}
-          onClick={(e) => onResolve('suspend', e.currentTarget)}
-          data-testid="admin-suspend"
-        >
-          <Ban aria-hidden="true" className="h-4 w-4" />
-          {u.suspendedAt ? 'Resolve (suspended)' : 'Suspend'}
-        </Button>
+        {u.suspendedAt ? (
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={locked}
+            onClick={(e) => onResolve('suspend', e.currentTarget)}
+            data-testid="admin-suspend"
+          >
+            <Ban aria-hidden="true" className="h-4 w-4" />
+            Close (already suspended)
+          </Button>
+        ) : (
+          <Button
+            variant="danger"
+            size="sm"
+            disabled={locked || u.deleted || u.isGuest}
+            title={
+              u.isGuest
+                ? 'Guests can start a new guest session, so they can’t be suspended'
+                : undefined
+            }
+            onClick={(e) => onResolve('suspend', e.currentTarget)}
+            data-testid="admin-suspend"
+          >
+            <Ban aria-hidden="true" className="h-4 w-4" />
+            Suspend
+          </Button>
+        )}
       </div>
     </li>
   )
@@ -183,12 +219,28 @@ export function AdminReports() {
     void load()
   }, [load])
 
-  async function run(id: string, what: string, fn: () => Promise<unknown>) {
+  // The tab title follows the heading when access is refused (App sets "Review queue").
+  useEffect(() => {
+    if (denied) document.title = `Moderators only · ${APP_NAME}`
+  }, [denied])
+
+  /**
+   * Runs an action. `from` is the control it came from: when the action removes that row,
+   * focus moves to the report now in its place (or the next one up), else the heading.
+   */
+  async function run(id: string, what: string, fn: () => Promise<unknown>, from?: HTMLElement) {
     setBusy({ id, what })
     setError(undefined)
+    const index = data?.reports.findIndex((r) => r.id === id) ?? -1
+    const restoreFocus = keepFocusNear(from, () => {
+      const cards = document.querySelectorAll<HTMLElement>('[data-testid="admin-report"]')
+      if (index >= 0) return cards[Math.min(index, cards.length - 1)]
+      return document.getElementById('suspended-title')
+    })
     try {
       await fn()
       await load()
+      restoreFocus()
       return true
     } catch (err) {
       setError(moderationErrorMessage(err))
@@ -256,10 +308,10 @@ export function AdminReports() {
                   key={r.id}
                   r={r}
                   busy={busy?.id === r.id ? busy.what : undefined}
-                  onDismiss={() => void run(r.id, 'dismiss', () => dismissReport(r.id))}
+                  onDismiss={(el) => void run(r.id, 'dismiss', () => dismissReport(r.id), el)}
                   onResolve={(action, el) => {
                     if (action === 'warn') {
-                      void run(r.id, 'warn', () => resolveReport(r.id, 'warn'))
+                      void run(r.id, 'warn', () => resolveReport(r.id, 'warn'), el)
                       return
                     }
                     opener.current = el
@@ -298,7 +350,14 @@ export function AdminReports() {
                       size="sm"
                       busy={busy?.id === s.userId}
                       disabled={busy !== undefined}
-                      onClick={() => void run(s.userId, 'unsuspend', () => unsuspendUser(s.userId))}
+                      onClick={(e) =>
+                        void run(
+                          s.userId,
+                          'unsuspend',
+                          () => unsuspendUser(s.userId),
+                          e.currentTarget,
+                        )
+                      }
                       data-testid="admin-unsuspend"
                     >
                       Lift suspension
@@ -316,10 +375,10 @@ export function AdminReports() {
         onOpenChange={(o) => {
           if (!o) setPending(undefined)
         }}
-        title={pending ? CONFIRM[pending.action].title(pending.report.reported.name) : ''}
-        description={pending ? (error ?? CONFIRM[pending.action].body) : undefined}
-        confirmLabel={pending?.action === 'suspend' ? 'Suspend' : 'Reset username'}
-        tone="danger"
+        title={pending ? CONFIRM[confirmKind(pending)].title(pending.report.reported.name) : ''}
+        description={pending ? (error ?? CONFIRM[confirmKind(pending)].body) : undefined}
+        confirmLabel={pending ? CONFIRM[confirmKind(pending)].confirm : ''}
+        tone={pending && confirmKind(pending) === 'suspended' ? 'default' : 'danger'}
         busy={busy !== undefined}
         returnFocusTo={opener}
         testId="admin-confirm-dialog"
@@ -327,7 +386,8 @@ export function AdminReports() {
         onConfirm={async () => {
           if (!pending) return
           const { report, action } = pending
-          if (await run(report.id, action, () => resolveReport(report.id, action))) {
+          const from = opener.current ?? undefined
+          if (await run(report.id, action, () => resolveReport(report.id, action), from)) {
             setPending(undefined)
           }
         }}

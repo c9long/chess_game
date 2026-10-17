@@ -190,9 +190,6 @@ export const PlayerCard = memo(function PlayerCard({
               Bot · {botLevelText(seat.botLevel)}
             </span>
           ) : null}
-          {friendAction ? (
-            <span className="ml-auto flex shrink-0 pl-0.5">{friendAction}</span>
-          ) : null}
         </p>
         {/* Full rows: civ and seat (a bot's civ is already its name). */}
         <p className="hidden truncate text-xs leading-tight text-parchment/65 lg:block">
@@ -232,6 +229,10 @@ export const PlayerCard = memo(function PlayerCard({
             <span className="truncate text-[10px] font-semibold text-parchment/65 uppercase lg:hidden">
               Bot {botLevelText(seat.botLevel)}
             </span>
+          ) : null}
+          {/* Add friend and the player menu: on the bottom line, so the name keeps its width. */}
+          {friendAction ? (
+            <span className="-my-1 ml-auto flex shrink-0 items-center pl-0.5">{friendAction}</span>
           ) : null}
         </div>
       </div>

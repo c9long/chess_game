@@ -1,10 +1,14 @@
 import { REPORT_REASONS } from '@game/protocol'
 import { describe, expect, it } from 'vitest'
 import {
+  markReported,
   playerMenuItems,
   REPORT_REASON_LABEL,
   REPORT_REASON_OPTIONS,
   reportCountsText,
+  reportedVersion,
+  subscribeReported,
+  wasReported,
 } from './moderation-labels.ts'
 
 describe('playerMenuItems', () => {
@@ -76,5 +80,27 @@ describe('reportCountsText', () => {
     expect(reportCountsText({ openReports: 3, openReporters: 2, totalReports: 5 })).toBe(
       '3 open reports from 2 players · 5 in total',
     )
+  })
+})
+
+describe('reports sent in this tab', () => {
+  it('remembers a report per viewer, target and game, and notifies subscribers', () => {
+    const target = { matchId: 'm1', seat: 2 as const }
+    let calls = 0
+    const unsubscribe = subscribeReported(() => calls++)
+    const before = reportedVersion()
+    expect(wasReported('me', target)).toBe(false)
+    markReported('me', target)
+    expect(wasReported('me', target)).toBe(true)
+    expect(wasReported('someone-else', target)).toBe(false)
+    expect(wasReported('me', { matchId: 'm1', seat: 1 })).toBe(false)
+    expect(wasReported('me', { matchId: 'm2', seat: 2 })).toBe(false)
+    expect(wasReported('me', { userId: 'u1' })).toBe(false)
+    expect(reportedVersion()).toBe(before + 1)
+    expect(calls).toBe(1)
+    unsubscribe()
+    markReported('me', { userId: 'u1' })
+    expect(wasReported('me', { userId: 'u1' })).toBe(true)
+    expect(calls).toBe(1)
   })
 })
