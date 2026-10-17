@@ -103,4 +103,11 @@ describe('reports sent in this tab', () => {
     expect(wasReported('me', { userId: 'u1' })).toBe(true)
     expect(calls).toBe(1)
   })
+  it('keys profile reports by username, in any case', () => {
+    expect(wasReported('me', { username: 'Ana_7' })).toBe(false)
+    markReported('me', { username: 'Ana_7' })
+    expect(wasReported('me', { username: 'ana_7' })).toBe(true)
+    expect(wasReported('me', { username: 'ana_8' })).toBe(false)
+    expect(wasReported('me', { userId: 'ana_7' })).toBe(false)
+  })
 })

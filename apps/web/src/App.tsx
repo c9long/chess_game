@@ -26,6 +26,7 @@ const Match = lazy(() => import('./pages/Match.tsx').then((m) => ({ default: m.M
 const Play = lazy(() => import('./pages/Play.tsx').then((m) => ({ default: m.Play })))
 const History = lazy(() => import('./pages/History.tsx').then((m) => ({ default: m.History })))
 const Friends = lazy(() => import('./pages/Friends.tsx').then((m) => ({ default: m.Friends })))
+const Profile = lazy(() => import('./pages/Profile.tsx').then((m) => ({ default: m.Profile })))
 // Moderators only (the server checks every call); never linked for other players.
 const AdminReports = lazy(() =>
   import('./pages/AdminReports.tsx').then((m) => ({ default: m.AdminReports })),
@@ -93,6 +94,7 @@ const PAGE_TITLES: [prefix: string, title: string][] = [
   ['/match/', 'Game'],
   ['/history', 'Match history'],
   ['/friends', 'Friends'],
+  ['/u/', 'Player profile'],
   ['/leaderboard', 'Leaderboard'],
   ['/admin/reports', 'Review queue'],
   ['/account', 'Account'],
@@ -207,6 +209,15 @@ export function App() {
                   element={
                     <RequireAuth>
                       <AdminReports />
+                    </RequireAuth>
+                  }
+                />
+                {/* Public player profiles (signed-in viewers; guests have no profile). */}
+                <Route
+                  path="u/:username"
+                  element={
+                    <RequireAuth>
+                      <Profile />
                     </RequireAuth>
                   }
                 />

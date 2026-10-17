@@ -15,9 +15,10 @@ import {
   useRef,
   useState,
 } from 'react'
-import { Link, useNavigate } from 'react-router'
+import { Link, useNavigate, useSearchParams } from 'react-router'
 import { MODE_LABEL, relativeTime } from '../components/match/labels.ts'
 import { ConfirmDialog, Dialog, DialogClose } from '../components/overlay.tsx'
+import { FindPlayers } from '../components/social/FindPlayers.tsx'
 import { PlayerMenu } from '../components/social/PlayerMenu.tsx'
 import { Alert, Button, cx, linkButtonClass, Spinner } from '../components/ui.tsx'
 import { ApiError } from '../lib/api.ts'
@@ -34,6 +35,7 @@ import {
   declineChallenge,
   declineFriendRequest,
   dropChallenge,
+  profilePath,
   refreshChallenges,
   refreshFriends,
   removeFriend,
@@ -98,6 +100,18 @@ function Section({
       </div>
       {children}
     </section>
+  )
+}
+
+/** A player's name, linking to their public profile. */
+function ProfileName({ name }: { name: string }) {
+  return (
+    <Link
+      to={profilePath(name)}
+      className="block truncate font-semibold underline-offset-2 hover:text-gold hover:underline"
+    >
+      {name}
+    </Link>
   )
 }
 
@@ -282,7 +296,7 @@ function FriendRow({
     <li className={rowClass} data-testid="friend-row" data-online={f.online || undefined}>
       <Avatar name={f.username} online={f.online} />
       <div className="min-w-0 flex-1">
-        <p className="truncate font-semibold">{f.username}</p>
+        <ProfileName name={f.username} />
         <p className={cx('text-xs', f.online ? 'text-[#7fe0b5]' : 'text-parchment/50')}>
           {f.online ? 'Online' : 'Offline'}
           <span className="hidden text-parchment/45 sm:inline">
@@ -606,9 +620,9 @@ function EmptyFriends() {
       <Users aria-hidden="true" className="mx-auto h-9 w-9 text-parchment/40" />
       <h3 className="mt-3 font-display text-lg font-semibold">No friends yet</h3>
       <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-parchment/65">
-        Play a game with someone, then choose <strong className="text-parchment">Add friend</strong>{' '}
-        on their player card, on the result screen or in your match history. You can add anyone
-        you’re playing or have finished a game with.
+        Add someone by username or search for them above, or choose{' '}
+        <strong className="text-parchment">Add friend</strong> on a player card, the result screen
+        or in your match history.
       </p>
       <div className="mt-6 flex flex-wrap justify-center gap-3">
         <Link to="/play" className={linkButtonClass('primary')}>
@@ -645,6 +659,25 @@ export function Friends() {
     void refreshFriends()
     void refreshChallenges()
   }, [guest])
+
+  // A profile's "Challenge" button lands here with ?challenge=<friend's user id>.
+  const [params, setParams] = useSearchParams()
+  const challengeParam = params.get('challenge')
+  const friendIds = friends?.friends.map((f) => f.userId).join(',')
+  useEffect(() => {
+    if (!challengeParam || friendIds === undefined) return
+    if (friendIds.split(',').includes(challengeParam)) {
+      setChallengeFor(challengeParam)
+      setChallengeOpen(true)
+    }
+    setParams(
+      (p) => {
+        p.delete('challenge')
+        return p
+      },
+      { replace: true },
+    )
+  }, [challengeParam, friendIds, setParams])
 
   if (guest) {
     return (
@@ -724,7 +757,7 @@ export function Friends() {
                   <li key={r.user.userId} className={rowClass} data-testid="request-incoming">
                     <Avatar name={r.user.username} />
                     <div className="min-w-0 flex-1">
-                      <p className="truncate font-semibold">{r.user.username}</p>
+                      <ProfileName name={r.user.username} />
                       <p className="text-xs text-parchment/55">
                         Wants to be friends · {relativeTime(r.createdAt)}
                       </p>
@@ -761,7 +794,7 @@ export function Friends() {
                   <li key={r.user.userId} className={rowClass} data-testid="request-outgoing">
                     <Avatar name={r.user.username} />
                     <div className="min-w-0 flex-1">
-                      <p className="truncate font-semibold">{r.user.username}</p>
+                      <ProfileName name={r.user.username} />
                       <p className="text-xs text-parchment/55">
                         Request sent · {relativeTime(r.createdAt)}
                       </p>
@@ -792,54 +825,70 @@ export function Friends() {
             </Section>
           ) : null}
 
-          <Section
-            title="Friends"
-            count={list.length}
-            action={
-              list.length > 0 ? (
-                <Button
-                  size="sm"
-                  onClick={(e) => openChallenge(undefined, e.currentTarget)}
-                  disabled={Boolean(busyRoomId)}
-                  title={
-                    busyRoomId
-                      ? 'You’re in a lobby or game. Leave it to send a new challenge.'
-                      : undefined
-                  }
-                  data-testid="challenge-friends"
-                >
-                  <Swords aria-hidden="true" className="h-4 w-4" />
-                  Challenge
-                </Button>
-              ) : null
-            }
-            testId="friends-list"
-          >
-            {list.length === 0 ? (
-              <EmptyFriends />
-            ) : (
-              <ul className="flex flex-col gap-2">
-                {list.map((f) => (
-                  <FriendRow
-                    key={f.userId}
-                    f={f}
-                    busyElsewhere={Boolean(busyRoomId)}
-                    onChallenge={(fr, el) => openChallenge(fr, el)}
-                    onRemove={(fr, el) => {
-                      opener.current = el
-                      setRemoveError(undefined)
-                      setRemoving(fr)
-                    }}
-                  />
-                ))}
-              </ul>
-            )}
-            {list.length >= max ? (
-              <p className="mt-3 text-xs text-parchment/55">
-                You’ve reached the limit of {max} friends. Remove one to add someone new.
-              </p>
-            ) : null}
-          </Section>
+          {/*
+            "Add friends" sits above the list only while it is empty; once you have friends the
+            list comes first, so a phone doesn't scroll past both add fields to reach them.
+            Keyed siblings, so React moves them without remounting (the search keeps its text).
+          */}
+          {(() => {
+            const addSection = (
+              <Section key="add" title="Add friends" testId="friends-add">
+                <FindPlayers />
+              </Section>
+            )
+            const friendsSection = (
+              <Section
+                key="friends"
+                title="Friends"
+                count={list.length}
+                action={
+                  list.length > 0 ? (
+                    <Button
+                      size="sm"
+                      onClick={(e) => openChallenge(undefined, e.currentTarget)}
+                      disabled={Boolean(busyRoomId)}
+                      title={
+                        busyRoomId
+                          ? 'You’re in a lobby or game. Leave it to send a new challenge.'
+                          : undefined
+                      }
+                      data-testid="challenge-friends"
+                    >
+                      <Swords aria-hidden="true" className="h-4 w-4" />
+                      Challenge
+                    </Button>
+                  ) : null
+                }
+                testId="friends-list"
+              >
+                {list.length === 0 ? (
+                  <EmptyFriends />
+                ) : (
+                  <ul className="flex flex-col gap-2">
+                    {list.map((f) => (
+                      <FriendRow
+                        key={f.userId}
+                        f={f}
+                        busyElsewhere={Boolean(busyRoomId)}
+                        onChallenge={(fr, el) => openChallenge(fr, el)}
+                        onRemove={(fr, el) => {
+                          opener.current = el
+                          setRemoveError(undefined)
+                          setRemoving(fr)
+                        }}
+                      />
+                    ))}
+                  </ul>
+                )}
+                {list.length >= max ? (
+                  <p className="mt-3 text-xs text-parchment/55">
+                    You’ve reached the limit of {max} friends. Remove one to add someone new.
+                  </p>
+                ) : null}
+              </Section>
+            )
+            return list.length > 0 ? [friendsSection, addSection] : [addSection, friendsSection]
+          })()}
 
           {friends.blocked.length > 0 ? (
             <Section title="Blocked" count={friends.blocked.length} testId="friends-blocked">
@@ -872,7 +921,7 @@ export function Friends() {
         title={`Remove ${removing?.username ?? 'friend'}?`}
         description={
           removeError ??
-          'They won’t be told, but you’ll disappear from each other’s friends lists. To be friends again, one of you has to send a new request after a game together.'
+          'They won’t be told, but you’ll disappear from each other’s friends lists. To be friends again, one of you has to send a new request.'
         }
         confirmLabel="Remove friend"
         tone="danger"

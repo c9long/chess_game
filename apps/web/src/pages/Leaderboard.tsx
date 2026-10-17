@@ -7,10 +7,25 @@ import { RankedBadge } from '../components/match/RankedBadge.tsx'
 import { Alert, Spinner } from '../components/ui.tsx'
 import { api } from '../lib/api.ts'
 import { displayName, isGuest, useAppState } from '../lib/app-state.tsx'
+import { profilePath } from '../lib/social.ts'
 
 type Bucket = (typeof RATING_BUCKETS)[number]
 
 const bucketKey = (b: { mode: string; timeControl: string }) => `${b.mode}-${b.timeControl}`
+
+/** A leaderboard name: a link to the player's profile for signed-in viewers. */
+function PlayerName({ name, link }: { name: string; link: boolean }) {
+  if (!link) return <>{name}</>
+  return (
+    <Link
+      to={profilePath(name)}
+      className="underline-offset-2 hover:text-gold hover:underline"
+      data-testid="leaderboard-name"
+    >
+      {name}
+    </Link>
+  )
+}
 
 function YouChip() {
   return (
@@ -24,7 +39,15 @@ function YouChip() {
  * The top three: podium cards (2nd, 1st, 3rd) from 640px, compact medal rows on phones. Each
  * card is a leaderboard row (same test id and content as the table rows).
  */
-function Podium({ entries, me }: { entries: LeaderboardEntry[]; me: string | null }) {
+function Podium({
+  entries,
+  me,
+  link,
+}: {
+  entries: LeaderboardEntry[]
+  me: string | null
+  link: boolean
+}) {
   // Wide screens: 2nd, 1st, 3rd, each in a fixed column (so a lone leader still stands in
   // the middle). Heights step down from the middle.
   const order = [
@@ -52,7 +75,7 @@ function Podium({ entries, me }: { entries: LeaderboardEntry[]; me: string | nul
           >
             <Medal place={e.rank} size={e.rank === 1 ? 'lg' : 'md'} />
             <p className="min-w-0 flex-1 truncate font-semibold sm:max-w-full sm:flex-none">
-              {e.username}
+              <PlayerName name={e.username} link={link} />
               {mine ? <YouChip /> : null}
             </p>
             <p className="text-right sm:text-center">
@@ -174,7 +197,7 @@ export function Leaderboard() {
           </div>
         ) : (
           <>
-            <Podium entries={shown.entries.slice(0, 3)} me={me} />
+            <Podium entries={shown.entries.slice(0, 3)} me={me} link={Boolean(session)} />
             {shown.entries.length > 3 ? (
               <div className="overflow-hidden rounded-2xl border border-parchment/10 bg-panel/80">
                 <table className="w-full text-sm">
@@ -218,7 +241,7 @@ export function Leaderboard() {
                             </span>
                           </td>
                           <td className="max-w-0 truncate px-2 py-2.5 font-semibold">
-                            {e.username}
+                            <PlayerName name={e.username} link={Boolean(session)} />
                             {mine ? <YouChip /> : null}
                           </td>
                           <td className="px-2 py-2.5 text-right font-display text-base font-semibold tabular-nums">

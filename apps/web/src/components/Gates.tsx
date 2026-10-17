@@ -243,7 +243,11 @@ export function RequireAuth({ children }: { children: React.ReactNode }) {
     // there (rather than wait) so a route opened mid-sign-out can't leave a spinner behind.
     if (signingOut) return <Navigate to="/" replace state={leaveState} />
     return (
-      <Navigate to="/sign-in" replace state={{ from: `${location.pathname}${location.search}` }} />
+      <Navigate
+        to="/sign-in"
+        replace
+        state={{ from: `${location.pathname}${location.search}${location.hash}` }}
+      />
     )
   }
   return <>{children}</>

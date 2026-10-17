@@ -56,9 +56,9 @@ const ICON = {
 
 /** Per state: border, background and text. */
 const TONE: Record<Shown, string> = {
-  add: 'border-gold/45 text-gold enabled:hover:bg-gold/10',
+  add: 'border-gold/45 text-gold not-aria-disabled:hover:bg-gold/10',
   // They asked you: the one filled button, so it stands apart from "Add".
-  accept: 'border-gold bg-gold text-ink enabled:hover:bg-gold-bright',
+  accept: 'border-gold bg-gold text-ink not-aria-disabled:hover:bg-gold-bright',
   sent: 'border-parchment/20 text-parchment/70',
   friends: 'border-seat-east/40 text-seat-east-light',
   friendsFull: 'border-parchment/15 text-parchment/60',
@@ -100,6 +100,8 @@ export function FriendButton({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string>()
   const [optimistic, setOptimistic] = useState<Shown>()
+  /** Said once by a polite live region after a click works (the button keeps focus). */
+  const [announced, setAnnounced] = useState('')
   const base = shownState(relation, capReached, outgoingFull)
   // A fresh answer from the server replaces the optimistic one (e.g. a request declined).
   // biome-ignore lint/correctness/useExhaustiveDependencies: reset whenever the server state changes
@@ -129,11 +131,16 @@ export function FriendButton({
     if (!actionable || busy) return
     setBusy(true)
     setError(undefined)
+    setAnnounced('')
     try {
       const res = (await (shown === 'accept' ? onAccept() : onAdd())) as
         | { relation?: string }
         | undefined
-      setOptimistic(shown === 'accept' || res?.relation === 'friends' ? 'friends' : 'sent')
+      const next = shown === 'accept' || res?.relation === 'friends' ? 'friends' : 'sent'
+      setOptimistic(next)
+      setAnnounced(
+        next === 'friends' ? `You and ${name} are now friends.` : `Friend request sent to ${name}.`,
+      )
     } catch (err) {
       const message = socialErrorMessage(err)
       setError(message)
@@ -153,26 +160,33 @@ export function FriendButton({
 
   if (compact) {
     return (
-      <button
-        type="button"
-        className={cx(
-          'inline-flex h-6 min-w-6 shrink-0 items-center justify-center gap-1 rounded-md border text-[11px] font-semibold whitespace-nowrap transition-colors lg:px-1.5',
-          'disabled:cursor-default',
-          TONE[shown],
-          className,
-        )}
-        onClick={click}
-        disabled={!actionable || busy}
-        aria-label={`${LABEL[shown]}: ${name}`}
-        title={title}
-        data-testid={testId}
-        data-state={shown}
-      >
-        {icon}
-        <span aria-hidden="true" className="hidden lg:inline">
-          {SHORT[shown]}
+      <>
+        <button
+          type="button"
+          className={cx(
+            'inline-flex h-6 min-w-6 shrink-0 items-center justify-center gap-1 rounded-md border text-[11px] font-semibold whitespace-nowrap transition-colors lg:px-1.5',
+            'aria-disabled:cursor-default',
+            TONE[shown],
+            className,
+          )}
+          onClick={click}
+          // aria-disabled, not disabled: a disabled button drops keyboard focus to the page
+          // when a click turns it into "Request sent" or "Friends".
+          aria-disabled={!actionable || busy || undefined}
+          aria-label={`${LABEL[shown]}: ${name}`}
+          title={title}
+          data-testid={testId}
+          data-state={shown}
+        >
+          {icon}
+          <span aria-hidden="true" className="hidden lg:inline">
+            {SHORT[shown]}
+          </span>
+        </button>
+        <span role="status" className="sr-only">
+          {announced}
         </span>
-      </button>
+      </>
     )
   }
 
@@ -182,11 +196,13 @@ export function FriendButton({
         type="button"
         className={cx(
           'inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-xs font-semibold whitespace-nowrap transition-colors',
-          'disabled:cursor-default',
+          'aria-disabled:cursor-default',
           TONE[shown],
         )}
         onClick={click}
-        disabled={!actionable || busy}
+        // aria-disabled, not disabled: a disabled button drops keyboard focus to the page
+        // when a click turns it into "Request sent" or "Friends".
+        aria-disabled={!actionable || busy || undefined}
         aria-label={`${LABEL[shown]}: ${name}`}
         title={title}
         data-testid={testId}
@@ -206,6 +222,9 @@ export function FriendButton({
           <span aria-hidden="true">{LABEL[shown]}</span>
         )}
       </button>
+      <span role="status" className="sr-only">
+        {announced}
+      </span>
       {error ? (
         <span role="alert" className="max-w-48 text-right text-[11px] text-seat-south-light">
           {error}

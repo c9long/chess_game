@@ -34,6 +34,8 @@ export async function blockPlayer(target: PlayerTarget): Promise<BlockResponse> 
 }
 
 export async function unblockPlayer(target: PlayerTarget): Promise<void> {
+  // A username target (a profile) always comes with the user id once you blocked them.
+  if ('username' in target) throw new Error('unblock needs the user id')
   const path =
     'userId' in target
       ? `/api/blocks/${encodeURIComponent(target.userId)}`

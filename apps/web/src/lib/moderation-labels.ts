@@ -58,9 +58,10 @@ const sentListeners = new Set<() => void>()
 let sentVersion = 0
 
 export function reportKey(viewerId: string, target: PlayerTarget): string {
-  return 'matchId' in target
-    ? `${viewerId}|m:${target.matchId}:${target.seat}`
-    : `${viewerId}|u:${target.userId}`
+  if ('matchId' in target) return `${viewerId}|m:${target.matchId}:${target.seat}`
+  return 'userId' in target
+    ? `${viewerId}|u:${target.userId}`
+    : `${viewerId}|n:${target.username.toLowerCase()}`
 }
 
 export function markReported(viewerId: string, target: PlayerTarget): void {

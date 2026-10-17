@@ -13,6 +13,10 @@ import type {
   FriendRequestResponse,
   FriendsResponse,
   MatchRelationsResponse,
+  PlayerSearchResponse,
+  PublicProfileResponse,
+  SocialSettingsBody,
+  SocialSettingsResponse,
 } from '@game/protocol'
 import { useEffect } from 'react'
 import { create } from 'zustand'
@@ -140,6 +144,27 @@ async function act<T>(fn: () => Promise<T>): Promise<T> {
 
 export const sendFriendRequest = (matchId: string, seat: number) =>
   act(() => api<FriendRequestResponse>('/api/friends/requests', { body: { matchId, seat } }))
+
+/** Friend request by exact username (any case). */
+export const sendFriendRequestByUsername = (username: string) =>
+  act(() => api<FriendRequestResponse>('/api/friends/requests', { body: { username } }))
+
+/** Player search (3+ characters; the server ranks prefix matches first). */
+export const searchPlayers = (q: string) =>
+  api<PlayerSearchResponse>(`/api/players?q=${encodeURIComponent(q)}`)
+
+/** A player's public profile (404 "Player not found" for anyone without one). */
+export const fetchProfile = (username: string) =>
+  api<PublicProfileResponse>(`/api/players/${encodeURIComponent(username)}`)
+
+/** Your "who can send me friend requests" setting. */
+export const fetchSocialSettings = () => api<SocialSettingsResponse>('/api/friends/settings')
+
+export const saveSocialSettings = (body: SocialSettingsBody) =>
+  api<SocialSettingsResponse>('/api/friends/settings', { method: 'PUT', body })
+
+/** Where a player's public profile lives. */
+export const profilePath = (username: string) => `/u/${encodeURIComponent(username)}`
 
 export const acceptFriendRequest = (userId: string) =>
   act(() =>
