@@ -7,6 +7,8 @@ import type { Piece, PieceKind, Seat } from '@game/rules'
  * game rules.
  */
 export const MATERIAL_VALUE: Record<Exclude<PieceKind, 'king'>, number> = {
+  // England's Prime Ministers (all four lead; only the last one's loss ends the seat's game).
+  prime_minister: 4,
   queen: 9,
   rook: 5,
   bishop: 3,
@@ -15,12 +17,15 @@ export const MATERIAL_VALUE: Record<Exclude<PieceKind, 'king'>, number> = {
 }
 
 /** Display order of lost pieces: most valuable first. */
-export const LOST_ORDER = ['queen', 'rook', 'bishop', 'knight', 'pawn'] as const
+export const LOST_ORDER = ['queen', 'prime_minister', 'rook', 'bishop', 'knight', 'pawn'] as const
 
 export type LostKind = (typeof LOST_ORDER)[number]
 
 export interface SeatMaterial {
-  /** Lost pieces per kind (leaders are left out: losing one ends the seat's game). */
+  /**
+   * Lost pieces per kind. A single leader (a king) is left out: losing it ends the seat's game.
+   * England's Prime Ministers are counted, since it loses them one at a time.
+   */
   lost: Record<LostKind, number>
   /** Sum of the lost pieces' values. */
   points: number
@@ -55,10 +60,18 @@ export function lostMaterial(
   return SEAT_ORDER.map((seat) => {
     const s = start.get(seat) ?? new Map<PieceKind, number>()
     const c = now.get(seat) ?? new Map<PieceKind, number>()
-    const lost: Record<LostKind, number> = { queen: 0, rook: 0, bishop: 0, knight: 0, pawn: 0 }
+    const lost: Record<LostKind, number> = {
+      queen: 0,
+      prime_minister: 0,
+      rook: 0,
+      bishop: 0,
+      knight: 0,
+      pawn: 0,
+    }
     let promoted = 0
     for (const kind of LOST_ORDER) {
       if (kind === 'pawn') continue
+      // Pawns never promote to a Prime Minister: a surplus can't come from a promotion.
       const diff = (s.get(kind) ?? 0) - (c.get(kind) ?? 0)
       if (diff > 0) lost[kind] = diff
       else promoted += -diff

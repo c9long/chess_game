@@ -88,6 +88,18 @@ describe('the landing page demo games', () => {
     },
   )
 
+  it('uses only civs with the standard army (the seeds were tuned on it)', () => {
+    for (const g of DEMO_GAMES) {
+      const game = Game.create({ mode: 'ffa', civs: g.civs })
+      try {
+        expect(game.legalMoves()).toHaveLength(30)
+        expect(game.snapshot().leaderSquares.map((l) => l.length)).toEqual([1, 1, 1, 1])
+      } finally {
+        game.free()
+      }
+    }
+  })
+
   it('shows every army on the board in the still (reduced motion) position', () => {
     for (const g of DEMO_GAMES) {
       const game = Game.create({ mode: 'ffa', civs: g.civs })

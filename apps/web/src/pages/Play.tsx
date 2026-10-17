@@ -20,6 +20,7 @@ import {
   useState,
 } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router'
+import { CivArmyNote } from '../components/CivArmyNote.tsx'
 import { CivEmblem, civName } from '../components/CivEmblem.tsx'
 import { CivSelect } from '../components/CivSelect.tsx'
 import { ClockIcon, LockIcon } from '../components/game/icons.tsx'
@@ -154,9 +155,7 @@ function PlayVsBots({ blocked }: { blocked: boolean }) {
             Your civilization
           </h3>
           <CivSelect value={civ} onChange={setCiv} labelId={civLabelId} className="max-w-md" />
-          <p className="mt-2 max-w-md text-xs text-parchment/55">
-            For now a civilization is your emblem; special abilities arrive in a later update.
-          </p>
+          <CivArmyNote civ={civ} className="mt-2 max-w-md" />
         </div>
         <div className="flex flex-col gap-5 lg:pt-14">
           <div className="flex flex-col gap-1.5">

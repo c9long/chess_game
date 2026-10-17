@@ -18,6 +18,7 @@ import { CIVILIZATIONS } from '@game/config'
 import { Check, ChevronDown, Search, Shield } from 'lucide-react'
 import { Popover } from 'radix-ui'
 import { type KeyboardEvent, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { specialArmy } from '../lib/civ-info.ts'
 import {
   bestMatchIndex,
   buildSearchIndex,
@@ -27,6 +28,7 @@ import {
   listNavIndex,
 } from '../lib/civ-select.ts'
 import { safeCollisionPadding } from '../lib/safe-area.ts'
+import { SpecialArmyTag } from './CivArmyNote.tsx'
 import { CivEmblem, hasCivEmblem } from './CivEmblem.tsx'
 import { cx } from './ui.tsx'
 
@@ -271,6 +273,7 @@ export function CivSelect({
           >
             {selected ? selected.name : placeholder}
           </span>
+          {selected ? <SpecialArmyTag civ={selected.slug} /> : null}
           <span
             aria-hidden="true"
             className="grid h-7 w-7 shrink-0 place-items-center rounded-md border border-gold/25 bg-ink/40 text-gold/80 transition group-hover/civ:border-gold/50 group-hover/civ:text-gold group-data-[state=open]/civ:border-gold/60 group-data-[state=open]/civ:text-gold"
@@ -381,17 +384,27 @@ export function CivSelect({
                   )}
                 >
                   <Medallion civ={c} size="md" />
-                  <span
-                    className={cx(
-                      'min-w-0 flex-1 truncate font-display text-base font-semibold tracking-tight',
-                      isSelected
-                        ? 'text-gold-bright'
-                        : isActive
-                          ? 'text-parchment'
-                          : 'text-parchment/80',
-                    )}
-                  >
-                    {c.name}
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <span className="flex min-w-0 items-center gap-2">
+                      <span
+                        className={cx(
+                          'min-w-0 truncate font-display text-base font-semibold tracking-tight',
+                          isSelected
+                            ? 'text-gold-bright'
+                            : isActive
+                              ? 'text-parchment'
+                              : 'text-parchment/80',
+                        )}
+                      >
+                        {c.name}
+                      </span>
+                      <SpecialArmyTag civ={c.slug} />
+                    </span>
+                    {specialArmy(c.slug) ? (
+                      <span className="truncate text-[11px] leading-tight text-parchment/60">
+                        {specialArmy(c.slug)?.summary}
+                      </span>
+                    ) : null}
                   </span>
                   {isSelected ? (
                     <Check

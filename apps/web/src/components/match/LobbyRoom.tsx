@@ -7,6 +7,7 @@ import { leaveMatch, type MatchRoom, matchApi } from '../../lib/match.ts'
 import { useMediaQuery } from '../../lib/media.ts'
 import { usePrefs } from '../../lib/prefs.ts'
 import type { MatchFeed } from '../../pages/Match.tsx'
+import { CivArmyNote } from '../CivArmyNote.tsx'
 import { CivEmblem, civName } from '../CivEmblem.tsx'
 import { CIV_SELECT_CONTENT_ATTR, CivSelect } from '../CivSelect.tsx'
 import { CheckIcon, CopyIcon, CrownIcon, DotsIcon, PlusIcon } from '../game/icons.tsx'
@@ -649,16 +650,14 @@ export function LobbyRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) 
             <h2 id={civLabelId} className="mb-1 font-display text-lg font-semibold">
               Your civilization
             </h2>
-            <p className="mb-4 text-xs text-parchment/55">
-              For now a civilization is your emblem; special abilities arrive in a later update.
-            </p>
             <CivSelect
               value={me.civ}
               onChange={(civ) => send('setCiv', { civ: civ as never })}
               labelId={civLabelId}
             />
+            <CivArmyNote civ={me.civ} className="mt-2" />
             {/* Phones: a bar fixed to the bottom of the screen; larger screens: in the card. */}
-            <div className="fixed inset-x-0 bottom-0 z-30 flex gap-2 border-t border-parchment/10 bg-ink/90 px-4 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] backdrop-blur sm:static sm:z-auto sm:mt-5 sm:border-0 sm:bg-transparent sm:p-0 sm:backdrop-blur-none">
+            <div className="fixed inset-x-0 bottom-0 z-30 flex gap-2 border-t border-parchment/10 bg-ink/90 px-4 pt-2 pb-[max(0.5rem,var(--safe-bottom))] backdrop-blur sm:static sm:z-auto sm:mt-5 sm:border-0 sm:bg-transparent sm:p-0 sm:backdrop-blur-none">
               <Button
                 className="h-11 flex-1"
                 variant={me.ready ? 'secondary' : 'primary'}

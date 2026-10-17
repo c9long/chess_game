@@ -1,6 +1,7 @@
 import bishop from '@game/assets/pieces/bishop.svg?raw'
 import knight from '@game/assets/pieces/knight.svg?raw'
 import pawn from '@game/assets/pieces/pawn.svg?raw'
+import primeMinister from '@game/assets/pieces/prime-minister.svg?raw'
 import queen from '@game/assets/pieces/queen.svg?raw'
 import rook from '@game/assets/pieces/rook.svg?raw'
 import { LOST_ORDER, type LostKind, type SeatMaterial } from '../../lib/material.ts'
@@ -12,6 +13,7 @@ const strip = (svg: string) =>
 
 const GLYPHS: Record<LostKind, string> = {
   queen: strip(queen),
+  prime_minister: strip(primeMinister),
   rook: strip(rook),
   bishop: strip(bishop),
   knight: strip(knight),
@@ -20,6 +22,7 @@ const GLYPHS: Record<LostKind, string> = {
 
 const NAMES: Record<LostKind, [string, string]> = {
   queen: ['queen', 'queens'],
+  prime_minister: ['Prime Minister', 'Prime Ministers'],
   rook: ['rook', 'rooks'],
   bishop: ['bishop', 'bishops'],
   knight: ['knight', 'knights'],

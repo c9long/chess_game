@@ -63,7 +63,12 @@ test('the civ dropdown works from the keyboard (ARIA combobox + listbox)', async
   // Typing filters by name (case- and accent-insensitive); Enter picks the best match.
   await page.keyboard.type('ÉNG')
   await expect(list.getByRole('option')).toHaveCount(1)
-  await expect(list.getByRole('option')).toHaveText('England')
+  // England fields a special army: its row says so under the name.
+  await expect(list.getByRole('option')).toContainText('England')
+  await expect(list.getByRole('option')).toContainText('Special army')
+  await expect(list.getByRole('option')).toContainText(
+    'Four Prime Ministers replace the king, queen and knights',
+  )
   await page.keyboard.press('Backspace')
   await page.keyboard.press('Backspace')
   await page.keyboard.press('Backspace')

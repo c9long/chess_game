@@ -25,6 +25,8 @@ const VALUE: Record<PieceKind, number> = {
   queen: 9,
   // Taking a leader knocks a whole army out: always worth it.
   king: 30,
+  // One of England's four Prime Ministers (only the last one knocks the army out).
+  prime_minister: 5,
 }
 
 /** Small deterministic PRNG (mulberry32), so a seed replays the same game. */
@@ -42,17 +44,19 @@ export function seededRandom(seed: number): () => number {
 /**
  * The games the landing page cycles through: civs per seat and the seed of the move picker's
  * randomness. Fixed, so every one of them is covered by demo-moves.test.ts (no army falls
- * early, the game ends).
+ * early, the game ends). Only civs with the standard army appear: for them the civ is just an
+ * emblem, so a seed replays the same game whatever civs it shows. (England, whose Prime
+ * Ministers change the game, was swapped out when it got its special army.)
  */
 export const DEMO_GAMES: readonly {
   readonly civs: readonly [CivId, CivId, CivId, CivId]
   readonly seed: number
 }[] = [
   { civs: ['france', 'japan', 'mali', 'canada'], seed: 7936 },
-  { civs: ['england', 'china', 'usa', 'germany'], seed: 15855 },
-  { civs: ['russia', 'mali', 'japan', 'england'], seed: 23774 },
+  { civs: ['france', 'china', 'usa', 'germany'], seed: 15855 },
+  { civs: ['russia', 'mali', 'japan', 'canada'], seed: 23774 },
   { civs: ['canada', 'germany', 'china', 'france'], seed: 31694 },
-  { civs: ['usa', 'russia', 'england', 'mali'], seed: 39612 },
+  { civs: ['usa', 'russia', 'china', 'mali'], seed: 39612 },
 ]
 
 /** How many of the best-looking candidates get the (costlier) look-ahead check. */

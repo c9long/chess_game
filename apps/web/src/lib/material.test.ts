@@ -38,7 +38,14 @@ describe('lostMaterial', () => {
     const now = without(without(start, 'west', 'queen'), 'west', 'pawn', 2)
     const [south, west] = lostMaterial(start, now)
     expect(south?.points).toBe(0)
-    expect(west?.lost).toEqual({ queen: 1, rook: 0, bishop: 0, knight: 0, pawn: 2 })
+    expect(west?.lost).toEqual({
+      queen: 1,
+      prime_minister: 0,
+      rook: 0,
+      bishop: 0,
+      knight: 0,
+      pawn: 2,
+    })
     expect(west?.points).toBe(11)
   })
 
@@ -54,5 +61,27 @@ describe('lostMaterial', () => {
   it('ignores empty squares and the leader', () => {
     const now = [...without(start, 'east', 'king'), null, null] as (Piece | null)[]
     expect(lostMaterial([...start, null], now)[3]?.points).toBe(0)
+  })
+
+  it("counts England's lost Prime Ministers, and a promotion to a queen it never started with", () => {
+    // England (civ v2): R M B M M B M R + 8 pawns.
+    const england: Piece[] = [
+      p('south', 'rook'),
+      p('south', 'rook'),
+      p('south', 'bishop'),
+      p('south', 'bishop'),
+      ...Array.from({ length: 4 }, () => p('south', 'prime_minister')),
+      ...Array.from({ length: 8 }, () => p('south', 'pawn')),
+    ]
+    const begin = [...england, ...army('west')]
+    const now = [
+      ...without(without(begin, 'south', 'prime_minister', 2), 'south', 'pawn'),
+      p('south', 'queen'),
+    ]
+    const [south] = lostMaterial(begin, now)
+    expect(south?.lost.prime_minister).toBe(2)
+    expect(south?.lost.queen).toBe(0)
+    expect(south?.lost.pawn).toBe(0)
+    expect(south?.points).toBe(8)
   })
 })
