@@ -205,16 +205,17 @@ An ACTIVE seat is **defeated** when:
 ### Designed now, built later (each is tracked in `TODO.md`)
 | Feature | How it's accounted for |
 |---|---|
-| **Move log** | Every action is stored as an ordered event (`match_events`) with notation and clock times. The live room already broadcasts each move as an event. The UI panel is the only missing piece. |
+| **Move log** | Built (2026-10-17): every action is stored as an ordered event (`match_events`) with notation and clock times and broadcast as an `events` message; a `moveLog` message sends the game so far on join and reconnect. The game screen's move log lists the moves by round (one column per seat) in the engine's notation, with captures, checks, leader captures, passes, defeats and the result marked (side panel on wide screens; a collapsible bar on phones). |
 | **Resign** | Built (M5): the `resign` message; in Teams a vote with the teammate (`respondResign`, `resignEvent`); a Teams resignation resigns the whole team (§2). |
 | **Offer / accept draw** | `game.offerDraw` and `game.respondDraw` are reserved. Results already support shared placements. |
 | **Takebacks, chat, emotes** | Reserved message namespaces (`game.takeback*`, `chat.*`). Basic moderation (blocking, reports, review queue) is built ("Moderation" below); chat moderation comes with chat. |
-| **Spectating & replays** | Rooms support a read-only spectator role. Replays re-simulate `match_events` under the stored `rules_version` and civ versions. |
+| **Spectating & replays** | Spectating (built 2026-10-17): `joinById(<match room>, { spectate: true })` puts a spectator in the match's own watch room, which mirrors the match state and passes its messages on but accepts no game messages, so spectators can never act. Public lobbies and games (listed in the lobby browser while they run) and solo games: anyone signed in; password lobbies: the password; challenge lobbies: invitees and the host's friends; never the room's own players; at most 20 accounts at a time (one place each), shown as "N watching". Ranked games are shown at least 2 full rounds late while they run (anti-cheat), with draw offers and resignation votes hidden; the whole game shows once it ends. The Friends page lists friends' running games to watch. Replays (built 2026-10-17) re-simulate `match_events` under the stored `rules_version` and civ versions: `GET /api/matches/:id/replay` (participants only for now) gives the config, the actions and the server's re-simulated final position, the browser replays them with the rules WASM (History → Replay: board, move log with click-to-jump, step/play controls) and checks it reaches the same position. Rules version 1 (12×12) games can't be replayed. |
 | **Draft mode** (bans + pick order) | The lobby state machine already has phases `waiting → civ_select → [draft_ban → draft_pick] → countdown → in_game → finished`. `pickMode` and `draftConfig` live on the lobby, and DB tables are reserved. |
 | **Unique-civ matchmaking** | A matchmaking queue service slots in beside lobbies. The uniqueness constraint is a queue option. |
 | **Civ abilities** | Roster/leader data model, per-civ defeat condition and modifier hooks (§2), versioned civ definitions (§5). |
 | **Progression / XP / unlocks / civ mastery** | DB tables reserved, keyed by user id, so they are shared with Unity. |
-| **Rematch, AFK → bot takeover (casual), premoves** | Lobby can be re-opened after a match. A bot-service seat can replace an abandoning human. Premoves are a client-side queue validated by the server. |
+| **Rematch** | Built (2026-10-17): after the game a seated human proposes (`proposeRematch`), the other humans answer within 60 s (no answer or leaving = no), bots come along; the server opens a fresh lobby (new room, later a new match id) with the same settings, seats, civs and bots, holding the accepting players' seats for 30 s. Ranked only if the game was ranked and all four accepted, else casual with declined seats open. |
+| **AFK → bot takeover (casual), premoves** | A bot-service seat can replace an abandoning human. Premoves are a client-side queue validated by the server. |
 | **Unity client + Steam** | See §7. |
 
 ### Friends and challenges (built 2026-10-17)
@@ -519,11 +520,11 @@ If many players fill seats with strong bots, the next step is a bigger OVH tier 
   - report-driven review queue;
   - account trust levels (new accounts need N casual games before rated);
   - rating rollback for confirmed cheaters;
-  - spectator delay on rated games once spectating exists.
+  - spectator delay on rated games (built 2026-10-17: ranked games are shown to spectators at least 2 full rounds late).
 - **Monetization (undecided):** options are cosmetic piece sets/boards/emblem frames, a supporter subscription, a paid Steam version alongside a free web version, or battle-pass-style progression. Constraints: no pay-to-win, and the choice affects progression data design.
 - **Mobile:** responsive layout, touch drag/tap controls, portrait board scaling, PWA install.
 - **Designed-for-later features:**
-  - **in-game:** move log UI, resign, draw offers, takebacks, chat/emotes, spectating, replays, rematch, AFK bot takeover (casual), premoves;
+  - **in-game:** move log UI, resign, draw offers, takebacks, chat/emotes, spectating, replays, rematch, AFK bot takeover (casual), premoves (built so far: move log, resign, draw offers, spectating, replays, rematch);
   - **game modes:** draft mode, unique-civ matchmaking, civ abilities, progression/XP/unlocks/civ mastery;
   - **Unity / Steam:** Unity client, Steam auth plugin + publisher Web API key, Steam integration;
   - **platform:** Sign in with Apple, NNUE bots, Redis scale-out, analytics (with cookie consent), marketing email (opt-in).
