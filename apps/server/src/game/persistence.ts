@@ -12,7 +12,13 @@ import {
   matches,
   matchPlayers,
 } from '@game/db'
-import { isUntimed } from '@game/protocol'
+import {
+  applyReplayAction,
+  isUntimed,
+  REPLAY_ACTION_EVENT_TYPES,
+  type ReplayAction,
+  replayActionsOf,
+} from '@game/protocol'
 import { type CivId, Game, type GameConfigInput, type Outcome, RULES_VERSION } from '@game/rules'
 import { and, asc, eq, inArray, sql } from 'drizzle-orm'
 import type { Logger } from '../logger.ts'
@@ -40,10 +46,11 @@ export type MatchEventType =
  * a solo FFA game ends at its player's elimination, end reason `player_eliminated`); every
  * other `game_end` row is derived from the action before it.
  */
-export const ACTION_EVENT_TYPES = ['move', 'promotion', 'timeout', 'abandon', 'resign'] as const
+export const ACTION_EVENT_TYPES = REPLAY_ACTION_EVENT_TYPES
 // A Teams resignation is one `resign` action (seat: the proposer) replayed as
 // `Game.applyResign`, which resigns the whole team; the vote rows before it
-// (`resign_proposal`, `resign_response`) are not actions.
+// (`resign_proposal`, `resign_response`) are not actions. Shared with every replay viewer
+// (`@game/protocol` replay.ts).
 
 export interface EventRow {
   seat: number | null
@@ -448,12 +455,18 @@ export function canResimulate(rulesVersion: number): boolean {
   return rulesVersion === RULES_VERSION
 }
 
+/** What a replay of a stored match needs: the engine config and the actions in order. */
+export interface StoredReplay {
+  config: { mode: 'ffa' | 'teams'; civs: { id: CivId; version: number }[]; rulesVersion: number }
+  actions: ReplayAction[]
+}
+
 /**
- * Rebuilds a match from its database rows alone (config from matches/match_players, actions
- * from match_events) and returns the final position string. Throws
- * `UnsupportedRulesVersionError` for a match from an older rules version (see above).
+ * Reads a match's replay input from its database rows alone (config from matches and
+ * match_players, actions from match_events). Throws `UnsupportedRulesVersionError` for a match
+ * from an older rules version (see above).
  */
-export async function resimulate(db: Executor, matchId: string): Promise<string> {
+export async function loadReplay(db: Executor, matchId: string): Promise<StoredReplay> {
   const [match] = await db.select().from(matches).where(eq(matches.id, matchId))
   if (!match) throw new Error(`match ${matchId} not found`)
   if (!canResimulate(match.rulesVersion)) {
@@ -467,12 +480,7 @@ export async function resimulate(db: Executor, matchId: string): Promise<string>
     .orderBy(asc(matchPlayers.seat))
   const civs = players.map((p) => ({ id: p.slug as CivId, version: p.version }))
   if (civs.length !== 4) throw new Error(`match ${matchId} has ${civs.length} players`)
-  const config: GameConfigInput = {
-    mode: match.mode,
-    civs: civs as unknown as NonNullable<GameConfigInput['civs']>,
-    rulesVersion: match.rulesVersion,
-  }
-  const actions = await db
+  const rows = await db
     .select({
       seq: matchEvents.seq,
       seat: matchEvents.seat,
@@ -487,27 +495,31 @@ export async function resimulate(db: Executor, matchId: string): Promise<string>
       ),
     )
     .orderBy(asc(matchEvents.seq))
-  const game = Game.create(config)
+  return {
+    config: { mode: match.mode, civs, rulesVersion: match.rulesVersion },
+    actions: replayActionsOf(rows),
+  }
+}
+
+/** Plays a stored replay through the engine; returns the final position string. */
+export function playReplay(replay: StoredReplay): string {
+  const game = Game.create(replay.config as unknown as GameConfigInput)
   try {
-    const seats = ['south', 'west', 'north', 'east'] as const
-    for (const a of actions) {
-      const seat = seats[a.seat ?? -1]
-      if (a.type === 'move' || a.type === 'promotion') {
-        game.applyMove(String((a.payload as { notation?: unknown }).notation))
-      } else if (a.type === 'timeout' && seat) {
-        game.applyTimeout(seat)
-      } else if (a.type === 'abandon' && seat) {
-        game.applyAbandon(seat)
-      } else if (a.type === 'resign' && seat) {
-        game.applyResign(seat)
-      } else if (a.type === 'game_end' && (a.payload as { agreedDraw?: unknown }).agreedDraw) {
-        game.applyAgreedDraw()
-      }
-    }
+    for (const a of replay.actions) applyReplayAction(game, a)
     return game.positionString()
   } finally {
     game.free()
   }
+}
+
+/**
+ * Rebuilds a match from its database rows alone and returns the final position string (the
+ * same path every replay viewer takes: `replayActionsOf` + `applyReplayAction` from
+ * `@game/protocol`). Throws `UnsupportedRulesVersionError` for a match from an older rules
+ * version (see above).
+ */
+export async function resimulate(db: Executor, matchId: string): Promise<string> {
+  return playReplay(await loadReplay(db, matchId))
 }
 
 /** Startup: games left in_progress by a crash or kill are aborted (unrated). */

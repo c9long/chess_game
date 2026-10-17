@@ -15,7 +15,13 @@ import {
   Server,
 } from '@colyseus/core'
 import { WebSocketTransport } from '@colyseus/ws-transport'
-import { COLYSEUS_PATH, ERROR_CODES, ROOM_NAMES } from '@game/protocol'
+import {
+  COLYSEUS_PATH,
+  ERROR_CODES,
+  joinOptionsSchema,
+  PROTOCOL_VERSION,
+  ROOM_NAMES,
+} from '@game/protocol'
 import { fromNodeHeaders } from 'better-auth/node'
 import { type Request, type Response, Router } from 'express'
 import { type AppConfig, allowedOrigins } from '../config.ts'
@@ -27,6 +33,7 @@ import { joinError } from './errors.ts'
 import { type MatchmakeInfo, MatchRoom } from './match-room.ts'
 import { resolvePlayer } from './player-auth.ts'
 import type { GameService } from './service.ts'
+import { WatchRoom } from './watch-room.ts'
 
 /** The public lobby browser: Colyseus' realtime room listing, for signed-in players only. */
 export class PublicLobbyRoom extends LobbyRoom {
@@ -68,13 +75,44 @@ async function checkReconnectOwner(
   headers: Headers,
 ) {
   const room = matchMaker.getLocalRoomById(roomId)
-  if (!(room instanceof MatchRoom)) return
+  // Spectators' places too: a token alone must not let someone else watch a game they may not.
+  if (!(room instanceof MatchRoom) && !(room instanceof WatchRoom)) return
   const token = typeof body.reconnectionToken === 'string' ? body.reconnectionToken : ''
   const owner = room.reconnectionOwner(token)
   if (!owner) return // an unknown token: Colyseus refuses it
   const session = await MatchRoom.service.auth.api.getSession({ headers }).catch(() => null)
   if (!session) throw joinError('unauthorized')
   if (session.user.id !== owner) throw joinError('not_seated')
+}
+
+/**
+ * The watch room for `joinById(target, { spectate: true })`. For a match room the caller is
+ * admitted first (signed in, allowed to watch, the password), and only then is the watch room
+ * created on first use; `info.admittedSpectator` tells the watch room's onAuth not to check
+ * again. A watch room's own id is checked by its onAuth.
+ */
+async function spectatorRoomId(
+  target: string,
+  body: Record<string, unknown>,
+  info: MatchmakeInfo,
+  headers: Headers,
+): Promise<string> {
+  const room = matchMaker.getLocalRoomById(target)
+  if (room instanceof WatchRoom) return target
+  if (!(room instanceof MatchRoom)) throw joinError('room_not_found')
+  if (body.protocolVersion !== PROTOCOL_VERSION) throw joinError('protocol_mismatch')
+  const parsed = joinOptionsSchema.safeParse(body)
+  if (!parsed.success) throw joinError('invalid_options')
+  const svc = MatchRoom.service
+  const player = await resolvePlayer(svc.auth, svc.db, headers)
+  await room.admitSpectator(player, parsed.data.password ?? '', info.ip)
+  const watchId = await room.watchRoomId()
+  const watch = matchMaker.getLocalRoomById(watchId)
+  if (watch instanceof WatchRoom && watch.isFull(player.userId)) {
+    throw joinError('spectators_full')
+  }
+  info.admittedSpectator = player.userId
+  return watchId
 }
 
 /**
@@ -112,7 +150,13 @@ export function matchmakeRouter(config: AppConfig, svc: GameService): Router {
       req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {}
     try {
       if (method === 'reconnect') await checkReconnectOwner(target, body, headers)
-      const reservation = await matchMaker.controller.invokeMethod(method, target, body, context)
+      let roomId = target
+      if (method === 'joinById' && body.spectate === true) {
+        // Spectators get a seat in the match's watch room, never in the match room.
+        roomId = await spectatorRoomId(target, body, info, headers)
+        info.target = roomId
+      }
+      const reservation = await matchMaker.controller.invokeMethod(method, roomId, body, context)
       res.json(reservation)
     } catch (err) {
       const e = err as { code?: number; message?: string }
@@ -174,6 +218,7 @@ export async function attachGameServer(
   server.define(ROOM_NAMES.lobby, PublicLobbyRoom)
   server.define(ROOM_NAMES.match, MatchRoom).enableRealtimeListing()
   server.define(ROOM_NAMES.social, SocialRoom)
+  server.define(ROOM_NAMES.watch, WatchRoom)
   await matchMaker.accept()
   return {
     server,

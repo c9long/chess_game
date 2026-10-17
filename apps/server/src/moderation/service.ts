@@ -361,6 +361,10 @@ export class ModerationService {
       const room = matchMaker.getLocalRoomById(id)
       if (room instanceof MatchRoom) room.removeSuspended(userId)
     }
+    // Games they were only watching.
+    for (const room of this.game.rooms) {
+      if (room instanceof MatchRoom) room.dropSpectator(userId)
+    }
   }
 
   /** Lifts a suspension; the player can sign in again. */

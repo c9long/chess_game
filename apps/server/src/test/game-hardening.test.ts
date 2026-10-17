@@ -11,6 +11,7 @@ import {
   FakeBotClient,
   type GameHarness,
   guest,
+  sleep,
   startGameHarness,
   WEB_ORIGIN,
 } from './game-harness.ts'
@@ -59,7 +60,7 @@ describe('WebSocket upgrade origin', () => {
 })
 
 describe('lobby browser', () => {
-  it('lists a lobby while it is open and unlists it once the game runs', async () => {
+  it('lists a lobby while it is open and the game while it runs (to watch), not once over', async () => {
     const host = await createLobby(await guest(h), { name: 'Listed lobby' })
     const listed = async () =>
       (await matchMaker.query({ name: ROOM_NAMES.match, private: false })).some(
@@ -75,8 +76,15 @@ describe('lobby browser', () => {
     bots.delayMs = 200
     host.send('startGame')
     await host.waitState((s) => s.phase === 'in_game', 5_000, 'in_game')
-    expect(await listed()).toBe(false)
+    const running = (await matchMaker.query({ name: ROOM_NAMES.match, private: false })).find(
+      (r) => r.roomId === host.room.roomId,
+    )
+    expect(running?.metadata?.phase).toBe('in_game')
     bots.delayMs = 0
+    // The host leaves: the bots finish the game quickly, and it leaves the browser.
     await host.leave()
+    const deadline = Date.now() + 20_000
+    while ((await listed()) && Date.now() < deadline) await sleep(50)
+    expect(await listed()).toBe(false)
   })
 })

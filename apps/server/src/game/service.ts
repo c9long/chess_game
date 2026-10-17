@@ -97,6 +97,33 @@ export interface LobbyHooks {
   ended?(roomId: string, reason: 'started' | 'closed'): void
 }
 
+/** One seat of a rematch lobby: a bot, a held seat for a player who accepted, or empty. */
+export type RematchSeat =
+  | { kind: 'bot'; level: string; civ: string }
+  | { kind: 'human'; userId: string; displayName: string; civ: string }
+  | { kind: 'empty' }
+
+/**
+ * What a finished room hands its rematch lobby (through `issueRematchTicket`, since a room
+ * created by the server gets nothing but its options).
+ */
+export interface RematchSpec {
+  /** The finished room the rematch comes from. */
+  fromRoomId: string
+  name: string
+  mode: 'ffa' | 'teams'
+  timeControl: string
+  /** Singleplayer: the player's civ (the room starts by itself once they are seated). */
+  solo: { civ: string } | null
+  ranked: boolean
+  /** The old lobby's password hash: the new one keeps the password. */
+  passwordHash: string | null
+  /** Challenge lobby: only these users may take a seat (the players who accepted). */
+  inviteUserIds: string[] | null
+  hostUserId: string
+  seats: [RematchSeat, RematchSeat, RematchSeat, RematchSeat]
+}
+
 export interface GameServiceDeps {
   config: AppConfig
   db: Database
@@ -130,6 +157,7 @@ export class GameService {
     string,
     { player: PlayerAuth; sessionId: string; expires: number; invite?: LobbyInvite }
   >()
+  #rematchTickets = new Map<string, { spec: RematchSpec; expires: number }>()
   /** In-flight database work of finishing games; shutdown waits for it. */
   #pending = new Set<Promise<unknown>>()
 
@@ -168,6 +196,22 @@ export class GameService {
     const entry = this.#creatorTickets.get(ticket)
     this.#creatorTickets.delete(ticket)
     return entry && entry.expires >= Date.now() ? entry : undefined
+  }
+
+  /** Hands a rematch spec to the new room's `onCreate` (see RematchSpec). */
+  issueRematchTicket(spec: RematchSpec): string {
+    const now = Date.now()
+    for (const [k, v] of this.#rematchTickets) if (v.expires < now) this.#rematchTickets.delete(k)
+    const ticket = randomBytes(18).toString('base64url')
+    this.#rematchTickets.set(ticket, { spec, expires: now + 30_000 })
+    return ticket
+  }
+
+  takeRematchTicket(ticket: unknown): RematchSpec | undefined {
+    if (typeof ticket !== 'string') return undefined
+    const entry = this.#rematchTickets.get(ticket)
+    this.#rematchTickets.delete(ticket)
+    return entry && entry.expires >= Date.now() ? entry.spec : undefined
   }
 
   /**

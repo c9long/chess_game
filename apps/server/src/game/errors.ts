@@ -16,6 +16,7 @@ const HTTP_STATUS: Partial<Record<ErrorCode, number>> = {
   room_not_found: 404,
   room_not_joinable: 409,
   room_full: 409,
+  spectators_full: 409,
   already_seated: 409,
   already_in_room: 409,
   maintenance: 503,

@@ -122,6 +122,7 @@ describe('lobby browser and lobbies', () => {
       ranked: false,
       civs: ['', '', '', ''],
       occupied: [true, false, false, false],
+      spectators: 0,
     })
     const other = await joinLobby(await guest(h), host.room.roomId)
     await waitFor(

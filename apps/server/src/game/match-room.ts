@@ -25,10 +25,16 @@ import {
   isUntimed,
   joinOptionsSchema,
   type LobbyMetadata,
+  type MoveLogEntry,
   PROTOCOL_VERSION,
+  REMATCH_SEAT_HOLD_MS,
+  REMATCH_TIMEOUT_MS,
+  REMATCH_VOTE,
   type ResignLapseReason,
+  ROOM_NAMES,
   type ServerMessages,
   SOLO_DEFAULT_NAME,
+  SPECTATOR_DELAY_ROUNDS,
   TEAM_RESIGN_COOLDOWN_MOVES,
 } from '@game/protocol'
 import { createMatchState, EventState, type MatchState, type SeatState } from '@game/protocol/state'
@@ -43,6 +49,7 @@ import {
   seatIndex,
 } from '@game/rules'
 import { hash, verify } from '@node-rs/argon2'
+import { friendIdsOf } from '../social/friends.ts'
 import { BotServiceError, fallbackMove } from './bot-client.ts'
 import { GameClock, monoNow } from './clock.ts'
 import {
@@ -72,14 +79,68 @@ import {
 import { type FinishResult, type MatchEventType, MatchRecorder } from './persistence.ts'
 import { type PlayerAuth, resolvePlayer } from './player-auth.ts'
 import { botAcceptsTeamResign, resignLapseReason, teammateOf, teamOf } from './resign-logic.ts'
-import type { GameService, ManagedRoom } from './service.ts'
+import type { GameService, ManagedRoom, RematchSpec } from './service.ts'
+import type { WatchRoom } from './watch-room.ts'
 
 /** What the matchmaking route passes as `AuthContext.req`. */
 export interface MatchmakeInfo {
   method: string
-  /** Room name, or the room id for joinById. */
+  /** Room name, or the room id for joinById (a spectator's: the watch room's id). */
   target: string
   ip: string | undefined
+  /**
+   * Spectating: the account matchmaking already admitted (`admitSpectator`) before it created
+   * or picked the watch room, so the watch room's onAuth doesn't check the password again.
+   * Set by the server only, never from the request.
+   */
+  admittedSpectator?: string
+}
+
+/**
+ * What spectators see of the game at one point: the start position (`seq` 0) or the position
+ * after an action. Ranked games show spectators an older frame (see `spectatorView`).
+ */
+export interface ViewFrame {
+  seq: number
+  positionString: string
+  seatToMove: number
+  statuses: string[]
+  clock: ClockSync
+  events: GameEvent[]
+  /** The round the action was made in (full turns of the turn order before it). */
+  round: number
+  /** The move log entry of the action (null for the start). */
+  entry: MoveLogEntry | null
+}
+
+/**
+ * Whether the turn order went round (a new round began) between the seat to move before an
+ * action and the seat to move after it. Turn order is seat order (S, W, N, E); a mover's own
+ * action that hands the turn to the same or an earlier seat wrapped around, while an
+ * off-turn action (an abandon or resign by another seat) only wrapped if the pointer moved
+ * back.
+ */
+export function wrappedRound(prevToMove: number, nextToMove: number, actingSeat: number): boolean {
+  if (prevToMove < 0 || nextToMove < 0) return false
+  return actingSeat === prevToMove ? nextToMove <= prevToMove : nextToMove < prevToMove
+}
+
+/**
+ * The newest frame spectators may see when the game is in round `currentRound`, at least
+ * `delayRounds` full rounds behind: the last frame made before round
+ * `currentRound - delayRounds` (frame 0, the start, at worst). Frames are in order.
+ */
+export function visibleFrameIndex(
+  rounds: readonly number[],
+  currentRound: number,
+  delayRounds: number,
+): number {
+  let idx = 0
+  for (let i = 1; i < rounds.length; i++) {
+    if ((rounds[i] as number) < currentRound - delayRounds) idx = i
+    else break
+  }
+  return idx
 }
 
 /** Lobby passwords: argon2id like account passwords (PLAN §5), kept in memory only. */
@@ -176,6 +237,25 @@ export class MatchRoom
   private game: Game | null = null
   private gameClock: GameClock | null = null
   private recorder: MatchRecorder | null = null
+  /** Every action of the game so far, for the move log (`moveLog` message on join). */
+  private moveLog: MoveLogEntry[] = []
+  /** Spectator frames: the start, then one per action (ranked spectators see older ones). */
+  private frames: ViewFrame[] = []
+  /** Full rounds of the turn order completed so far. */
+  private round = 0
+  /** The spectators' room, once someone watches (see `watchRoomId`). */
+  private watch: WatchRoom | null = null
+  private watchCreating: Promise<string> | null = null
+  /** Rematch proposals made in this finished room (a few at most). */
+  private rematchProposals = 0
+  private rematchTimer: NodeJS.Timeout | undefined
+  private rematchCreating = false
+  /**
+   * Rematch lobby: seats held for the players who accepted (userId -> seat and civ) until
+   * they connect or REMATCH_SEAT_HOLD_MS passes.
+   */
+  private holds = new Map<string, { seat: SeatNum; civ: string; until: number; name: string }>()
+  private holdTimer: NodeJS.Timeout | undefined
   private starting = false
   private countdownTimer: NodeJS.Timeout | undefined
   private flagTimer: NodeJS.Timeout | undefined
@@ -263,6 +343,8 @@ export class MatchRoom
       }
       const parsed = joinOptionsSchema.safeParse(options)
       if (!parsed.success) throw joinError('invalid_options')
+      // Spectators are sent to the watch room by the matchmaking route.
+      if (parsed.data.spectate) throw joinError('room_not_joinable')
       return room.admit(player, parsed.data.password ?? '', info.ip)
     }
 
@@ -281,7 +363,8 @@ export class MatchRoom
   ): Promise<ReservedPlayer> {
     if (this.isRejoin(player)) return player
     this.newSeatChecks(player)
-    if (this.passwordHash) {
+    // A rematch player's held seat needs no password.
+    if (this.passwordHash && !this.heldSeat(player.userId)) {
       const limiter = this.svc.passwordAttempts
       const keys = [`ip:${ip ?? 'unknown'}`, `room:${this.roomId}`]
       if (keys.some((k) => limiter.blocked(k))) throw joinError('too_many_attempts')
@@ -315,7 +398,9 @@ export class MatchRoom
     // Ranked lobbies seat registered accounts only.
     if (this.ranked && player.isGuest) throw joinError('account_required')
     // Challenge lobbies seat the challenger and the invited friends only.
-    if (this.invite && !this.invite.userIds.has(player.userId)) throw joinError('not_invited')
+    if (this.invite && !this.invite.userIds.has(player.userId) && !this.heldSeat(player.userId)) {
+      throw joinError('not_invited')
+    }
     if (this.kicked.has(player.userId)) throw joinError('kicked')
     const elsewhere = svc.seats.get(player.userId)
     if (elsewhere && elsewhere !== this.roomId) throw joinError('already_in_room')
@@ -325,15 +410,46 @@ export class MatchRoom
     if (this.openSeats(player.userId) <= 0) throw joinError('room_full')
   }
 
-  /** Empty seats not spoken for by other users' pending reservations. */
+  /**
+   * Empty seats not spoken for by other users' pending reservations or by seats held for
+   * other rematch players. A user with a held seat always finds it open.
+   */
   private openSeats(userId: string): number {
+    if (this.heldSeat(userId)) return 1
     const empty = this.state.seats.filter((s) => !s.occupied).length
-    return empty - this.svc.pendingClaims(this.roomId, userId).length
+    const claims = this.svc.pendingClaims(this.roomId, userId)
+    const held = [...this.liveHolds().keys()].filter((u) => u !== userId && !claims.includes(u))
+    return empty - claims.length - held.length
   }
 
-  /** The creator (host) still holds an unconsumed reservation for this room. */
+  /** The creator (host) still holds an unconsumed reservation (or a held rematch seat) here. */
   private hostClaimPending(): boolean {
-    return this.hostUserId !== null && this.svc.liveClaim(this.hostUserId)?.roomId === this.roomId
+    if (this.hostUserId === null) return false
+    return (
+      this.svc.liveClaim(this.hostUserId)?.roomId === this.roomId ||
+      this.heldSeat(this.hostUserId) !== undefined
+    )
+  }
+
+  /** Rematch seats still held (expired holds are dropped). */
+  private liveHolds(now = Date.now()) {
+    for (const [userId, h] of this.holds) {
+      if (h.until <= now || this.hasSeated(userId)) this.holds.delete(userId)
+    }
+    return this.holds
+  }
+
+  /** Refuses to fill a seat held for a rematch player who hasn't arrived yet. */
+  private requireNotHeld(seat: number) {
+    for (const h of this.liveHolds().values()) {
+      if (h.seat !== seat) continue
+      throw new GameError('seat_occupied', `That seat is held for ${h.name} (rematch).`)
+    }
+  }
+
+  /** The seat held for `userId` in this rematch lobby, if any. */
+  private heldSeat(userId: string): { seat: SeatNum; civ: string } | undefined {
+    return this.liveHolds().get(userId)
   }
 
   // -------------------------------------------------------------------------
@@ -342,6 +458,11 @@ export class MatchRoom
 
   override async onCreate(options: Record<string, unknown>) {
     this.svc = MatchRoom.service
+    const rematch = this.svc.takeRematchTicket(options.rematchTicket)
+    if (rematch) {
+      this.setupRematch(rematch)
+      return
+    }
     const creator = this.svc.takeCreatorTicket(options.creatorTicket)
     const { creatorTicket: _ignored, ...rest } = options
     const parsed = createOptionsSchema.parse(rest)
@@ -395,6 +516,11 @@ export class MatchRoom
       }
       refreshLobbyPhase(s)
     }
+    this.finishCreate()
+  }
+
+  /** The end of onCreate: listing, registration, handlers and the host's grace. */
+  private finishCreate() {
     this.metadata = this.listing()
     this.svc.rooms.add(this)
     this.registerHandlers()
@@ -403,6 +529,57 @@ export class MatchRoom
       this.hostGraceTimer = undefined
       if (isLobbyPhase(this.state.phase) && !this.hostSeated()) this.afterSeatsChanged()
     }, CLAIM_TTL_MS + 100)
+  }
+
+  /**
+   * A rematch lobby (created by a finished room, see `createRematch`): the same name, mode,
+   * time control, password or invite list, the bots in their seats with their civs, and the
+   * seats of the players who accepted held for them with their civs.
+   */
+  private setupRematch(spec: RematchSpec) {
+    this.hostUserId = spec.hostUserId
+    this.passwordHash = spec.passwordHash
+    const s = this.state
+    s.protocolVersion = PROTOCOL_VERSION
+    s.name = spec.name
+    s.mode = spec.mode
+    s.timeControl = spec.timeControl
+    s.pickMode = 'blind'
+    s.hasPassword = Boolean(this.passwordHash)
+    this.ranked = spec.ranked
+    s.ranked = spec.ranked
+    if (spec.inviteUserIds) {
+      this.invite = { challengeId: '', userIds: new Set(spec.inviteUserIds) }
+      s.inviteOnly = true
+    }
+    if (spec.solo) this.solo = { civ: spec.solo.civ }
+    if (this.invite || this.solo) void this.setPrivate(true).catch(() => {})
+    s.phase = 'waiting'
+    s.reconnectGraceMs = this.svc.config.game.reconnectGraceMs
+    this.untimed = isUntimed(spec.timeControl)
+    s.clock.incrementMs = this.untimed
+      ? 0
+      : TIME_CONTROLS[spec.timeControl as TimeControlId].incrementMs
+    const until = Date.now() + REMATCH_SEAT_HOLD_MS
+    spec.seats.forEach((seat, i) => {
+      if (seat.kind === 'bot') seatBot(s, i as SeatNum, seat.level, seat.civ)
+      else if (seat.kind === 'human') {
+        this.holds.set(seat.userId, {
+          seat: i as SeatNum,
+          civ: seat.civ,
+          until,
+          name: seat.displayName,
+        })
+      }
+    })
+    refreshLobbyPhase(s)
+    // Seats nobody came back for open up to anyone.
+    this.holdTimer = setTimeout(() => {
+      this.holdTimer = undefined
+      this.liveHolds()
+      if (isLobbyPhase(this.state.phase)) this.afterSeatsChanged()
+    }, REMATCH_SEAT_HOLD_MS + 100)
+    this.finishCreate()
   }
 
   override onJoin(client: MatchClient, _options: unknown, auth?: PlayerAuth) {
@@ -423,6 +600,7 @@ export class MatchRoom
       )
     }
     this.newSeatChecks(player)
+    const held = this.heldSeat(player.userId)
     const seat = this.pickSeat(player.userId)
     if (seat === -1) throw joinError('room_full')
     this.svc.claims.delete(player.userId)
@@ -437,7 +615,10 @@ export class MatchRoom
       const mine = this.state.seats[seat] as SeatState
       mine.civ = this.solo.civ
       mine.ready = true
+    } else if (held && held.seat === seat) {
+      ;(this.state.seats[seat] as SeatState).civ = held.civ
     }
+    this.holds.delete(player.userId)
     this.svc.seats.set(player.userId, this.roomId)
     if (!this.hostUserId || (!this.hostSeated() && !this.hostClaimPending())) {
       this.hostUserId = player.userId
@@ -447,9 +628,17 @@ export class MatchRoom
     if (this.invite) this.svc.lobbyHooks.seated?.(this.roomId, player.userId)
   }
 
-  /** First empty seat; seat 0 is kept for a creator who hasn't connected yet. */
+  /**
+   * The seat held for a rematch player, else the first empty seat not held for someone else;
+   * seat 0 is kept for a creator who hasn't connected yet.
+   */
   private pickSeat(userId: string): SeatNum | -1 {
-    const free = SEAT_NUMS.filter((i) => !this.state.seats[i]?.occupied)
+    const held = this.heldSeat(userId)
+    if (held && !this.state.seats[held.seat]?.occupied) return held.seat
+    const heldForOthers = new Set(
+      [...this.liveHolds()].filter(([u]) => u !== userId).map(([, h]) => h.seat),
+    )
+    const free = SEAT_NUMS.filter((i) => !this.state.seats[i]?.occupied && !heldForOthers.has(i))
     if (free[0] === 0 && free.length > 1 && userId !== this.hostUserId && this.hostClaimPending()) {
       return free[1] as SeatNum
     }
@@ -533,6 +722,7 @@ export class MatchRoom
     if (phase === 'finished') {
       s.connected = false
       this.svc.seats.delete(binding.userId)
+      this.rematchSeatLeft(seat as SeatNum)
       return
     }
     // Pre-game: the seat is freed.
@@ -547,6 +737,9 @@ export class MatchRoom
 
   override async onDispose() {
     this.svc.rooms.delete(this)
+    const watch = this.watch
+    this.watch = null
+    if (watch) void watch.disconnect(CLOSE_CODES.roomClosed).catch(() => {})
     if (this.invite) this.svc.lobbyHooks.ended?.(this.roomId, 'closed')
     this.clearTimers()
     for (const b of this.bindings) {
@@ -612,6 +805,7 @@ export class MatchRoom
    */
   removeSuspended(userId: string) {
     this.kicked.add(userId)
+    this.dropSpectator(userId)
     this.invite?.userIds.delete(userId)
     const seat = seatOfUser(this.bindings, userId)
     const phase = this.state.phase
@@ -634,6 +828,8 @@ export class MatchRoom
     if (!this.invite) return
     if (this.bindings.some((b) => b?.userId === userId)) return
     this.invite.userIds.delete(userId)
+    // The friendship ended: no more watching either (admitSpectator checks again on return).
+    this.dropSpectator(userId)
   }
 
   // -------------------------------------------------------------------------
@@ -650,7 +846,7 @@ export class MatchRoom
 
   async closeLobby(reason: string) {
     this.cancelCountdown()
-    this.broadcast('error', { code: 'maintenance', message: reason })
+    this.announce('error', { code: 'maintenance', message: reason })
     await this.disconnect(CLOSE_CODES.roomClosed)
   }
 
@@ -666,8 +862,9 @@ export class MatchRoom
     this.state.result.endReason = reason
     this.state.seatToMove = -1
     this.updateListing()
+    void this.setPrivate(true).catch(() => {})
     await this.recorder?.abort(reason)
-    this.broadcast('error', { code: 'maintenance', message: reason })
+    this.announce('error', { code: 'maintenance', message: reason })
     this.releaseSeats()
     await this.disconnect(CLOSE_CODES.roomClosed)
   }
@@ -700,10 +897,12 @@ export class MatchRoom
       this.requireLobby()
       if (this.ranked) throw new GameError('ranked_no_bots', 'ranked games are for people only')
       if ((this.state.seats[seat] as SeatState).occupied) throw new GameError('seat_occupied')
+      this.requireNotHeld(seat)
       const civs = await this.enabledCivs()
       this.requireHost(client)
       this.requireLobby()
       if ((this.state.seats[seat] as SeatState).occupied) throw new GameError('seat_occupied')
+      this.requireNotHeld(seat)
       const civ = civs[Math.floor(Math.random() * civs.length)] ?? 'canada'
       seatBot(this.state, seat, level, civ)
       this.afterSeatsChanged()
@@ -740,6 +939,7 @@ export class MatchRoom
         clearSeat(s)
       } else {
         this.kicked.add(binding.userId)
+        this.dropSpectator(binding.userId)
         this.bindings[seat] = null
         clearSeat(s)
         this.svc.seats.delete(binding.userId)
@@ -754,6 +954,9 @@ export class MatchRoom
       this.requireHost(client)
       this.requireLobby()
       if (a === b) throw new GameError('invalid_seat')
+      // Nobody may be moved into a seat held for a rematch player.
+      if (this.state.seats[a]?.occupied) this.requireNotHeld(b)
+      if (this.state.seats[b]?.occupied) this.requireNotHeld(a)
       swapSeats(this.state, a, b)
       const tmp = this.bindings[a] ?? null
       this.bindings[a] = this.bindings[b] ?? null
@@ -835,6 +1038,15 @@ export class MatchRoom
     this.handle('syncClock', (client) => {
       if (this.gameClock) client.send('clock', this.clockSync())
     })
+    this.handle('proposeRematch', (client) => {
+      const seat = this.requireSeat(client)
+      this.proposeRematch(seat)
+    })
+    this.handle('respondRematch', (client, { accept }) => {
+      const seat = this.requireSeat(client)
+      if (this.state.phase !== 'finished') throw new GameError('wrong_phase')
+      this.respondRematch(seat, accept)
+    })
     this.onMessage('*', (client, type) => {
       const t = String(type)
       if (isReservedMessageType(t)) {
@@ -870,6 +1082,310 @@ export class MatchRoom
         }
       }
     })
+  }
+
+  /** Broadcasts to the players and passes the message on to the spectators' room. */
+  private announce<K extends keyof ServerMessages>(type: K, payload: ServerMessages[K]) {
+    ;(this.broadcast as (t: string, m: unknown) => void)(type, payload)
+    this.watch?.relay(type, payload)
+  }
+
+  // -------------------------------------------------------------------------
+  // Spectators (the watch room, see watch-room.ts)
+  // -------------------------------------------------------------------------
+
+  /**
+   * The id of this match's watch room, created on first use. Matchmaking sends spectators
+   * there (`joinById(<this room>, { spectate: true })`).
+   */
+  async watchRoomId(): Promise<string> {
+    if (this.watch) return this.watch.roomId
+    this.watchCreating ??= matchMaker
+      .createRoom(ROOM_NAMES.watch, { matchRoomId: this.roomId })
+      .then((r) => r.roomId)
+      .finally(() => {
+        this.watchCreating = null
+      })
+    return this.watchCreating
+  }
+
+  /** Stops `userId` watching this room (suspended, kicked, invitation withdrawn). */
+  dropSpectator(userId: string) {
+    this.watch?.removeSpectator(userId)
+  }
+
+  /** Called by the watch room when it is created or disposed. */
+  attachWatch(room: WatchRoom | null) {
+    this.watch = room
+    if (!room) this.setSpectators(0)
+  }
+
+  /** The spectator count shown to everyone ("3 watching") and in the lobby browser. */
+  setSpectators(n: number) {
+    if (this.state.spectators === n) return
+    this.state.spectators = n
+    this.updateListing()
+  }
+
+  /**
+   * Who may watch (checked at matchmaking): not the room's own players (they rejoin their
+   * seat) and not players the host kicked; challenge lobbies only for the invited players and
+   * the host's friends; password lobbies with the password (the same attempt limits as
+   * joining). Everything else (public lobbies and games, solo games) is open to anyone signed
+   * in who has the room id.
+   */
+  async admitSpectator(player: PlayerAuth, password: string, ip: string | undefined) {
+    if (this.hasSeated(player.userId)) throw joinError('already_seated')
+    if (this.kicked.has(player.userId)) throw joinError('kicked')
+    if (this.invite) {
+      if (this.invite.userIds.has(player.userId)) return
+      const host = this.hostUserId
+      const friends = host && !player.isGuest ? await friendIdsOf(this.svc.db, player.userId) : []
+      if (!host || !friends.includes(host)) throw joinError('not_invited')
+      return
+    }
+    if (!this.passwordHash) return
+    const limiter = this.svc.passwordAttempts
+    const keys = [`ip:${ip ?? 'unknown'}`, `room:${this.roomId}`]
+    if (keys.some((k) => limiter.blocked(k))) throw joinError('too_many_attempts')
+    for (const k of keys) limiter.fail(k)
+    const ok = await verify(this.passwordHash, password).catch(() => false)
+    if (!ok) throw joinError('invalid_password')
+    for (const k of keys) limiter.refund(k)
+  }
+
+  /**
+   * Whether `userId` may watch without a password (the friends list on the Friends page):
+   * `friendIds` are the viewer's friends (a friendship goes both ways).
+   */
+  watchableBy(userId: string, friendIds: readonly string[]): boolean {
+    if (this.hasSeated(userId) || this.kicked.has(userId)) return false
+    if (!this.invite) return true
+    return (
+      this.invite.userIds.has(userId) ||
+      (this.hostUserId !== null && friendIds.includes(this.hostUserId))
+    )
+  }
+
+  /** The seated humans' user ids and names, in seat order (Friends page). */
+  seatedPlayers(): { userId: string; displayName: string }[] {
+    return this.bindings
+      .filter((b): b is SeatBinding => b !== null)
+      .map((b) => ({ userId: b.userId, displayName: b.displayName }))
+  }
+
+  /** Singleplayer room. */
+  isSolo(): boolean {
+    return this.solo !== null
+  }
+
+  /**
+   * What spectators see right now: null while they see the room live (lobbies, casual and
+   * solo games, any finished game), else the delayed frame of a running ranked game, at
+   * least SPECTATOR_DELAY_ROUNDS full rounds behind (anti-cheat), with the number of move
+   * log entries it includes.
+   */
+  spectatorView(): { frame: ViewFrame; entries: number } | null {
+    if (!this.ranked || this.state.phase !== 'in_game' || this.frames.length === 0) return null
+    const idx = visibleFrameIndex(
+      this.frames.map((f) => f.round),
+      this.round,
+      SPECTATOR_DELAY_ROUNDS,
+    )
+    return { frame: this.frames[idx] as ViewFrame, entries: idx }
+  }
+
+  /** Spectator frames so far (frame k is the position after action k; frame 0 the start). */
+  spectatorFrames(): readonly ViewFrame[] {
+    return this.frames
+  }
+
+  /** Every action so far (the move log). */
+  moveLogEntries(): readonly MoveLogEntry[] {
+    return this.moveLog
+  }
+
+  /** The live clock (for spectators of games shown live). */
+  liveClock(): ClockSync | null {
+    return this.gameClock ? this.clockSync() : null
+  }
+
+  /** Keeps the watch room's copy of the state current before each patch. */
+  override onBeforePatch() {
+    this.watch?.sync()
+  }
+
+  // -------------------------------------------------------------------------
+  // Rematch (after the game)
+  // -------------------------------------------------------------------------
+
+  /**
+   * `seat` (a seated human, in the finished room) proposes a rematch: its own vote counts as
+   * accepted, every other seated human still connected must answer within
+   * REMATCH_TIMEOUT_MS, a human who already left counts as declined, bots come along.
+   */
+  private proposeRematch(seat: SeatNum) {
+    const s = this.state
+    if (s.phase !== 'finished') throw new GameError('wrong_phase')
+    if (this.svc.maintenance) throw new GameError('maintenance')
+    if (s.rematchRoomId) throw new GameError('wrong_phase', 'The rematch lobby is already open.')
+    if (s.rematchSeat !== -1) {
+      // Proposing while someone else's proposal waits for you agrees to it.
+      if (s.rematchVotes[seat] === REMATCH_VOTE.pending) {
+        this.respondRematch(seat, true)
+        return
+      }
+      throw new GameError('rematch_pending')
+    }
+    if (this.rematchProposals >= 3) {
+      throw new GameError('wrong_phase', 'No more rematch proposals for this game.')
+    }
+    this.rematchProposals++
+    for (const i of SEAT_NUMS) {
+      const seatState = s.seats[i] as SeatState
+      const human = Boolean(this.bindings[i]) && !seatState.isBot
+      s.rematchVotes[i] = !human
+        ? REMATCH_VOTE.notVoter
+        : i === seat
+          ? REMATCH_VOTE.accepted
+          : seatState.connected
+            ? REMATCH_VOTE.pending
+            : REMATCH_VOTE.declined
+    }
+    s.rematchSeat = seat
+    s.rematchDeadline = Date.now() + REMATCH_TIMEOUT_MS
+    clearTimeout(this.rematchTimer)
+    this.rematchTimer = setTimeout(() => this.rematchTimedOut(), REMATCH_TIMEOUT_MS)
+    // The finished room stays open at least until the rematch is settled.
+    this.announce('rematchEvent', { type: 'proposed', seat })
+    this.maybeResolveRematch()
+  }
+
+  private respondRematch(seat: SeatNum, accept: boolean) {
+    const s = this.state
+    if (s.rematchSeat === -1 || s.rematchRoomId || this.rematchCreating) {
+      throw new GameError('no_rematch')
+    }
+    const vote = s.rematchVotes[seat]
+    if (vote === REMATCH_VOTE.notVoter || vote === undefined) throw new GameError('no_rematch')
+    if (vote !== REMATCH_VOTE.pending) throw new GameError('already_responded')
+    s.rematchVotes[seat] = accept ? REMATCH_VOTE.accepted : REMATCH_VOTE.declined
+    this.announce('rematchEvent', { type: accept ? 'accepted' : 'declined', seat })
+    this.maybeResolveRematch()
+  }
+
+  /** A seated player left the finished room: their pending vote is a no; the proposer's leave cancels. */
+  private rematchSeatLeft(seat: SeatNum) {
+    const s = this.state
+    if (s.rematchSeat === -1 || s.rematchRoomId || this.rematchCreating) return
+    if (s.rematchSeat === seat) {
+      this.cancelRematch('proposer_left')
+      return
+    }
+    if (s.rematchVotes[seat] === REMATCH_VOTE.pending) {
+      s.rematchVotes[seat] = REMATCH_VOTE.declined
+      this.announce('rematchEvent', { type: 'declined', seat })
+      this.maybeResolveRematch()
+    }
+  }
+
+  private rematchTimedOut() {
+    this.rematchTimer = undefined
+    const s = this.state
+    if (s.rematchSeat === -1 || s.rematchRoomId || this.rematchCreating) return
+    for (const i of SEAT_NUMS) {
+      if (s.rematchVotes[i] === REMATCH_VOTE.pending) s.rematchVotes[i] = REMATCH_VOTE.declined
+    }
+    this.maybeResolveRematch()
+  }
+
+  private cancelRematch(reason: 'proposer_left' | 'nobody_accepted' | 'failed') {
+    const s = this.state
+    clearTimeout(this.rematchTimer)
+    this.rematchTimer = undefined
+    s.rematchSeat = -1
+    s.rematchDeadline = 0
+    for (const i of SEAT_NUMS) s.rematchVotes[i] = REMATCH_VOTE.notVoter
+    this.announce('rematchEvent', { type: 'cancelled', reason })
+  }
+
+  /** Once nobody is left to answer: the new lobby, or nothing if nobody else accepted. */
+  private maybeResolveRematch() {
+    const s = this.state
+    if (s.rematchSeat === -1 || s.rematchRoomId || this.rematchCreating) return
+    const votes = SEAT_NUMS.map((i) => s.rematchVotes[i] ?? REMATCH_VOTE.notVoter)
+    if (votes.includes(REMATCH_VOTE.pending)) return
+    const others = SEAT_NUMS.filter(
+      (i) => i !== s.rematchSeat && votes[i] !== REMATCH_VOTE.notVoter,
+    )
+    if (others.length > 0 && others.every((i) => votes[i] === REMATCH_VOTE.declined)) {
+      this.cancelRematch('nobody_accepted')
+      return
+    }
+    void this.createRematch(votes)
+  }
+
+  /**
+   * Creates the rematch lobby: the same name, mode, time control, password or invite list,
+   * seats, civs and bots; the players who accepted get their seats held; a seat whose player
+   * declined is empty (open to anyone). Ranked only if this game was ranked and every seat is
+   * again a registered human (all four accepted); otherwise casual.
+   */
+  private async createRematch(votes: readonly number[]) {
+    const s = this.state
+    const proposer = s.rematchSeat
+    const host = this.bindings[proposer]
+    if (!host) {
+      this.cancelRematch('proposer_left')
+      return
+    }
+    this.rematchCreating = true
+    clearTimeout(this.rematchTimer)
+    this.rematchTimer = undefined
+    const seats = SEAT_NUMS.map((i) => {
+      const seat = s.seats[i] as SeatState
+      const binding = this.bindings[i]
+      if (seat.isBot) return { kind: 'bot' as const, level: seat.botLevel, civ: seat.civ }
+      if (binding && votes[i] === REMATCH_VOTE.accepted) {
+        return {
+          kind: 'human' as const,
+          userId: binding.userId,
+          displayName: binding.displayName,
+          civ: seat.civ,
+        }
+      }
+      return { kind: 'empty' as const }
+    }) as RematchSpec['seats']
+    const accepted = seats.filter((x) => x.kind === 'human')
+    const spec: RematchSpec = {
+      fromRoomId: this.roomId,
+      name: s.name,
+      mode: s.mode as 'ffa' | 'teams',
+      timeControl: s.timeControl,
+      solo: this.solo ? { civ: (s.seats[proposer] as SeatState).civ || this.solo.civ } : null,
+      ranked: this.ranked && accepted.length === 4,
+      passwordHash: this.passwordHash,
+      inviteUserIds: this.invite ? accepted.map((x) => x.userId) : null,
+      hostUserId: host.userId,
+      seats,
+    }
+    try {
+      if (this.svc.maintenance) throw new Error('maintenance')
+      if (this.svc.rooms.size >= this.svc.config.game.maxMatchRooms) throw new Error('room cap')
+      const ticket = this.svc.issueRematchTicket(spec)
+      const room = await matchMaker.createRoom(ROOM_NAMES.match, { rematchTicket: ticket })
+      s.rematchRoomId = room.roomId
+      s.rematchDeadline = 0
+      this.announce('rematchEvent', { type: 'ready', roomId: room.roomId, ranked: spec.ranked })
+    } catch (err) {
+      this.svc.logger.warn(
+        { room: this.roomId, err: (err as Error).message },
+        'creating the rematch lobby failed',
+      )
+      this.cancelRematch('failed')
+    } finally {
+      this.rematchCreating = false
+    }
   }
 
   private sendError(client: MatchClient, code: ErrorCode, requestType?: string, message?: string) {
@@ -926,7 +1442,18 @@ export class MatchRoom
       seat: seat === -1 ? -1 : (seat as SeatNum),
       isHost: seat !== -1 && this.bindings[seat]?.userId === this.hostUserId,
     })
+    this.sendMoveLog(client)
     if (this.gameClock) client.send('clock', this.clockSync())
+  }
+
+  /**
+   * The game so far, for the client's move log (after a reload or a reconnect it has missed
+   * the earlier `events` messages). Players only: spectators get theirs from the watch room,
+   * which cuts it to the delayed part of a ranked game (watch-room.ts).
+   */
+  private sendMoveLog(client: MatchClient) {
+    if (!this.gameClock || this.moveLog.length === 0) return
+    client.send('moveLog', { entries: this.moveLog })
   }
 
   // -------------------------------------------------------------------------
@@ -949,6 +1476,7 @@ export class MatchRoom
         return seat?.occupied ? seat.civ : ''
       }),
       occupied: [0, 1, 2, 3].map((i) => Boolean((s.seats[i] as SeatState | undefined)?.occupied)),
+      spectators: s.spectators,
     }
   }
 
@@ -1089,6 +1617,9 @@ export class MatchRoom
       const base = tc ? (svc.config.game.devClockBaseMs ?? tc.baseMs) : 0
       this.game = game
       this.recorder = recorder
+      this.moveLog = []
+      this.frames = []
+      this.round = 0
       this.gameClock = new GameClock(base, tc?.incrementMs ?? 0)
       game = null
       recorder = null
@@ -1098,9 +1629,8 @@ export class MatchRoom
       s.countdownEndsAt = 0
       this.autoDispose = false
       if (this.invite) this.svc.lobbyHooks.ended?.(this.roomId, 'started')
-      // Off the lobby browser (a running game isn't a lobby); seated players still rejoin
-      // by id.
-      void this.setPrivate(true).catch(() => {})
+      // A public game stays in the lobby browser while it runs (phase `in_game`), so people
+      // can watch it; it leaves once it is over.
       for (const i of SEAT_NUMS) (s.seats[i] as SeatState).status = snap.statuses[i]
       s.positionString = this.game.positionString()
       s.actionSeq = 0
@@ -1108,14 +1638,24 @@ export class MatchRoom
       if (!this.untimed) this.gameClock.startTurn(seatIndex(snap.seatToMove) as SeatNum, now)
       s.seatToMove = seatIndex(snap.seatToMove)
       this.syncClockState(now)
+      this.frames.push({
+        seq: 0,
+        positionString: s.positionString,
+        seatToMove: s.seatToMove,
+        statuses: [...snap.statuses],
+        clock: this.clockSync(now),
+        events: [],
+        round: 0,
+        entry: null,
+      })
       this.updateListing()
-      this.broadcast('clock', this.clockSync(now))
+      this.announce('clock', this.clockSync(now))
       if (!this.untimed) {
         this.syncTimer = setInterval(() => {
           if (this.gameClock && this.state.phase === 'in_game') {
             const t = monoNow()
             this.syncClockState(t)
-            this.broadcast('clock', this.clockSync(t))
+            this.announce('clock', this.clockSync(t))
           }
         }, svc.config.game.clockSyncIntervalMs)
       }
@@ -1135,7 +1675,7 @@ export class MatchRoom
         refreshLobbyPhase(s)
         this.updateListing()
       }
-      this.broadcast('error', {
+      this.announce('error', {
         code: err instanceof GameError ? err.code : 'internal',
         requestType: 'startGame',
       })
@@ -1195,6 +1735,7 @@ export class MatchRoom
     }
 
     const s = this.state
+    const prevToMove = s.seatToMove
     s.actionSeq += 1
     s.positionString = game.positionString()
     s.seatToMove = snap.isOver ? -1 : seatIndex(snap.seatToMove)
@@ -1251,8 +1792,28 @@ export class MatchRoom
       }
     }
 
+    const entry: MoveLogEntry = {
+      seq: s.actionSeq,
+      action: kind,
+      seat,
+      notation,
+      events,
+      positionString: s.positionString,
+    }
+    this.moveLog.push(entry)
     const sync = this.clockSync(now)
-    this.broadcast('events', {
+    this.frames.push({
+      seq: s.actionSeq,
+      positionString: s.positionString,
+      seatToMove: s.seatToMove,
+      statuses: [...snap.statuses],
+      clock: sync,
+      events,
+      round: this.round,
+      entry,
+    })
+    if (wrappedRound(prevToMove, s.seatToMove, seat)) this.round += 1
+    this.announce('events', {
       seq: s.actionSeq,
       action: kind,
       seat,
@@ -1550,7 +2111,7 @@ export class MatchRoom
     this.drawTurnsTaken = new Set()
     for (const i of SEAT_NUMS) s.drawVotes[i] = votes[i] ?? DRAW_VOTE.notVoter
     this.record(seat, 'draw_offer', { actionSeq: s.actionSeq, votes }, null)
-    this.broadcast('drawEvent', { type: 'offered', seat, offerSeat: seat })
+    this.announce('drawEvent', { type: 'offered', seat, offerSeat: seat })
     if (allAccepted(votes)) {
       this.runAction('agreed_draw', seat, null)
       return
@@ -1608,11 +2169,11 @@ export class MatchRoom
     )
     if (!accept) {
       this.endDrawOffer()
-      this.broadcast('drawEvent', { type: 'declined', seat, offerSeat: offer })
+      this.announce('drawEvent', { type: 'declined', seat, offerSeat: offer })
       return
     }
     s.drawVotes[seat] = DRAW_VOTE.accepted
-    this.broadcast('drawEvent', { type: 'accepted', seat, offerSeat: offer })
+    this.announce('drawEvent', { type: 'accepted', seat, offerSeat: offer })
     if (allAccepted([...s.drawVotes])) this.runAction('agreed_draw', seat, null)
   }
 
@@ -1652,7 +2213,7 @@ export class MatchRoom
   private lapseDrawOffer(reason: DrawLapseReason) {
     const offerSeat = this.state.drawOfferSeat as SeatNum
     this.endDrawOffer()
-    this.broadcast('drawEvent', { type: 'lapsed', seat: offerSeat, offerSeat, reason })
+    this.announce('drawEvent', { type: 'lapsed', seat: offerSeat, offerSeat, reason })
   }
 
   /** Ends the pending offer unanswered or declined: the offerer waits before offering again. */
@@ -1697,7 +2258,7 @@ export class MatchRoom
     const partner = teammateOf(seat) as SeatNum
     if (!this.takesTurns(partner)) {
       this.record(seat, 'resign_proposal', { actionSeq: s.actionSeq, immediate: true }, null)
-      this.broadcast('resignEvent', { type: 'immediate', seat, team })
+      this.announce('resignEvent', { type: 'immediate', seat, team })
       this.runAction('resign', seat, null, now, { team: true, immediate: true })
       return
     }
@@ -1712,7 +2273,7 @@ export class MatchRoom
     this.resignProposalIds[team] = ++this.resignProposalSeq
     this.resignTurnsTaken[team] = new Set()
     this.record(seat, 'resign_proposal', { actionSeq: s.actionSeq, teammate: partner }, null)
-    this.broadcast('resignEvent', { type: 'proposed', seat, team })
+    this.announce('resignEvent', { type: 'proposed', seat, team })
     if ((s.seats[partner] as SeatState).isBot) {
       const id = this.resignProposalIds[team]
       const delay = Math.max(0, this.svc.config.game.botMinMoveMs)
@@ -1765,11 +2326,11 @@ export class MatchRoom
     )
     if (!accept) {
       this.endTeamResign(team)
-      this.broadcast('resignEvent', { type: 'declined', seat, team })
+      this.announce('resignEvent', { type: 'declined', seat, team })
       return
     }
     this.clearTeamResign(team)
-    this.broadcast('resignEvent', { type: 'accepted', seat, team })
+    this.announce('resignEvent', { type: 'accepted', seat, team })
     this.runAction('resign', from, null, monoNow(), { team: true, acceptedBy: seat })
   }
 
@@ -1809,10 +2370,12 @@ export class MatchRoom
     const proposer = this.state.teamResignSeat[team] as SeatNum
     const outSeat =
       reason === 'voters_changed'
-        ? [proposer, teammateOf(proposer)].find((i) => !this.takesTurns(i as SeatNum))
+        ? ([proposer, teammateOf(proposer)].find((i) => !this.takesTurns(i as SeatNum)) as
+            | SeatNum
+            | undefined)
         : undefined
     this.endTeamResign(team)
-    this.broadcast('resignEvent', {
+    this.announce('resignEvent', {
       type: 'lapsed',
       seat: proposer,
       team,
@@ -1856,6 +2419,8 @@ export class MatchRoom
     for (const p of outcome.placements) s.result.placements.push(p)
     this.syncClockState(now)
     this.updateListing()
+    // Off the lobby browser: there is nothing left to watch.
+    void this.setPrivate(true).catch(() => {})
 
     let result: FinishResult = {
       status: 'aborted',
@@ -1899,7 +2464,7 @@ export class MatchRoom
     }
     if (result.status === 'aborted') s.result.endReason = result.endReason
     s.rated = result.rated
-    this.broadcast('gameOver', {
+    this.announce('gameOver', {
       matchId: s.matchId,
       result: outcome.result,
       placements: [...outcome.placements] as [number, number, number, number],
@@ -1939,6 +2504,10 @@ export class MatchRoom
     clearTimeout(this.closeTimer)
     clearTimeout(this.hostGraceTimer)
     this.hostGraceTimer = undefined
+    clearTimeout(this.holdTimer)
+    this.holdTimer = undefined
+    clearTimeout(this.rematchTimer)
+    this.rematchTimer = undefined
     this.countdownTimer = undefined
     this.flagTimer = undefined
     this.syncTimer = undefined
@@ -1961,7 +2530,8 @@ export function endReasonOf(outcome: Outcome): string {
   }
 }
 
-function flattenEvent(e: GameEvent): EventState {
+/** One rules event as the flattened `lastEvents` entry of the room state. */
+export function flattenEvent(e: GameEvent): EventState {
   const out = new EventState()
   out.type = e.type
   if ('seat' in e) out.seat = seatIndex(e.seat)

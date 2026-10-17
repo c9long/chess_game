@@ -10,6 +10,8 @@ import {
   users,
 } from '@game/db'
 import {
+  type FriendGame,
+  type FriendGamesResponse,
   GAME_MODES,
   LEADERBOARD_DEFAULT_LIMIT,
   LEADERBOARD_MAX_LIMIT,
@@ -18,16 +20,20 @@ import {
   type MatchDetailResponse,
   type MatchListItem,
   type MatchListResponse,
+  type MatchReplayResponse,
   type RatingsResponse,
 } from '@game/protocol'
 import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lt, ne, or } from 'drizzle-orm'
-import { Router } from 'express'
+import { type Request, Router } from 'express'
 import { z } from 'zod'
 import type { Auth } from '../auth/auth.ts'
+import { fixedWindowLimiter } from '../http/security.ts'
 import { requireSession, sessionOf } from '../http/session.ts'
 import { requireCurrentAcceptance } from '../legal/routes.ts'
 import { blockedAmong, blockedByAmong } from '../social/blocks.ts'
-import { relationsOf } from '../social/friends.ts'
+import { friendIdsOf, relationsOf } from '../social/friends.ts'
+import { MatchRoom } from './match-room.ts'
+import { canResimulate, loadReplay, playReplay } from './persistence.ts'
 
 const leaderboardQuery = z.object({
   mode: z.enum(GAME_MODES).default('ffa'),
@@ -120,9 +126,38 @@ async function playersOf(db: Database, matchIds: string[]): Promise<PlayerRow[]>
     .orderBy(asc(matchPlayers.seat))
 }
 
+/** Re-simulated final positions of finished matches (they never change), newest last. */
+const finalPositions = new Map<string, string>()
+const FINAL_POSITIONS_MAX = 500
+
+/** The re-simulated final position of a finished match, computed once per process. */
+function cachedFinalPosition(matchId: string, compute: () => string): string {
+  const hit = finalPositions.get(matchId)
+  if (hit !== undefined) return hit
+  const position = compute()
+  finalPositions.set(matchId, position)
+  if (finalPositions.size > FINAL_POSITIONS_MAX) {
+    const oldest = finalPositions.keys().next().value
+    if (oldest !== undefined) finalPositions.delete(oldest)
+  }
+  return position
+}
+
+const byUser = (req: Request) => (req.res?.locals.session?.user.id as string | undefined) ?? 'anon'
+
 export function gameRouter({ db, auth }: { db: Database; auth: Auth }) {
   const router = Router()
   const guard = [requireSession(auth), requireCurrentAcceptance(db)]
+  /**
+   * Replays load every event of a game: a few per minute per player is plenty (the replay
+   * page fetches once). Only answers with a replay count (not "not finished yet" polls).
+   */
+  const replayLimiter = fixedWindowLimiter({
+    windowMs: 60_000,
+    max: 30,
+    key: byUser,
+    countIf: (status) => status === 200,
+  })
 
   /** The signed-in player's match history, newest first (finished and aborted games). */
   router.get('/matches', ...guard, async (req, res) => {
@@ -148,6 +183,7 @@ export function gameRouter({ db, auth }: { db: Database; auth: Auth }) {
         rated: matches.rated,
         ranked: matches.ranked,
         endReason: matches.endReason,
+        rulesVersion: matches.rulesVersion,
         seat: matchPlayers.seat,
       })
       .from(matchPlayers)
@@ -232,6 +268,7 @@ export function gameRouter({ db, auth }: { db: Database; auth: Auth }) {
         rated: m.rated,
         ranked: m.ranked,
         endReason: m.endReason,
+        rulesVersion: m.rulesVersion,
         seat: m.seat,
         civ: mine?.civ ?? '',
         placement: mine?.placement ?? null,
@@ -317,6 +354,93 @@ export function gameRouter({ db, auth }: { db: Database; auth: Auth }) {
         clockRemainingMs: e.clockRemainingMs,
         serverTs: e.serverTs.toISOString(),
       })),
+    }
+    res.json(body)
+  })
+
+  /**
+   * A finished match's replay input: engine config, actions in order and the server's own
+   * re-simulated final position (participants only, like the detail; public sharing of
+   * replays is a TODO). Matches from another rules version (the old 12×12 board) answer 409.
+   */
+  router.get('/matches/:id/replay', ...guard, replayLimiter, async (req, res) => {
+    const id = z.uuid().safeParse(req.params.id)
+    if (!id.success) {
+      res.status(404).json({ error: 'NOT_FOUND' })
+      return
+    }
+    const me = sessionOf(res).user.id
+    const [match] = await db.select().from(matches).where(eq(matches.id, id.data))
+    const [mine] = match
+      ? await db
+          .select({ seat: matchPlayers.seat })
+          .from(matchPlayers)
+          .where(and(eq(matchPlayers.matchId, match.id), eq(matchPlayers.userId, me)))
+          .limit(1)
+      : []
+    if (!match || !mine) {
+      res.status(404).json({ error: 'NOT_FOUND' })
+      return
+    }
+    if (match.status !== 'finished') {
+      res.status(409).json({ error: 'NOT_FINISHED' })
+      return
+    }
+    if (!canResimulate(match.rulesVersion)) {
+      res.status(409).json({ error: 'RULES_VERSION_UNSUPPORTED', rulesVersion: match.rulesVersion })
+      return
+    }
+    const replay = await loadReplay(db, match.id)
+    const body: MatchReplayResponse = {
+      id: match.id,
+      mode: match.mode,
+      timeControl: match.timeControl,
+      rulesVersion: match.rulesVersion,
+      config: replay.config,
+      actions: replay.actions,
+      finalPosition: cachedFinalPosition(match.id, () => playReplay(replay)),
+      endReason: match.endReason,
+    }
+    res.json(body)
+  })
+
+  /**
+   * Games your friends are playing right now that you may watch (the Friends page "Watch"
+   * buttons): running games only, filtered by the same rules as watching.
+   */
+  router.get('/live/friends', ...guard, async (_req, res) => {
+    const session = sessionOf(res)
+    const me = session.user.id
+    const body: FriendGamesResponse = { games: [] }
+    const rooms = MatchRoom.service?.rooms
+    if ((session.user as { isAnonymous?: boolean | null }).isAnonymous || !rooms) {
+      res.json(body)
+      return
+    }
+    const friendIds = await friendIdsOf(db, me)
+    if (friendIds.length === 0) {
+      res.json(body)
+      return
+    }
+    const friends = new Set(friendIds)
+    for (const room of rooms) {
+      if (!(room instanceof MatchRoom)) continue
+      const s = room.state
+      if (s.phase !== 'in_game') continue
+      const playing = room.seatedPlayers().filter((p) => friends.has(p.userId))
+      if (playing.length === 0 || !room.watchableBy(me, friendIds)) continue
+      const game: FriendGame = {
+        roomId: room.roomId,
+        friends: playing.map((p) => p.displayName),
+        name: s.name,
+        mode: s.mode as FriendGame['mode'],
+        timeControl: s.timeControl,
+        ranked: s.ranked,
+        solo: room.isSolo(),
+        locked: s.hasPassword,
+        spectators: s.spectators,
+      }
+      body.games.push(game)
     }
     res.json(body)
   })
