@@ -79,6 +79,24 @@ export interface ManagedRoom {
   abortGame(reason: string): Promise<void>
 }
 
+/**
+ * A challenge lobby's invitation, handed to the room with its creator ticket: the lobby is
+ * invite-only (only `userIds` may take a seat) and never listed.
+ */
+export interface LobbyInvite {
+  challengeId: string
+  /** Who may join: the challenger and the invited friends. */
+  userIds: string[]
+}
+
+/** What match rooms tell the social service about challenge lobbies. */
+export interface LobbyHooks {
+  /** A user took a seat in the room. */
+  seated?(roomId: string, userId: string): void
+  /** The lobby is over: its game started, or the room closed. */
+  ended?(roomId: string, reason: 'started' | 'closed'): void
+}
+
 export interface GameServiceDeps {
   config: AppConfig
   db: Database
@@ -106,7 +124,12 @@ export class GameService {
   readonly claims = new Map<string, SeatClaim>()
   /** Stop accepting new rooms and game starts (graceful shutdown). */
   maintenance = false
-  #creatorTickets = new Map<string, { player: PlayerAuth; sessionId: string; expires: number }>()
+  /** Set by the social service (challenge lobbies). */
+  lobbyHooks: LobbyHooks = {}
+  #creatorTickets = new Map<
+    string,
+    { player: PlayerAuth; sessionId: string; expires: number; invite?: LobbyInvite }
+  >()
   /** In-flight database work of finishing games; shutdown waits for it. */
   #pending = new Set<Promise<unknown>>()
 
@@ -125,15 +148,22 @@ export class GameService {
    * passes only the client options between them). The ticket is random and short-lived;
    * clients can't send their own (create options are parsed strictly first).
    */
-  issueCreatorTicket(player: PlayerAuth, sessionId: string): string {
+  issueCreatorTicket(player: PlayerAuth, sessionId: string, invite?: LobbyInvite): string {
     const now = Date.now()
     for (const [k, v] of this.#creatorTickets) if (v.expires < now) this.#creatorTickets.delete(k)
     const ticket = randomBytes(18).toString('base64url')
-    this.#creatorTickets.set(ticket, { player, sessionId, expires: now + 30_000 })
+    this.#creatorTickets.set(ticket, {
+      player,
+      sessionId,
+      expires: now + 30_000,
+      ...(invite ? { invite } : {}),
+    })
     return ticket
   }
 
-  takeCreatorTicket(ticket: unknown): { player: PlayerAuth; sessionId: string } | undefined {
+  takeCreatorTicket(
+    ticket: unknown,
+  ): { player: PlayerAuth; sessionId: string; invite?: LobbyInvite } | undefined {
     if (typeof ticket !== 'string') return undefined
     const entry = this.#creatorTickets.get(ticket)
     this.#creatorTickets.delete(ticket)

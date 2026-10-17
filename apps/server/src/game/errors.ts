@@ -9,6 +9,7 @@ const HTTP_STATUS: Partial<Record<ErrorCode, number>> = {
   invalid_password: 403,
   kicked: 403,
   account_required: 403,
+  not_invited: 403,
   too_many_attempts: 429,
   protocol_mismatch: 400,
   invalid_options: 400,

@@ -8,6 +8,8 @@ import type { AppConfig } from '../config.ts'
 import { requireSession, sessionOf } from '../http/session.ts'
 import { cookieOptions } from '../legal/gate.ts'
 import type { Logger } from '../logger.ts'
+import { rowsOf } from '../social/friends.ts'
+import type { SocialService } from '../social/service.ts'
 import { anonymizeUser } from './anonymize.ts'
 import { buildAccountExport } from './export.ts'
 import { referenceCode } from './reference.ts'
@@ -29,8 +31,10 @@ export function accountRouter(deps: {
   db: Database
   auth: Auth
   logger: Logger
+  /** Told about deletions (former friends are notified, connections closed). */
+  social?: SocialService
 }) {
-  const { config, db, auth, logger } = deps
+  const { config, db, auth, logger, social } = deps
   const router = Router()
   router.use(requireSession(auth))
 
@@ -114,7 +118,10 @@ export function accountRouter(deps: {
         return
       }
     }
+    // Friends and anyone with a request to or from the user (their lists change).
+    const counterparts = social ? (await rowsOf(db, user.id)).map((r) => r.userId) : []
     const result = await anonymizeUser(db, user.id, 'user_request')
+    social?.accountDeleted(user.id, counterparts)
     logger.info({ event: 'account_deleted', guest: Boolean(user.isAnonymous) }, 'account deleted')
     for (const name of ['better-auth.session_token', '__Secure-better-auth.session_token']) {
       res.clearCookie(name, { path: '/', secure: config.isProduction })

@@ -12,6 +12,7 @@ import {
 } from '@game/db'
 import { and, eq, exists, isNull, or, sql } from 'drizzle-orm'
 import { repointUserRows } from '../auth/guest-link.ts'
+import { deleteAllOf as deleteFriendships } from '../social/friends.ts'
 
 export type DeletionReason = 'user_request' | 'guest_purge'
 
@@ -55,6 +56,8 @@ async function hasSharedHistory(tx: Transaction, userId: string) {
  *   acceptances are cleared. Opponents' histories stay intact under "Deleted player #…".
  * - `erase`: the user's acceptances and ratings (OpenSkill and Elo) are deleted outright
  *   (guests with no games).
+ * In both modes the user's friendships and friend requests are deleted (personal, not shared
+ * history).
  * Then the original users row is deleted, which cascades to sessions, credentials, passkeys,
  * 2FA secrets and device codes.
  */
@@ -65,6 +68,8 @@ async function removeUser(
   now: Date,
 ): Promise<string | undefined> {
   let label: string | undefined
+  // Friends and friend requests are personal: deleted, never re-keyed to the placeholder.
+  await deleteFriendships(tx, userId)
   if (mode === 'rekey') {
     label = deletedLabel()
     const placeholderId = randomUUID()

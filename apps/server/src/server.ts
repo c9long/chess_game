@@ -34,7 +34,7 @@ export async function startServer(
     ctx.logger.warn({ count: aborted.length }, 'aborted matches left in progress by a restart')
   }
   const httpServer = createServer(ctx.app)
-  const gameServer = await attachGameServer(httpServer, ctx.game)
+  const gameServer = await attachGameServer(httpServer, ctx.game, ctx.social)
   await new Promise<void>((resolve, reject) => {
     httpServer.once('error', reject)
     httpServer.listen(config.port, config.host, () => {

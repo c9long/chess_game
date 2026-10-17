@@ -12,6 +12,7 @@ import {
   users,
 } from '@game/db'
 import { asc, desc, eq } from 'drizzle-orm'
+import { rowsOf } from '../social/friends.ts'
 
 /**
  * Everything we hold about a user, as a JSON-serializable object (PLAN §8 export).
@@ -21,7 +22,7 @@ export async function buildAccountExport(db: Database, userId: string, now: Date
   const [user] = await db.select().from(users).where(eq(users.id, userId))
   if (!user) return undefined
 
-  const [linked, keys, acceptances, userRatings, userElo, history, activeSessions] =
+  const [linked, keys, acceptances, userRatings, userElo, history, activeSessions, social] =
     await Promise.all([
       db
         .select({ provider: accounts.providerId, createdAt: accounts.createdAt })
@@ -105,6 +106,7 @@ export async function buildAccountExport(db: Database, userId: string, now: Date
         })
         .from(sessions)
         .where(eq(sessions.userId, userId)),
+      rowsOf(db, userId),
     ])
 
   return {
@@ -133,6 +135,13 @@ export async function buildAccountExport(db: Database, userId: string, now: Date
     eloRatings: userElo,
     matchHistory: history,
     sessions: activeSessions,
+    /** Friends and pending friend requests (the other player's username only). */
+    friends: social.map((f) => ({
+      username: f.username,
+      status: f.status === 'accepted' ? 'friends' : f.requestedBy === userId ? 'sent' : 'received',
+      requestedAt: f.createdAt,
+      acceptedAt: f.acceptedAt,
+    })),
   }
 }
 

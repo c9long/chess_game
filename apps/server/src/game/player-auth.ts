@@ -21,6 +21,20 @@ export async function resolvePlayer(
   db: Database,
   headers: Headers,
 ): Promise<PlayerAuth> {
+  return (await resolvePlayerSession(auth, db, headers)).player
+}
+
+/** The session a connection was opened with (long-lived channels re-check it). */
+export interface ConnectionSession {
+  id: string
+}
+
+/** `resolvePlayer`, plus the session it was resolved from. */
+export async function resolvePlayerSession(
+  auth: Auth,
+  db: Database,
+  headers: Headers,
+): Promise<{ player: PlayerAuth; session: ConnectionSession }> {
   const session = await auth.api.getSession({ headers }).catch(() => null)
   if (!session) throw joinError('unauthorized')
   const user = session.user as typeof session.user & {
@@ -38,9 +52,12 @@ export async function resolvePlayer(
   const isGuest = Boolean(user.isAnonymous)
   if (!isGuest && !user.username) throw joinError('username_required')
   return {
-    userId: user.id,
-    displayName:
-      (isGuest ? user.name : (user.displayUsername ?? user.username ?? user.name)) || 'Player',
-    isGuest,
+    player: {
+      userId: user.id,
+      displayName:
+        (isGuest ? user.name : (user.displayUsername ?? user.username ?? user.name)) || 'Player',
+      isGuest,
+    },
+    session: { id: session.session.id },
   }
 }

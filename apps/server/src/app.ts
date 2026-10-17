@@ -25,6 +25,8 @@ import { requestLogger } from './http/request-log.ts'
 import { requireTrustedOrigin, securityHeaders } from './http/security.ts'
 import { legalRouter } from './legal/routes.ts'
 import { createLogger, type Logger } from './logger.ts'
+import { socialRouter } from './social/routes.ts'
+import { type SocialOptions, SocialService } from './social/service.ts'
 
 export interface AppOverrides {
   email?: EmailSender
@@ -32,6 +34,8 @@ export interface AppOverrides {
   namePolicy?: NamePolicy
   /** Source of bot moves (tests inject fakes). Default: bot-service at BOT_SERVICE_URL. */
   botClient?: BotClient
+  /** Friends limits and timings (tests shorten them). */
+  social?: Partial<SocialOptions>
 }
 
 /**
@@ -51,7 +55,16 @@ export function createApp(config: AppConfig, overrides: AppOverrides = {}) {
           file: config.devMailboxFile,
           viewUrl: config.devMailEndpoint ? `${config.webOrigin}/dev/mail` : undefined,
         }))
-  const auth = createAuth({ config, db, email, logger, namePolicy })
+  // The social service is built after auth; session deletions reach it through this.
+  let sessionDeleted: (sessionId: string) => void = () => {}
+  const auth = createAuth({
+    config,
+    db,
+    email,
+    logger,
+    namePolicy,
+    onSessionDeleted: (id) => sessionDeleted(id),
+  })
   const game = new GameService({
     config,
     db,
@@ -62,6 +75,9 @@ export function createApp(config: AppConfig, overrides: AppOverrides = {}) {
       overrides.botClient ??
       createBotClient(config.game.botServiceUrl, config.game.botRequestTimeoutMs, logger),
   })
+
+  const social = new SocialService({ db, game, logger, options: overrides.social ?? {} })
+  sessionDeleted = (id) => social.sessionEnded(id)
 
   const app = express()
   app.disable('x-powered-by')
@@ -108,8 +124,9 @@ export function createApp(config: AppConfig, overrides: AppOverrides = {}) {
   })
 
   app.use('/api/legal', legalRouter({ config, db, auth }))
-  app.use('/api/account', accountRouter({ config, db, auth, logger }))
+  app.use('/api/account', accountRouter({ config, db, auth, logger, social }))
   app.use('/api', gameRouter({ db, auth }))
+  app.use('/api', socialRouter({ db, auth, social }))
   // Colyseus matchmaking (the WebSocket side is attached to the http.Server in server.ts).
   app.use(COLYSEUS_PATH, matchmakeRouter(config, game))
   if (devMailbox && email instanceof MemoryEmailSender) {
@@ -138,8 +155,10 @@ export function createApp(config: AppConfig, overrides: AppOverrides = {}) {
     db,
     email,
     game,
+    social,
     logger,
     close: async () => {
+      social.close()
       await closeDb()
     },
   }

@@ -21,6 +21,8 @@ import { type Request, type Response, Router } from 'express'
 import type { AppConfig } from '../config.ts'
 import { clientIp } from '../http/client-ip.ts'
 import { fixedWindowLimiter } from '../http/security.ts'
+import type { SocialService } from '../social/service.ts'
+import { SocialRoom } from '../social/social-room.ts'
 import { joinError } from './errors.ts'
 import { type MatchmakeInfo, MatchRoom } from './match-room.ts'
 import { resolvePlayer } from './player-auth.ts'
@@ -38,6 +40,7 @@ export class PublicLobbyRoom extends LobbyRoom {
 function allowed(method: string, target: string): boolean {
   switch (method) {
     case 'joinOrCreate':
+      return target === ROOM_NAMES.lobby || target === ROOM_NAMES.social
     case 'join':
       return target === ROOM_NAMES.lobby
     case 'create':
@@ -109,8 +112,10 @@ export interface GameServerHandle {
 export async function attachGameServer(
   httpServer: HttpServer,
   svc: GameService,
+  social: SocialService,
 ): Promise<GameServerHandle> {
   MatchRoom.service = svc
+  SocialRoom.social = social
   const transport = new WebSocketTransport({ noServer: true, maxPayload: 4 * 1024 })
   const isGamePath = (req: IncomingMessage) => Boolean(req.url?.startsWith(`${COLYSEUS_PATH}/`))
   // Cross-site WebSocket hijacking defence in depth (a seat reservation from the
@@ -143,6 +148,7 @@ export async function attachGameServer(
   })
   server.define(ROOM_NAMES.lobby, PublicLobbyRoom)
   server.define(ROOM_NAMES.match, MatchRoom).enableRealtimeListing()
+  server.define(ROOM_NAMES.social, SocialRoom)
   await matchMaker.accept()
   return {
     server,

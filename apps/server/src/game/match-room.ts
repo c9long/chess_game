@@ -93,7 +93,7 @@ const FINISHED_ROOM_TTL_MS = 10 * 60_000
 /** How long a matchmaking seat reservation waits for its WebSocket (Colyseus default: 15). */
 const RESERVATION_SECONDS = 10
 /** Our own record of a reservation outlives Colyseus' by a little (never undercounts). */
-const CLAIM_TTL_MS = RESERVATION_SECONDS * 1000 + 2_000
+export const CLAIM_TTL_MS = RESERVATION_SECONDS * 1000 + 2_000
 
 /** A player as returned from onAuth: `sessionId` makes Colyseus reserve under our id. */
 type ReservedPlayer = PlayerAuth & { sessionId?: string }
@@ -189,6 +189,11 @@ export class MatchRoom
   private untimed = false
   /** Ranked lobby: registered accounts only, no bots, Elo-rated (fixed at create). */
   private ranked = false
+  /**
+   * Challenge lobby (fixed at create): invite-only, never listed. `userIds` may take a seat
+   * (the challenger and the invited friends); everyone else gets `not_invited`.
+   */
+  private invite: { challengeId: string; userIds: Set<string> } | null = null
   /** Bot pacing: monotonic time of the latest game action (or the game start). */
   private lastActionAt = 0
   /** Bot pacing: how long after `lastActionAt` a bot's move may be applied. */
@@ -309,6 +314,8 @@ export class MatchRoom
     if (this.solo && player.userId !== this.hostUserId) throw joinError('room_not_joinable')
     // Ranked lobbies seat registered accounts only.
     if (this.ranked && player.isGuest) throw joinError('account_required')
+    // Challenge lobbies seat the challenger and the invited friends only.
+    if (this.invite && !this.invite.userIds.has(player.userId)) throw joinError('not_invited')
     if (this.kicked.has(player.userId)) throw joinError('kicked')
     const elsewhere = svc.seats.get(player.userId)
     if (elsewhere && elsewhere !== this.roomId) throw joinError('already_in_room')
@@ -362,6 +369,14 @@ export class MatchRoom
     s.hasPassword = Boolean(this.passwordHash)
     this.ranked = parsed.kind === 'lobby' && parsed.ranked
     s.ranked = this.ranked
+    if (creator.invite && parsed.kind === 'lobby' && !this.ranked && !this.passwordHash) {
+      this.invite = {
+        challengeId: creator.invite.challengeId,
+        userIds: new Set([creator.player.userId, ...creator.invite.userIds]),
+      }
+      s.inviteOnly = true
+      void this.setPrivate(true).catch(() => {})
+    }
     s.phase = 'waiting'
     s.reconnectGraceMs = this.svc.config.game.reconnectGraceMs
     this.untimed = isUntimed(parsed.timeControl)
@@ -429,6 +444,7 @@ export class MatchRoom
     }
     this.afterSeatsChanged()
     this.welcome(client)
+    if (this.invite) this.svc.lobbyHooks.seated?.(this.roomId, player.userId)
   }
 
   /** First empty seat; seat 0 is kept for a creator who hasn't connected yet. */
@@ -531,6 +547,7 @@ export class MatchRoom
 
   override async onDispose() {
     this.svc.rooms.delete(this)
+    if (this.invite) this.svc.lobbyHooks.ended?.(this.roomId, 'closed')
     this.clearTimers()
     for (const b of this.bindings) {
       if (b && this.svc.seats.get(b.userId) === this.roomId) this.svc.seats.delete(b.userId)
@@ -540,6 +557,46 @@ export class MatchRoom
     }
     this.game?.free()
     this.game = null
+  }
+
+  /**
+   * A challenge lobby's invitation ended (expired or cancelled): from now on only players
+   * already seated (who may rejoin) can take a seat.
+   */
+  revokeInvites() {
+    if (!this.invite) return
+    const seated = this.bindings.filter((b): b is SeatBinding => b !== null).map((b) => b.userId)
+    this.invite.userIds = new Set(seated)
+  }
+
+  /** Whether `userId` hosts this challenge lobby, seated, before the game: may invite again. */
+  canReinvite(userId: string): boolean {
+    return (
+      this.invite !== null &&
+      isLobbyPhase(this.state.phase) &&
+      !this.starting &&
+      this.hostUserId === userId &&
+      this.bindings.some((b) => b?.userId === userId)
+    )
+  }
+
+  /** Whether `userId` holds a seat here. */
+  hasSeated(userId: string): boolean {
+    return this.bindings.some((b) => b?.userId === userId)
+  }
+
+  /** A new challenge for this lobby: `userIds` may take a seat again. */
+  reopenInvites(challengeId: string, userIds: string[]) {
+    if (!this.invite) return
+    this.invite.challengeId = challengeId
+    for (const id of userIds) this.invite.userIds.add(id)
+  }
+
+  /** One invited player may no longer join (unless already seated). */
+  revokeInvite(userId: string) {
+    if (!this.invite) return
+    if (this.bindings.some((b) => b?.userId === userId)) return
+    this.invite.userIds.delete(userId)
   }
 
   // -------------------------------------------------------------------------
@@ -1003,6 +1060,7 @@ export class MatchRoom
       s.phase = 'in_game'
       s.countdownEndsAt = 0
       this.autoDispose = false
+      if (this.invite) this.svc.lobbyHooks.ended?.(this.roomId, 'started')
       // Off the lobby browser (a running game isn't a lobby); seated players still rejoin
       // by id.
       void this.setPrivate(true).catch(() => {})

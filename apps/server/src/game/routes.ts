@@ -26,6 +26,7 @@ import { z } from 'zod'
 import type { Auth } from '../auth/auth.ts'
 import { requireSession, sessionOf } from '../http/session.ts'
 import { requireCurrentAcceptance } from '../legal/routes.ts'
+import { relationsOf } from '../social/friends.ts'
 
 const leaderboardQuery = z.object({
   mode: z.enum(GAME_MODES).default('ffa'),
@@ -77,6 +78,8 @@ interface PlayerRow {
   name: string | null
   displayUsername: string | null
   isGuest: boolean | null
+  username: string | null
+  deletedAt: Date | null
 }
 
 /** Name shown for a seat. Deleted accounts show their "Deleted player #…" placeholder. */
@@ -106,6 +109,8 @@ async function playersOf(db: Database, matchIds: string[]): Promise<PlayerRow[]>
       name: users.name,
       displayUsername: users.displayUsername,
       isGuest: users.isAnonymous,
+      username: users.username,
+      deletedAt: users.deletedAt,
     })
     .from(matchPlayers)
     .innerJoin(civilizations, eq(civilizations.id, matchPlayers.civId))
@@ -165,6 +170,25 @@ export function gameRouter({ db, auth }: { db: Database; auth: Auth }) {
       db,
       page.map((r) => r.id),
     )
+    // Friend buttons: registered viewers, registered live opponents of finished games.
+    const viewer = sessionOf(res).user as { isAnonymous?: boolean | null; username?: string | null }
+    const canFriend = !viewer.isAnonymous && Boolean(viewer.username)
+    const finished = new Set(page.filter((m) => m.status === 'finished').map((m) => m.id))
+    const addable = (p: PlayerRow) =>
+      canFriend &&
+      finished.has(p.matchId) &&
+      p.userId !== null &&
+      p.userId !== me &&
+      !p.isGuest &&
+      !p.deletedAt &&
+      Boolean(p.username)
+    const relations = canFriend
+      ? await relationsOf(
+          db,
+          me,
+          players.filter(addable).map((p) => p.userId as string),
+        )
+      : new Map()
     const items: MatchListItem[] = page.map((m) => {
       const seats = players.filter((p) => p.matchId === m.id)
       const mine = seats.find((p) => p.seat === m.seat)
@@ -196,6 +220,7 @@ export function gameRouter({ db, auth }: { db: Database; auth: Auth }) {
             civ: p.civ,
             botLevel: p.botLevel,
             isGuest: Boolean(p.isGuest),
+            friend: addable(p) ? (relations.get(p.userId as string) ?? 'none') : null,
           })),
       }
     })

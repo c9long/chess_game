@@ -98,6 +98,9 @@ export interface AuthDeps {
   email: EmailSender
   logger: Logger
   namePolicy: NamePolicy
+  /** Told after a session row is deleted (sign-out, revoke, password reset): realtime
+   * channels opened with that session close. */
+  onSessionDeleted?: (sessionId: string) => void
 }
 
 function headerOf(
@@ -154,7 +157,7 @@ function socialProviders(config: AppConfig): BetterAuthOptions['socialProviders'
   return p
 }
 
-export function createAuth({ config, db, email, logger, namePolicy }: AuthDeps) {
+export function createAuth({ config, db, email, logger, namePolicy, onSessionDeleted }: AuthDeps) {
   const log = logger.child({ component: 'better-auth' })
   const send = (message: Parameters<EmailSender['send']>[0]) => {
     // Not awaited (avoids leaking account existence through timing); failures are logged.
@@ -500,6 +503,11 @@ export function createAuth({ config, db, email, logger, namePolicy }: AuthDeps) 
               .from(users)
               .where(eq(users.id, session.userId))
             if (row?.deletedAt) return false
+          },
+        },
+        delete: {
+          async after(session) {
+            onSessionDeleted?.(session.id)
           },
         },
       },
