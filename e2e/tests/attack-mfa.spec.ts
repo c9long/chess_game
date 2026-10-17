@@ -229,8 +229,8 @@ test('passkey: add, cancel, remove, sign-in after removal, stale session add', a
   await danger.getByTestId('delete-open').click()
   await danger.getByTestId('delete-confirm').fill('DELETE')
   await danger.getByTestId('delete-submit').click()
-  await expect(danger.getByRole('alert')).toBeVisible()
-  log('stale session delete:', await danger.getByRole('alert').innerText())
+  await expect(danger.getByTestId('delete-step-up')).toBeVisible()
+  log('stale session delete:', await danger.getByTestId('delete-step-up').innerText())
 })
 
 test('guest: export, delete after 25h session (cannot re-authenticate)', async ({ page }) => {

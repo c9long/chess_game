@@ -65,6 +65,17 @@ export interface PublicConfig {
   devMailbox?: boolean
 }
 
+/** `GET /api/account/two-factor/backup-codes`: how many backup codes are unused. */
+export interface BackupCodesStatus {
+  enabled: boolean
+  /** null when the server couldn't read the codes (the count is unknown, not zero). */
+  remaining: number | null
+  total: number
+}
+
+/** Ways to confirm it's you when the session is too old for account deletion. */
+export type StepUpMethod = 'password' | 'passkey' | 'totp'
+
 export type OAuthProvider = 'google' | 'discord' | 'github' | 'microsoft'
 
 export interface LegalStatus {

@@ -1,5 +1,5 @@
-import { Check, CircleAlert, CircleCheck, Eye, EyeOff, Info } from 'lucide-react'
-import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode } from 'react'
+import { Check, CircleAlert, CircleCheck, Eye, EyeOff, Info, TriangleAlert } from 'lucide-react'
+import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, Ref } from 'react'
 import { useId, useState } from 'react'
 
 // This module is imported by eagerly loaded pages, so it stays light: no overlay library
@@ -115,6 +115,8 @@ export function Field({
   type,
   ...rest
 }: InputHTMLAttributes<HTMLInputElement> & {
+  /** Passed to the <input> (React 19 ref as a prop). */
+  ref?: Ref<HTMLInputElement> | undefined
   label: string
   hint?: string | undefined
   error?: string | undefined
@@ -209,19 +211,28 @@ export function Alert({
   tone = 'error',
   children,
 }: {
-  tone?: 'error' | 'info' | 'success'
+  tone?: 'error' | 'info' | 'success' | 'warning'
   children: ReactNode
 }) {
   const tones = {
     error: 'border-seat-south/50 bg-seat-south/10 text-parchment',
     info: 'border-seat-west/50 bg-seat-west/10 text-parchment',
     success: 'border-seat-east/50 bg-seat-east/10 text-parchment',
+    warning: 'border-gold/45 bg-gold/10 text-parchment',
   }
-  const Icon = tone === 'error' ? CircleAlert : tone === 'success' ? CircleCheck : Info
+  const Icon =
+    tone === 'error'
+      ? CircleAlert
+      : tone === 'success'
+        ? CircleCheck
+        : tone === 'warning'
+          ? TriangleAlert
+          : Info
   const iconColor = {
     error: 'text-seat-south-light',
     info: 'text-[#8fb4f0]',
     success: 'text-seat-east-light',
+    warning: 'text-gold',
   }
   return (
     <div

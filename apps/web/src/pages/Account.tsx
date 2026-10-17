@@ -1,24 +1,47 @@
+import type { FriendRequestPolicy } from '@game/protocol'
+import { startAuthentication } from '@simplewebauthn/browser'
 import {
   Check,
   Download,
   KeyRound,
   Link2,
+  LockKeyhole,
   Mail,
   Plus,
   ShieldCheck,
+  Smartphone,
   TicketCheck,
   Trash2,
   TriangleAlert,
+  UserPlus,
 } from 'lucide-react'
 import { QRCodeSVG } from 'qrcode.react'
-import { lazy, type ReactNode, Suspense, useCallback, useEffect, useRef, useState } from 'react'
-import { Link } from 'react-router'
+import {
+  lazy,
+  type ReactNode,
+  Suspense,
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from 'react'
+import { Link, useLocation } from 'react-router'
 import { Alert, Button, cx, Field, linkButtonClass, Pill } from '../components/ui.tsx'
-import { ApiError, api, authErrorMessage, type OAuthProvider } from '../lib/api.ts'
+import {
+  ApiError,
+  api,
+  authErrorMessage,
+  type BackupCodesStatus,
+  type OAuthProvider,
+  type StepUpMethod,
+  tooManyAttempts,
+} from '../lib/api.ts'
 import { displayName, isGuest, useAppState } from '../lib/app-state.tsx'
 import { API_ORIGIN, authClient } from '../lib/auth-client.ts'
 import { endMatchSession } from '../lib/match.ts'
 import { authHeaders, endBearerSession, fetchCredentials } from '../lib/native-auth.ts'
+import { fetchSocialSettings, saveSocialSettings } from '../lib/social.ts'
 import { normalizeTotpUri, totpSecret } from '../lib/totp.ts'
 import { PROVIDER_LABELS } from './SignIn.tsx'
 
@@ -182,6 +205,19 @@ export function Account() {
     void loadAccounts()
   }, [loadAccounts])
 
+  // A link to a section (e.g. /account#two-step from a security email, also after signing in
+  // first): scroll to it once the sections that depend on the linked accounts are laid out.
+  const { hash } = useLocation()
+  const ready = Boolean(session) && accounts !== undefined
+  useEffect(() => {
+    if (!ready || !hash) return
+    try {
+      document.getElementById(decodeURIComponent(hash.slice(1)))?.scrollIntoView()
+    } catch {
+      // A malformed hash: stay at the top.
+    }
+  }, [ready, hash])
+
   const user = session?.user
   const guest = isGuest(user)
   const nav: { id: string; label: string }[] = [
@@ -192,6 +228,7 @@ export function Account() {
           { id: 'passkeys-section', label: 'Passkeys' },
           { id: 'two-step', label: 'Two-step verification' },
           { id: 'linked', label: 'Linked accounts' },
+          { id: 'privacy', label: 'Friend requests' },
         ]),
     { id: 'your-data', label: 'Your data' },
     { id: 'danger-zone', label: 'Danger zone' },
@@ -269,6 +306,7 @@ export function Account() {
                 hasPassword={hasPassword}
               />
               <LinkedAccounts accounts={accounts} reload={loadAccounts} />
+              <FriendRequestPrivacy />
             </>
           )}
           <DataExport />
@@ -279,7 +317,7 @@ export function Account() {
               Danger zone
               <span aria-hidden="true" className="h-px flex-1 bg-seat-south/25" />
             </h2>
-            <DeleteAccount guest={guest} hasPassword={hasPassword} />
+            <DeleteAccount guest={guest} />
           </div>
         </div>
       </div>
@@ -567,7 +605,32 @@ function TwoFactorSettings({ enabled, hasPassword }: { enabled: boolean; hasPass
   const [error, setError] = useState<string>()
   const [notice, setNotice] = useState<string>()
   const [newCodes, setNewCodes] = useState<string[]>()
+  const [codesLeft, setCodesLeft] = useState<BackupCodesStatus>()
+  const passwordBox = useRef<HTMLDivElement>(null)
   const pw = hasPassword ? { password } : {}
+
+  const loadCodesLeft = useCallback(async () => {
+    try {
+      setCodesLeft(await api<BackupCodesStatus>('/api/account/two-factor/backup-codes'))
+    } catch {
+      setCodesLeft(undefined)
+    }
+  }, [])
+  useEffect(() => {
+    if (enabled) void loadCodesLeft()
+    else setCodesLeft(undefined)
+  }, [enabled, loadCodesLeft])
+
+  /** The low-codes prompt: create new codes now, or ask for the password first. */
+  function promptRegenerate() {
+    if (hasPassword && !password) {
+      passwordBox.current?.querySelector('input')?.focus()
+      setError(undefined)
+      setNotice(undefined)
+      return
+    }
+    void regenerate()
+  }
 
   async function start() {
     setBusy(true)
@@ -637,6 +700,7 @@ function TwoFactorSettings({ enabled, hasPassword }: { enabled: boolean; hasPass
     setPassword('')
     setNewCodes(data.backupCodes)
     setNotice('New backup codes created. Your old codes no longer work.')
+    await loadCodesLeft()
   }
 
   const secret = setup ? totpSecret(setup.uri) : undefined
@@ -710,21 +774,31 @@ function TwoFactorSettings({ enabled, hasPassword }: { enabled: boolean; hasPass
           </div>
         ) : (
           <>
-            {hasPassword ? (
-              <Field
-                label="Current password"
-                type="password"
-                autoComplete="current-password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                hint={
-                  enabled
-                    ? 'Needed to turn it off or create new backup codes.'
-                    : 'Needed to set up an authenticator app.'
-                }
-                data-testid="two-factor-password"
-                className="sm:max-w-sm"
+            {enabled && codesLeft?.enabled ? (
+              <BackupCodesLeft
+                status={codesLeft}
+                onRegenerate={promptRegenerate}
+                needsPassword={hasPassword && !password}
+                busy={busy}
               />
+            ) : null}
+            {hasPassword ? (
+              <div ref={passwordBox}>
+                <Field
+                  label="Current password"
+                  type="password"
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  hint={
+                    enabled
+                      ? 'Needed to turn it off or create new backup codes.'
+                      : 'Needed to set up an authenticator app.'
+                  }
+                  data-testid="two-factor-password"
+                  className="sm:max-w-sm"
+                />
+              </div>
             ) : null}
             {newCodes ? <BackupCodes codes={newCodes} /> : null}
             {error ? <Alert>{error}</Alert> : null}
@@ -764,6 +838,98 @@ function TwoFactorSettings({ enabled, hasPassword }: { enabled: boolean; hasPass
         )}
       </div>
     </Section>
+  )
+}
+
+/** At or below this many unused backup codes, the page asks for a new set. */
+const LOW_BACKUP_CODES = 3
+
+/** "7 of 10 backup codes left", with a warning and a prompt for new codes when few are left. */
+function BackupCodesLeft({
+  status,
+  onRegenerate,
+  needsPassword,
+  busy,
+}: {
+  status: BackupCodesStatus
+  onRegenerate: () => void
+  needsPassword: boolean
+  busy: boolean
+}) {
+  const { remaining, total } = status
+  if (remaining === null) {
+    // The server couldn't read the stored codes: the count is unknown, not zero.
+    return (
+      <div
+        className="flex items-start gap-2.5 rounded-xl border border-parchment/10 bg-ink/30 px-4 py-3 text-sm text-parchment/75"
+        data-testid="backup-codes-left"
+        data-unknown="true"
+      >
+        <TicketCheck aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-parchment/45" />
+        <span>
+          We couldn’t check how many backup codes you have left. If you’re not sure you still have
+          some, create a new set.
+        </span>
+      </div>
+    )
+  }
+  const low = remaining <= LOW_BACKUP_CODES
+  const label = `${remaining} of ${total} backup code${total === 1 ? '' : 's'} left`
+  const meter = (
+    <span aria-hidden="true" className="flex gap-1">
+      {Array.from({ length: total }, (_, i) => (
+        <span
+          // biome-ignore lint/suspicious/noArrayIndexKey: fixed-length meter
+          key={i}
+          className={cx(
+            'h-1.5 w-3 rounded-full',
+            i < remaining ? 'bg-gold' : low ? 'bg-gold/20' : 'bg-parchment/15',
+          )}
+        />
+      ))}
+    </span>
+  )
+  if (!low) {
+    return (
+      <div
+        className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-parchment/10 bg-ink/30 px-4 py-3 text-sm"
+        data-testid="backup-codes-left"
+      >
+        <span className="flex items-center gap-2.5 font-medium">
+          <TicketCheck aria-hidden="true" className="h-4 w-4 text-parchment/45" />
+          {label}
+        </span>
+        {meter}
+      </div>
+    )
+  }
+  return (
+    <div data-testid="backup-codes-left" data-low="true">
+      <Alert tone="warning">
+        <div className="flex flex-col gap-3">
+          <div>
+            <p className="font-semibold">{remaining === 0 ? 'No backup codes left' : label}</p>
+            <p className="mt-1 text-parchment/70">
+              Each code signs you in once if you lose your authenticator app. Create a new set so
+              you don’t get locked out
+              {needsPassword ? ': enter your current password, then choose Create new codes.' : '.'}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
+            {meter}
+            <Button
+              variant="secondary"
+              size="sm"
+              busy={busy}
+              onClick={onRegenerate}
+              data-testid="backup-codes-low-regenerate"
+            >
+              {needsPassword ? 'Enter password' : 'Create new codes'}
+            </Button>
+          </div>
+        </div>
+      </Alert>
+    </div>
   )
 }
 
@@ -873,6 +1039,102 @@ function LinkedAccounts({
   )
 }
 
+const FRIEND_REQUEST_OPTIONS: { value: FriendRequestPolicy; label: string; hint: string }[] = [
+  {
+    value: 'anyone',
+    label: 'Anyone',
+    hint: 'Any registered player can send you a request, for example by your username.',
+  },
+  {
+    value: 'played_with',
+    label: 'Only players I’ve played with',
+    hint: 'Players you are playing or have finished a game with.',
+  },
+]
+
+/** "Who can send me friend requests" (saved as soon as it changes). */
+function FriendRequestPrivacy() {
+  const [policy, setPolicy] = useState<FriendRequestPolicy>()
+  const [saving, setSaving] = useState(false)
+  const [status, setStatus] = useState<{ tone: 'error' | 'success'; text: string }>()
+
+  useEffect(() => {
+    fetchSocialSettings()
+      .then((s) => setPolicy(s.friendRequests))
+      .catch(() => setStatus({ tone: 'error', text: 'Could not load this setting.' }))
+  }, [])
+
+  async function choose(next: FriendRequestPolicy) {
+    if (next === policy || saving) return
+    const before = policy
+    setPolicy(next)
+    setSaving(true)
+    setStatus(undefined)
+    try {
+      await saveSocialSettings({ friendRequests: next })
+      setStatus({ tone: 'success', text: 'Saved.' })
+    } catch {
+      setPolicy(before)
+      setStatus({ tone: 'error', text: 'We couldn’t save that. Please try again.' })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Section
+      id="privacy"
+      icon={<UserPlus className={iconClass} />}
+      title="Who can send me friend requests"
+      description="If someone isn’t allowed to send you a request, they see the same message as for an unknown username, so they can’t tell which option you chose. Your public profile stays visible either way."
+      testId="friend-request-privacy"
+    >
+      {/* Not disabled while saving: that would drop keyboard focus off the chosen radio. */}
+      <fieldset
+        disabled={policy === undefined}
+        aria-busy={saving || undefined}
+        className="flex flex-col gap-2"
+      >
+        <legend className="sr-only">Who can send me friend requests</legend>
+        {FRIEND_REQUEST_OPTIONS.map((o) => (
+          <label
+            key={o.value}
+            className={cx(
+              'flex cursor-pointer items-start gap-3 rounded-xl border px-4 py-3 transition-colors',
+              policy === o.value
+                ? 'border-gold/60 bg-gold/10'
+                : 'border-parchment/15 hover:border-parchment/35',
+            )}
+          >
+            <input
+              type="radio"
+              name="friend-requests"
+              value={o.value}
+              checked={policy === o.value}
+              onChange={() => void choose(o.value)}
+              className="mt-1 h-4 w-4 accent-[#d4a017]"
+              data-testid={`friend-requests-${o.value}`}
+            />
+            <span className="min-w-0">
+              <span className="block text-sm font-semibold">{o.label}</span>
+              <span className="block text-xs leading-relaxed text-parchment/60">{o.hint}</span>
+            </span>
+          </label>
+        ))}
+      </fieldset>
+      <p
+        role="status"
+        className={cx(
+          'mt-2 min-h-5 text-xs',
+          status?.tone === 'error' ? 'text-seat-south-light' : 'text-seat-east-light',
+        )}
+      >
+        {status?.text ?? ''}
+      </p>
+    </Section>
+  )
+}
+
 function DataExport() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string>()
@@ -920,36 +1182,154 @@ function DataExport() {
   )
 }
 
-function DeleteAccount({ guest, hasPassword }: { guest: boolean; hasPassword: boolean }) {
+const STEP_UP_LABELS: Record<StepUpMethod, { label: string; icon: ReactNode }> = {
+  password: { label: 'Password', icon: <LockKeyhole aria-hidden="true" className="h-4 w-4" /> },
+  passkey: { label: 'Passkey', icon: <KeyRound aria-hidden="true" className="h-4 w-4" /> },
+  totp: { label: 'Authenticator app', icon: <Smartphone aria-hidden="true" className="h-4 w-4" /> },
+}
+
+/** A passkey assertion for the step-up: Better Auth's challenge, signed by this device. */
+async function passkeyProof() {
+  const { data, error } = await authClient.$fetch<
+    Parameters<typeof startAuthentication>[0]['optionsJSON']
+  >('/passkey/generate-authenticate-options', { method: 'GET' })
+  if (error || !data) throw new Error('options')
+  return startAuthentication({ optionsJSON: data })
+}
+
+function DeleteAccount({ guest }: { guest: boolean }) {
   const { refreshSession, leaveSession } = useAppState()
   const [open, setOpen] = useState(false)
   const [typed, setTyped] = useState('')
+  /** Ways to confirm it's you, once the server said the session is too old; else null. */
+  const [methods, setMethods] = useState<StepUpMethod[] | null>(null)
+  const [method, setMethod] = useState<StepUpMethod>()
   const [password, setPassword] = useState('')
-  const [needPassword, setNeedPassword] = useState(false)
+  const [code, setCode] = useState('')
+  const [useBackup, setUseBackup] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string>()
+  /** Read out by screen readers (the step-up appears without a page change). */
+  const [announcement, setAnnouncement] = useState('')
+  /** Where keyboard focus goes after a reply: into the new step-up, or back to the proof. */
+  const [focusRequest, setFocusRequest] = useState<{ n: number; to: 'step-up' | 'retry' }>()
+  const formRef = useRef<HTMLFormElement>(null)
+  const openerRef = useRef<HTMLDivElement>(null)
+  const wasOpen = useRef(false)
+  const hintId = useId()
+
+  const proofReady =
+    !methods ||
+    methods.length === 0 ||
+    method === 'passkey' ||
+    (method === 'password' && password.length > 0) ||
+    (method === 'totp' &&
+      (useBackup ? code.trim().length >= 10 : code.replace(/\s/g, '').length >= 6))
+  const canSubmit = typed === 'DELETE' && proofReady && methods?.length !== 0
+  const stepUp = methods && methods.length > 0 && method ? method : undefined
+
+  // The submit button is disabled while busy, which drops focus to <body>: put it where the
+  // next step is (the method choice or the proof field, else the button itself).
+  useEffect(() => {
+    if (!focusRequest) return
+    const form = formRef.current
+    if (!form) return
+    const box = form.querySelector('[data-testid="delete-step-up"]')
+    const input = box?.querySelector<HTMLInputElement>('input:not([type="radio"])')
+    const radio = box?.querySelector<HTMLInputElement>('input[type="radio"]:checked')
+    const submit = form.querySelector<HTMLButtonElement>('[data-testid="delete-submit"]')
+    const cancel = form.querySelector<HTMLButtonElement>('[data-testid="delete-cancel"]')
+    const target =
+      (focusRequest.to === 'step-up' ? radio : null) ??
+      input ??
+      (submit && !submit.disabled ? submit : null) ??
+      cancel
+    target?.focus()
+    if (focusRequest.to === 'retry' && target === input) input?.select()
+  }, [focusRequest])
+
+  // Closing the dialog removes the button that had focus: return it to "Delete account…".
+  useEffect(() => {
+    if (wasOpen.current && !open) openerRef.current?.querySelector('button')?.focus()
+    wasOpen.current = open
+  }, [open])
+
+  const requestFocus = (to: 'step-up' | 'retry') =>
+    setFocusRequest((r) => ({ n: (r?.n ?? 0) + 1, to }))
+
+  /** A fresh dialog each time: nothing typed, no proof or old error kept. */
+  function reset() {
+    setTyped('')
+    setPassword('')
+    setCode('')
+    setUseBackup(false)
+    setError(undefined)
+    setAnnouncement('')
+  }
+
+  async function proof(): Promise<Record<string, unknown> | null> {
+    if (!stepUp) return {}
+    if (stepUp === 'password') return { password }
+    if (stepUp === 'totp')
+      return useBackup ? { backupCode: code } : { totpCode: code.replace(/\s/g, '') }
+    try {
+      return { passkey: await passkeyProof() }
+    } catch {
+      setError('The passkey check was cancelled or didn’t finish. Try again.')
+      requestFocus('retry')
+      return null
+    }
+  }
 
   async function remove() {
     setBusy(true)
     setError(undefined)
+    setAnnouncement('')
+    const extra = await proof()
+    if (!extra) {
+      setBusy(false)
+      return
+    }
     try {
-      await api('/api/account', {
-        method: 'DELETE',
-        body: needPassword ? { confirm: 'DELETE', password } : { confirm: 'DELETE' },
-      })
+      await api('/api/account', { method: 'DELETE', body: { confirm: 'DELETE', ...extra } })
       // The apps' stored token died with the account: forget it (no-op in the browser).
       endBearerSession()
       await endMatchSession()
       await leaveSession(refreshSession, { deleted: true })
     } catch (err) {
-      if (err instanceof ApiError && err.code === 'SESSION_NOT_FRESH' && hasPassword) {
-        setNeedPassword(true)
-        setError('For your security, enter your password to confirm.')
+      if (err instanceof ApiError && err.code === 'SESSION_NOT_FRESH') {
+        const offered = ((err.body as { methods?: StepUpMethod[] } | null)?.methods ?? []).filter(
+          (m) => m in STEP_UP_LABELS,
+        )
+        setMethods(offered)
+        setMethod(offered[0])
+        if (offered.length === 0) {
+          setError('For your security, sign out and sign in again before deleting your account.')
+        } else {
+          setAnnouncement(
+            'Confirm it’s you: you signed in more than a day ago, so deleting your account needs one more check.',
+          )
+        }
+        requestFocus('step-up')
       } else {
-        setError(err instanceof ApiError ? err.message : 'Something went wrong. Please try again.')
+        if (err instanceof ApiError && err.status === 429) {
+          setError(tooManyAttempts(err.retryAfter))
+        } else {
+          setError(
+            err instanceof ApiError ? err.message : 'Something went wrong. Please try again.',
+          )
+        }
+        requestFocus('retry')
       }
       setBusy(false)
     }
+  }
+
+  function choose(m: StepUpMethod) {
+    setMethod(m)
+    setCode('')
+    setUseBackup(false)
+    setError(undefined)
   }
 
   return (
@@ -967,14 +1347,33 @@ function DeleteAccount({ guest, hasPassword }: { guest: boolean; hasPassword: bo
       testId="delete-account"
       actions={
         open ? null : (
-          <Button variant="danger" onClick={() => setOpen(true)} data-testid="delete-open">
-            {guest ? 'Delete guest account…' : 'Delete account…'}
-          </Button>
+          <div ref={openerRef}>
+            <Button
+              variant="danger"
+              onClick={() => {
+                reset()
+                setOpen(true)
+              }}
+              data-testid="delete-open"
+            >
+              {guest ? 'Delete guest account…' : 'Delete account…'}
+            </Button>
+          </div>
         )
       }
     >
       {open ? (
-        <div className="flex flex-col gap-4">
+        <form
+          ref={formRef}
+          className="flex flex-col gap-4"
+          onSubmit={(e) => {
+            e.preventDefault()
+            if (canSubmit && !busy) void remove()
+          }}
+        >
+          <p className="sr-only" role="status" data-testid="delete-announcement">
+            {announcement}
+          </p>
           <Field
             label="Type DELETE to confirm"
             value={typed}
@@ -983,33 +1382,126 @@ function DeleteAccount({ guest, hasPassword }: { guest: boolean; hasPassword: bo
             data-testid="delete-confirm"
             className="sm:max-w-sm"
           />
-          {needPassword ? (
-            <Field
-              label="Current password"
-              type="password"
-              autoComplete="current-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              data-testid="delete-password"
-              className="sm:max-w-sm"
-            />
+          {stepUp ? (
+            <fieldset
+              className="flex flex-col gap-3"
+              aria-describedby={hintId}
+              data-testid="delete-step-up"
+            >
+              <legend className="mb-2 text-sm font-medium text-parchment/85">
+                Confirm it’s you
+              </legend>
+              <p
+                id={hintId}
+                className="-mt-1 text-sm text-parchment/60"
+                data-testid="delete-step-up-hint"
+              >
+                You signed in more than a day ago, so we need to check it’s really you before
+                deleting your account.
+              </p>
+              {methods && methods.length > 1 ? (
+                <div className="flex flex-wrap gap-2">
+                  {methods.map((m) => (
+                    <label
+                      key={m}
+                      className={cx(
+                        'inline-flex h-9 cursor-pointer items-center gap-2 rounded-full border px-3.5 text-sm font-medium transition-colors duration-150',
+                        'has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-gold',
+                        method === m
+                          ? 'border-gold/60 bg-gold/10 text-parchment'
+                          : 'border-parchment/15 text-parchment/70 hover:border-parchment/35 hover:text-parchment',
+                      )}
+                    >
+                      <input
+                        type="radio"
+                        name="delete-step-up"
+                        value={m}
+                        checked={method === m}
+                        onChange={() => choose(m)}
+                        className="sr-only"
+                        data-testid={`delete-method-${m}`}
+                      />
+                      {STEP_UP_LABELS[m].icon}
+                      {STEP_UP_LABELS[m].label}
+                    </label>
+                  ))}
+                </div>
+              ) : null}
+              {method === 'password' ? (
+                <Field
+                  label="Current password"
+                  type="password"
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  data-testid="delete-password"
+                  className="sm:max-w-sm"
+                />
+              ) : method === 'passkey' ? (
+                <p className="flex items-start gap-2.5 text-sm text-parchment/70">
+                  <KeyRound
+                    aria-hidden="true"
+                    className="mt-0.5 h-4 w-4 shrink-0 text-parchment/45"
+                  />
+                  Your browser will ask for one of this account’s passkeys.
+                </p>
+              ) : (
+                <div className="flex flex-col items-start gap-2">
+                  <Field
+                    key={useBackup ? 'backup' : 'totp'}
+                    label={useBackup ? 'Backup code' : 'Code from your authenticator app'}
+                    inputMode={useBackup ? 'text' : 'numeric'}
+                    autoComplete={useBackup ? 'off' : 'one-time-code'}
+                    autoCapitalize={useBackup ? 'characters' : undefined}
+                    spellCheck={false}
+                    value={code}
+                    onChange={(e) => setCode(e.target.value)}
+                    hint={useBackup ? 'A backup code works once.' : undefined}
+                    data-testid="delete-code"
+                    className="w-full sm:max-w-sm"
+                  />
+                  <button
+                    type="button"
+                    className="-my-1 inline-flex min-h-8 items-center rounded-md py-1 text-sm font-medium text-gold underline-offset-4 hover:underline"
+                    onClick={() => {
+                      setUseBackup((b) => !b)
+                      setCode('')
+                    }}
+                    data-testid="delete-use-backup"
+                  >
+                    {useBackup ? 'Use your authenticator app instead' : 'Use a backup code instead'}
+                  </button>
+                </div>
+              )}
+            </fieldset>
           ) : null}
           {error ? <Alert>{error}</Alert> : null}
           <div className="flex flex-wrap gap-3">
             <Button
+              type="submit"
               variant="danger"
-              disabled={typed !== 'DELETE' || (needPassword && !password)}
+              disabled={!canSubmit}
               busy={busy}
-              onClick={remove}
               data-testid="delete-submit"
             >
-              {guest ? 'Delete guest account' : 'Delete my account'}
+              {guest
+                ? 'Delete guest account'
+                : stepUp === 'passkey'
+                  ? 'Confirm with passkey and delete'
+                  : 'Delete my account'}
             </Button>
-            <Button variant="ghost" onClick={() => setOpen(false)}>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                reset()
+                setOpen(false)
+              }}
+              data-testid="delete-cancel"
+            >
               Cancel
             </Button>
           </div>
-        </div>
+        </form>
       ) : null}
     </Section>
   )
