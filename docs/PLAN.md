@@ -341,6 +341,8 @@ I will draft these from established practice and the case law on online agreemen
   - Under-13s get a neutral "Sorry, we can't create an account right now" and nothing is stored. A persistent cookie blocks an immediate retry.
   - Only the age band (13–15 / 16–17 / 18+) plus the date is kept. Under-18 bands get high-privacy defaults (profile and match history not public by default).
   - If we later learn a user is under 13, the account and data are deleted promptly (TODO moderation item).
+  - The screen comes before playing as a guest or creating an account, never before signing in: signing in and account recovery (sign-in, two-step verification, forgot/reset password, email verification) don't ask, because every account was age-confirmed when it was created. The age is stored on the account, so a signed-in account whose stored confirmation is true is never shown the screen, whatever the browser's age cookie says. An account without one (none is created that way today; a future path or a script could) is asked once after sign-in and the answer is stored on it. A recent under-13 answer in the browser still blocks the sign-in pages (open question in TODO).
+  - The web client shows the screen only on a settled answer: while the session or the legal status is loading, refetching or failing (a server restart), it keeps the previous answer or shows a loading state, and says the server is unreachable only after repeated failures, retrying on its own.
 - **Terms of Service** cover:
   - **eligibility:** 13+. Users under 18 (or the local age of majority) need a parent or guardian's permission. The guardian is not bound unless a guardian-confirmation step is added (attorney decision);
   - **accounts, security and guest accounts;**
