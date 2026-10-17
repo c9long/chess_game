@@ -112,7 +112,13 @@ you want to tone it down: three Prime Ministers (keep one knight), or Prime Mini
 only like a king plus one knight jump per turn, or England loses when any two are captured.
 
 Commits `03a45a1`…`c138851`. The full check passed on these commits on their own (server 356
-tests, web 96). A review pass (rules attack tests + visual check) is still running.
+tests, web 96). The review pass found 12 issues, all fixed (commits `9e6fa4e`…`56dc142`): bots
+treated any attacked Prime Minister like an attacked king and passed up free material (now
+only the last one counts); the crown is bigger so the piece reads at phone sizes; England's
+name never truncates in the pickers; screen readers say which Prime Ministers are attacked;
+the result says "All Prime Ministers captured". After the bot fix England still wins about
+45–60% of bot FFA games, so the balance warning stands. *(The usage limit hit at 8:18 AM and
+this pass only finished at about 12:30 PM; see "Usage limit" below.)*
 
 ### 7. From the to-do list: basic moderation (needed for the app stores)
 Apple and Google require blocking and reporting in apps where players interact, and friend
@@ -134,7 +140,27 @@ requests now count. Built for the beta, not for scale (commits `ab5b63c`…`39e4
 - Terms and Privacy Policy drafts say what's kept and for how long.
 - The full check passed on these commits on their own (server 392 tests; one clock-timing test
   missed its 5 ms tolerance by 0.2 ms while three workflows were running, and passed 5 of 5 on
-  rerun). A review pass (abuse tests + UX check) is still running.
+  rerun). The review pass found 23 issues, all fixed (commits `68b80df`…`51d94ac`): the name
+  filter can't be beaten by splitting a word with `_`/spaces, look-alike letters or the
+  displayed spelling, and no longer refuses ordinary Japanese, Thai, Indian and European
+  names; a reset username is held for a year; a blocked player no longer sees an "Add friend"
+  button that always fails (which gave the block away); keyboard users can use the Report and
+  Block dialogs on the result screen.
+
+### 8. From the to-do list: one-address hosting (`WEB_DIST_DIR`)
+The API server can now serve the built web app itself, so the CSC setup can run on a single
+hostname without Cloudflare Pages (the guide offers it as option B; Pages stays the default).
+Commit `b2c539e`. One follow-up: the page security policy still allows `unsafe-eval` because
+the board renderer (PixiJS) needs it; a one-line import can remove that.
+
+### Usage limit and the retry helper
+At 8:18 AM the session limit hit while England's and moderation's review fixes and the
+one-address review were running. The workflow retry helper retried instantly, so all three
+steps failed within seconds, and nothing woke the session at the 8:50 reset; the work sat
+idle until 11:24. The helper now waits on a backoff schedule (2, 5, 10, 15, then 30-minute
+steps, up to ~6 h), probing with a tiny agent until the limit clears, and only then retries
+for real; probes don't use up the 3 attempts. The three steps were resumed from cache and
+finished.
 
 ### 6. Docker (M0 leftover): verified for real
 Both images build, and a local test stack migrated the database, answered `/api/health` and
