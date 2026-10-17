@@ -45,7 +45,8 @@ Contact: [PRIVACY CONTACT EMAIL]. See Section 16.
 | **Agreement records** | Which version of the Terms you accepted and which version of this Privacy Policy you acknowledged, when, and a pseudonymized (keyed-hash) form of the IP address used at that moment. | Each time you accept or acknowledge |
 | **Messages to us** | Your email address and whatever you include when you contact us (support, appeals, privacy requests, copyright notices). | When you contact us |
 | **Copyright (DMCA) records** | Copyright notices and counter-notices (including the sender's contact details), the account they concern, strike history, and a keyed hash of that account's email address. | When a notice or counter-notice is sent |
-| **Reports** (planned) | If we add player reporting: who reported whom, the reason, and related game details. | When you submit a report |
+| **Reports** | When you report a player: who reported whom, the reason you chose (offensive username, harassment, cheating or something else), your optional note (up to 500 characters), the game it came from (if any), the reported player's username at that moment, and when. Guests can report too. | When you submit a report |
+| **Blocks** (registered accounts only) | The players you blocked and when. | When you block someone |
 | **Chat** (planned) | If we add chat, we will update this policy before launch to explain what is collected and how long it is kept. | — |
 
 ### 2.2 Information created when you play
@@ -110,6 +111,8 @@ If you are in the European Economic Area (EEA), the United Kingdom or Switzerlan
 | Run lobbies and games; enforce clocks and rules; show results | Lobby data, match records, moves and events, username, civilization | **Contract** |
 | Calculate and display ratings; keep match history; let you and other players review past games | Match records, ratings | **Contract** |
 | Friends: friend requests, friends lists, showing your friends when you are online, and challenges to private games | Friends list and requests, online status, username, match records (to check you played together) | **Contract** |
+| Blocking: keeping players you blocked from sending you friend requests or challenges, and from seeing you online | Blocks, friends list and requests | **Contract** |
+| Moderation: reviewing reports, refusing offensive or impersonating usernames, warning players, resetting usernames and suspending accounts | Reports, username, match records and events of the reported game, account status | **Legitimate interests** (keeping the Service safe and fair for all players, and enforcing our Terms) |
 | Upgrade a guest account to a registered account while keeping your history; merge a Steam account with a web account | Guest account, match records, ratings, agreement records | **Contract** |
 | Send transactional emails (email verification, password reset, sign-in and security alerts, important changes to these documents) | Email address | **Contract**; for security alerts, also **legitimate interests** (protecting your account) |
 | Check that users are 13 or older, record their age band, and apply under-18 defaults | Age band and date | **Legitimate interests** (keeping the Service limited to its intended audience, applying age-appropriate defaults, and meeting our obligations under US children's-privacy law) |
@@ -140,6 +143,10 @@ Your **username**, **civilization emblem**, seat, ready status, moves and result
 > [CONFIRM AT IMPLEMENTATION: whether profiles, ratings and match history are public, visible to signed-in users only, or private. Update the bracketed sentence.]
 
 **Friends.** If you add friends, each of your friends can see that you are friends, your username, and **whether you are online right now**. Online status is shown only to your accepted friends, never to other players. Someone you sent a friend request to (or who sent you one) sees your username and when the request was sent. When you challenge friends, the friends you invite see your username, the game settings and the names of the others invited. Removing a friend, or deleting your account, ends all of this at once.
+
+**Blocking.** If you block a player, they are not told. They stop seeing you online and can no longer send you friend requests or challenges (they get the same message as for any player they can't add). Any friendship or friend request between you is removed, so they may notice that it is gone. Blocking doesn't remove anyone from a game that is already running.
+
+**Reports.** If you report a player, **we never tell them who reported them**. Reports are seen only by our moderators. If we act on a report (a warning, a username reset or a suspension), the reported player may learn of the action, but not of the reporter.
 
 ### 5.2 Service providers (processors)
 
@@ -205,7 +212,7 @@ When you delete your account, we remove your email, username, sign-in methods an
 | Information | How long |
 |---|---|
 | **Registered account** (email, username, sign-in methods, settings) | Until you delete your account. Deletion takes effect **immediately**. |
-| **On account deletion** | Email and username are replaced with "Deleted player #…"; passwords, passkeys, sessions, two-step secrets, sign-in provider links, friends lists and friend requests are **deleted**; the IP hash on agreement records is cleared. |
+| **On account deletion** | Email and username are replaced with "Deleted player #…"; passwords, passkeys, sessions, two-step secrets, sign-in provider links, friends lists, friend requests and blocks are **deleted**; the IP hash on agreement records is cleared. Reports you filed or that were filed about you are kept for the periods below, linked only to the placeholder; the username recorded in reports about you is deleted. |
 | **Guest accounts** | **Purged after 30 days of inactivity.** Guests with no games are deleted; for guests with games, the guest details are removed and the games are kept under a placeholder name as described above. |
 | **Match records, moves and ratings history** | Kept for as long as the Service runs, so other players' histories, ratings and replays stay accurate. **After you delete your account (or a guest account is purged), they are kept in de-identified form** under a placeholder name and are no longer linked to your email or username. They remain linked to an internal ID and may be recognizable to people who played or watched those games. |
 | **Age band** | For the life of the account (as part of the account record); deleted with the account's other details. |
@@ -217,6 +224,9 @@ When you delete your account, we remove your email, username, sign-in methods an
 | **Lobbies** | Only in server memory; gone when the lobby closes. |
 | **Sessions** | Until sign-out or expiry; deleted on account deletion. |
 | **Friends lists and friend requests** | Until you (or the other player) remove the friend, decline or cancel the request. **Deleted, not de-identified, when you delete your account.** Online status is never stored; challenges live only in server memory for at most 5 minutes. |
+| **Blocks** | Until you unblock the player. **Deleted when either account is deleted.** |
+| **Reports** | Open reports until a moderator reviews them. Reviewed reports (resolved or dismissed), including who handled them, when, and what was done, are **deleted 1 year after the review**. |
+| **Suspensions** | The date and the moderator who suspended the account, until the suspension is lifted or the account is deleted. |
 | **Support, appeal and privacy-request emails** | [2 years] after the matter is closed, or longer if needed for a legal claim. |
 | **Moderation records** (e.g. reasons for a ban) | [For as long as needed to enforce the ban, up to [X] years]. |
 | **Copyright (DMCA) records** (notices, counter-notices, strike history, hashed email of the affected account) | [3] years after the last notice, including after account deletion, to administer our repeat-infringer policy (**legitimate interests**: meeting US copyright-law requirements and preventing terminated repeat infringers from re-registering). |
@@ -250,8 +260,8 @@ Wherever you live, you can:
 
 | Right | How |
 |---|---|
-| **Access / download (portability)** | **Settings → Download my data** gives you a JSON file with your profile, ratings, match history, and friends and friend requests. Or email us for a copy of other information we hold. |
-| **Correct** | Change your email or password in Settings. [Username changes: per policy.] Email us to correct anything else. |
+| **Access / download (portability)** | **Settings → Download my data** gives you a JSON file with your profile, ratings, match history, friends and friend requests, the players you blocked, and the reports you filed (without the reported player's details). Or email us for a copy of other information we hold. Reports filed about you are not in the download; on request we tell you about them without revealing who filed them. |
+| **Correct** | Change your email or password in Settings. Usernames can't be changed during the beta (a moderator may reset an offensive username, and you then choose a new one). Email us to correct anything else. |
 | **Delete** | **Settings → Delete account** deletes immediately (see Section 8). Or email us. |
 | **Disconnect sign-in providers** | Settings → Sign-in methods (as long as one sign-in method remains). You can also revoke our access in your Google, Discord, GitHub, Microsoft or Steam settings. |
 | **Object / ask us to restrict** | Email us. We will stop or limit a use based on legitimate interests unless we have compelling grounds, or need it for legal claims. |

@@ -87,7 +87,7 @@ Conventions (see [CLAUDE.md](CLAUDE.md)):
 - ~~Bot seats with level picker and random-but-editable civ~~ (done 2026-10-15)
 - ~~Civ dropdown instead of the emblem grid (scales to 100+ civs)~~ (done 2026-10-16; `CivSelect`: a 56 px trigger row (medallion, name, chevron) opening a Radix popover with a search box and scrolling 56 px rows, a check on the chosen civ; WAI-ARIA 1.2 combobox/listbox keyboard (arrows, Page Up/Down, Home/End, Enter, Escape, Tab, typeahead), case- and accent-insensitive search, focus back on the trigger; data-driven from `CIVILIZATIONS`, monogram for civs without art, unit-tested with 120 synthetic civs. Replaces the Play vs bots and lobby grids and the host's bot-civ `<select>`; `CivPicker` and `grid-nav` removed; E2E helper `chooseCiv`, `civ-select.spec.ts`)
 - ~~Friends & challenges~~ (done 2026-10-17; registered accounts only. Add anyone you are playing with or finished a game with (both seated in the same in-progress or finished match; a lobby alone or an aborted game doesn't count; no bots, guests or deleted accounts), named by match + seat so user ids can't be used to spam strangers. 50 friends per player (both sides checked on accept), 10 pending outgoing, 20 requests/hour per user; a request back auto-accepts. `friendships` table (migration 0007), deleted (not re-keyed) on account deletion, included in the export. REST for every action (`/api/friends`, `/api/friends/match/:id`, `/api/challenges`), plus a `social` Colyseus room (cookie or bearer) pushing requests, acceptances, presence (5 s offline grace) and challenges. Challenges: up to 3 friends, FFA/Teams, 10+0/3+2, casual; the server creates an unlisted invite-only lobby (`inviteOnly`, others get `not_invited`), invitees get a Join/Decline prompt that expires after 5 minutes or when the lobby starts or closes; the host can invite again into the same lobby after it ends. Removing a friend or deleting an account withdraws open invitations; social connections close when their session ends (sign-out, revoke, expiry). Web: Friends page (online dots, Challenge, Remove, requests, open challenges, empty state, guest hint), header link + phone menu with a badge, "Add friend" on live player cards, the result screen and history rows, toasts and a challenge prompt. `social.test.ts`, `friends.spec.ts`)
-- Friends: block users (hide their requests and challenges; remove an existing friendship)
+- ~~Friends: block users (hide their requests and challenges; remove an existing friendship)~~ (done 2026-10-17; registered accounts, up to 500, from the Friends page, live player cards, the result screen and history rows. Removes the friendship and pending requests both ways; the blocked player gets the same neutral answers as any ineligible player (requests `NOT_ELIGIBLE`, challenges `NOT_FRIENDS`); presence is friends-only so neither sees the other online; "Blocked" list with Unblock on the Friends page. Never removes anyone from a running game. `blocks` table (migration 0008), deleted with either account, in the export. `moderation.test.ts`, `moderation.spec.ts`)
 - Friends: ranked challenges (invite-only ranked lobbies; today challenges are casual only)
 
 ### M5 — Live games — §2, §5
@@ -153,7 +153,14 @@ Conventions (see [CLAUDE.md](CLAUDE.md)):
 
 ## Before public release
 
-- Moderation: profanity filter, reserved/impersonation names, report button + review queue, username change policy
+- ~~Moderation: profanity filter, reserved/impersonation names, report button + review queue, username change policy~~ (done 2026-10-17; see PLAN §3 "Moderation". Name filter in the pluggable NamePolicy (normalized matching: case, accents, leetspeak, repeats, separators; whole-word rules + allowlist against the Scunthorpe problem; word lists in `apps/server/src/auth/name-terms.json`) and reserved names (staff words, Guest/Player/bot placeholders, `APP_NAME` words) at sign-up, username choice and guest upgrade, with one neutral "That username isn't available" answer; profanity filter on lobby names. Report button on live cards, the result screen, history and the Friends page (guests too; offensive username / harassment / cheating / other + 500-character note; 10 per day, one open report per player and game). `/admin/reports` review queue for `ADMIN_USER_IDS`: dismiss, warn (recorded), reset username, suspend (sign-in refused, sessions revoked, out of lobbies) and unsuspend. Reports kept 1 year after review. Username change policy: **not available in the beta**; a moderator reset is the only change)
+- Moderation: chat moderation (filter, mute, reports with message context) when chat is built
+- Moderation: appeals process for warnings, username resets and suspensions (Terms §8.2 names an email; decide who answers and how fast)
+- Moderation: "Warn" only records the decision; tell the player (email or an in-app notice)
+- Moderation: let admins open the reported game (players, moves) from the review queue; today they copy the match id
+- Moderation: keep a reset (offensive) username reserved so nobody else can take it right away
+- Moderation: require two-step verification (or a fresh sign-in) for admin actions, and keep an audit row for unsuspensions (today only the log line)
+- Username changes, if ever offered: at most once per 30 days, and the old name stays reserved for 30 days
 - Process for deleting accounts found to belong to under-13s (COPPA actual knowledge)
 - Attorney review of Terms/Privacy (choose dispute option A or B, confirm minor/guardian language)
 - Fill legal placeholders (operator legal name, address, contact email)
@@ -188,7 +195,7 @@ Conventions (see [CLAUDE.md](CLAUDE.md)):
 
 - Statistical engine-match analysis on rated games (compare with bot-engine top choices, weighted by position complexity)
 - Move-time consistency analysis
-- Report-driven review queue
+- ~~Report-driven review queue~~ (done 2026-10-17; "cheating" reports land in the moderation review queue with the game attached; no statistical analysis yet)
 - Account trust levels (N casual games before rated)
 - Rating rollback for confirmed cheaters
 - Spectator delay on rated games once spectating exists

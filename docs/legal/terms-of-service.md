@@ -131,9 +131,9 @@ Your username is public. It appears in lobbies, during games, on results screens
 
 The same rules apply to **lobby names** and to any other text you create in the Service.
 
-We may refuse, reset or change any username or lobby name that we believe breaks these rules, and we may reserve certain names. We may replace a removed username with a neutral placeholder.
+We may refuse, reset or change any username or lobby name that we believe breaks these rules, and we may reserve certain names. We use an automatic filter that refuses some names (for example, offensive words and names such as "admin" or "moderator"); a refused name gets a neutral "not available" message. We may replace a removed username with a neutral placeholder, and you will then be asked to choose a new username.
 
-> [Drafting note: The username-change policy (whether users can change usernames, how often, and whether old names are reserved) is still an open product decision (TODO "moderation"). Add a sentence here once decided.]
+**Changing your username.** During the beta you can't change your username yourself. If a moderator resets it, you choose a new one the next time you visit.
 
 ## 5. Your license to use the Service
 
@@ -182,6 +182,12 @@ If you believe you have found a security vulnerability, please report it to [SEC
 
 > [Drafting note: The safe-harbor sentence is optional. It is a goodwill measure that encourages responsible disclosure; counsel may narrow it or delete it.]
 
+### 6.5 Blocking and reporting
+
+**Blocking.** You can block another registered player from your Friends page, from their player card during a game, from the results screen or from your match history. A blocked player can't send you friend requests or challenges and doesn't see when you are online, and any friendship or request between you ends. They are not told that you blocked them. Blocking does not remove anyone from a game that is already running. You can unblock a player at any time. You can block up to 500 players.
+
+**Reporting.** You can report a player (including as a guest) for an offensive username, harassment, cheating or another reason, with an optional note. Reports go to our moderators; **the reported player is never told who reported them**. Please report honestly: knowingly false or abusive reports break these rules. You can send a limited number of reports per day. The Privacy Policy explains what a report contains and how long we keep it.
+
 ## 7. Rated play and ratings
 
 ### 7.1 How rated play works
@@ -215,11 +221,12 @@ We may use automated tools and human review to detect cheating, collusion and ra
 
 To keep the Service fair and safe, we may, with or without notice:
 
-- remove or change usernames, lobby names or other content;
+- remove or change usernames, lobby names or other content (including resetting your username, after which you choose a new one);
 - remove a player from a lobby or game, or close a lobby;
 - annul results and adjust ratings (Section 7.2);
 - restrict features (for example, rated play) for a period of time;
-- suspend your account temporarily; or
+- warn you;
+- suspend your account temporarily (while suspended you can't sign in, you are signed out everywhere and removed from any lobby; your match history stays); or
 - permanently ban you and terminate your account.
 
 We decide what action to take based on how serious the violation is, any history of violations, and the effect on other players. We do not have to give a warning first. We may also act against related accounts used by the same person. The Privacy Policy describes the signals we use to identify related accounts.
