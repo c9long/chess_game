@@ -33,6 +33,9 @@ describe('loadConfig', () => {
     )
     expect(() => loadConfig({ ...prod, RESEND_API_KEY: '' })).toThrow(/RESEND_API_KEY/)
     expect(() => loadConfig({ ...prod, DEV_MAIL_ENDPOINT: 'true' })).toThrow(/DEV_MAIL_ENDPOINT/)
+    expect(() => loadConfig({ ...prod, ABORT_ORPHANED_MATCHES: 'false' })).toThrow(
+      /ABORT_ORPHANED_MATCHES/,
+    )
     const c = loadConfig(prod)
     expect(c.isProduction).toBe(true)
     expect(c.devMailEndpoint).toBe(false)

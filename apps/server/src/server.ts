@@ -29,7 +29,7 @@ export async function startServer(
 ): Promise<RunningServer> {
   initRulesSync()
   const ctx = createApp(config, overrides)
-  const aborted = await abortOrphanedMatches(ctx.db)
+  const aborted = config.abortOrphanedMatches ? await abortOrphanedMatches(ctx.db) : []
   if (aborted.length > 0) {
     ctx.logger.warn({ count: aborted.length }, 'aborted matches left in progress by a restart')
   }

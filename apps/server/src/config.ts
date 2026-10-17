@@ -46,6 +46,12 @@ const envSchema = z.object({
   /** Development only: file that keeps dev emails across restarts ('' = memory only). */
   DEV_MAILBOX_FILE: z.string().optional(),
   GUEST_INACTIVE_DAYS: z.coerce.number().int().positive().default(30),
+  /**
+   * Abort matches left in_progress by a previous process at startup (default on). Off only for
+   * a second test server sharing a database with a running one (E2E restart spec), where those
+   * matches belong to the other server. Must stay on in production.
+   */
+  ABORT_ORPHANED_MATCHES: bool.default(true),
   GUEST_PURGE_INTERVAL_MINUTES: z.coerce
     .number()
     .int()
@@ -115,6 +121,8 @@ export interface AppConfig {
   devMailboxFile: string | undefined
   guestInactiveDays: number
   guestPurgeIntervalMinutes: number
+  /** Abort matches a previous process left in_progress at startup (see ABORT_ORPHANED_MATCHES). */
+  abortOrphanedMatches: boolean
   oauth: Partial<Record<OAuthProviderId, OAuthCredentials>>
   microsoftTenantId: string
   game: GameConfig
@@ -175,6 +183,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   }
   if (isProduction && !e.RESEND_API_KEY) {
     problems.push('RESEND_API_KEY is required in production')
+  }
+  if (isProduction && !e.ABORT_ORPHANED_MATCHES) {
+    problems.push('ABORT_ORPHANED_MATCHES cannot be disabled in production')
   }
   if (isProduction && e.DEV_MAIL_ENDPOINT) {
     problems.push('DEV_MAIL_ENDPOINT cannot be enabled in production')
@@ -260,6 +271,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
         : undefined,
     guestInactiveDays: e.GUEST_INACTIVE_DAYS,
     guestPurgeIntervalMinutes: e.GUEST_PURGE_INTERVAL_MINUTES,
+    abortOrphanedMatches: e.ABORT_ORPHANED_MATCHES,
     oauth,
     microsoftTenantId: e.MICROSOFT_TENANT_ID,
     game: {

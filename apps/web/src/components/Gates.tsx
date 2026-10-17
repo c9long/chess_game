@@ -168,9 +168,9 @@ export function AgeGate({ requireAge = true }: { requireAge?: boolean }) {
     return (
       <CenteredPage>
         <div className="flex flex-col items-center gap-4" data-testid="server-unreachable">
-          <Alert>We can&apos;t reach the server right now. Please try again shortly.</Alert>
+          <Alert>We can&apos;t reach the server right now.</Alert>
           <p className="flex items-center gap-2 text-sm text-parchment/60" aria-live="polite">
-            <Spinner /> Trying again…
+            <Spinner /> Reconnecting automatically…
           </p>
         </div>
       </CenteredPage>

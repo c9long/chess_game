@@ -314,7 +314,7 @@ export function GameOver({
                         </span>
                       ) : null}
                     </span>
-                    <span className="block truncate text-xs text-parchment/50">
+                    <span className="block truncate text-xs text-parchment/65">
                       {civName(seat.civ)} · {SEAT_LABEL[seatName(i)]}
                       {reason ? (
                         <span
