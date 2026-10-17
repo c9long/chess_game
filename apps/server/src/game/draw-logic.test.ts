@@ -62,6 +62,13 @@ describe('material', () => {
       4, 9, 5, 3,
     ])
   })
+
+  it("counts England's Prime Ministers (4 each)", () => {
+    const game = Game.create({ mode: 'ffa', civs: ['england', 'canada', 'canada', 'canada'] })
+    // England: 8 pawns, 2 bishops, 2 rooks, 4 Prime Ministers = 8 + 6 + 10 + 16.
+    expect(materialBySeat(game.snapshot())).toEqual([40, 39, 39, 39])
+    game.free()
+  })
 })
 
 describe('bot draw answers', () => {

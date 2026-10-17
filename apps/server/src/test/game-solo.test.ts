@@ -360,7 +360,8 @@ describe('solo rooms', () => {
     // reverse-defeat-order places.
     const myPlace = over.placements[0] ?? 0
     expect(myPlace).toBeGreaterThan(1)
-    expect(over.placements.filter((x) => x === 1)).toHaveLength(4 - myPlace + 1)
+    // (The bots out before the player took places 4, 3, ...; every other bot shares 1st.)
+    expect(over.placements.filter((x) => x === 1)).toHaveLength(myPlace - 1)
     await p.waitState((s) => s.phase === 'finished')
     expect(await finishedMatch(matchId)).toMatchObject({ endReason: 'player_eliminated' })
     expect(await resimulate(db(), matchId)).toBe(p.state.positionString)

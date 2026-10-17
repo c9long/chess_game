@@ -58,6 +58,10 @@ async function startGame(
   })
   for (const seat of opts.botSeats ?? []) host.send('addBot', { seat, level: '1200' })
   await host.waitState((s) => (opts.botSeats ?? []).every((i) => s.seats[i]?.isBot))
+  // Bots get a random civ, which can be England (a different army); the scripted games here
+  // assume the standard army in every seat.
+  for (const seat of opts.botSeats ?? []) host.send('setBotCiv', { seat, civ: CIVS[seat] })
+  await host.waitState((s) => (opts.botSeats ?? []).every((i) => s.seats[i]?.civ === CIVS[i]))
   const players = [host]
   for (const b of rest) players.push(await joinLobby(b, host.room.roomId))
   await host.waitState((s) => s.seats.every((x) => x.occupied), 5_000, 'all seats filled')

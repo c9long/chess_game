@@ -12,7 +12,11 @@ import {
   seatIndex,
 } from '@game/rules'
 
-/** Conventional piece values for the bots' "am I clearly losing?" check (leader excluded). */
+/**
+ * Conventional piece values for the bots' "am I clearly losing?" check. A single king is left
+ * out; England's four Prime Ministers count (each moves like a knight or a king, and losing one
+ * is a loss of material, not of the game).
+ */
 export const MATERIAL_VALUE: Record<PieceKind, number> = {
   pawn: 1,
   knight: 3,
@@ -20,6 +24,7 @@ export const MATERIAL_VALUE: Record<PieceKind, number> = {
   rook: 5,
   queen: 9,
   king: 0,
+  prime_minister: 4,
 }
 
 /**
