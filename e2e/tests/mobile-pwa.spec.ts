@@ -52,18 +52,42 @@ async function stubWakeLock(page: Page) {
   })
 }
 
-/** Keeps every WebSocket the page opens, so a test can make one go silent. */
+/**
+ * Keeps every WebSocket the page opens, so a test can make one go silent, and records the
+ * close codes of the game-room sockets (`__roomCloses`).
+ */
 async function trackSockets(page: Page) {
   await page.addInitScript(() => {
     const Native = window.WebSocket
     const sockets: WebSocket[] = []
-    ;(window as unknown as { __sockets: WebSocket[] }).__sockets = sockets
+    const roomCloses: number[] = []
+    const w = window as unknown as { __sockets: WebSocket[]; __roomCloses: number[] }
+    w.__sockets = sockets
+    w.__roomCloses = roomCloses
     window.WebSocket = class extends Native {
       constructor(url: string | URL, protocols?: string | string[]) {
         super(url, protocols)
         sockets.push(this)
+        if (String(url).includes('/colyseus/')) {
+          this.addEventListener('close', (e) => roomCloses.push(e.code))
+        }
       }
     } as typeof WebSocket
+  })
+}
+
+/**
+ * Records whether the reconnecting banner was ever shown (`__bannerSeen`). A reconnect can
+ * take well under a second, shorter than expect()'s polling interval, so polling for the
+ * banner itself can miss it.
+ */
+async function watchForReconnectingBanner(page: Page) {
+  await page.addInitScript(() => {
+    const w = window as unknown as { __bannerSeen: boolean }
+    w.__bannerSeen = false
+    new MutationObserver(() => {
+      if (document.querySelector('[data-testid="reconnecting"]')) w.__bannerSeen = true
+    }).observe(document, { childList: true, subtree: true })
   })
 }
 
@@ -227,19 +251,33 @@ test('back in the app: a socket that died while away is replaced at once', async
   test.setTimeout(120_000)
   const { context, page } = await phonePage(browser)
   await trackSockets(page)
+  await watchForReconnectingBanner(page)
   await startSolo(page)
+  const roomCloses = () =>
+    page.evaluate(() => (window as unknown as { __roomCloses: number[] }).__roomCloses)
+  const closesBefore = (await roomCloses()).length
 
   // The phone suspended the app and the connection died silently: nothing more goes out on
   // it (no close event either). Coming back to the app checks the connection right away.
   await page.evaluate(() => {
-    const sockets = (window as unknown as { __sockets: WebSocket[] }).__sockets
-    const live = sockets.filter((s) => s.readyState === WebSocket.OPEN)
+    const w = window as unknown as { __sockets: WebSocket[]; __bannerSeen: boolean }
+    w.__bannerSeen = false
+    const live = w.__sockets.filter((s) => s.readyState === WebSocket.OPEN)
     for (const s of live) s.send = () => {}
     document.dispatchEvent(new Event('visibilitychange'))
   })
+  // The unanswered ping drops the room socket (4010, which the SDK reconnects from at once),
+  // and the player is told while the new one connects. That can be over in a few hundred ms,
+  // so the banner is checked through the page's own record of it, not by polling for it.
+  await expect
+    .poll(async () => (await roomCloses()).slice(closesBefore), { timeout: 6_000 })
+    .toContain(4010)
+  await expect
+    .poll(() => page.evaluate(() => (window as unknown as { __bannerSeen: boolean }).__bannerSeen))
+    .toBe(true)
   const banner = page.getByTestId('reconnecting')
-  await expect(banner).toBeVisible({ timeout: 6_000 })
-  if (SHOTS) {
+  // Best effort: the banner may already be gone again by now.
+  if (SHOTS && (await banner.isVisible())) {
     await simulateSafeArea(page)
     await page.screenshot({ path: `${SHOTS}/phone-reconnecting.png` })
   }
