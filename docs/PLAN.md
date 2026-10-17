@@ -210,6 +210,16 @@ An ACTIVE seat is **defeated** when:
 | **Rematch, AFK → bot takeover (casual), premoves** | Lobby can be re-opened after a match. A bot-service seat can replace an abandoning human. Premoves are a client-side queue validated by the server. |
 | **Unity client + Steam** | See §7. |
 
+### Friends and challenges (built 2026-10-17)
+*(User request, 2026-10-17.)*
+- **Registered accounts only.** Guests see "Create an account to add friends".
+- **Who you can add:** anyone you are playing with right now (a running game) or have finished a game with, i.e. both of you are seated in the same in-progress or finished match. Sitting in the same lobby is not enough, and neither is an aborted game; bots, guests and deleted accounts can't be added. Requests name the other player by match and seat, never by user id, so joining random lobbies to spam requests doesn't work.
+- **Limits:** 50 accepted friends per player (both sides checked when a request is accepted), at most 10 outgoing requests waiting, 20 requests per hour per player. Sending a request to someone who already asked you accepts theirs.
+- **Actions:** send, cancel, accept, decline, remove. Blocking is not built yet (TODO).
+- **Where:** a Friends page (friends with online dots, Challenge and Remove; incoming and outgoing requests; open challenges), and "Add friend" on player cards in a live game, on the result screen and in match history. States: Add friend / Request sent / Accept request / Friends / Friends full (50-friend cap) / Too many pending (10 requests waiting).
+- **Realtime:** a `social` Colyseus room every signed-in registered client joins (cookie on the web, bearer token in the mobile and Unity apps). It pushes friend requests, acceptances, friends' online/offline status (offline after a 5 s grace) and challenges. Every action is also a REST endpoint, so polling works too (`packages/protocol/README.md`). A connection belongs to the session it was opened with: sign-out, revoked sessions, a password reset, expiry or account deletion close it (close code 4103), so a lost device stops receiving friends' data once its token is revoked.
+- **Challenges:** from the Friends page, pick FFA/Teams, 10+0/3+2 and up to 3 friends (online or offline). The server creates a casual, unlisted, **invite-only** lobby hosted by the challenger: invited friends join without a password, anyone else gets `not_invited`. Each invitee gets a prompt (Join / Decline) that expires after 5 minutes or when the lobby starts or closes (on the Friends page, or during a game, it arrives as a toast instead, since the page lists it). Removing the friend or deleting an account withdraws an open invitation. The host's lobby shows the countdown, and after the invitation ends offers "Invite again" (same lobby, friends not yet seated). Co-invitees who aren't your friends are shown by name only. Empty seats can still take bots. Ranked challenges are not built yet (TODO).
+
 ---
 
 ## 4. Civilization Emblems (no flags)
@@ -257,6 +267,7 @@ Emblems are SVG (vector) files, so they stay crisp at any size, from the lobby i
   - Public `GET /api/leaderboard?mode=&tc=&limit=`: the top registered players with at least 5 ranked games in that rating; usernames only; deleted accounts and guests never appear.
   - `ratings` (OpenSkill): the hidden **shadow rating** still updates in casual games with bots, rated against fixed bot anchors (`bot_level_anchors`). It is used only to calibrate bot labels, never shown and never touches Elo. The former public OpenSkill pool is no longer written.
 - **Reserved for later:** `progression`, `unlocks`, `civ_stats`, `draft_sessions`, `draft_actions`, `reports`.
+- **Friends** (2026-10-17): `friendships` (user_a, user_b, status [pending, accepted], requested_by, created_at, accepted_at), one row per pair in canonical order (`user_a < user_b`, byte order). Foreign keys `ON DELETE RESTRICT` like the other tables, but friendships are personal data: account deletion deletes the user's rows (never re-keyed), and the export includes them. Presence and challenges live only in server memory.
 - **Lobbies** (pre-game) live only in server memory (Colyseus).
 - **Account deletion** de-identifies rather than erases shared history. Email and username are scrubbed to "Deleted player #…", credentials, sessions and passkeys are deleted, and the `ip_hash` on acceptances is cleared. Opponents' histories stay intact. In the same transaction, the deleted user's `match_players`, `ratings`, `elo_ratings` and `legal_acceptances` rows are re-keyed to a fresh random per-deletion ID that `deletion_log` does not keep (the data is still pseudonymous, not anonymous, and the Privacy Policy says so). For accounts deleted because the user is under 13, each seat is replaced with a per-match "Removed player" value not linked to any ID.
 
