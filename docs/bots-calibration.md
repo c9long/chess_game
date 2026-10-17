@@ -10,6 +10,45 @@
 > shadow ratings from real casual games** (PLAN §5/§6). FFA and Teams are separate
 > ladders.
 
+## England's Prime Ministers (civ version 2, 2026-10-17)
+
+England's king, queen and knights are replaced by four Prime Ministers (knight + king moves,
+all four leaders; see docs/RULES.md). The engine values a Prime Minister at **450** (mobility
+2 per square, a mildly central piece-square table that keeps it near home), adds a
+**150 leader reserve** per leader beyond the last, penalises a hanging non-last leader by 350
+(`leader_spare_hanging`) instead of the full `leader_hanging`, and treats only the capture of
+a seat's **last** leader as decisive. Arena overrides: `w.m`, `w.mob.m`, `w.leader_reserve`,
+`w.leader_spare_hanging`.
+
+Method: four copies of one player, England fixed in South (start position with
+`civ=england.2,…`), seats rotating so every player sits in England's seat equally often.
+England's seat result is the civ's result. Shared machine (load ≈ 10 on 12 cores), untimed.
+
+| Run | Games | England (South) 1st | England 4th | Other seats' 1st |
+|---|---|---|---|---|
+| Baseline, no England, `brs+:nodes=20000` | 96 | 26.9 ± 8.0% (South) | 30.2% | 18–28% |
+| England, `brs+:nodes=20000`, PM 450 (default) | 96 | **60.9 ± 8.6%** | 3.1% | W 11.6, N 20.8, E 6.6% |
+| England, PM 300 | 48 | 69.4 ± 10.8% | 0% | 9–12% |
+| England, PM 650 | 48 | 55.9 ± 12.2% | 0% | 9–18% |
+| Baseline, no England, level 1200 | 96 | 24.5 ± 8.6% (South) | 28.1% | 22–30% |
+| England, level 1200 | 96 | **60.9 ± 9.1%** | 1.0% | W 7.3, N 19.8, E 12.0% |
+| Teams, England South (partner North standard), level 1500 | 48 | South+North score 0.542 ± 0.142 | | baseline 0.531 ± 0.141 |
+
+**Reading it:** in FFA England wins about 60% of games against a fair share of 25% and almost
+never finishes last, at every strength tried. The Prime Minister's value moves this only a
+little (a lower value makes the bots trade them more freely, which helps England, not hurts):
+the imbalance is in the rules (four leaders to hunt instead of one, and four short-range
+attackers), not in how the bots value the piece, so the default stays at 450. In Teams the
+effect is within the noise (a defeated seat keeps playing for its partner, so England's
+resilience matters less). Bots never returned an illegal move with England in play
+(`crates/bot-engine/tests/england_bot.rs`). A balance review with human games is on the
+to-do list.
+
+Commands (`$E` = the start position string with England in South; `T` = the same with
+`teams`): `bot-arena play P P P P -g 96 -j 12 --seed 11 --start "$E"` with
+`P=brs+:nodes=20000[:w.m=300|650]` (48 games for the overrides, `-j 7`) and `P=1200`
+(`--seed 7`); Teams: `bot-arena play 1500 1500 1500 1500 -g 48 --mode teams --start "$T"`.
+
 ## Re-check on the 16×16 board (rules version 2, 2026-10-17)
 
 The board grew from 12×12 to 16×16. The engine got 16×16 tables (piece-square tables generated

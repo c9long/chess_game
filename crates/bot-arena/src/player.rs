@@ -13,9 +13,11 @@
 //!   * search: `tt=MB` (default 16), `q=N` (max quiescence depth), `noise=N`,
 //!     `nonull`, `nolmr`, `noasp`, `exact`;
 //!   * evaluation weights: `w.<name>=<int>` with `<name>` one of
-//!     `p n b r q k` (material), `mob.<p|n|b|r|q|k>` (mobility),
+//!     `p n b r q k m` (material; `m` = Prime Minister),
+//!     `mob.<p|n|b|r|q|k|m>` (mobility),
 //!     `leader_hanging`, `leader_attacked_to_move`, `leader_zone_attack`,
 //!     `leader_open_line`, `leader_open_cap`, `leader_shield`,
+//!     `leader_spare_hanging`, `leader_reserve`,
 //!     `frozen_material_pct`, `ffa_opponent_out`, `teams_active_seat`,
 //!     `tempo`.
 //! * Any player: `name=<label>` sets the display label (default: the spec).
@@ -88,6 +90,7 @@ fn kind_index(s: &str) -> Option<usize> {
         "r" => 3,
         "q" => 4,
         "k" => 5,
+        "m" => 6,
         _ => return None,
     })
 }
@@ -111,6 +114,8 @@ fn set_weight(cfg: &mut SearchConfig, name: &str, v: i32) -> Result<(), String> 
         "leader_open_line" => &mut w.leader_open_line,
         "leader_open_cap" => &mut w.leader_open_cap,
         "leader_shield" => &mut w.leader_shield,
+        "leader_spare_hanging" => &mut w.leader_spare_hanging,
+        "leader_reserve" => &mut w.leader_reserve,
         "frozen_material_pct" => &mut w.frozen_material_pct,
         "ffa_opponent_out" => &mut w.ffa_opponent_out,
         "teams_active_seat" => &mut w.teams_active_seat,

@@ -20,6 +20,14 @@
 //! leader attacked by an opponent that moves *before* its owner's next turn is
 //! very likely lost. That case gets a large penalty
 //! ([`EvalWeights::leader_hanging`]).
+//!
+//! **Several leaders** (England's four Prime Ministers): losing one is costly
+//! but not terminal, so for a civ that starts with more than one leader piece
+//! every leader keeps its material value, each one beyond the last earns
+//! [`EvalWeights::leader_reserve`], and a hanging leader costs
+//! [`EvalWeights::leader_spare_hanging`] while others remain. Once a single
+//! leader is left it gets the full single-leader safety terms (its loss ends
+//! the seat's game, which the search sees as terminal).
 
 use rules_core::{GameMode, GameState, KindSet, PieceKind, Seat, SeatStatus};
 
@@ -28,8 +36,10 @@ use crate::geom::{Bits, DIR_DELTA, NSQ, SIZE, T};
 /// Tunable evaluation weights (centipawns).
 #[derive(Clone, Debug, PartialEq)]
 pub struct EvalWeights {
-    /// Material by kind index (P, N, B, R, Q, K). The king value applies only
-    /// when it is an ordinary piece (its seat is no longer ACTIVE).
+    /// Material by kind index (P, N, B, R, Q, K, M). The value of a leader
+    /// kind applies only when it is an ordinary piece (its seat is no longer
+    /// ACTIVE), except for civs with several leader pieces (see the module
+    /// docs), whose leaders always count it.
     pub piece_value: [i32; PieceKind::COUNT],
     /// Piece-square tables by kind index, from South's view, indexed by square
     /// index (`file + 16 * rank`).
@@ -55,6 +65,12 @@ pub struct EvalWeights {
     pub leader_open_cap: i32,
     /// Bonus per own or friendly piece next to the leader.
     pub leader_shield: i32,
+    /// Several leaders: penalty per hanging leader while the seat has others
+    /// (the last one gets [`EvalWeights::leader_hanging`]).
+    pub leader_spare_hanging: i32,
+    /// Several leaders: bonus per leader piece beyond the last one (losing
+    /// one brings the seat closer to elimination).
+    pub leader_reserve: i32,
     /// Material of FROZEN seats counts this percentage (they never move).
     pub frozen_material_pct: i32,
     /// FFA: bonus per opponent already removed.
@@ -101,6 +117,10 @@ fn default_pst() -> [[i16; NSQ]; PieceKind::COUNT] {
             _ => -15 * r,
         } - if cf <= 3 { 5 } else { 0 };
         pst[PieceKind::King.index()][sq] = king as i16;
+        // Prime Minister: a leader that fights like a knight; mildly central,
+        // but it pays to stay near home (losing all four ends the game).
+        let pm = central * 2 - 20 - if r >= 4 { 8 * (r - 3) } else { 0 };
+        pst[PieceKind::PrimeMinister.index()][sq] = pm as i16;
     }
     pst
 }
@@ -108,16 +128,18 @@ fn default_pst() -> [[i16; NSQ]; PieceKind::COUNT] {
 impl Default for EvalWeights {
     fn default() -> Self {
         EvalWeights {
-            piece_value: [100, 300, 350, 500, 1000, 300],
+            piece_value: [100, 300, 350, 500, 1000, 300, 450],
             pst: default_pst(),
             pawn_advance: [0, 0, 5, 10, 18, 30, 48, 75],
-            mobility: [0, 4, 4, 3, 2, 0],
+            mobility: [0, 4, 4, 3, 2, 0, 2],
             leader_hanging: 2500,
             leader_attacked_to_move: 60,
             leader_zone_attack: 12,
             leader_open_line: 3,
             leader_open_cap: 24,
             leader_shield: 8,
+            leader_spare_hanging: 350,
+            leader_reserve: 150,
             frozen_material_pct: 25,
             ffa_opponent_out: 1200,
             ffa_tie_value: [0, 0, 600, 300, 0],
@@ -142,13 +164,17 @@ pub(crate) const fn south_frame(seat: Seat, sq: usize) -> usize {
     sr * n + sf
 }
 
+/// Leader squares tracked per seat for civs with several leaders.
+const MAX_LEADERS: usize = 8;
+
 /// Evaluation with precomputed rotated tables.
 #[derive(Clone, Debug)]
 pub struct Evaluator {
     w: EvalWeights,
     /// Material + rotated PST (+ pawn advancement) per seat, kind, square.
     table: Box<[[[i32; NSQ]; PieceKind::COUNT]; 4]>,
-    /// Rotated PST only (used for ACTIVE leaders, which have no material).
+    /// Rotated PST only (used for an ACTIVE seat's single leader, which has
+    /// no material).
     pst_only: Box<[[[i32; NSQ]; PieceKind::COUNT]; 4]>,
 }
 
@@ -205,12 +231,21 @@ impl Evaluator {
         let mut terms = [0i32; 4];
         let mut attacks = [Bits::EMPTY; 4];
         let mut leader_sq = [usize::MAX; 4];
+        // Several leaders: their squares (at most MAX_LEADERS tracked).
+        let mut multi_sq = [[0usize; MAX_LEADERS]; 4];
+        let mut multi_n = [0usize; 4];
         let mut mob = [0i32; 4];
         let mut leaders = [KindSet::EMPTY; 4];
+        // The civ starts with several leader pieces: leaders keep material.
+        let mut multi = [false; 4];
+        let mut live_leaders = [0u32; 4];
         // friendly[a][b]: a's pieces block b and b may not capture them.
         let mut friendly = [[false; 4]; 4];
         for a in Seat::ALL {
-            leaders[a.index()] = st.roster(a).leaders();
+            let roster = st.roster(a);
+            leaders[a.index()] = roster.leaders();
+            multi[a.index()] = roster.starting_leaders() > 1;
+            live_leaders[a.index()] = st.leader_count(a);
             for b in Seat::ALL {
                 friendly[a.index()][b.index()] = match mode {
                     GameMode::Ffa => a == b,
@@ -234,8 +269,17 @@ impl Evaluator {
                 _ => {}
             }
             if statuses[s] == SeatStatus::Active && leaders[s].contains(p.kind) {
-                leader_sq[s] = i;
-                terms[s] += self.pst_only[s][k][i];
+                if live_leaders[s] == 1 {
+                    leader_sq[s] = i;
+                } else if multi_n[s] < MAX_LEADERS {
+                    multi_sq[s][multi_n[s]] = i;
+                    multi_n[s] += 1;
+                }
+                terms[s] += if multi[s] {
+                    self.table[s][k][i]
+                } else {
+                    self.pst_only[s][k][i]
+                };
             } else {
                 terms[s] += self.table[s][k][i];
             }
@@ -277,6 +321,17 @@ impl Evaluator {
                         attacks[s].set(t as usize);
                     }
                 }
+                PieceKind::PrimeMinister => {
+                    let n = T.knight_n[i] as usize;
+                    let m = T.king_n[i] as usize;
+                    for &t in T.knight[i][..n].iter().chain(&T.king[i][..m]) {
+                        let t = t as usize;
+                        attacks[s].set(t);
+                        if can_land(t) {
+                            mob[s] += mobw[k];
+                        }
+                    }
+                }
                 PieceKind::Bishop | PieceKind::Rook | PieceKind::Queen => {
                     let dirs: &[usize] = match p.kind {
                         PieceKind::Bishop => &[4, 5, 6, 7],
@@ -316,30 +371,52 @@ impl Evaluator {
         for x in Seat::ALL {
             let xi = x.index();
             terms[xi] += mob[xi];
+            let x_pos = order.iter().position(|&s| s == x).unwrap_or(0);
+            // Whether an opponent attacks `sq`, and whether one that moves
+            // before `x` does (the piece on `sq` is hanging).
+            let threat = |sq: usize| {
+                let (mut attacked, mut hanging) = (false, false);
+                for (j, y) in order.iter().enumerate() {
+                    let yi = y.index();
+                    if friendly[xi][yi] || !statuses[yi].takes_turns() {
+                        continue;
+                    }
+                    if attacks[yi].get(sq) {
+                        attacked = true;
+                        hanging |= j < x_pos;
+                    }
+                }
+                (attacked, hanging)
+            };
+            if multi_n[xi] > 0 {
+                // Several leaders left: each is valuable, none is decisive.
+                let mut safety = w.leader_reserve * (multi_n[xi] as i32 - 1);
+                for &l in &multi_sq[xi][..multi_n[xi]] {
+                    match threat(l) {
+                        (_, true) => safety -= w.leader_spare_hanging,
+                        (true, false) if x == to_move => safety -= w.leader_attacked_to_move,
+                        _ => {}
+                    }
+                }
+                terms[xi] += safety;
+                continue;
+            }
             let l = leader_sq[xi];
             if l == usize::MAX {
                 continue;
             }
             let mut safety = 0;
-            let mut attacked = false;
-            let mut hanging = false;
             let mut zone_hits = 0u32;
             let zone = &T.zone[l];
-            for (j, y) in order.iter().enumerate() {
+            for y in order {
                 let yi = y.index();
                 if friendly[xi][yi] || !statuses[yi].takes_turns() {
                     continue;
                 }
                 zone_hits += attacks[yi].and_count(zone);
-                if attacks[yi].get(l) {
-                    attacked = true;
-                    // `y` moves before `x` iff it comes earlier in the order.
-                    let x_pos = order.iter().position(|&s| s == x).unwrap_or(0);
-                    if j < x_pos {
-                        hanging = true;
-                    }
-                }
             }
+            // `y` moves before `x` iff it comes earlier in the order.
+            let (attacked, hanging) = threat(l);
             if hanging {
                 safety -= w.leader_hanging;
             } else if attacked && x == to_move {

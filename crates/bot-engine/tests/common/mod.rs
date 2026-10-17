@@ -61,12 +61,22 @@ pub fn is_generated(state: &GameState, m: Move) -> bool {
 
 /// Random self-play positions (ongoing games only), `count` per mode.
 pub fn random_positions(seed: u64, count: usize, max_plies: u32) -> Vec<GameState> {
+    random_positions_with(seed, count, max_plies, [CivId::Canada; 4])
+}
+
+/// [`random_positions`] with the given civs (latest versions).
+pub fn random_positions_with(
+    seed: u64,
+    count: usize,
+    max_plies: u32,
+    civs: [CivId; 4],
+) -> Vec<GameState> {
     let mut rng = Rng::new(seed);
     let mut out = Vec::new();
     for mode in [GameMode::Ffa, GameMode::Teams] {
         let mut produced = 0;
         while produced < count {
-            let mut s = GameState::new(GameConfig::new(mode)).unwrap();
+            let mut s = GameState::new(GameConfig::new(mode).with_civs(civs)).unwrap();
             let target = rng.below(u64::from(max_plies)) as u32;
             // Occasionally freeze/abandon a seat in Teams for variety.
             let freeze_at = if mode == GameMode::Teams && rng.below(3) == 0 {

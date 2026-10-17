@@ -336,9 +336,13 @@ fn victim(st: &GameState, mv: Move) -> Option<Piece> {
     st.piece_at(mv.to)
 }
 
-/// Whether capturing `v` captures a live leader.
+/// Whether capturing `v` captures a live leader whose loss is decisive: the
+/// owner's **last** leader piece (with England's four Prime Ministers, only
+/// the last one; the others are ordinary, if valuable, captures).
 fn is_leader(st: &GameState, v: Piece) -> bool {
-    st.status(v.owner) == SeatStatus::Active && st.roster(v.owner).is_leader(v.kind)
+    st.status(v.owner) == SeatStatus::Active
+        && st.roster(v.owner).is_leader(v.kind)
+        && st.leader_count(v.owner) <= 1
 }
 
 /// Whether `owner` defends `sq` (a piece of `owner` could recapture there).
