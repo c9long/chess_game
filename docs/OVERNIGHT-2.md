@@ -180,6 +180,31 @@ Commits `afb2baa`…`743ccc6`:
 - The single-origin page's security policy no longer needs `unsafe-eval`.
 - A review found 13 issues, all fixed. One left for later: an announcement verbosity setting.
 
+### 11. Your follow-up: add friends by username, player search, public profiles
+Commits `f15c7c7`…`ebd83d2`. **No Elasticsearch:** PostgreSQL's built-in trigram index
+(`pg_trgm`) answers search-as-you-type in 0.02–30 ms on 50,000 test users; exact usernames use
+the existing unique index. Elasticsearch would only add a second always-on service to host and
+keep in sync.
+- **Add by username** on the Friends page, plus search (3+ letters or digits, 10 results, 30
+  searches a minute). Guests, deleted and suspended accounts never appear.
+- **New setting "Who can send me friend requests":** Anyone (default) or Only players I've
+  played with (last night's rule). All limits stay: 50 friends, 10 pending, 20 requests/hour.
+- **Public profiles** at `/u/<name>`: member since, ratings, games played, favourite civ; Add
+  friend, Challenge, Block/Report. Match history stays private (opt-in public history is a
+  to-do).
+- **Needs your sign-off:** search *shows* people who blocked you (adding them gets the same
+  neutral "We couldn't send that request" as any refusal). Hiding them would reveal the block,
+  because profiles and the leaderboard are public anyway. Players *you* blocked are hidden.
+- A review found 22 issues, all fixed (e.g. caps were checked after the block, which leaked
+  whether someone blocked you; search queries of underscores scanned every user).
+
+### 12. From the to-do list: account security polish
+Commits `145e649`, `580fae9`: the Account page shows how many backup codes are left (warning at
+3 or fewer); a password lockout emails the account owner at most once an hour; deleting from an
+old session accepts a password, authenticator code, backup code or passkey. The review found 16
+issues, 3 serious (a stale session on a passwordless account could mint its own two-step proof
+to delete the account; the attempt limit could be raced), all fixed.
+
 ### Test-suite fixes along the way
 - The full verification of everything committed (Rust format/lint/tests, `pnpm check`, all
   browser tests, the 49 board specs) found one real flake: the landing page's demo-board test
