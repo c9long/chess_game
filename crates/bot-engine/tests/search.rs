@@ -356,8 +356,9 @@ fn respects_deadlines() {
 fn weak_levels_are_fast() {
     let s = GameState::new(GameConfig::new(GameMode::Ffa)).unwrap();
     // Unoptimised builds running the other tests in parallel are several
-    // times slower; the release run keeps the tight bound.
-    let slack_ms = if cfg!(debug_assertions) { 250 } else { 60 };
+    // times slower (more so on the 16×16 board, where 1200's 3k nodes take
+    // ~300 ms on a loaded machine); the release run keeps the tight bound.
+    let slack_ms = if cfg!(debug_assertions) { 600 } else { 60 };
     for level in [Level::L600, Level::L900, Level::L1200] {
         let r = choose_move(&s, level, u64::MAX, 0, 3);
         assert!(r.nodes <= level.params().max_nodes + 1);

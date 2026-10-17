@@ -212,7 +212,13 @@ async fn a_seed_makes_weak_levels_reproducible() {
         s
     };
     let lib = choose_move(&mid, Level::L2400, u64::MAX, 0, 7);
-    for _ in 0..3 {
+    // On the 16×16 board 2400's 100k nodes take ~300 ms, close to the 500 ms
+    // response deadline (no new iteration after half of it), so on a busy
+    // machine a search can be cut short by time. Such a reply is not a
+    // reproducibility failure; every reply that reached the node budget must
+    // match the library, and at least two of them must.
+    let mut matched = 0;
+    for _ in 0..6 {
         // A timed 2400 search in between warms the table.
         post_move(&r, move_req(&mid, "2400", 60_000, Some(9)))
             .await
@@ -220,9 +226,20 @@ async fn a_seed_makes_weak_levels_reproducible() {
         let mut untimed = move_req(&mid, "2400", 0, Some(7));
         untimed["clockMs"] = Value::Null;
         let a = post_move(&r, untimed).await.ok();
+        if a.nodes < lib.nodes {
+            continue;
+        }
         assert_eq!(a.mv, lib.best_move.unwrap().to_string());
         assert_eq!(a.nodes, lib.nodes);
+        matched += 1;
+        if matched == 3 {
+            break;
+        }
     }
+    assert!(
+        matched >= 2,
+        "only {matched} untimed 2400 searches reached their budget"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

@@ -1,10 +1,11 @@
 //! Precomputed board tables used by the evaluation (rules-core keeps its own
-//! tables private), plus a tiny 144-bit set.
+//! tables private), plus a tiny 256-bit set.
 
+/// Board side length (16×16, rules version 2).
+pub(crate) const SIZE: i32 = rules_core::geometry::BOARD_SIZE as i32;
 /// Number of squares.
-pub(crate) const NSQ: usize = 144;
-/// Board side length.
-const SIZE: i32 = 12;
+pub(crate) const NSQ: usize = rules_core::geometry::NUM_SQUARES;
+const _: () = assert!(NSQ == (SIZE * SIZE) as usize && NSQ <= 256);
 
 /// Ray directions as (file delta, rank delta); 0..4 orthogonal, 4..8 diagonal.
 pub(crate) const DIR_DF: [i32; 8] = [0, 1, 0, -1, 1, 1, -1, -1];
@@ -31,12 +32,12 @@ const KNIGHT_OFFSETS: [(i32, i32); 8] = [
     (-1, 2),
 ];
 
-/// A set of squares (144 bits).
+/// A set of squares (one bit per square).
 #[derive(Clone, Copy, Default, PartialEq, Eq, Debug)]
-pub(crate) struct Bits(pub [u64; 3]);
+pub(crate) struct Bits(pub [u64; NSQ / 64]);
 
 impl Bits {
-    pub(crate) const EMPTY: Bits = Bits([0; 3]);
+    pub(crate) const EMPTY: Bits = Bits([0; NSQ / 64]);
 
     #[inline]
     pub(crate) fn set(&mut self, sq: usize) {
@@ -50,9 +51,11 @@ impl Bits {
 
     #[inline]
     pub(crate) fn and_count(&self, other: &Bits) -> u32 {
-        (self.0[0] & other.0[0]).count_ones()
-            + (self.0[1] & other.0[1]).count_ones()
-            + (self.0[2] & other.0[2]).count_ones()
+        self.0
+            .iter()
+            .zip(other.0.iter())
+            .map(|(a, b)| (a & b).count_ones())
+            .sum()
     }
 }
 
@@ -83,8 +86,8 @@ const fn build() -> Tables {
     };
     let mut sq = 0;
     while sq < NSQ {
-        let f = (sq % 12) as i32;
-        let r = (sq / 12) as i32;
+        let f = sq as i32 % SIZE;
+        let r = sq as i32 / SIZE;
         let mut i = 0;
         while i < 8 {
             let (df, dr) = KNIGHT_OFFSETS[i];
@@ -127,16 +130,21 @@ mod tests {
         // a1 = 0: knight b3, c2; king a2, b1, b2.
         assert_eq!(T.knight_n[0], 2);
         assert_eq!(T.king_n[0], 3);
-        assert_eq!(T.ray_len[0][0], 11);
-        assert_eq!(T.ray_len[0][4], 11);
+        assert_eq!(T.ray_len[0][0], 15);
+        assert_eq!(T.ray_len[0][4], 15);
         assert_eq!(T.ray_len[0][2], 0);
+        // p16 = 255: knight n15, o14; king o16, p15, o15.
+        assert_eq!(T.knight_n[255], 2);
+        assert_eq!(T.king_n[255], 3);
+        assert_eq!(T.ray_len[255][6], 15);
         // A central square has 8 knight and king steps.
-        assert_eq!(T.knight_n[5 * 12 + 5], 8);
-        assert_eq!(T.king_n[5 * 12 + 5], 8);
+        assert_eq!(T.knight_n[7 * 16 + 7], 8);
+        assert_eq!(T.king_n[7 * 16 + 7], 8);
         let mut b = Bits::EMPTY;
-        b.set(143);
-        assert!(b.get(143));
-        assert!(!b.get(142));
-        assert_eq!(T.zone[13].and_count(&T.zone[13]), 8);
+        b.set(255);
+        assert!(b.get(255));
+        assert!(!b.get(254));
+        // b2 = 17 has all 8 neighbours on the board.
+        assert_eq!(T.zone[17].and_count(&T.zone[17]), 8);
     }
 }

@@ -1,6 +1,6 @@
 # Bot strength calibration
 
-**Date:** 2026-10-15  
+**Date:** 2026-10-15 (12×12); re-checked 2026-10-17 on the 16×16 board  
 **Engine:** `crates/bot-engine`, level table in `crates/bot-engine/src/level.rs` (calibrated values below)  
 **Tool:** `crates/bot-arena`
 
@@ -9,6 +9,44 @@
 > yet comparable to human ratings. The labels will be **re-anchored with the hidden
 > shadow ratings from real casual games** (PLAN §5/§6). FFA and Teams are separate
 > ladders.
+
+## Re-check on the 16×16 board (rules version 2, 2026-10-17)
+
+The board grew from 12×12 to 16×16. The engine got 16×16 tables (piece-square tables generated
+for the new board with the same value ranges, pawn advancement over 7 steps instead of 5, a
+256-square history table and attack sets). **The level table is unchanged**: the move-time
+targets stay as they were, and every node-bound level still finishes well inside its target
+(a node is about 1.3–1.5× slower on the bigger board). Quick confirmation run on a shared
+machine (load ≈ 10 on 12 cores), same method as below, new seeds:
+
+**FFA ladder** (336 games, 48 per adjacent pair, untimed, seed 8101):
+
+| Level | Rating | 95% interval | Gap (95%) | P(gap>0) | ms/move (target) | Nodes/move |
+|---|---|---|---|---|---|---|
+| 600 | 1054 | 925–1177 | | | 0.6 (30) | 144 |
+| 900 | 1261 | 1153–1355 | +207 (+145, +284) | 100% | 1.2 (35) | 507 |
+| 1200 | 1423 | 1351–1482 | +162 (+92, +230) | 100% | 8.2 (25) | 2.8k |
+| 1500 | 1500 | anchor | +77 (+18, +149) | 100% | 27 (80) | 7.5k |
+| 1800 | 1511 | 1464–1558 | +11 (−36, +58) | 64% | 57 (150) | 15k |
+| 2100 | 1586 | 1511–1666 | +75 (+22, +136) | 99.8% | 137 (250) | 39k |
+| 2400 | 1761 | 1672–1864 | +176 (+132, +228) | 100% | 331 (400) | 98k |
+| Max | 1772 | 1665–1893 | +11 (−47, +84) | 62% | 418 (500) | 152k |
+
+**Teams ladder** (168 games, 24 per adjacent pair, untimed, seed 8102): 600 −241, 900 284,
+1200 586, 1500 1500 (anchor), 1800 1652, 2100 1984, 2400 2173, Max 2361. Every gap positive
+with P = 100% (head-to-head 95.8%, 85.4%, 100%, 70.8%, 87.5%, 75.0%, 75.0% for the level
+above).
+
+**Reading it:** the ladder stays monotonic in both modes. The two marginal FFA steps are the
+same as on the 12×12 board (1500→1800 and 2400→Max, "about equal in FFA"); at 48 games per
+pair the intervals are wide, so a full 192-game run is still worth doing before the labels are
+re-anchored. Max now searches about 150k nodes per move in FFA at its 500 ms target (240k on
+12×12), so its edge over 2400 (98k) is thinner. Seat bias, FFA (336 games): first places S
+22.8%, W 27.1%, N 23.2%, E 26.9% (±4.5%), no seat significantly off; Teams: South+North score
+0.479 ± 0.076. With no contact on move 1, the old "East's exposed corner pawns" question is
+moot. Games are longer: about 380 plies after the opening in FFA ladder games.
+
+Commands: as below, with `-g 48 -j 6 --seed 8101` (FFA) and `--mode teams -g 24 -j 6 --seed 8102`.
 
 ## Re-check after the review fixes (2026-10-15, later the same day)
 

@@ -48,9 +48,9 @@ fn rot_sq(seat: Seat, sq: Square) -> Square {
     let (f, r) = (sq.file(), sq.rank());
     let (af, ar) = match seat {
         Seat::South => (f, r),
-        Seat::West => (r, 11 - f),
-        Seat::North => (11 - f, 11 - r),
-        Seat::East => (11 - r, f),
+        Seat::West => (r, 15 - f),
+        Seat::North => (15 - f, 15 - r),
+        Seat::East => (15 - r, f),
     };
     Square::from_coords(af, ar).unwrap()
 }
@@ -332,14 +332,14 @@ fn strong_levels_do_not_walk_the_leader_into_attack() {
 // 4. FFA: a third player will capture an opponent's leader
 // ---------------------------------------------------------------------------
 
-/// `next` (West) can take `opp`'s king with its queen on a12 (rank 12 open
-/// from a12 to the king on g12). `opp`'s rook on g10 threatens `me`'s king
-/// on g1 along the open g-file, but `opp` moves after `next`, who will
+/// `next` (West) can take `opp`'s king with its queen on a16 (rank 16 open
+/// from a16 to the king on k16). `opp`'s rook on k14 threatens `me`'s king
+/// on k1 along the open k-file, but `opp` moves after `next`, who will
 /// almost certainly win `opp`'s king first. `me` can take `prev`'s queen
 /// for free with the c3 rook.
 const THIRD_PARTY: &[&str] = &[
-    "mKg1", "mPf2", "mPh2", "mRc3", "nKa5", "nQa12", "nPb4", "oRg10", "oKg12", "oPf11", "pKl7",
-    "pQc8", "pPk8",
+    "mKk1", "mPf2", "mPl2", "mRc3", "nKa5", "nQa16", "nPb4", "oRk14", "oKk16", "oPf15", "pKp11",
+    "pQc12", "pPo12",
 ];
 
 #[test]
@@ -351,9 +351,9 @@ fn ffa_third_party_leader_capture_is_modelled() {
         // Sanity: the next seat really can take opp's king.
         let mut c = s.clone();
         // Let `me` play a quiet move, then `next` captures.
-        apply_move(&mut c, rot_mv(me, "h2h3")).unwrap();
+        apply_move(&mut c, rot_mv(me, "l2l3")).unwrap();
         assert_eq!(c.seat_to_move(), next);
-        apply_move(&mut c, rot_mv(me, "a12g12")).unwrap();
+        apply_move(&mut c, rot_mv(me, "a16k16")).unwrap();
         assert_eq!(c.status(opp), SeatStatus::Removed);
         for algo in FFA_ALGOS {
             for &level in levels() {
@@ -411,16 +411,16 @@ fn teams_defeated_partner_passes_and_enemy_moves_twice() {
     // `opp` (partner) is DEFEATED and has no legal move (a lone pawn blocked
     // by an enemy pawn), so it passes automatically: after `me` come `next`,
     // (opp passes), `prev`. `next` and `prev` both move before `me` again.
-    // `prev`'s rook on l1 is blocked from `me`'s king (g1) by `next`'s knight
-    // on i1: `next` moves the knight, then `prev` wins. `me` must react now
-    // (block on j1 with the j5 rook); `prev`'s queen on j9 is the bait.
+    // `prev`'s rook on p1 is blocked from `me`'s king (i1) by `next`'s knight
+    // on m1: `next` moves the knight, then `prev` wins. `me` must react now
+    // (block on n1 with the n7 rook); `prev`'s queen on n13 is the bait.
     for me in Seat::ALL {
         let s = rotated(
             "teams",
             me,
             &[
-                "mKg1", "mPf2", "mPg2", "mPh2", "mRj5", "nKa7", "nNi1", "nPf6", "oPf7", "pKl7",
-                "pRl1", "pQj9",
+                "mKi1", "mPh2", "mPi2", "mPj2", "mRn7", "nKa9", "nNm1", "nPh8", "oPh9", "pKp9",
+                "pRp1", "pQn13",
             ],
             ['A', 'A', 'D', 'A'],
             &[(2, 'l')],
@@ -428,8 +428,8 @@ fn teams_defeated_partner_passes_and_enemy_moves_twice() {
         );
         // Check the pass really happens.
         let mut c = s.clone();
-        apply_move(&mut c, rot_mv(me, "f2f3")).unwrap();
-        apply_move(&mut c, rot_mv(me, "i1j3")).unwrap();
+        apply_move(&mut c, rot_mv(me, "h2h3")).unwrap();
+        apply_move(&mut c, rot_mv(me, "m1n3")).unwrap();
         assert_eq!(
             c.seat_to_move(),
             role(me, 3),
@@ -465,9 +465,9 @@ fn teams_defeated_partner_passes_and_enemy_moves_twice() {
                 "{me} {level:?}: {m} (score {}) loses in {s}",
                 r.score
             );
-            // `next`'s knight then forks from h3 and the team is lost by
-            // force; the block on j1 is the longest defence.
-            assert_eq!(m, rot_mv(me, "j5j1"), "{me} {level:?}");
+            // `next`'s knight then forks from j3 and the team is lost by
+            // force; the block on n1 is the longest defence.
+            assert_eq!(m, rot_mv(me, "n7n1"), "{me} {level:?}");
         }
     }
 }
@@ -514,14 +514,14 @@ fn promotes_on_the_mid_line_every_orientation() {
             "ffa",
             me,
             &[
-                "mKg1", "mPf2", "mPg2", "mPh2", "mPc6", "nKa9", "nPb9", "oKg12", "oPf11", "pKl9",
-                "pPk9",
+                "mKi1", "mPh2", "mPi2", "mPj2", "mPe8", "nKa11", "nPb11", "oKi16", "oPh15",
+                "pKp11", "pPo11",
             ],
             ['A'; 4],
             &[],
             0,
         );
-        let want = rot_mv(me, "c6c7q");
+        let want = rot_mv(me, "e8e9q");
         assert!(is_generated(&s, want), "{me}: {want} in {s}");
         for &algo in algos_for(&s) {
             for &level in levels() {
@@ -534,17 +534,17 @@ fn promotes_on_the_mid_line_every_orientation() {
 
 #[test]
 fn promotion_capture_of_a_leader_every_orientation() {
-    // The c6 pawn captures `next`'s king on d7 while promoting. (With the
-    // pawn still on h2 instead of h3, `opp`'s queen wins `me`'s king on the
+    // The e8 pawn captures `next`'s king on f9 while promoting. (With the
+    // pawn still on j2 instead of j5, `opp`'s queen wins `me`'s king on the
     // back rank after Qa1 and every strong search correctly prefers taking
-    // that queen with the e4 knight instead.)
+    // that queen with the g6 knight instead.)
     for me in Seat::ALL {
         let s = rotated(
             "ffa",
             me,
             &[
-                "mKg1", "mPf2", "mPg2", "mPh3", "mPc6", "mNe4", "nKd7", "oKg12", "oQf6", "pKl9",
-                "pPk9",
+                "mKi1", "mPh2", "mPi2", "mPj5", "mPe8", "mNg6", "nKf9", "oKi16", "oQh8", "pKp11",
+                "pPo11",
             ],
             ['A'; 4],
             &[],
@@ -555,7 +555,7 @@ fn promotion_capture_of_a_leader_every_orientation() {
                 let m = level_move(&s, level, algo, 6).best_move.unwrap();
                 assert_eq!(
                     m.to,
-                    rot_sq(me, "d7".parse().unwrap()),
+                    rot_sq(me, "f9".parse().unwrap()),
                     "{me} {algo:?} {level:?}: {m}"
                 );
                 assert!(m.promotion.is_some());
@@ -647,10 +647,10 @@ fn quiescence_stays_bounded_in_a_melee() {
     let melee = build(
         "ffa",
         &[
-            "sKg1", "sQf5", "sRe4", "sRh4", "sBd5", "sNg5", "sPe3", "sPf4", "sPg3", "wKa7", "wQf7",
-            "wRd6", "wRe8", "wBc5", "wNh6", "wPc4", "wPd7", "nKg12", "nQg6", "nRf8", "nRh8",
-            "nBe7", "nNe6", "nPg8", "nPh7", "eKl7", "eQi6", "eRi4", "eRi8", "eBj5", "eNh5", "ePj7",
-            "ePi5",
+            "sKk1", "sQf5", "sRe4", "sRl4", "sBd5", "sNk5", "sPe3", "sPf4", "sPk3", "wKa11",
+            "wQf11", "wRd6", "wRe12", "wBc5", "wNl6", "wPc4", "wPd11", "nKk16", "nQk6", "nRf12",
+            "nRl12", "nBe11", "nNe6", "nPk12", "nPl11", "eKp11", "eQm6", "eRm4", "eRm12", "eBn5",
+            "eNl5", "ePn11", "ePm5",
         ],
         "S AAAA - - 0 0",
     );
@@ -746,10 +746,10 @@ fn interrupted_first_iteration_reports_real_scores() {
     let s = build(
         "ffa",
         &[
-            "sKg1", "sQf5", "sRe4", "sRh4", "sBd5", "sNg5", "sPe3", "sPf4", "sPg3", "wKa7", "wQf7",
-            "wRd6", "wRe8", "wBc5", "wNh6", "wPc4", "wPd7", "nKg12", "nQg6", "nRf8", "nRh8",
-            "nBe7", "nNe6", "nPg8", "nPh7", "eKl7", "eQi6", "eRi4", "eRi8", "eBj5", "eNh5", "ePj7",
-            "ePi5",
+            "sKk1", "sQf5", "sRe4", "sRl4", "sBd5", "sNk5", "sPe3", "sPf4", "sPk3", "wKa11",
+            "wQf11", "wRd6", "wRe12", "wBc5", "wNl6", "wPc4", "wPd11", "nKk16", "nQk6", "nRf12",
+            "nRl12", "nBe11", "nNe6", "nPk12", "nPl11", "eKp11", "eQm6", "eRm4", "eRm12", "eBn5",
+            "eNl5", "ePn11", "ePm5",
         ],
         "S AAAA - - 0 0",
     );
@@ -851,11 +851,11 @@ fn king_of(s: &GameState) -> Square {
 
 #[test]
 fn depth_one_respects_a_node_cap() {
-    // Replayed arena position (2100 vs 2400, ply 72) where the uncapped
-    // exact-score depth-1 iteration of FFA 2100 used ~3.2M nodes against a
-    // 40k budget.
+    // Replayed arena position (2100 vs 2400, ply 72; recorded on the 12×12
+    // board and stretched to 16×16) where the uncapped exact-score depth-1
+    // iteration of FFA 2100 used ~3.2M nodes against a 40k budget.
     let s = parse_position(
-        "ffa nQ5nKnBnNnR2/3wR2nPnP3eQ/1wN2nN3nP2eR/1wP2nPnP4ePeN/wBwP4nB3ePeB/wK1nR1wP5eP1/1wQ3wPsP4eK/wB1wN1wP3eP1sNeB/3wP2sN4eN/wR2sPsB3sP3/2sPsPsQ1sPsPsP3/5sRsKsB2sR1 S AAAA Wa3 - 0 72 ep=on ml=25 civ=canada.1,canada.1,canada.1,canada.1 def=- rv=1",
+        "ffa nQ7nKnBnNnR4/5wR2nPnP5eQ/16/16/1wN4nN3nP4eR/1wP4nPnP6ePeN/wBwP6nB5ePeB/wK3nR1wP7eP1/1wQ5wPsP6eK/wB3wN1wP3eP3sNeB/5wP2sN6eN/wR4sPsB3sP5/16/16/4sPsPsQ1sPsPsP5/7sRsKsB4sR1 S AAAA Wa5 - 0 72 ep=on ml=25 civ=canada.1,canada.1,canada.1,canada.1 def=- rv=2",
     )
     .unwrap();
     for level in [Level::L1200, Level::L1500, Level::L1800, Level::L2100] {

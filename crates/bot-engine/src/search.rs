@@ -37,6 +37,7 @@ use rules_core::{
 };
 
 use crate::eval::Evaluator;
+use crate::geom::NSQ;
 use crate::rng::splitmix64;
 use crate::tt::{Bound, SMove, Tt};
 use crate::{EvalWeights, SearchResult};
@@ -200,7 +201,7 @@ enum Filler {
     Best,
 }
 
-const HIST_LEN: usize = 4 * 144 * 144;
+const HIST_LEN: usize = 4 * NSQ * NSQ;
 const HIST_MAX: i32 = 1_000_000;
 
 impl Engine {
@@ -498,7 +499,7 @@ impl Searcher<'_> {
     }
 
     fn hist_index(mover: Seat, mv: Move) -> usize {
-        mover.index() * 144 * 144 + mv.from.index() * 144 + mv.to.index()
+        mover.index() * NSQ * NSQ + mv.from.index() * NSQ + mv.to.index()
     }
 
     /// Move-ordering score of `sm` played from `st` (the mover's own state).

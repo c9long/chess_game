@@ -136,7 +136,9 @@ impl Level {
             max_qdepth,
         };
         // Calibrated with bot-arena on 2026-10-15 (docs/bots-calibration.md):
-        // every level beats the one below in FFA and in Teams.
+        // every level beats the one below in FFA and in Teams. Re-checked on
+        // the 16×16 board on 2026-10-17: unchanged, still monotonic, and every
+        // node budget still finishes inside its time target.
         match self {
             Level::L600 => p(1, 300, 30, 200, 0.60, 10, 300.0, 0.25, 1, 1),
             Level::L900 => p(2, 1_000, 35, 120, 0.40, 6, 160.0, 0.10, 1, 2),

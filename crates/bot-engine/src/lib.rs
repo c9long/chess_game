@@ -1,4 +1,4 @@
-//! Bot search engine for the 4-player 12×12 chess variant (PLAN §6).
+//! Bot search engine for the 4-player 16×16 chess variant (PLAN §6).
 //!
 //! Built on `rules-core` (copy-make on its fixed-size [`GameState`]); it
 //! never re-implements rules. The next mover always comes from the state,

@@ -23,7 +23,7 @@
 
 use rules_core::{GameMode, GameState, KindSet, PieceKind, Seat, SeatStatus};
 
-use crate::geom::{Bits, DIR_DELTA, NSQ, T};
+use crate::geom::{Bits, DIR_DELTA, NSQ, SIZE, T};
 
 /// Tunable evaluation weights (centipawns).
 #[derive(Clone, Debug, PartialEq)]
@@ -32,11 +32,11 @@ pub struct EvalWeights {
     /// when it is an ordinary piece (its seat is no longer ACTIVE).
     pub piece_value: [i32; PieceKind::COUNT],
     /// Piece-square tables by kind index, from South's view, indexed by square
-    /// index (`file + 12 * rank`).
+    /// index (`file + 16 * rank`).
     pub pst: [[i16; NSQ]; PieceKind::COUNT],
-    /// Pawn bonus by progress (0 = back line, 1 = start line, 5 = one step
+    /// Pawn bonus by progress (0 = back line, 1 = start line, 7 = one step
     /// before the promotion line).
-    pub pawn_advance: [i32; 6],
+    pub pawn_advance: [i32; 8],
     /// Mobility bonus per reachable square, by kind index.
     pub mobility: [i32; PieceKind::COUNT],
     /// Penalty when a seat's leader is attacked by an opponent that moves
@@ -71,19 +71,23 @@ pub struct EvalWeights {
     pub tempo: i32,
 }
 
-/// Default piece-square tables from South's view.
+/// Default piece-square tables from South's view, generated for the 16×16
+/// board (and rotated per seat by [`south_frame`]). The value ranges match
+/// the original 12×12 tables, so the other weights keep their meaning.
 #[allow(clippy::needless_range_loop)]
 fn default_pst() -> [[i16; NSQ]; PieceKind::COUNT] {
     let mut pst = [[0i16; NSQ]; PieceKind::COUNT];
+    let edge = SIZE - 1; // 15
     for sq in 0..NSQ {
-        let f = (sq % 12) as i32;
-        let r = (sq / 12) as i32;
+        let f = sq as i32 % SIZE;
+        let r = sq as i32 / SIZE;
+        // Twice the distance from the centre line: 1 (central) ..= 15 (edge).
+        let cf = (2 * f - edge).abs();
+        let cr = (2 * r - edge).abs();
         // Centrality 0 (corner) ..= 20 (centre), symmetric in both axes.
-        let cf = (2 * f - 11).abs();
-        let cr = (2 * r - 11).abs();
-        let central = 22 - cf - cr;
-        // Distance from the central files only (0..=5).
-        let file_c = (11 - cf) / 2;
+        let central = (2 * edge - cf - cr) * 20 / (2 * edge - 2);
+        // Distance from the edge files only, scaled to 0..=5.
+        let file_c = (edge - cf) / 2 * 5 / (edge / 2);
         // Pawn: prefer central files (advancement is a separate term).
         pst[PieceKind::Pawn.index()][sq] = (file_c * 3) as i16;
         pst[PieceKind::Knight.index()][sq] = (central * 3 - 30) as i16;
@@ -106,7 +110,7 @@ impl Default for EvalWeights {
         EvalWeights {
             piece_value: [100, 300, 350, 500, 1000, 300],
             pst: default_pst(),
-            pawn_advance: [0, 0, 8, 20, 40, 75],
+            pawn_advance: [0, 0, 5, 10, 18, 30, 48, 75],
             mobility: [0, 4, 4, 3, 2, 0],
             leader_hanging: 2500,
             leader_attacked_to_move: 60,
@@ -126,15 +130,16 @@ impl Default for EvalWeights {
 /// Rotates a square into South's frame for `seat`: returns the square index
 /// whose South-view table entry applies.
 pub(crate) const fn south_frame(seat: Seat, sq: usize) -> usize {
-    let f = sq % 12;
-    let r = sq / 12;
+    let n = SIZE as usize;
+    let f = sq % n;
+    let r = sq / n;
     let (sf, sr) = match seat {
         Seat::South => (f, r),
-        Seat::North => (11 - f, 11 - r),
-        Seat::West => (11 - r, f),
-        Seat::East => (r, 11 - f),
+        Seat::North => (n - 1 - f, n - 1 - r),
+        Seat::West => (n - 1 - r, f),
+        Seat::East => (r, n - 1 - f),
     };
-    sr * 12 + sf
+    sr * n + sf
 }
 
 /// Evaluation with precomputed rotated tables.
@@ -164,7 +169,7 @@ impl Evaluator {
                     let p = i32::from(w.pst[kind.index()][s]);
                     let mut v = w.piece_value[kind.index()] + p;
                     if kind == PieceKind::Pawn {
-                        let prog = s / 12;
+                        let prog = s / SIZE as usize;
                         v += w.pawn_advance.get(prog).copied().unwrap_or(0);
                     }
                     table[seat.index()][kind.index()][sq] = v;
@@ -242,8 +247,8 @@ impl Evaluator {
             match p.kind {
                 PieceKind::Pawn => {
                     let (fx, fy) = p.owner.forward();
-                    let f = (i % 12) as i32;
-                    let r = (i / 12) as i32;
+                    let f = i as i32 % SIZE;
+                    let r = i as i32 / SIZE;
                     let diag: [(i32, i32); 2] = if fx == 0 {
                         [(-1, i32::from(fy)), (1, i32::from(fy))]
                     } else {
@@ -251,8 +256,8 @@ impl Evaluator {
                     };
                     for (dx, dy) in diag {
                         let (tf, tr) = (f + dx, r + dy);
-                        if (0..12).contains(&tf) && (0..12).contains(&tr) {
-                            attacks[s].set((tr * 12 + tf) as usize);
+                        if (0..SIZE).contains(&tf) && (0..SIZE).contains(&tr) {
+                            attacks[s].set((tr * SIZE + tf) as usize);
                         }
                     }
                 }
@@ -446,10 +451,10 @@ mod tests {
         // Each seat's back line maps to South's rank 1 and its pawn line to rank 2.
         for seat in Seat::ALL {
             for sq in rules_core::setup::back_line(seat) {
-                assert_eq!(south_frame(seat, sq.index()) / 12, 0, "{seat} {sq}");
+                assert_eq!(south_frame(seat, sq.index()) / 16, 0, "{seat} {sq}");
             }
             for sq in rules_core::setup::pawn_line(seat) {
-                assert_eq!(south_frame(seat, sq.index()) / 12, 1, "{seat} {sq}");
+                assert_eq!(south_frame(seat, sq.index()) / 16, 1, "{seat} {sq}");
             }
         }
         // It is a bijection for every seat.
@@ -476,9 +481,9 @@ mod tests {
 
     #[test]
     fn hanging_leader_is_penalised() {
-        // South king g1 attacked by West's rook on c1. With South to move it
+        // South king i1 attacked by West's rook on c1. With South to move it
         // can escape; with West to move the leader is hanging.
-        let base = "ffa 12/12/12/12/12/12/12/12/12/wK11/12/nK1wR3sK4eK";
+        let base = "ffa 16/16/16/16/16/16/16/16/16/16/16/16/16/wK15/16/nK1wR5sK6eK";
         let s_to_move: GameState = format!("{base} S AAAA - - 0 0")
             .parse()
             .unwrap_or_else(|e| {
