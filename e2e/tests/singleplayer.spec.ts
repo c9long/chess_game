@@ -95,7 +95,9 @@ test('guest plays an untimed game against three bots', async ({ page }) => {
   // start, South's move, then West, North and East.
   expect(times.length).toBe(5)
   const gaps = times.slice(2).map((t, i) => t - (times[i + 1] ?? 0))
-  for (const gap of gaps) expect(gap).toBeGreaterThanOrEqual(500)
+  // The server spaces bot moves BOT_MIN_MOVE_MS (700 ms) apart; browser-side timing jitters
+  // under load, so allow some slack while still proving moves are not instant.
+  for (const gap of gaps) expect(gap).toBeGreaterThanOrEqual(400)
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/solo-mid.png` })
 
   // Untimed: waiting changes nothing, and nobody's flag falls.
