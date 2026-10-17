@@ -13,7 +13,7 @@ Rules version 2 is version 1 (with resigning and draws by agreement) on a bigger
 - The board has 16 files (columns), **a** to **p**, and 16 ranks (rows), **1** to **16**. Every square is playable, including the empty 4×4 corners. Square a1 is dark, as in normal chess.
 - Four players sit on the four sides: **South** (bottom), **West** (left), **North** (top) and **East** (right).
 - Turns go **clockwise: South → West → North → East**, then back to South. Players who no longer take turns are skipped.
-- Everyone gets the same army: 8 pawns, 2 rooks, 2 knights, 2 bishops, 1 queen and 1 king. Your civilization is shown as an emblem next to your name. In this version it is cosmetic only.
+- Almost every army is the same: 8 pawns, 2 rooks, 2 knights, 2 bishops, 1 queen and 1 king. Your civilization is shown as an emblem next to your name, and for most civilizations that is all it changes. **England** fields a special army (see [Civilizations with special armies](#civilizations-with-special-armies)).
 
 ### Game modes
 
@@ -30,6 +30,8 @@ Each army sits centered on its own edge, with four empty squares at each end of 
 | North | e16 Rook, f16 Knight, g16 Bishop, **h16 Queen**, i16 King, j16 Bishop, k16 Knight, l16 Rook | e15 to l15 | South (rank 1) |
 | West | a5 Rook, a6 Knight, a7 Bishop, **a8 Queen**, a9 King, a10 Bishop, a11 Knight, a12 Rook | b5 to b12 | East (file p) |
 | East | p5 Rook, p6 Knight, p7 Bishop, **p8 Queen**, p9 King, p10 Bishop, p11 Knight, p12 Rook | o5 to o12 | West (file a) |
+
+That is the standard army. England's Prime Ministers stand on its king, queen and knight squares instead (see [below](#civilizations-with-special-armies)).
 
 As in normal chess, each queen starts on her own color, so opposite queens face each other. South and West are the "light" armies (queen on a light square); North and East are the "dark" armies.
 
@@ -58,13 +60,13 @@ While the indicator is on, your king's square has a pulsing orange-red ring with
 - If an opponent attacks your king while it isn't your turn, you are **not** told until your turn starts (by then the danger may already be gone).
 - The indicator is only ever for you: you never see it for other players' kings, and spectators see none.
 - It is information only. It never stops a move, and only an **active** player's king can be in check (see Player status below).
-- "Leader" is the piece your army can't afford to lose. In this version every army's leader is its king.
+- "Leader" is the piece your army can't afford to lose. For most armies that is the king. England has four leaders, its Prime Ministers: the indicator comes on when **any** of them is attacked, and only the attacked ones get the ring.
 
 ### Pawns
 
 - A pawn moves one square forward, or **two squares** on its first move (from its starting line) if both squares are empty.
 - It captures one square diagonally forward.
-- **Promotion happens halfway:** when a pawn reaches the first line past the middle of the board, it **must** promote. That line is **rank 9 for South, rank 8 for North, file i for West and file h for East**, seven steps from where the pawn started. You choose a queen, rook, bishop or knight. You can never promote to a king.
+- **Promotion happens halfway:** when a pawn reaches the first line past the middle of the board, it **must** promote. That line is **rank 9 for South, rank 8 for North, file i for West and file h for East**, seven steps from where the pawn started. You choose a queen, rook, bishop or knight. You can never promote to a king (or, for England, to a Prime Minister). England's pawns may promote to a queen or knight even though England starts without them.
 
 ### En passant (provisional)
 
@@ -80,6 +82,27 @@ While the indicator is on, your king's square has a pulsing orange-red ring with
 - You may castle only if the king and that rook have **never moved** and every square between them is **empty**.
 - **No attack restrictions:** you may castle out of, through or into an attacked square.
 - You can castle only while you are an **active** player (see below).
+- Only an army with a single leader castles: **England never castles**.
+
+---
+
+## Civilizations with special armies
+
+A civilization's rules have a **version**. Most civilizations are at version 1 (the standard army). When a civilization gets new rules it gets a new version, and new games use the newest one; games already played keep the version they were played with, so your match history always replays exactly.
+
+### England: Prime Ministers (version 2)
+
+England has **no king, no queen and no knights**. Instead, **four Prime Ministers** start on the king's, the queen's and both knights' squares. South's England army is: e1 Rook, **f1 Prime Minister**, g1 Bishop, **h1 Prime Minister**, **i1 Prime Minister**, j1 Bishop, **k1 Prime Minister**, l1 Rook, pawns e2 to l2 (the other seats mirror this along their own back line).
+
+- **Moves:** a Prime Minister moves like a knight **or** like a king: an L-shaped leap, or one step in any direction. It captures the same way. It never castles and never moves two squares.
+- **Leaders:** all four are leaders. Capturing one is not a defeat; England is knocked out only when the **fourth** is captured (or, as for anyone, by stalemate, running out of time, leaving or resigning). You may leave a Prime Minister under attack, as with a king.
+- **Check indicator:** shown when any Prime Minister is attacked; the ring marks only the attacked ones.
+- **Castling:** England can't castle (it has more than one leader).
+- **Promotion:** England's pawns promote to a queen, rook, bishop or knight, as everyone's do, never to a Prime Minister.
+- **Once England is no longer active** (Teams: defeated or frozen), its remaining Prime Ministers are ordinary pieces, like a defeated player's king.
+- In position strings and logs a Prime Minister is the letter **M**.
+
+The Prime Minister looks like a knight wearing the king's crown.
 
 ---
 
@@ -89,12 +112,12 @@ At every moment each player has exactly one status:
 
 | Status | What it means |
 |---|---|
-| **Active** | Still in the game, with their king. |
+| **Active** | Still in the game, with their king (England: at least one Prime Minister). |
 | **Defeated** | Lost their king, or was stalemated. *In Teams only*, a defeated player keeps taking turns with their remaining pieces for as long as their partner is still active. |
 | **Frozen** | *Teams only.* Ran out of time or left the game. The pieces stay on the board: they block squares and can be captured, but they never move again, and the player's turns are skipped. A defeated player who later runs out of time or leaves also becomes frozen. |
 | **Removed** | *Free-for-All only.* The player's army has been taken off the board, and their turns are skipped. |
 
-**(provisional)** Once a player is no longer active, a king they still have becomes an ordinary piece. Capturing it changes nothing, and it can't castle. In particular, a stalemated or timed-out Teams player's king does **not** keep their team alive.
+**(provisional)** Once a player is no longer active, a king (or any of England's Prime Ministers) they still have becomes an ordinary piece. Capturing it changes nothing, and it can't castle. In particular, a stalemated or timed-out Teams player's king does **not** keep their team alive.
 
 ---
 
@@ -102,7 +125,7 @@ At every moment each player has exactly one status:
 
 You are knocked out when any one of these happens:
 
-1. **Your king is captured.** Any opponent can do it on their own turn, and it takes effect immediately.
+1. **Your king is captured.** Any opponent can do it on their own turn, and it takes effect immediately. England is knocked out only when its **last** Prime Minister is captured; losing one, two or three of them is just a loss of material.
 2. **Stalemate is a loss, not a draw.** If you have **no legal move** at the start of your turn, you are defeated. In Teams this happens only once. After that, whenever a defeated player has no legal move on their turn, they **pass automatically**. A pass uses no clock time, earns no increment, and appears in the move log as `--`.
    - Your turn starts once the previous player has finished. If, while it is your turn, another player leaves the game and that takes away your last legal move (for example, your only move captured one of their pieces and, in Free-for-All, their army is taken off the board; or it was an en passant capture of their pawn, which expires when they leave), your turn is judged again: an active player is stalemated, and a defeated Teams player passes.
 3. **Your clock runs out.**

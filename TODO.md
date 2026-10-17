@@ -149,6 +149,7 @@ Conventions (see [CLAUDE.md](CLAUDE.md)):
 - ~~Review corner-pawn opening balance (East exposed on both corners) with bot-arena data (first bot data 2026-10-15 in [docs/bots-calibration.md](docs/bots-calibration.md): FFA East wins 23.0 ± 1.8% vs fair 25%, no Teams bias)~~ (done 2026-10-17; moot with the 16×16 board: no army starts in contact, so there are no move-1 corner-pawn captures. Seat bias of the new board is in docs/bots-calibration.md)
 - FFA move-limit tie placements: survivors share 1st and defeated seats keep their reverse-defeat placements (e.g. 1st, 1st, 3rd, 4th) — confirm this is what lobby results and ratings should show
 - Confirm: a Teams seat that was already DEFEATED and then freezes does not reset the move-limit counter (only ACTIVE-seat defeats reset it)
+- Balance review of England (civ v2, four Prime Ministers) with arena and human data: in bot-arena FFA games England wins about 61% (fair share 25%) and almost never finishes last, at level 1200 and with a 20k-node engine alike; in Teams no clear effect (see docs/bots-calibration.md). Options if human games agree: fewer Prime Ministers, weaker movement, or a different defeat condition (as a new civ version)
 
 ## Before public release
 
@@ -244,6 +245,7 @@ Plan: [docs/MOBILE.md](docs/MOBILE.md) (Capacitor shells around the web build, s
 - Draft mode (bans + pick order)
 - Unique-civ matchmaking
 - Civ abilities
+- ~~England: Prime Ministers (civ v2)~~ (done 2026-10-17; England's king, queen and knights are replaced by four Prime Ministers (letter `M`, `prime_minister`) on the K, Q and both N squares: each moves like a knight or a king, all four are leaders and England is eliminated only when the last is captured (default "no leaders" defeat condition). England can't castle (more than one leader piece, `Roster::castling_leader`); pawns still promote to Q, R, B or N (roster `promotion_choices`, now data separate from the starting back line). England v1 stays defined for history; new games use v2 (`CivId::latest_version`), the catalog seed adds the v2 roster row, `match_players.civ_version` stores it. Snapshot field `attackedLeaderSquares`: the check ring goes on the attacked Prime Ministers only. Bots value a Prime Minister at 450 plus a 150 leader reserve, only the last leader is decisive; arena results in docs/bots-calibration.md. Piece art `prime-minister.svg` (knight wearing the king's crown) in the board atlas; "Special army" tag and explanation in the civ picker, Play page and lobby. Perft with England in South: 34, 1,020, 30,600)
 - Progression / XP / unlocks / civ mastery
 - Unity client (Windows x64) via Colyseus Unity SDK + `rules-ffi` DLL
 - Steam auth plugin (ticket + OpenID 2.0) + publisher Web API key

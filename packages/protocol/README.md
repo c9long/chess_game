@@ -214,7 +214,7 @@ protocol v1; older decoders ignore them). `inviteOnly`: a challenge lobby (see b
   the re-simulation replays.
 - Bots as voters answer after a paced delay (`BOT_MIN_MOVE_MS`, then half that more for each
   further bot): they accept only when clearly losing, i.e. when the material in play (P1 N3 B3
-  R5 Q9, leader excluded, frozen pieces not counted) of their own army (Teams: their team) is
+  R5 Q9, England's Prime Ministers M4, a king excluded, frozen pieces not counted) of their own army (Teams: their team) is
   at most 80% of the strongest other remaining player's (Teams: the enemy team's); otherwise
   they decline.
 - Untimed (solo) rooms: a server drain aborts a running untimed game at once instead of
