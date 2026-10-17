@@ -76,9 +76,9 @@ describe('a ranked FFA game between four registered players', () => {
 
     // Illegal moves and moves out of turn are refused without changing anything.
     const notToMove = players.find((p) => p.seat !== host.state.seatToMove) as Player
-    expect((await notToMove.expectError('move', { move: 'c2c4' })).code).toBe('not_your_turn')
+    expect((await notToMove.expectError('move', { move: 'e2e4' })).code).toBe('not_your_turn')
     const toMove = players.find((p) => p.seat === host.state.seatToMove) as Player
-    expect((await toMove.expectError('move', { move: 'c2c9' })).code).toBe('illegal_move')
+    expect((await toMove.expectError('move', { move: 'e2e9' })).code).toBe('illegal_move')
     expect(host.state.actionSeq).toBe(0)
 
     const over = await playOut(players)
@@ -109,7 +109,7 @@ describe('a ranked FFA game between four registered players', () => {
     const [m] = await db.select().from(matches).where(eq(matches.id, matchId))
     expect(m).toMatchObject({ status: 'finished', rated: true, mode: 'ffa', timeControl: '10+0' })
     expect(m?.endReason).toBe('last_standing')
-    expect(m?.rulesVersion).toBe(1)
+    expect(m?.rulesVersion).toBe(2)
     const rows = await db
       .select()
       .from(matchEvents)

@@ -80,10 +80,10 @@ describe('HttpBotClient', () => {
   it('posts the request and returns the move', async () => {
     reply = (res) => {
       res.setHeader('content-type', 'application/json')
-      res.end(JSON.stringify({ move: 'c2c4', score: 10, depth: 3, nodes: 100, timeMs: 5 }))
+      res.end(JSON.stringify({ move: 'e2e4', score: 10, depth: 3, nodes: 100, timeMs: 5 }))
     }
     const r = await new HttpBotClient(url, 1000).requestMove(req, new AbortController().signal)
-    expect(r.move).toBe('c2c4')
+    expect(r.move).toBe('e2e4')
     expect(lastBody).toEqual(req)
   })
 

@@ -53,7 +53,7 @@ describe('bot teammate', () => {
   it('agrees when its team is clearly losing (team material at most 80% of the enemy team)', () => {
     // South (a lone king) and North (a rook, 5) against West and East (two queens, 18).
     const losing = Game.fromPosition(
-      'teams nR5nK5/12/12/12/12/wK10eK/wQ10eQ/12/12/12/12/6sK5 S AAAA - - 0 0',
+      'teams nR7nK7/16/16/16/16/16/16/wK14eK/wQ14eQ/16/16/16/16/16/16/8sK7 S AAAA - - 0 0',
     )
     expect(botAcceptsTeamResign(losing.snapshot(), 2)).toBe(true)
     expect(botAcceptsTeamResign(losing.snapshot(), 0)).toBe(true)
@@ -62,12 +62,12 @@ describe('bot teammate', () => {
     losing.free()
     // 5 + 9 = 14 vs 18: at most 0.8 x 18 = 14.4, still clearly losing; 9 + 9 vs 18 is even.
     const close = Game.fromPosition(
-      'teams nR5nK5/12/12/12/12/wK10eK/wQ10eQ/12/12/12/12/sQ5sK5 S AAAA - - 0 0',
+      'teams nR7nK7/16/16/16/16/16/16/wK14eK/wQ14eQ/16/16/16/16/16/16/sQ7sK7 S AAAA - - 0 0',
     )
     expect(botAcceptsTeamResign(close.snapshot(), 2)).toBe(true)
     close.free()
     const even = Game.fromPosition(
-      'teams nQ5nK5/12/12/12/12/wK10eK/wQ10eQ/12/12/12/12/sQ5sK5 S AAAA - - 0 0',
+      'teams nQ7nK7/16/16/16/16/16/16/wK14eK/wQ14eQ/16/16/16/16/16/16/sQ7sK7 S AAAA - - 0 0',
     )
     expect(botAcceptsTeamResign(even.snapshot(), 2)).toBe(false)
     even.free()

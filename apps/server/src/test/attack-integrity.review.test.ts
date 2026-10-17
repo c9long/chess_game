@@ -195,7 +195,7 @@ describe('attack-integrity: live game', () => {
       expect((await atk.expectError('setCiv', { civ: 'mali' })).code).toBe('wrong_phase')
       expect((await atk.expectError('kick', { seat: 0 })).code).toMatch(/not_host|wrong_phase/)
       expect((await atk.expectError('setReady', { ready: false })).code).toBe('wrong_phase')
-      expect((await atk.expectError('move', { move: 'c2c4', seat: 0 })).code).toBe(
+      expect((await atk.expectError('move', { move: 'e2e4', seat: 0 })).code).toBe(
         'invalid_message',
       )
       expect((await atk.expectError('startGame')).code).toMatch(/not_host|wrong_phase/)

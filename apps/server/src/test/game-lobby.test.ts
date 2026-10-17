@@ -293,6 +293,6 @@ describe('messages', () => {
   it('rejects unknown and malformed messages', async () => {
     expect((await host.expectError('teleport', {})).code).toBe('unknown_message')
     expect((await host.expectError('setCiv', { civ: 'atlantis' })).code).toBe('invalid_message')
-    expect((await host.expectError('move', { move: 'c2c4' })).code).toBe('wrong_phase')
+    expect((await host.expectError('move', { move: 'e2e4' })).code).toBe('wrong_phase')
   })
 })

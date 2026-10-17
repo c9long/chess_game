@@ -398,7 +398,7 @@ describe('a defeated seat still playing', () => {
     // South lost its king (DEFEATED, still playing); South to move.
     const pos = (south.state.positionString as string)
       .replace('sK', '1')
-      .replace(' S AAAA Sc1,Sj1,', ' S DAAA ')
+      .replace(' S AAAA Se1,Sl1,', ' S DAAA ')
       .replace('def=-', 'def=Sl')
     room.game.free()
     room.game = Game.fromPosition(pos)
@@ -440,12 +440,12 @@ describe('cooldown of a seat that can only pass', () => {
     // South lost its king and has no pieces left (it passes every turn). West to move.
     const parts = (south.state.positionString as string).split(' ')
     const ranks = (parts[1] as string).split('/')
-    ranks[10] = '12'
-    ranks[11] = '12'
+    ranks[14] = '16'
+    ranks[15] = '16'
     parts[1] = ranks.join('/')
     parts[2] = 'W'
     parts[3] = 'DAAA'
-    parts[4] = 'Wa3,Wa10,Nc12,Nj12,El3,El10'
+    parts[4] = 'Wa5,Wa12,Ne16,Nl16,Ep5,Ep12'
     const pos = parts.join(' ').replace('def=-', 'def=Sl')
     room.game.free()
     room.game = Game.fromPosition(pos)

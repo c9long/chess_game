@@ -102,6 +102,16 @@ async function leaveAll(players: Player[]) {
   for (const p of players) await p.leave()
 }
 
+// biome-ignore lint/suspicious/noExplicitAny: reaching into the room's private state
+type AnyRoom = any
+
+function roomOf(roomId: string): AnyRoom {
+  for (const r of h.server.ctx.game.rooms) {
+    if ((r as AnyRoom).roomId === roomId) return r
+  }
+  throw new Error('room not found')
+}
+
 describe('resign', () => {
   it('FFA: off turn removes the army and keeps the clock; on turn ends the turn without increment; the last resign ends the game', async () => {
     const players = await startGame(await Promise.all([guest(h), guest(h), guest(h), guest(h)]), {
@@ -129,7 +139,7 @@ describe('resign', () => {
     expect(north.state.seats[2]).toMatchObject({ connected: true, status: 'removed' })
     expect((await north.expectError('resign')).code).toBe('not_playing')
     expect((await north.expectError('offerDraw')).code).toBe('not_playing')
-    expect((await north.expectError('move', { move: 'c2c4' })).code).toBe('not_your_turn')
+    expect((await north.expectError('move', { move: 'e2e4' })).code).toBe('not_your_turn')
 
     // South resigns on its own turn: the turn passes to West, with no increment for South.
     south.send('resign')
@@ -410,18 +420,27 @@ describe('solo (untimed) games', () => {
 
   it('bots answer by the material heuristic, in seat order', async () => {
     const p = await createSolo(await guest(h), { mode: 'ffa' })
-    const players = [p]
-    // Greedy play until some bot is clearly losing on South's turn.
-    let snap = null as ReturnType<Game['snapshot']> | null
-    for (let i = 0; i < 100; i++) {
-      await p.waitState((s) => s.phase === 'in_game' && s.seatToMove === 0, 5_000, 'my turn')
-      const game = Game.fromPosition(p.state.positionString)
-      snap = game.snapshot()
-      game.free()
-      if ([1, 2, 3].some((s) => botAcceptsDraw(snap as never, s))) break
-      await moveOnce(players)
-    }
-    if (!snap) throw new Error('no position')
+    // West has lost its queen and both rooks (20 material against 39): West, the first bot
+    // to answer, is clearly losing; North is not. Injected into the live room, because the
+    // armies of the 16×16 board take a long time to meet in greedy play.
+    await p.waitState((s) => s.phase === 'in_game' && s.seatToMove === 0, 5_000, 'my turn')
+    const start = p.state.positionString as string
+    const fields = start.split(' ')
+    fields[1] = (fields[1] as string)
+      .split('/')
+      .map((rank) => rank.replace(/^wRwP12/, '1wP12').replace(/^wQwP12/, '1wP12'))
+      .join('/')
+    fields[4] = (fields[4] as string)
+      .split(',')
+      .filter((c) => !c.startsWith('W'))
+      .join(',')
+    const room = roomOf(p.room.roomId)
+    room.game.free()
+    room.game = Game.fromPosition(fields.join(' '))
+    const snap = room.game.snapshot() as ReturnType<Game['snapshot']>
+    expect(snap.seatToMove).toBe('south')
+    expect(botAcceptsDraw(snap, 1)).toBe(true)
+    expect(botAcceptsDraw(snap, 2)).toBe(false)
     const voters = [1, 2, 3].filter((s) => snap?.statuses[s] === 'active')
     const expected: ServerMessages['drawEvent'][] = []
     for (const seat of voters) {

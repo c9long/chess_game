@@ -17,10 +17,10 @@ beforeAll(() => {
 /** Board field of a position string from square -> piece ('sK', 'wQ', ...). */
 function board(pieces: Record<string, string>): string {
   const rows: string[] = []
-  for (let r = 12; r >= 1; r--) {
+  for (let r = 16; r >= 1; r--) {
     let row = ''
     let empty = 0
-    for (const f of 'abcdefghijkl') {
+    for (const f of 'abcdefghijklmnop') {
       const p = pieces[`${f}${r}`]
       if (!p) {
         empty++
@@ -47,8 +47,8 @@ function snapshotOf(position: string): Snapshot {
 
 /** An FFA position: four leaders in the corners plus `extra` pieces. */
 function ffa(extra: Record<string, string>, statuses = 'AAAA', defeats = '-'): Snapshot {
-  const kings: Record<string, string> = { a1: 'sK', a12: 'wK', l12: 'nK', l1: 'eK' }
-  if (statuses[1] === 'R') delete kings.a12
+  const kings: Record<string, string> = { a1: 'sK', a16: 'wK', p16: 'nK', p1: 'eK' }
+  if (statuses[1] === 'R') delete kings.a16
   return snapshotOf(`ffa ${board({ ...kings, ...extra })} S ${statuses} - - 0 0 def=${defeats}`)
 }
 
