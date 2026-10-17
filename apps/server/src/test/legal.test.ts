@@ -108,6 +108,28 @@ describe('neutral age screen', () => {
     expect((await confirmAge(c, '1990-01-01')).status).toBe(200)
   })
 
+  it('a signed-in account answers from its own confirmation, not the browser cookie', async () => {
+    const a = await signUpVerified(h)
+    // A browser that never saw the age screen: sign-in doesn't need it.
+    const c = h.client()
+    const signedOut = await c.get('/api/legal/status')
+    expect(signedOut.body).toMatchObject({ userId: null, ageConfirmed: false })
+    const res = await c.post(
+      '/api/auth/sign-in/username',
+      { username: a.username, password: a.password },
+      { captcha: true },
+    )
+    expect(res.status).toBe(200)
+    const status = await c.get('/api/legal/status')
+    expect(status.body).toMatchObject({
+      userId: a.userId,
+      ageConfirmed: true,
+      ageBand: '18+',
+      needsAcceptance: false,
+    })
+    expect(cookiesOf(res).some((s) => s.startsWith('age_ok='))).toBe(false)
+  })
+
   it('rejects impossible dates', async () => {
     const c = h.client()
     expect((await confirmAge(c, '2001-02-30')).status).toBe(400)

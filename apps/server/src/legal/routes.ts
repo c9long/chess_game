@@ -68,7 +68,13 @@ export function legalRouter({ config, db, auth }: { config: AppConfig; db: Datab
     res.json({ versions: LEGAL_VERSIONS })
   })
 
-  /** Required versions plus what the signed-in user (if any) has accepted. */
+  /**
+   * Required versions plus what the signed-in user (if any) has accepted, and whether the age
+   * screen is done. A signed-in account answers from its stored confirmation (set when it was
+   * created), never from the browser's age cookie, so a missing or stale cookie can't bring
+   * the age screen back for an account. `userId` says whom the answer describes, so the client
+   * can tell an answer for the current session from a stale one.
+   */
   router.get('/status', async (req, res) => {
     const gate = readGate(config, req.headers.cookie)
     const session = await loadSession(auth, req)
@@ -77,6 +83,7 @@ export function legalRouter({ config, db, auth }: { config: AppConfig; db: Datab
       (d) => accepted[d] !== LEGAL_VERSIONS[d],
     )
     res.json({
+      userId: session?.user.id ?? null,
       required: LEGAL_VERSIONS,
       accepted,
       needsAcceptance: session ? missing.length > 0 : undefined,
