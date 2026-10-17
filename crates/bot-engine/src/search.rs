@@ -345,6 +345,15 @@ fn is_leader(st: &GameState, v: Piece) -> bool {
         && st.leader_count(v.owner) <= 1
 }
 
+/// Whether `seat`'s leader is in decisive danger: it holds at most one live
+/// leader piece and that piece is attacked. With spare leaders (England's
+/// Prime Ministers) an attacked one is a material question, not a lost game,
+/// so the leader-safety heuristics (level sampling, fillers, fallback,
+/// null-move gate) ignore it until only the last one is left.
+pub(crate) fn decisive_leader_under_attack(st: &GameState, seat: Seat) -> bool {
+    st.leader_count(seat) <= 1 && leader_under_attack(st, seat)
+}
+
 /// Whether `owner` defends `sq` (a piece of `owner` could recapture there).
 fn is_defended(st: &GameState, owner: Seat, sq: rules_core::Square) -> bool {
     is_square_attacked_by(st, sq, owner)
@@ -633,7 +642,8 @@ impl Searcher<'_> {
             events.clear();
             apply_generated_move(&mut c, m, &mut events);
             let safe = c.is_over()
-                || (c.status(seat) == SeatStatus::Active && !leader_under_attack(&c, seat));
+                || (c.status(seat) == SeatStatus::Active
+                    && !decisive_leader_under_attack(&c, seat));
             if safe {
                 return Some(m);
             }
@@ -645,8 +655,12 @@ impl Searcher<'_> {
     /// (its own leader is attacked, it attacks the root seat's leader).
     fn filler_threats(&self, st: &GameState) -> (bool, bool) {
         let seat = st.seat_to_move();
-        let root_active = seat != self.root && st.status(self.root) == SeatStatus::Active;
-        let own_active = st.status(seat) == SeatStatus::Active;
+        // Only a seat's last leader counts: with spare leaders (England's
+        // Prime Ministers) an attacked one is not a game-deciding threat.
+        let root_active = seat != self.root
+            && st.status(self.root) == SeatStatus::Active
+            && st.leader_count(self.root) <= 1;
+        let own_active = st.status(seat) == SeatStatus::Active && st.leader_count(seat) <= 1;
         let (own_roster, root_roster) = (st.roster(seat), st.roster(self.root));
         let (mut danger, mut hit) = (false, false);
         for (i, p) in st.board().iter().enumerate() {
@@ -836,7 +850,7 @@ impl Searcher<'_> {
     fn side_leader_attacked(&self, st: &GameState, side: u8) -> bool {
         Seat::ALL
             .into_iter()
-            .any(|s| self.side_of(s) == side && leader_under_attack(st, s))
+            .any(|s| self.side_of(s) == side && decisive_leader_under_attack(st, s))
     }
 
     // ----- search ----------------------------------------------------------
@@ -1304,7 +1318,7 @@ impl Searcher<'_> {
             apply_generated_move(&mut c, sm.mv, &mut self.events);
             if c.is_over()
                 || (c.status(self.root) == SeatStatus::Active
-                    && !leader_under_attack(&c, self.root))
+                    && !decisive_leader_under_attack(&c, self.root))
             {
                 return Some(sm.mv);
             }

@@ -17,7 +17,10 @@ all four leaders; see docs/RULES.md). The engine values a Prime Minister at **45
 2 per square, a mildly central piece-square table that keeps it near home), adds a
 **150 leader reserve** per leader beyond the last, penalises a hanging non-last leader by 350
 (`leader_spare_hanging`) instead of the full `leader_hanging`, and treats only the capture of
-a seat's **last** leader as decisive. Arena overrides: `w.m`, `w.mob.m`, `w.leader_reserve`,
+a seat's **last** leader as decisive. The leader-safety heuristics outside the evaluation (the
+level filter that keeps weak bots from sampling a move that hangs the leader, the BRS fillers,
+the static fallback and the null-move gate) follow the same rule: an attacked Prime Minister
+counts as leader danger only when it is the seat's last one. Arena overrides: `w.m`, `w.mob.m`, `w.leader_reserve`,
 `w.leader_spare_hanging`.
 
 Method: four copies of one player, England fixed in South (start position with
@@ -28,14 +31,19 @@ England's seat result is the civ's result. Shared machine (load ≈ 10 on 12 cor
 |---|---|---|---|---|
 | Baseline, no England, `brs+:nodes=20000` | 96 | 26.9 ± 8.0% (South) | 30.2% | 18–28% |
 | England, `brs+:nodes=20000`, PM 450 (default) | 96 | **60.9 ± 8.6%** | 3.1% | W 11.6, N 20.8, E 6.6% |
+| Same, after the leader-heuristic fix | 96 | **59.9 ± 8.6%** | 3.1% | W 8.5, N 22.9, E 8.7% |
 | England, PM 300 | 48 | 69.4 ± 10.8% | 0% | 9–12% |
 | England, PM 650 | 48 | 55.9 ± 12.2% | 0% | 9–18% |
 | Baseline, no England, level 1200 | 96 | 24.5 ± 8.6% (South) | 28.1% | 22–30% |
-| England, level 1200 | 96 | **60.9 ± 9.1%** | 1.0% | W 7.3, N 19.8, E 12.0% |
+| England, level 1200 | 96 | 60.9 ± 9.1% | 1.0% | W 7.3, N 19.8, E 12.0% |
+| Same, after the leader-heuristic fix | 96 | **44.6 ± 8.5%** | 2.1% | W 18.2, N 21.7, E 15.5% |
 | Teams, England South (partner North standard), level 1500 | 48 | South+North score 0.542 ± 0.142 | | baseline 0.531 ± 0.141 |
 
-**Reading it:** in FFA England wins about 60% of games against a fair share of 25% and almost
-never finishes last, at every strength tried. The Prime Minister's value moves this only a
+**Reading it:** in FFA England wins 45–60% of games against a fair share of 25% and almost
+never finishes last, at every strength tried. (Before the leader-heuristic fix the level filter
+wrongly treated every attacked Prime Minister as a hanging leader, so a weak England bot's
+deliberate mistakes could never leave a spare one en prise, a protection no other piece gets;
+level 1200 dropped from 60.9% to 44.6% once fixed. The engine at a fixed node count, which has no level filter, barely moved.) The Prime Minister's value moves this only a
 little (a lower value makes the bots trade them more freely, which helps England, not hurts):
 the imbalance is in the rules (four leaders to hunt instead of one, and four short-range
 attackers), not in how the bots value the piece, so the default stays at 450. In Teams the

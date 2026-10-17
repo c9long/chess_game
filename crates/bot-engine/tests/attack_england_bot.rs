@@ -187,8 +187,9 @@ fn teams_bot_takes_the_decisive_last_pm() {
     assert!(r.score >= MATE_BOUND, "{}", r.score);
 }
 
-/// The level filter treats a hanging *spare* PM like a hanging leader. It must
-/// still return a legal move when every move leaves some PM attacked.
+/// A spare PM left attacked is a material risk, not a hanging leader: the
+/// level filter must not reject a move for it (only the last PM counts).
+/// It must still return a legal move when every move leaves some PM attacked.
 #[test]
 fn level_filter_with_unavoidably_attacked_pm_still_moves_legally() {
     let text = format!(
@@ -199,5 +200,40 @@ fn level_filter_with_unavoidably_attacked_pm_still_moves_legally() {
     for seed in 0..20 {
         let r = choose_move(&s, Level::L600, u64::MAX, 0, seed);
         assert!(is_generated(&s, r.best_move.unwrap()));
+    }
+}
+
+/// With a spare PM attacked, taking a free queen does not "hang the leader":
+/// the level filter, fillers and fallback only guard the last leader.
+#[test]
+fn attacked_spare_pm_does_not_count_as_a_hanging_leader() {
+    let text = format!(
+        "ffa {} S AARR - - 0 0 def=Nl,El civ=england.2,canada.1,canada.1,canada.1",
+        board_field(&["sMc3", "sMm2", "sRp1", "wRc10", "wQp9", "wKa16"])
+    );
+    let s = parse_position(&text).unwrap();
+    assert!(leader_under_attack(&s, Seat::South));
+    assert!(!move_hangs_leader(&s, mv("p1p9")));
+    let flagged = legal_moves(&s)
+        .into_iter()
+        .filter(|&m| move_hangs_leader(&s, m))
+        .count();
+    assert_eq!(
+        flagged, 0,
+        "no move hangs a leader while a spare PM remains"
+    );
+
+    // With the spare gone, leaving the last PM attacked does hang it.
+    let text = format!(
+        "ffa {} S AARR - - 0 0 def=Nl,El civ=england.2,canada.1,canada.1,canada.1",
+        board_field(&["sMc3", "sRp1", "wRc10", "wQp9", "wKa16"])
+    );
+    let s = parse_position(&text).unwrap();
+    assert!(move_hangs_leader(&s, mv("p1p9")));
+    for seed in 0..10 {
+        let m = choose_move(&s, Level::L600, u64::MAX, 0, seed)
+            .best_move
+            .unwrap();
+        assert!(!move_hangs_leader(&s, m), "seed {seed}: {m}");
     }
 }

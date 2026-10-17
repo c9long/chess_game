@@ -11,7 +11,7 @@
 //! | Field | Format | Example |
 //! |---|---|---|
 //! | mode | `ffa` or `teams` | `ffa` |
-//! | board | 16 ranks from rank 16 down to rank 1, separated by `/`. Each rank lists files `a`..`p`: a piece is two characters, seat letter (`s w n e`, lowercase) + kind letter (`P N B R Q K`, uppercase); a number `1`..`16` is that many empty squares. Each rank must total 16. | `4sRsNsBsQsKsBsNsR4` |
+//! | board | 16 ranks from rank 16 down to rank 1, separated by `/`. Each rank lists files `a`..`p`: a piece is two characters, seat letter (`s w n e`, lowercase) + kind letter (`P N B R Q K M`, uppercase; `M` = Prime Minister, only on a seat whose civ roster has it, e.g. `england.2`); a number `1`..`16` is that many empty squares. Each rank must total 16. | `4sRsNsBsQsKsBsNsR4` |
 //! | to-move | seat letter `S W N E` | `S` |
 //! | statuses | 4 letters in seat order S, W, N, E: `A`ctive, `D`efeated, `F`rozen, `R`emoved | `AAAA` |
 //! | castling | comma list of seat letter + home square of a rook it may still castle with, or `-` | `Se1,Sl1,Wa5` |

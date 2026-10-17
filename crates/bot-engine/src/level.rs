@@ -14,13 +14,12 @@
 
 use std::time::{Duration, Instant};
 
-use rules_core::{
-    GameMode, GameState, Move, SeatStatus, apply_move, leader_under_attack, legal_moves,
-};
+use rules_core::{GameMode, GameState, Move, SeatStatus, apply_move, legal_moves};
 
 use crate::rng::Rng;
 use crate::search::{
     EXACT_ROOT_MARGIN, Engine, FfaAlgorithm, MATE_BOUND, RootMove, SearchConfig, SearchLimits, WIN,
+    decisive_leader_under_attack,
 };
 use crate::{EvalWeights, SearchResult, evaluate};
 
@@ -315,7 +314,9 @@ fn forced_move(state: &GameState, start: Instant) -> Option<SearchResult> {
 }
 
 /// Whether playing `mv` leaves the mover's leader attacked (every opponent
-/// moves before the mover's next turn, so the leader is hanging).
+/// moves before the mover's next turn, so the leader is hanging). Only the
+/// mover's last leader counts: with spare leaders (England's Prime
+/// Ministers) leaving one attacked is a material risk, like any piece.
 pub fn move_hangs_leader(state: &GameState, mv: Move) -> bool {
     let me = state.seat_to_move();
     let mut c = state.clone();
@@ -325,7 +326,7 @@ pub fn move_hangs_leader(state: &GameState, mv: Move) -> bool {
     if c.is_over() {
         return false;
     }
-    c.status(me) == SeatStatus::Active && leader_under_attack(&c, me)
+    c.status(me) == SeatStatus::Active && decisive_leader_under_attack(&c, me)
 }
 
 /// Level-based move selection among the searched root moves.
