@@ -397,7 +397,7 @@ export function Countdown({ endsAt, state }: { endsAt: number; state: MatchState
   }, [])
   const secs = Math.max(1, Math.ceil((endsAt - now) / 1000))
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center overflow-y-auto bg-ink/80 px-4 py-8 backdrop-blur-sm">
+    <div className="fixed inset-0 z-40 flex items-center justify-center overflow-y-auto bg-ink/80 px-4 pt-[calc(2rem+var(--safe-top))] pb-[calc(2rem+var(--safe-bottom))] backdrop-blur-sm">
       <div className="flex w-full max-w-2xl flex-col items-center">
         <p className="text-sm font-semibold tracking-[0.35em] text-gold uppercase">Game starting</p>
         <div className="relative mt-6 flex h-32 w-32 items-center justify-center">

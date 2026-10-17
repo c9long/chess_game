@@ -5,11 +5,7 @@ import { Alert, Button, Field } from '../components/ui.tsx'
 import { authErrorMessage } from '../lib/api.ts'
 import { displayName, useAppState } from '../lib/app-state.tsx'
 import { authClient } from '../lib/auth-client.ts'
-
-/** Friendly names for the device-authorization client ids the server accepts. */
-const CLIENT_NAMES: Record<string, string> = {
-  'game-unity-client': 'the desktop game app',
-}
+import { deviceClientName } from '../lib/device-clients.ts'
 
 interface Pending {
   userCode: string
@@ -68,9 +64,7 @@ export function Device() {
     else setResult(kind === 'approve' ? 'approved' : 'denied')
   }
 
-  const clientName = pending?.clientId
-    ? (CLIENT_NAMES[pending.clientId] ?? pending.clientId)
-    : 'an app'
+  const clientName = pending?.clientId ? deviceClientName(pending.clientId) : 'an app'
 
   return (
     <AuthCard title="Connect a device" subtitle="Enter the code shown on your other device.">

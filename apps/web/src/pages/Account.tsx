@@ -17,6 +17,8 @@ import { Alert, Button, cx, Field, linkButtonClass, Pill } from '../components/u
 import { ApiError, api, authErrorMessage, type OAuthProvider } from '../lib/api.ts'
 import { displayName, isGuest, useAppState } from '../lib/app-state.tsx'
 import { API_ORIGIN, authClient } from '../lib/auth-client.ts'
+import { endMatchSession } from '../lib/match.ts'
+import { authHeaders, endBearerSession, fetchCredentials } from '../lib/native-auth.ts'
 import { normalizeTotpUri, totpSecret } from '../lib/totp.ts'
 import { PROVIDER_LABELS } from './SignIn.tsx'
 
@@ -878,7 +880,10 @@ function DataExport() {
     setBusy(true)
     setError(undefined)
     try {
-      const res = await fetch(`${API_ORIGIN}/api/account/export`, { credentials: 'include' })
+      const res = await fetch(`${API_ORIGIN}/api/account/export`, {
+        credentials: fetchCredentials(),
+        headers: authHeaders(),
+      })
       if (!res.ok) throw new Error(String(res.status))
       const blob = await res.blob()
       const name =
@@ -932,6 +937,9 @@ function DeleteAccount({ guest, hasPassword }: { guest: boolean; hasPassword: bo
         method: 'DELETE',
         body: needPassword ? { confirm: 'DELETE', password } : { confirm: 'DELETE' },
       })
+      // The apps' stored token died with the account: forget it (no-op in the browser).
+      endBearerSession()
+      await endMatchSession()
       await leaveSession(refreshSession, { deleted: true })
     } catch (err) {
       if (err instanceof ApiError && err.code === 'SESSION_NOT_FRESH' && hasPassword) {

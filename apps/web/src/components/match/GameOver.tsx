@@ -179,7 +179,7 @@ export function GameOver({
 
   return (
     <motion.div
-      className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/65 px-4 py-6 backdrop-blur-sm"
+      className="safe-y-overlay fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/65 px-4 backdrop-blur-sm"
       role="dialog"
       aria-modal="true"
       aria-labelledby="game-over-title"

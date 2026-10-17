@@ -1,4 +1,4 @@
-import { type ClockSync, isUntimed, type ServerMessages } from '@game/protocol'
+import { CLOSE_CODES, type ClockSync, isUntimed, type ServerMessages } from '@game/protocol'
 import type { MatchStateJson } from '@game/protocol/state'
 import { type FormEvent, useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
@@ -8,17 +8,23 @@ import { SoloStarting } from '../components/match/SoloStarting.tsx'
 import { Alert, Button, Card, CenteredPage, Field, Spinner } from '../components/ui.tsx'
 import {
   type CloseReason,
+  checkConnection,
   errorCodeMessage,
+  forgetFinishedRoom,
   forgetRoom,
+  hasSavedToken,
   joinMatch,
   leaveMatch,
   type MatchRoom,
   matchErrorCode,
   matchErrorMessage,
+  reconnectGraceMs,
   reconnectMatch,
+  rejoinWindowMs,
   stateJson,
   useMatchStore,
 } from '../lib/match.ts'
+import { onResume } from '../lib/resume.ts'
 
 type Connection =
   | { kind: 'connecting' }
@@ -152,8 +158,27 @@ function useMatchFeed(room: MatchRoom, onClosed: (reason: string) => void): Matc
     const onDrop = () => setReconnecting(true)
     const onReconnect = () => setReconnecting(false)
     const onLeave = (code: number) => {
-      forgetRoom(room.roomId)
-      onClosed(code === 4100 ? 'kicked' : code === 4102 ? 'closed' : 'left')
+      // The SDK gave up reconnecting (4003), or the drop came too soon after joining for it to
+      // try (1006): keep the token, so a rejoin can still make it within the server's grace.
+      if (code === 4003 || code === 1006) {
+        onClosed('lost')
+        return
+      }
+      // Another connection of this player took the seat over: a rejoin elsewhere (seatLost),
+      // or a reconnect with the same token (Colyseus closes the old socket with 4002). That
+      // tab or app keeps playing and has saved its own token, which this one must not delete.
+      forgetRoom(room.roomId, room.reconnectionToken)
+      if (code === CLOSE_CODES.seatLost || code === 4002) {
+        onClosed('replaced')
+        return
+      }
+      onClosed(
+        code === CLOSE_CODES.kicked
+          ? 'kicked'
+          : code === CLOSE_CODES.roomClosed
+            ? 'closed'
+            : 'left',
+      )
     }
     room.onDrop(onDrop)
     room.onReconnect(onReconnect)
@@ -166,6 +191,16 @@ function useMatchFeed(room: MatchRoom, onClosed: (reason: string) => void): Matc
       for (const off of offs) off()
     }
   }, [room, onClosed, notify])
+
+  // Back in the app or tab (or back online): check the connection now instead of waiting for
+  // the SDK's backoff or a dead socket's timeout (phones suspend background apps).
+  useEffect(() => onResume(() => void checkConnection(room)), [room])
+
+  // A finished game no longer needs the long-lived copy of its reconnection token.
+  const phase = state?.phase
+  useEffect(() => {
+    if (phase === 'finished') forgetFinishedRoom(room.roomId)
+  }, [phase, room])
 
   if (!state) return null
   const mySeat = state.seats.findIndex((s) => s.sessionId && s.sessionId === room.sessionId)
@@ -194,6 +229,43 @@ function toSync(c: MatchStateJson['clock']): ClockSync {
   }
 }
 
+/**
+ * After the SDK's own reconnection gave up ('lost'): rejoin with the saved token right away,
+ * then again whenever the app comes back or the network returns, and every few seconds, until
+ * it works (a new room object is adopted and the view starts afresh), the server refuses the
+ * token, or the grace is surely over (`onGiveUp`). True while trying.
+ */
+function useRejoin(room: MatchRoom, lost: boolean, onGiveUp: () => void): boolean {
+  const [giveUp] = useState(() => onGiveUp)
+  useEffect(() => {
+    if (!lost) return
+    let cancelled = false
+    let busy = false
+    const started = Date.now()
+    const windowMs = rejoinWindowMs(reconnectGraceMs(stateJson(room)))
+    const attempt = async () => {
+      if (busy || cancelled) return
+      busy = true
+      const again = await reconnectMatch(room.roomId)
+      busy = false
+      if (again || cancelled) return
+      if (!hasSavedToken(room.roomId) || Date.now() - started > windowMs) {
+        forgetRoom(room.roomId, room.reconnectionToken)
+        giveUp()
+      }
+    }
+    void attempt()
+    const timer = window.setInterval(() => void attempt(), 4_000)
+    const off = onResume(() => void attempt())
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+      off()
+    }
+  }, [lost, room, giveUp])
+  return lost
+}
+
 function MatchView({ room }: { room: MatchRoom }) {
   const navigate = useNavigate()
   const markClosed = useMatchStore((s) => s.markClosed)
@@ -203,24 +275,33 @@ function MatchView({ room }: { room: MatchRoom }) {
     markClosed(room.roomId, reason as CloseReason)
   })
   const feed = useMatchFeed(room, onClosed)
+  const rejoining = useRejoin(room, closed === 'lost' && feed?.state.phase !== 'finished', () =>
+    setClosed('left'),
+  )
 
   // A finished game stays on screen (with its result) after the room closes.
   const keepFinished = feed?.state.phase === 'finished' && closed !== 'kicked'
-  if (closed && !keepFinished) {
+  if (closed && closed !== 'lost' && !keepFinished) {
     return (
       <CenteredPage>
         <Card>
           <h1 className="mb-3 font-display text-2xl font-semibold">
-            {closed === 'kicked' ? 'Removed from the lobby' : 'Disconnected'}
+            {closed === 'kicked'
+              ? 'Removed from the lobby'
+              : closed === 'replaced'
+                ? 'Opened somewhere else'
+                : 'Disconnected'}
           </h1>
           <p className="mb-6 text-parchment/70">
             {closed === 'kicked'
               ? 'The host removed you from this lobby.'
-              : closed === 'closed'
-                ? 'This lobby was closed.'
-                : import.meta.env.DEV
-                  ? 'You are no longer connected to this game. Locally this usually means the server restarted after a code change, which closes every open lobby.'
-                  : 'You are no longer connected to this game.'}
+              : closed === 'replaced'
+                ? 'This game was opened in another tab or in the app, and continues there.'
+                : closed === 'closed'
+                  ? 'This lobby was closed.'
+                  : import.meta.env.DEV
+                    ? 'You are no longer connected to this game. Locally this usually means the server restarted after a code change, which closes every open lobby.'
+                    : 'You are no longer connected to this game.'}
           </p>
           <Button onClick={() => navigate('/play')}>Back to lobbies</Button>
         </Card>
@@ -240,8 +321,14 @@ function MatchView({ room }: { room: MatchRoom }) {
   const inGame = feed.state.phase === 'in_game' || feed.state.phase === 'finished'
   return (
     <>
-      {feed.reconnecting && !closed ? (
-        <div className="sticky top-0 z-40 bg-seat-north/90 px-4 py-2 text-center text-sm font-semibold text-ink">
+      {(feed.reconnecting && !closed) || rejoining ? (
+        <div
+          // Covers the header (same height, text clear of the notch) instead of taking space in
+          // the layout, so the game screen doesn't move while reconnecting.
+          className="fixed inset-x-0 top-0 z-50 flex min-h-[calc(4rem+var(--safe-top))] items-center justify-center bg-seat-north px-4 pt-[var(--safe-top)] text-center text-sm font-semibold text-ink shadow-lg shadow-black/30"
+          role="status"
+          data-testid="reconnecting"
+        >
           Connection lost. Reconnecting…
         </div>
       ) : null}
@@ -249,8 +336,10 @@ function MatchView({ room }: { room: MatchRoom }) {
           side panel's buttons; on narrower screens they sit at the top, clear of the action row
           and its hints below the board. They let clicks through so they never block a move. */}
       <div
-        className={`pointer-events-none fixed right-4 z-50 flex w-80 max-w-[calc(100vw-2rem)] flex-col gap-2 ${
-          inGame ? 'top-4 lg:top-auto lg:right-auto lg:bottom-4 lg:left-4' : 'bottom-4'
+        className={`pointer-events-none fixed right-[calc(1rem+var(--safe-right))] z-50 flex w-80 max-w-[calc(100vw-2rem-var(--safe-left)-var(--safe-right))] flex-col gap-2 ${
+          inGame
+            ? 'top-[calc(1rem+var(--safe-top))] lg:top-auto lg:right-auto lg:bottom-[calc(1rem+var(--safe-bottom))] lg:left-[calc(1rem+var(--safe-left))]'
+            : 'bottom-[calc(1rem+var(--safe-bottom))]'
         }`}
       >
         {feed.notices.map((n) => (
@@ -318,9 +407,13 @@ function PasswordPrompt({
 export function Match() {
   const { roomId = '' } = useParams()
   const room = useMatchStore((s) => s.room)
+  const generation = useMatchStore((s) => s.generation)
   const [conn, withPassword] = useRoomFor(roomId)
 
-  if (conn.kind === 'ready' && room) return <MatchView key={room.roomId} room={room} />
+  // Keyed by adoption too: a rejoin (a new room object for the same id) starts a fresh view.
+  if (conn.kind === 'ready' && room) {
+    return <MatchView key={`${room.roomId}:${generation}`} room={room} />
+  }
   if (conn.kind === 'password') return <PasswordPrompt error={conn.error} onSubmit={withPassword} />
   if (conn.kind === 'other-room') {
     return (
@@ -347,7 +440,9 @@ export function Match() {
               ? 'The host removed you from this lobby.'
               : conn.reason === 'left'
                 ? 'You left this game. Create or join another one.'
-                : 'It is no longer available (the server may have restarted). Create or join another one.'}
+                : conn.reason === 'replaced'
+                  ? 'This game was opened in another tab or in the app, and continues there.'
+                  : 'It is no longer available (the server may have restarted). Create or join another one.'}
           </p>
           <Link className="font-semibold text-gold hover:underline" to="/play">
             Back to lobbies

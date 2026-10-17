@@ -12,10 +12,13 @@ import {
   INITIAL_CHECK,
   nextCheck,
 } from '../../lib/check-indicator.ts'
-import { leaveMatch, type MatchRoom, matchApi } from '../../lib/match.ts'
+import { type FeedbackEvent, feedback, feedbackFor } from '../../lib/feedback.ts'
+import { leaveMatch, type MatchRoom, matchApi, reconnectGraceMs } from '../../lib/match.ts'
 import { lostMaterial, type SeatMaterial } from '../../lib/material.ts'
+import { useMediaQuery } from '../../lib/media.ts'
 import { usePrefs } from '../../lib/prefs.ts'
 import { useRulesReady } from '../../lib/rules.ts'
+import { useWakeLock } from '../../lib/wake-lock.ts'
 import type { MatchFeed } from '../../pages/Match.tsx'
 import { BoardSettings, KeyboardHints } from '../game/BoardSettings.tsx'
 import { GameButton } from '../game/GameButton.tsx'
@@ -338,6 +341,94 @@ function Board({
   )
 }
 
+/**
+ * Haptic feedback (lib/feedback.ts) at the moments the board plays its sounds: a move or
+ * capture, check on you, your turn, and the end of the game. Nothing on the first position
+ * shown (joining or rejoining isn't news).
+ */
+function useGameFeedback(input: {
+  ready: boolean
+  ps: string
+  events: readonly FeedbackEvent[] | undefined
+  mySeat: number
+  myTurn: boolean
+  check: CheckNotice
+  finished: boolean
+}) {
+  const { ready, ps, events, mySeat, myTurn, check, finished } = input
+  const prev = useRef<{ ps: string; myTurn: boolean; check: CheckNotice; finished: boolean }>(null)
+  // The end arrives twice (the final move's events, then the finished phase): feel it once.
+  const endFelt = useRef(false)
+  useEffect(() => {
+    if (!ready || !ps) return
+    const p = prev.current
+    prev.current = { ps, myTurn, check, finished }
+    if (!p) {
+      endFelt.current = finished
+      return
+    }
+    const kind = feedbackFor({
+      events: p.ps !== ps ? events : undefined,
+      mySeat,
+      yourTurn: myTurn && !p.myTurn,
+      check: check === 'check' && p.check !== 'check',
+      ended: finished && !p.finished,
+    })
+    if (!kind || (kind === 'gameEnd' && endFelt.current)) return
+    if (kind === 'gameEnd') endFelt.current = true
+    feedback(kind)
+  }, [ready, ps, events, mySeat, myTurn, check, finished])
+}
+
+const LEAVE_HINT_KEY = 'hint:leave-forfeit:dismissed'
+
+/** "60 s", "90 s", "3 min": the server's reconnect grace for the hint. */
+function graceLabel(ms: number): string {
+  const s = Math.round(ms / 1000)
+  return s < 120 ? `${s} s` : `${Math.round(s / 60)} min`
+}
+
+function leaveHintDismissed(): boolean {
+  try {
+    return localStorage.getItem(LEAVE_HINT_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Phones and tablets, while playing: switching apps for longer than the server's reconnect
+ * grace forfeits the seat. Dismissible; remembered on this device.
+ */
+function LeaveHint({ show, graceMs }: { show: boolean; graceMs: number }) {
+  const touch = useMediaQuery('(pointer: coarse)')
+  const [dismissed, setDismissed] = useState(leaveHintDismissed)
+  if (!show || !touch || dismissed) return null
+  return (
+    <div
+      className="order-7 flex items-center gap-2 rounded-lg border border-parchment/10 bg-ink/40 py-1.5 pr-1.5 pl-3 text-xs text-parchment/70 wide:order-none"
+      data-testid="leave-hint"
+    >
+      <span className="min-w-0 flex-1">
+        Leaving the app for more than {graceLabel(graceMs)} forfeits
+      </span>
+      <button
+        type="button"
+        className="flex h-8 shrink-0 items-center rounded-md px-2.5 font-semibold text-parchment/80 hover:bg-parchment/5 hover:text-parchment"
+        onClick={() => {
+          setDismissed(true)
+          try {
+            localStorage.setItem(LEAVE_HINT_KEY, '1')
+          } catch {}
+        }}
+        aria-label="Dismiss the hint about leaving the app"
+      >
+        Got it
+      </button>
+    </div>
+  )
+}
+
 /** While it's your move and the tab is in the background, say so in the tab title. */
 function useTurnTitle(myTurn: boolean) {
   useEffect(() => {
@@ -393,6 +484,17 @@ export function GameRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) {
     mySeat,
   )
   useTurnTitle(myTurn)
+  useGameFeedback({
+    ready,
+    ps: shown.ps,
+    events: shown.events ?? state.lastEvents,
+    mySeat,
+    myTurn,
+    check,
+    finished,
+  })
+  // Keep the screen on while the game is live (released when it ends or the page closes).
+  useWakeLock(inGame)
 
   // The lobby's Start button sits below the fold: open the game at the top of the page.
   useEffect(() => {
@@ -421,11 +523,11 @@ export function GameRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) {
   const leaveLabel = finished ? (untimed ? 'Back to Play' : 'Back to lobbies') : 'Leave game'
   const moreButtons = (
     // Phones and tablets: two more cells of the action row. Desktop: a row of its own.
-    <div className="contents lg:col-span-2 lg:flex lg:gap-2">
+    <div className="contents wide:col-span-2 wide:flex wide:gap-2">
       <GameButton
         variant="ghost"
         ref={leaveButton}
-        className="w-full lg:flex-1"
+        className="w-full wide:flex-1"
         onClick={leave}
         aria-label={leaveLabel}
       >
@@ -458,17 +560,20 @@ export function GameRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) {
   return (
     <div
       className={[
-        'mx-auto flex w-full max-w-[1500px] flex-col gap-2 px-4 pt-2 pb-6',
-        'lg:grid lg:grid-cols-[auto_minmax(320px,360px)] lg:items-start lg:justify-center lg:gap-6 lg:py-4',
+        // Bottom padding clears a phone's home indicator (there is no footer on this page).
+        'safe-bottom-6 mx-auto flex w-full max-w-[1500px] flex-col gap-2 px-4 pt-2',
+        'wide:grid wide:grid-cols-[auto_minmax(320px,360px)] wide:items-start wide:justify-center wide:gap-6 wide:py-4',
         // Board size. Phones (2x2 strip): header 64 + title 24 + banner 40 + strip 118 +
-        // actions 40 + gaps and padding 48. Tablets (strip in one row): strip 56. Desktop: the
-        // panel sits beside the board, so only the header and padding count.
-        '[--board:max(min(100%,300px),min(100%,calc(100dvh-334px)))]',
-        'min-[560px]:[--board:max(min(100%,300px),min(100%,calc(100dvh-276px)))]',
-        'lg:[--board:min(calc(100vw-440px),calc(100dvh-96px))]',
+        // actions 40 + gaps and padding 48. Tablets (strip in one row): strip 56. Desktop and
+        // phones held sideways (`wide:`, index.css): the panel sits beside the board, so only
+        // the header and padding count.
+        // Safe-area insets (notch, home indicator) come off the height too.
+        '[--board:max(min(100%,300px),min(100%,calc(100dvh_-_334px_-_var(--safe-top)_-_var(--safe-bottom))))]',
+        'min-[560px]:[--board:max(min(100%,300px),min(100%,calc(100dvh_-_276px_-_var(--safe-top)_-_var(--safe-bottom))))]',
+        'wide:[--board:min(calc(100vw_-_440px_-_var(--safe-left)_-_var(--safe-right)),calc(100dvh_-_96px_-_var(--safe-top)_-_var(--safe-bottom)))]',
       ].join(' ')}
     >
-      <div className="order-2 flex min-w-0 justify-center lg:order-none">
+      <div className="order-2 flex min-w-0 justify-center wide:order-none">
         {ready ? (
           <Board room={room} feed={feed} check={check} />
         ) : (
@@ -480,13 +585,13 @@ export function GameRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) {
 
       <aside
         aria-label="Game"
-        className="contents lg:sticky lg:top-4 lg:flex lg:max-h-[calc(100dvh-96px)] lg:flex-col lg:gap-3 lg:overflow-y-auto lg:rounded-2xl lg:border lg:border-parchment/10 lg:bg-panel/85 lg:p-4"
+        className="contents wide:sticky wide:top-4 wide:flex wide:max-h-[calc(100dvh-96px)] wide:flex-col wide:gap-3 wide:overflow-y-auto wide:rounded-2xl wide:border wide:border-parchment/10 wide:bg-panel/85 wide:p-4"
       >
-        <header className="order-1 flex min-w-0 items-center gap-x-3 gap-y-1 lg:order-none lg:flex-wrap lg:items-baseline lg:justify-between">
-          <h1 className="min-w-0 truncate font-display text-base font-semibold lg:text-lg">
+        <header className="order-1 flex min-w-0 items-center gap-x-3 gap-y-1 wide:order-none wide:flex-wrap wide:items-baseline wide:justify-between">
+          <h1 className="min-w-0 truncate font-display text-base font-semibold wide:text-lg">
             {state.name}
           </h1>
-          <span className="ml-auto flex shrink-0 items-center gap-2 text-xs text-parchment/65 lg:ml-0">
+          <span className="ml-auto flex shrink-0 items-center gap-2 text-xs text-parchment/65 wide:ml-0">
             {state.ranked ? <RankedBadge /> : null}
             <span>
               {MODE_LABEL[state.mode]} · {untimed ? 'Untimed' : state.timeControl}
@@ -494,7 +599,7 @@ export function GameRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) {
           </span>
         </header>
 
-        <div className="order-3 lg:order-none">
+        <div className="order-3 wide:order-none">
           <TurnBanner
             finished={finished}
             myTurn={myTurn}
@@ -513,19 +618,19 @@ export function GameRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) {
         </div>
 
         {finished ? null : (
-          <div className="order-4 empty:hidden lg:order-none">
+          <div className="order-4 empty:hidden wide:order-none">
             <TeamResignCard room={room} feed={feed} />
             <DrawOfferCard room={room} feed={feed} />
           </div>
         )}
 
-        <section aria-label="Players" className="order-5 lg:order-none">
+        <section aria-label="Players" className="order-5 wide:order-none">
           {state.mode === 'teams' ? (
-            <p className="mb-1.5 hidden text-xs text-parchment/50 lg:block">
+            <p className="mb-1.5 hidden text-xs text-parchment/50 wide:block">
               {teamLabel(0)} vs {teamLabel(1)}
             </p>
           ) : null}
-          <ol className="grid grid-cols-2 gap-1.5 min-[560px]:grid-cols-4 lg:grid-cols-1 lg:gap-1">
+          <ol className="grid grid-cols-2 gap-1.5 min-[560px]:grid-cols-4 wide:grid-cols-1 wide:gap-1">
             {[0, 1, 2, 3].map((i) => {
               const seat = state.seats[i]
               if (!seat) return null
@@ -554,7 +659,7 @@ export function GameRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) {
             vote or draw card above can't push Resign / Leave out of view. */}
         <section
           aria-label="Actions"
-          className="order-6 lg:sticky lg:-bottom-4 lg:z-10 lg:order-none lg:-mx-4 lg:mt-auto lg:rounded-b-2xl lg:last:-mb-4 lg:border-t lg:border-parchment/10 lg:bg-panel lg:px-4 lg:pt-3 lg:pb-4"
+          className="order-6 wide:sticky wide:-bottom-4 wide:z-10 wide:order-none wide:-mx-4 wide:mt-auto wide:rounded-b-2xl wide:last:-mb-4 wide:border-t wide:border-parchment/10 wide:bg-panel wide:px-4 wide:pt-3 wide:pb-4"
         >
           {finished ? (
             <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">{moreButtons}</div>
@@ -572,8 +677,10 @@ export function GameRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) {
           )}
         </section>
 
+        <LeaveHint show={inGame && stillPlaying} graceMs={reconnectGraceMs(state)} />
+
         {settingsOpen ? (
-          <div className="order-7 lg:order-none">
+          <div className="order-8 wide:order-none">
             <BoardSettings id={settingsId} />
           </div>
         ) : null}

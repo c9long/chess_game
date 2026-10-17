@@ -24,7 +24,9 @@ const overlayClass =
   'fixed inset-0 z-50 bg-black/60 backdrop-blur-[2px] data-[state=closed]:animate-overlay-out data-[state=open]:animate-overlay-in'
 
 const contentClass =
-  'fixed top-1/2 left-1/2 z-50 w-[calc(100vw-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 ' +
+  'fixed top-1/2 left-1/2 z-50 w-[calc(100vw-2rem-var(--safe-left)-var(--safe-right))] max-w-md -translate-x-1/2 -translate-y-1/2 ' +
+  // Tall dialogs scroll inside the screen's safe area (notch and home indicator).
+  'max-h-[calc(100dvh-2rem-var(--safe-top)-var(--safe-bottom))] overflow-y-auto ' +
   'rounded-2xl border border-parchment/10 bg-panel p-6 text-parchment shadow-2xl shadow-black/60 ring-1 ring-black/30 sm:p-7 ' +
   'focus:outline-none data-[state=closed]:animate-pop-out data-[state=open]:animate-pop-in'
 
@@ -321,7 +323,7 @@ export function ToastViewport({ children }: { children: ReactNode }) {
             </Toast.Close>
           </Toast.Root>
         ))}
-        <Toast.Viewport className="fixed right-0 bottom-0 z-[60] m-0 flex w-full max-w-sm list-none flex-col gap-2 p-4 outline-none" />
+        <Toast.Viewport className="fixed right-[var(--safe-right)] bottom-[var(--safe-bottom)] z-[60] m-0 flex w-full max-w-sm list-none flex-col gap-2 p-4 outline-none" />
       </Toast.Provider>
     </ToastContext.Provider>
   )

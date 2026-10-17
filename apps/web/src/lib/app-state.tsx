@@ -17,6 +17,8 @@ import {
 } from './age-gate.ts'
 import { api, type LegalStatus, type PublicConfig } from './api.ts'
 import { authClient, type SessionData } from './auth-client.ts'
+import { endMatchSession } from './match.ts'
+import { endBearerSession } from './native-auth.ts'
 
 interface AppState {
   config: PublicConfig | undefined
@@ -271,6 +273,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       leaveSession(async () => {
         const res = await authClient.signOut()
         if (res?.error) throw new Error(res.error.message ?? 'sign-out failed')
+        // The apps forget their bearer token (no-op in the browser).
+        endBearerSession()
+        // Leave the match room (still seated as this account) and forget the saved seat tokens.
+        await endMatchSession()
       }).catch(() => {
         // Still signed in (the landing page shows it); leaveSession has cleared the flag.
       }),

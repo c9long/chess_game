@@ -3,6 +3,15 @@
 @import "@fontsource-variable/fraunces/wght.css";
 @import "@fontsource-variable/inter/wght.css";
 
+/* The game screen's two-column layout (board beside the panel): wide screens, and phones held
+   sideways, where the board under the header would leave no room for the panel. */
+@custom-variant wide {
+  @media (min-width: 64rem),
+    (orientation: landscape) and (max-height: 31.99rem) and (min-width: 40rem) {
+    @slot;
+  }
+}
+
 @theme {
   --color-parchment: #f4efe6;
   --color-ink: #1d1b19;
@@ -101,6 +110,12 @@
 @layer base {
   :root {
     color-scheme: dark;
+    /* Phone notches, rounded corners and home indicators (viewport-fit=cover in index.html):
+       0 on desktops. Used through these variables so tests can simulate an inset. */
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-right: env(safe-area-inset-right, 0px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+    --safe-left: env(safe-area-inset-left, 0px);
   }
 
   html,
@@ -171,6 +186,22 @@
   summary {
     -webkit-tap-highlight-color: transparent;
   }
+}
+
+/* Safe-area padding: a minimum gutter that grows to clear a notch or the home indicator. */
+@utility safe-x {
+  padding-left: var(--safe-left);
+  padding-right: var(--safe-right);
+}
+@utility safe-top {
+  padding-top: var(--safe-top);
+}
+@utility safe-bottom-6 {
+  padding-bottom: calc(1.5rem + var(--safe-bottom));
+}
+@utility safe-y-overlay {
+  padding-top: calc(1.5rem + var(--safe-top));
+  padding-bottom: calc(1.5rem + var(--safe-bottom));
 }
 
 @layer components {

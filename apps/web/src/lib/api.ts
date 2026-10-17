@@ -1,4 +1,5 @@
 import { API_ORIGIN, retryAfterSeconds } from './auth-client.ts'
+import { authHeaders, fetchCredentials } from './native-auth.ts'
 
 export class ApiError extends Error {
   readonly status: number
@@ -30,15 +31,18 @@ export function tooManyAttempts(seconds: number | undefined): string {
   return `Too many attempts. Try again in ${amount}.`
 }
 
-/** JSON call to our own (non-Better-Auth) API routes, with cookies. */
+/** JSON call to our own (non-Better-Auth) API routes, with cookies (or the apps' bearer token). */
 export async function api<T>(
   path: string,
   init: { method?: string; body?: unknown } = {},
 ): Promise<T> {
   const res = await fetch(`${API_ORIGIN}${path}`, {
     method: init.method ?? (init.body === undefined ? 'GET' : 'POST'),
-    credentials: 'include',
-    headers: init.body === undefined ? {} : { 'content-type': 'application/json' },
+    credentials: fetchCredentials(),
+    headers: {
+      ...authHeaders(),
+      ...(init.body === undefined ? {} : { 'content-type': 'application/json' }),
+    },
     body: init.body === undefined ? null : JSON.stringify(init.body),
   })
   const text = await res.text()

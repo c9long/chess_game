@@ -7,6 +7,7 @@ import {
   usernameClient,
 } from 'better-auth/client/plugins'
 import { createAuthClient } from 'better-auth/react'
+import { betterAuthBearer, fetchCredentials } from './native-auth.ts'
 
 export const API_ORIGIN =
   (import.meta.env.VITE_API_URL ?? '').replace(/\/$/, '') || window.location.origin
@@ -27,7 +28,10 @@ export function setTwoFactorHandler(handler: () => void) {
 export const authClient = createAuthClient({
   baseURL: `${API_ORIGIN}/api/auth`,
   fetchOptions: {
-    credentials: 'include',
+    // The browser's session cookie; the mobile apps send none and use `Authorization: Bearer`
+    // from the token store instead (docs/MOBILE.md §2).
+    credentials: fetchCredentials(),
+    ...betterAuthBearer(),
     onError(ctx) {
       if (ctx.response.status === 429) {
         const v = Number(ctx.response.headers.get('x-retry-after'))

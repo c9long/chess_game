@@ -7,11 +7,13 @@ import { Shell } from './components/Shell.tsx'
 import { buttonBase, buttonVariants, CenteredPage, PageTitle } from './components/ui.tsx'
 import { AppStateProvider } from './lib/app-state.tsx'
 import { setTwoFactorHandler } from './lib/auth-client.ts'
+import { isNative } from './lib/platform.ts'
 import { Account } from './pages/Account.tsx'
 import { CheckEmail } from './pages/CheckEmail.tsx'
 import { Device } from './pages/Device.tsx'
 import { GuestStart } from './pages/GuestStart.tsx'
 import { Landing } from './pages/Landing.tsx'
+import { NativeSignIn } from './pages/NativeSignIn.tsx'
 import { ForgotPassword, ResetPassword } from './pages/PasswordReset.tsx'
 import { SignIn } from './pages/SignIn.tsx'
 import { SignUp } from './pages/SignUp.tsx'
@@ -35,6 +37,10 @@ const DevMail = import.meta.env.DEV
 const DevCivSelect = import.meta.env.DEV
   ? lazy(() => import('./pages/DevCivSelect.tsx').then((m) => ({ default: m.DevCivSelect })))
   : null
+// Inside the mobile apps the web sign-in forms can't work (cookies, Turnstile, passkeys are
+// tied to the web origin): those routes show the app's sign-in screen instead (MOBILE.md §2).
+const nativeApp = isNative()
+
 const LegalDoc = lazy(() => import('./pages/LegalDoc.tsx').then((m) => ({ default: m.LegalDoc })))
 
 function NotFound() {
@@ -135,7 +141,7 @@ export function App() {
           <Route element={<AgeGate requireAge={false} />}>
             <Route element={<AcceptanceGate />}>
               <Route element={<UsernameGate />}>
-                <Route path="sign-in" element={<SignIn />} />
+                <Route path="sign-in" element={nativeApp ? <NativeSignIn /> : <SignIn />} />
                 <Route path="check-email" element={<CheckEmail />} />
                 <Route path="forgot-password" element={<ForgotPassword />} />
                 <Route path="two-factor" element={<TwoFactor />} />
@@ -149,8 +155,8 @@ export function App() {
             <Route element={<AcceptanceGate />}>
               <Route element={<UsernameGate />}>
                 <Route index element={<Landing />} />
-                <Route path="guest" element={<GuestStart />} />
-                <Route path="sign-up" element={<SignUp />} />
+                <Route path="guest" element={nativeApp ? <NativeSignIn /> : <GuestStart />} />
+                <Route path="sign-up" element={nativeApp ? <NativeSignIn /> : <SignUp />} />
                 <Route
                   path="account"
                   element={

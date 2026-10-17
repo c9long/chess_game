@@ -26,6 +26,7 @@ import {
   isTypeaheadKey,
   listNavIndex,
 } from '../lib/civ-select.ts'
+import { safeCollisionPadding } from '../lib/safe-area.ts'
 import { CivEmblem, hasCivEmblem } from './CivEmblem.tsx'
 import { cx } from './ui.tsx'
 
@@ -117,6 +118,8 @@ export function CivSelect({
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [active, setActive] = useState(-1)
+  // Clear of a phone's notch and home indicator too (measured when the list opens).
+  const collisionPadding = useMemo(() => (open ? safeCollisionPadding(12) : 12), [open])
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
@@ -281,7 +284,7 @@ export function CivSelect({
           side="bottom"
           align="start"
           sideOffset={6}
-          collisionPadding={12}
+          collisionPadding={collisionPadding}
           {...{ [CIV_SELECT_CONTENT_ATTR]: '' }}
           // Radix gives the content role="dialog"; name it, so screen readers don't announce an
           // unnamed dialog before the search box and the list.

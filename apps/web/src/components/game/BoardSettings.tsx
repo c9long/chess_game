@@ -1,3 +1,6 @@
+import { canVibrate } from '../../lib/feedback.ts'
+import { useMediaQuery } from '../../lib/media.ts'
+import { isNative } from '../../lib/platform.ts'
 import { usePrefs } from '../../lib/prefs.ts'
 
 function Toggle({
@@ -71,6 +74,7 @@ export function KeyboardHints({ compact = false }: { compact?: boolean }) {
 /** Board preferences and keyboard help, opened from the gear button. */
 export function BoardSettings({ id }: { id: string }) {
   const prefs = usePrefs()
+  const touch = useMediaQuery('(pointer: coarse)')
   return (
     <section
       id={id}
@@ -83,6 +87,14 @@ export function BoardSettings({ id }: { id: string }) {
       </h2>
       <div className="flex flex-col">
         <Toggle label="Sound" checked={prefs.sound} onChange={(v) => prefs.set({ sound: v })} />
+        {/* Only on touch devices that can vibrate (Android; iPhone Safari has no vibration). */}
+        {canVibrate() && (touch || isNative()) ? (
+          <Toggle
+            label="Vibration"
+            checked={prefs.vibration}
+            onChange={(v) => prefs.set({ vibration: v })}
+          />
+        ) : null}
         <Toggle
           label="Colour-blind markers"
           checked={prefs.colorblindPatterns}

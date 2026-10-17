@@ -3,6 +3,8 @@ import { create } from 'zustand'
 /** Per-browser board preferences (remembered in localStorage when available). */
 export interface BoardPrefs {
   sound: boolean
+  /** Short vibrations on moves, captures, check, your turn and game end (where supported). */
+  vibration: boolean
   colorblindPatterns: boolean
   reducedMotion: boolean
 }
@@ -12,6 +14,7 @@ const KEY = 'board:prefs'
 function load(): BoardPrefs {
   const defaults: BoardPrefs = {
     sound: true,
+    vibration: true,
     colorblindPatterns: false,
     reducedMotion:
       typeof window !== 'undefined' &&
