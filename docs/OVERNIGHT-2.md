@@ -153,6 +153,45 @@ hostname without Cloudflare Pages (the guide offers it as option B; Pages stays 
 Commit `b2c539e`. One follow-up: the page security policy still allows `unsafe-eval` because
 the board renderer (PixiJS) needs it; a one-line import can remove that.
 
+### 9. Your follow-up: a general civ card; England's ability is "Magna Carta"
+The "Special army" pill is gone. Three designs were mocked up independently and a judge picked
+the card-first one, with ideas grafted from the other two (commits `597574a`…`9fe7d12`):
+- **Every civ has display copy** in `packages/config` (shared with future clients): a one-line
+  description of its emblem and a list of named abilities. England has one, **Magna Carta**,
+  with the approved Prime Minister wording. Text only; the rules stay in the engine.
+- **Civ list:** standard civs show just their name; a civ with abilities adds a gold
+  "✦ Magna Carta" line, so the ones that change the rules stand out even among 100+ civs.
+  Search also finds ability names, summaries and emblems ("magna", "prime", "eagle").
+- **One civ card everywhere:** under the picker on Play and in the lobby, a preview of the
+  highlighted civ on wide screens, and any seated player's civ from the lobby seats or by
+  tapping a player's emblem in a game (a popover on wide screens, a bottom sheet on phones).
+- A review found 19 issues (contrast, focus, heading order, the popover arrow, touch targets),
+  all fixed; axe scans of every surface pass.
+
+### 10. From the to-do list: the board on phones, screen readers and keyboard
+Commits `afb2baa`…`743ccc6`:
+- **Zoom:** pinch, double tap on an empty square, or the corner zoom button (aiming for ~44 px
+  squares on a 390 px phone). One finger on a piece still drags it; one finger elsewhere pans.
+- **Screen readers** hear every move in plain words ("West: knight b7 to c9, takes North's
+  pawn"), batched when bots move together, then "Your move"; the final moves are read before
+  the result.
+- **Keyboard:** arrow keys move a cursor over the board, Enter/Space select and move, Escape
+  cancels; controls are listed in the board settings.
+- The single-origin page's security policy no longer needs `unsafe-eval`.
+- A review found 13 issues, all fixed. One left for later: an announcement verbosity setting.
+
+### Test-suite fixes along the way
+- The full verification of everything committed (Rust format/lint/tests, `pnpm check`, all
+  browser tests, the 49 board specs) found one real flake: the landing page's demo-board test
+  compared against Chrome's paint timing, which runs seconds late on a loaded machine. It now
+  checks the page's own first-frame mark (`b640902`).
+- An off-turn resign clock check had a 5 ms tolerance; now 50 ms with a 200 ms pause so a real
+  bug still shows (`cbe19d1`).
+- **The username filter refused about 1 in 150,000 random test names** (digits like 2 and 6
+  were dropped, gluing letters into words that weren't there). Fixed; 0 hits in 600,000 names
+  (`e41e7ba`).
+- A phone reconnect test fails since the board zoom commit; being fixed now.
+
 ### Usage limit and the retry helper
 At 8:18 AM the session limit hit while England's and moderation's review fixes and the
 one-address review were running. The workflow retry helper retried instantly, so all three
