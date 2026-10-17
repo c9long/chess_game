@@ -6,15 +6,7 @@ const log = (...a: unknown[]) => console.log('[attack-age]', ...a)
 test('deep links on first visit all show the DOB screen first, with no age hints', async ({
   page,
 }) => {
-  for (const path of [
-    '/',
-    '/sign-in',
-    '/sign-up',
-    '/guest',
-    '/account',
-    '/device',
-    '/two-factor',
-  ]) {
+  for (const path of ['/', '/sign-up', '/guest', '/account', '/device', '/leaderboard']) {
     await page.context().clearCookies()
     await page.goto(path)
     await expect(page.getByTestId('dob-form'), path).toBeVisible()
@@ -32,7 +24,26 @@ test('deep links on first visit all show the DOB screen first, with no age hints
     // Nothing but the DOB step and footer links should be interactive.
     const links = await page.locator('main a').count()
     expect.soft(links, `${path} has links in main`).toBe(0)
+    // Existing accounts can still sign in from the header without answering.
+    await expect(page.getByTestId('nav-sign-in')).toBeVisible()
   }
+})
+
+test('sign-in and recovery pages need no DOB screen on first visit', async ({ page }) => {
+  for (const [path, heading] of [
+    ['/sign-in', 'Sign in'],
+    ['/forgot-password', 'Reset your password'],
+    ['/two-factor', 'Two-step verification'],
+  ] as const) {
+    await page.context().clearCookies()
+    await page.goto(path)
+    await expect(page.getByRole('heading', { name: heading, level: 1 }), path).toBeVisible()
+    await expect(page.getByTestId('dob-form'), path).toHaveCount(0)
+  }
+  // "Create account" from there still goes through the DOB screen first.
+  await page.goto('/sign-in')
+  await page.getByRole('link', { name: 'Create account' }).click()
+  await expect(page.getByTestId('dob-form')).toBeVisible()
 })
 
 test('invalid dates: Feb 30, future year, ancient year', async ({ page }) => {
