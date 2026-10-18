@@ -163,41 +163,61 @@ test('check indicators are only for the viewer, from their turn or after their o
   browser,
 }) => {
   test.setTimeout(150_000)
-  // South and East are people, West and North bots (they move between South and East).
-  const [south, east] = (await guestPages(browser, 2)) as [Page, Page]
+  // Four people, so every move is scripted: bots could give check (or open and close the
+  // lines this test relies on) at random. West and North (who move between South and East)
+  // only push far-away pawns, which never attack or shield a leader.
+  const [south, west, north, east] = (await guestPages(browser, 4)) as [Page, Page, Page, Page]
   await south.goto('/play')
   await south.getByTestId('lobby-name').fill('Check table')
   await south.getByTestId('create-lobby').click()
   await expect(south.getByRole('heading', { name: 'Check table' })).toBeVisible()
-  for (const seat of ['west', 'north'] as const) {
-    const card = south.getByTestId(`seat-${seat}`)
-    await card.getByTestId('add-bot').click()
-    await expect(card.getByTestId('seat-name')).toHaveText(/^Bot · /)
+  // Each joins the first free seat in seat order: West, North, then East.
+  for (const [seat, p] of [
+    ['west', west],
+    ['north', north],
+    ['east', east],
+  ] as const) {
+    await p.goto(south.url())
+    await expect(p.getByRole('heading', { name: 'Check table' })).toBeVisible()
+    await expect(south.getByTestId(`seat-${seat}`).getByTestId('seat-name')).toHaveText(
+      /^Guest-\d{4}$/,
+    )
   }
-  await east.goto(south.url())
-  await expect(east.getByRole('heading', { name: 'Check table' })).toBeVisible()
-  await expect(south.getByTestId('seat-east').getByTestId('seat-name')).toHaveText(/^Guest-\d{4}$/)
-  for (const [i, p] of [south, east].entries()) {
-    await chooseCiv(p, ['mali', 'japan'][i] as string)
+  const everyone = [south, west, north, east]
+  for (const [i, p] of everyone.entries()) {
+    await chooseCiv(p, ['mali', 'france', 'japan', 'china'][i] as string)
     await p.getByTestId('ready').click()
   }
   await south.getByTestId('start-game').click()
-  for (const p of [south, east]) await expect(p.getByTestId('board')).toBeVisible()
+  for (const p of everyone) await expect(p.getByTestId('board')).toBeVisible()
+
+  /** West and North take their turns (no leader is attacked before or after). */
+  async function quietRound(westMove: [string, string], northMove: [string, string]) {
+    for (const [p, [from, to]] of [
+      [west, westMove],
+      [north, northMove],
+    ] as const) {
+      await expect(p.getByTestId('turn-banner')).toHaveText('Your move', { timeout: 20_000 })
+      await expectNoIndicator(p)
+      await playMove(p, from, to)
+    }
+  }
 
   // Round 1: South opens j2 (the p8-i1 diagonal is still closed by East's o7 pawn); East then
   // moves that pawn, so East's queen on p8 attacks South's leader on i1 as South's turn starts.
   await expect(south.getByTestId('turn-banner')).toHaveText('Your move', { timeout: 20_000 })
   await playMove(south, 'j2', 'j4')
-  await expect(east.getByTestId('turn-banner')).toHaveText('Your move', { timeout: 30_000 })
+  await quietRound(['b12', 'c12'], ['e15', 'e14'])
+  await expect(east.getByTestId('turn-banner')).toHaveText('Your move', { timeout: 20_000 })
   await playMove(east, 'o7', 'n7')
 
   // (a) Someone else put South in check: South's banner says so and i1 is marked. East (the
-  // attacker, another player) sees no check indicator at all.
+  // attacker) and the other players see no check indicator at all.
   await expect(south.getByTestId('turn-banner')).toHaveText(CHECK_TEXT)
   await expect(south.getByTestId('turn-banner')).toHaveAttribute('data-check', 'true')
   await expect.poll(() => checkSquares(south)).toEqual(['i1'])
   await expect(south.getByTestId('self-check-notice')).toHaveCount(0)
-  await expectNoIndicator(east)
+  for (const p of [east, west, north]) await expectNoIndicator(p)
   if (SHOTS) {
     await south.waitForTimeout(500)
     await south.screenshot({ path: `${SHOTS}/check-turn.png` })
@@ -220,18 +240,20 @@ test('check indicators are only for the viewer, from their turn or after their o
     await south.setViewportSize({ width: 1280, height: 720 })
   }
 
+  // The notice stays while the others move and the leader is still attacked.
+  await quietRound(['b11', 'c11'], ['f15', 'f14'])
+  await expect(south.getByTestId('self-check-notice')).toHaveText('Your leader is in check')
+
   // East leaves the leader be; South's turn comes round with it still attacked: banner check.
-  await expect(east.getByTestId('turn-banner')).toHaveText('Your move', { timeout: 30_000 })
+  await expect(east.getByTestId('turn-banner')).toHaveText('Your move', { timeout: 20_000 })
   await expectNoIndicator(east)
   await playMove(east, 'o5', 'n5')
   await expect(south.getByTestId('turn-banner')).toHaveText(CHECK_TEXT)
   await expect(south.getByTestId('self-check-notice')).toHaveCount(0)
   await expect.poll(() => checkSquares(south)).toEqual(['i1'])
 
-  // South blocks on k3: the leader is safe and every indicator goes away.
+  // South blocks on k3: the leader is safe and every indicator goes away. Nobody else ever
+  // saw one.
   await playMove(south, 'k2', 'k3')
-  await expectNoIndicator(south)
-  // East never sees South's leader marked. (The random bots may by now have attacked East's
-  // own leader, which East's indicator would then rightly show.)
-  expect(await checkSquares(east)).not.toContain('i1')
+  for (const p of everyone) await expectNoIndicator(p)
 })
