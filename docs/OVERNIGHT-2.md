@@ -220,6 +220,22 @@ Commits `5361be1`…`f5a9099`:
 - A review found 26 issues; 24 fixed. Left as a to-do: players already knocked out of a ranked
   game still see the rest of it live (being handled in the next batch).
 
+### 14. From the to-do list: game screen polish
+Commits `3b49e68`…`f775eff`: a "Read out moves: Every move / Only mine" setting; the zoomed board
+glides after a quick swipe; the move log shows each move's time left (also when watching and in
+replays); "Watch replay" on the result screen and a choice of seat to view a replay from; a
+rematch lobby shows "Saved for <name>"; a "Watch link" button copies a link and says who can
+open it.
+
+### Two real bugs found by flaky tests
+- **A second tab could break the first tab's rejoin token** (`7865324`): when a new tab took
+  over a seat, the old tab could erase the new tab's saved token, so the new tab couldn't rejoin
+  after the browser or app killed it. Reproduced 3 in 12 before the fix, 20/20 after.
+- The check-indicator test now plays a scripted game instead of relying on random bots
+  (`f74141f`).
+- Browser test runs can set their extra ports explicitly (`0d78fb5`), so nothing here uses
+  port 5185 any more (your other project).
+
 ### Test-suite fixes along the way
 - The full verification of everything committed (Rust format/lint/tests, `pnpm check`, all
   browser tests, the 49 board specs) found one real flake: the landing page's demo-board test
@@ -298,4 +314,37 @@ Then the safe parts of that plan were built (commits `8a24cab`…`293bdb8`):
 
 ## Not done / left for you
 
-_(Filled in at the end.)_
+### Paused (your request: weekly token budget)
+The last batch stopped at a clean point after part 1. **Part 2 is not started:**
+- a bot takes over for a player who leaves a casual game (and hands the seat back if they return);
+- premoves;
+- players already knocked out of a ranked game see it delayed, like spectators.
+
+To resume it later, ask me to resume the "polish-followups" workflow (run `wf_612fb306-13d`);
+part 1 comes back from cache and part 2 runs on ports 3170/5244 (clear of 5183–5185).
+
+### Decisions for you
+- **England balance:** England finishes first in ~45–60% of bot free-for-all games (fair is
+  25%). Options are in section 3.
+- **Search shows people who blocked you** (adding them is refused neutrally); see section 11.
+- **iOS sign-in:** hide Google/Discord/GitHub/Microsoft on iOS, or add Sign in with Apple
+  (docs/MOBILE.md).
+- **A short home-screen name** (`APP_SHORT_NAME`), and whether phones get a longer reconnect grace
+  than 60 s.
+- **Commits and branches:** your global instructions now say to use branches and pull requests;
+  this repo's CLAUDE.md (and your earlier request) says to commit straight to `main`. I followed
+  the repo rule; tell me if you want branches and PRs here from now on.
+- The Privacy Policy draft changed today (friends, profiles, search, lockout emails, moderation);
+  decide whether to bump its version before publishing.
+
+### Needs you, money or accounts (unchanged)
+Buying the domain and provisioning hosting (VPS or the CSC machine, after emailing syscom),
+OAuth app registrations, Turnstile and Resend keys, the attorney review, the Apple/Google
+developer accounts, and the Capacitor project itself (needs Android Studio / a Mac or a
+Codemagic account and real phones).
+
+### Final verification
+On `f5a9099` (everything before the last batch): Rust format, lint and all tests; `pnpm check`
+(server 602, web 119, board 91 tests); board specs 66/66; browser tests 94 passed, the 2
+failures fixed since (`7865324`, `f74141f`). Each later batch passed `pnpm check` and its own
+browser tests before it was committed.
