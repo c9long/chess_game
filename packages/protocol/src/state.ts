@@ -30,6 +30,13 @@ export const SeatState = schema(
     team: t.int8().default(-1),
     /** In game: the rules seat status (active, defeated, frozen, removed); '' before. */
     status: t.string().default(''),
+    /**
+     * Rematch lobby: the display name of the player this empty seat is held for until they
+     * arrive (REMATCH_SEAT_HOLD_MS), else '' (appended in protocol v1).
+     */
+    heldFor: t.string().default(''),
+    /** When that hold ends (server ms since epoch), else 0 (appended in protocol v1). */
+    heldUntil: t.float64().default(0),
   },
   'SeatState',
 )
@@ -273,4 +280,8 @@ export interface SeatStateJson {
   graceDeadline: number
   team: number
   status: string
+  /** Rematch lobby: the player this empty seat is held for, or '' (appended in protocol v1). */
+  heldFor?: string
+  /** When that hold ends (server ms since epoch), or 0 (appended in protocol v1). */
+  heldUntil?: number
 }

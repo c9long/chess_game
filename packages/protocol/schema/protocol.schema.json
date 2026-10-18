@@ -745,6 +745,9 @@
           },
           "required": ["remainingMs", "runningSeat", "serverTimestamp", "turnStartedAt"],
           "additionalProperties": false
+        },
+        "clockMs": {
+          "type": ["number", "null"]
         }
       },
       "required": [
@@ -815,6 +818,9 @@
               },
               "positionString": {
                 "type": "string"
+              },
+              "clockMs": {
+                "type": ["number", "null"]
               }
             },
             "required": ["seq", "action", "seat", "notation", "events", "positionString"],

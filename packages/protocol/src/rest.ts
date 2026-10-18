@@ -130,6 +130,8 @@ export interface MatchReplayResponse {
     action: 'move' | 'timeout' | 'abandon' | 'resign' | 'agreed_draw'
     seat: number | null
     notation: string | null
+    /** The acting seat's time left after the action (ms), or null (untimed, agreed draw). */
+    clockMs?: number | null
   }[]
   /** Position string after the last action, from the server's re-simulation. */
   finalPosition: string

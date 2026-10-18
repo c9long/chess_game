@@ -275,6 +275,11 @@ export const serverMessageSchemas = {
     positionString: z.string(),
     seatToMove: seatOrNone,
     clock: clockSyncSchema,
+    /**
+     * The acting seat's time left right after the action (ms, increment included), for the
+     * move log; null for untimed games and agreed draws. Optional: older servers omit it.
+     */
+    clockMs: z.number().nullable().optional(),
   }),
   /**
    * The game so far, for the move log: every action since the start, oldest first, in the
@@ -291,6 +296,8 @@ export const serverMessageSchemas = {
         notation: z.string().nullable(),
         events: z.array(gameEventSchema),
         positionString: z.string(),
+        /** As in the `events` message: the acting seat's time left after the action. */
+        clockMs: z.number().nullable().optional(),
       }),
     ),
   }),

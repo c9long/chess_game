@@ -178,14 +178,17 @@ from the start; bots come along. The proposer leaving cancels it. Once nobody is
   otherwise casual. The proposer hosts it; players ready up and the host starts as usual (a
   solo rematch starts by itself). `state.rematchRoomId` and `rematchEvent { type: 'ready',
   roomId, ranked }` announce it; the players who accepted `joinById(roomId)` (no password).
+  Until a held seat's player arrives (or the hold runs out), the empty seat shows whom it is
+  saved for: `seats[i].heldFor` (their display name) and `seats[i].heldUntil` (server ms when
+  the hold ends); both go back to `''` / 0 when they take it or the hold expires.
 
 ## Server -> client messages
 
 | Type | Payload |
 |---|---|
 | `welcome` | `{ protocolVersion, roomId, sessionId, seat (-1 = none), isHost, spectator?, delayRounds? }` on join and reconnect (`spectator`: a watch room; `delayRounds`: how many rounds late a ranked game is shown, 0 = live) |
-| `events` | `{ seq, action: 'move'\|'timeout'\|'abandon'\|'resign'\|'agreed_draw', seat, notation, events: GameEvent[], positionString, seatToMove, clock }` after every game action (`GAME_ACTIONS`; for `agreed_draw`, `seat` is the voter whose acceptance completed it and `events` is the `game_ended` event) |
-| `moveLog` | `{ entries: { seq, action, seat, notation, events: GameEvent[], positionString }[] }`: the game so far (every action, oldest first, each an `events` message without `seatToMove` and `clock`), sent right after `welcome` on join and on every reconnect once the game has started; replace the client's log with it, then append each `events` message with a higher `seq`. Register the handler as soon as the room is joined: it can arrive before a page mounts |
+| `events` | `{ seq, action: 'move'\|'timeout'\|'abandon'\|'resign'\|'agreed_draw', seat, notation, events: GameEvent[], positionString, seatToMove, clock, clockMs? }` after every game action (`GAME_ACTIONS`; for `agreed_draw`, `seat` is the voter whose acceptance completed it and `events` is the `game_ended` event). `clockMs`: the acting seat's time left right after the action (ms, rounded, increment included; the value stored as the action row's `clockRemainingMs`), for the move log; `null` in untimed games and for agreed draws; optional (absent from older servers) |
+| `moveLog` | `{ entries: { seq, action, seat, notation, events: GameEvent[], positionString, clockMs? }[] }`: the game so far (every action, oldest first, each an `events` message without `seatToMove` and `clock`), sent right after `welcome` on join and on every reconnect once the game has started; replace the client's log with it, then append each `events` message with a higher `seq`. Register the handler as soon as the room is joined: it can arrive before a page mounts |
 | `drawEvent` | `{ type: 'offered'\|'accepted'\|'declined'\|'lapsed', seat, offerSeat, reason?: 'round'\|'voters_changed' }` on every change to the draw offer (`seat`: who acted; for `lapsed`, the offerer) |
 | `resignEvent` | Teams: `{ type: 'proposed'\|'accepted'\|'declined'\|'lapsed'\|'immediate', seat, team: 0\|1, reason?: 'round'\|'voters_changed', outSeat? }` on every change to a resignation proposal (`seat`: who acted; for `lapsed` and `immediate`, the proposer; `outSeat`: for a `voters_changed` lapse, the teammate who stopped taking turns). `accepted` and `immediate` are followed by the `events` message with action `resign` |
 | `clock` | `{ remainingMs: [S,W,N,E], runningSeat, serverTimestamp, turnStartedAt }` on game start, every 5 s, on `syncClock` |
@@ -214,8 +217,10 @@ asked, 0 pending, 1 accepted, 2 declined), `rematchDeadline` (server ms, 0 = non
 `rematchRoomId` ('' until the new lobby exists): see "Rematch".
 
 - `seats[i]` (0 = South, 1 = West, 2 = North, 3 = East): `occupied, sessionId, displayName,
-  isGuest, isBot, botLevel, civ, ready, connected, graceDeadline, team, status`. User ids are
-  never synced; a client finds its seat by `sessionId` (or the `welcome` message).
+  isGuest, isBot, botLevel, civ, ready, connected, graceDeadline, team, status, heldFor,
+  heldUntil` (`heldFor` / `heldUntil`: a rematch lobby's seat held for a player who accepted,
+  see "Rematch"; appended in protocol v1). User ids are never synced; a client finds its seat
+  by `sessionId` (or the `welcome` message).
 - `phase`: `waiting` → `civ_select` (4 seats filled) → [`draft_ban` → `draft_pick`: reserved]
   → `countdown` (3 s) → `in_game` → `finished`.
 - `clock`: `remainingMs[4], runningSeat, serverTimestamp, turnStartedAt, incrementMs`.
@@ -310,8 +315,9 @@ asked, 0 pending, 1 accepted, 2 declined), `rematchDeadline` (server ms, 0 = non
 - `GET /api/matches/:id`: players and the full event log, participants only (`MatchDetailResponse`)
 - `GET /api/matches/:id/replay`: a finished match's replay input, participants only
   (`MatchReplayResponse`): `config` (mode, each seat's `{ id, version }` civ, `rulesVersion`)
-  for `Game.create`, `actions` (`{ seq, action, seat, notation }`, the stored game actions in
-  order) and `finalPosition`, the server's own re-simulation of the stored rows. Apply the
+  for `Game.create`, `actions` (`{ seq, action, seat, notation, clockMs }`, the stored game
+  actions in order; `clockMs` is the acting seat's time left after it, null when untimed or for
+  an agreed draw, and plays no part in replaying) and `finalPosition`, the server's own re-simulation of the stored rows. Apply the
   actions with `applyReplayAction` (`@game/protocol`; `replayActionsOf` picks the actions out of
   a detail's `events`, the same code the server's re-simulation check uses): the last position
   string equals `finalPosition`. 404 `NOT_FOUND` for non-participants and unknown ids, 409

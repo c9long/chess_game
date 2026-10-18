@@ -38,6 +38,11 @@ export interface ReplayAction {
   seat: number | null
   /** Engine notation for `move` actions ('e2e4', 'e8e9q'), else null. */
   notation: string | null
+  /**
+   * The acting seat's time left after the action (ms; the row's `clockRemainingMs`), or null
+   * (untimed games, agreed draws). Not used to replay: the move log shows it.
+   */
+  clockMs?: number | null
 }
 
 /** The fields of a stored match event that a replay reads. */
@@ -46,6 +51,8 @@ export interface StoredMatchEvent {
   seat: number | null
   type: string
   payload: unknown
+  /** The acting seat's time left after the action, when the row has it. */
+  clockRemainingMs?: number | null
 }
 
 function payloadField(payload: unknown, key: string): unknown {
@@ -55,6 +62,8 @@ function payloadField(payload: unknown, key: string): unknown {
 /** The game actions among a match's stored events (any order in, seq order out). */
 export function replayActionsOf(events: readonly StoredMatchEvent[]): ReplayAction[] {
   const out: ReplayAction[] = []
+  const clockOf = (e: StoredMatchEvent): number | null =>
+    typeof e.clockRemainingMs === 'number' ? Math.max(0, Math.round(e.clockRemainingMs)) : null
   for (const e of [...events].sort((a, b) => a.seq - b.seq)) {
     if (e.type === 'move' || e.type === 'promotion') {
       out.push({
@@ -62,12 +71,13 @@ export function replayActionsOf(events: readonly StoredMatchEvent[]): ReplayActi
         action: 'move',
         seat: e.seat,
         notation: String(payloadField(e.payload, 'notation')),
+        clockMs: clockOf(e),
       })
     } else if (e.type === 'timeout' || e.type === 'abandon' || e.type === 'resign') {
       if (e.seat === null || !SEAT_NAMES[e.seat]) continue
-      out.push({ seq: e.seq, action: e.type, seat: e.seat, notation: null })
+      out.push({ seq: e.seq, action: e.type, seat: e.seat, notation: null, clockMs: clockOf(e) })
     } else if (e.type === 'game_end' && payloadField(e.payload, 'agreedDraw') === true) {
-      out.push({ seq: e.seq, action: 'agreed_draw', seat: null, notation: null })
+      out.push({ seq: e.seq, action: 'agreed_draw', seat: null, notation: null, clockMs: null })
     }
   }
   return out
