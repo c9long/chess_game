@@ -139,9 +139,17 @@ describe('rematch', () => {
     // A's seat is held for A: the host can't fill it (or move anyone into it) meanwhile.
     expect((await fb.expectError('addBot', { seat: 0, level: '600' })).message).toMatch(/held for/)
     expect((await fb.expectError('swapSeats', { a: 0, b: 2 })).code).toBe('seat_occupied')
+    // Everyone in the lobby sees whom the empty seat is saved for, and until when.
+    const aName = pa.state.seats[0]?.displayName as string
+    expect(fb.state.seats[0]?.occupied).toBe(false)
+    expect(fb.state.seats[0]?.heldFor).toBe(aName)
+    expect(fb.state.seats[0]?.heldUntil).toBeGreaterThan(Date.now())
+    expect(fb.state.seats[1]?.heldFor).toBe('')
     const fa = await join(a, ready.roomId as string)
     expect([fa.seat, fb.seat]).toEqual([0, 1])
     await fa.waitState((s) => s.seats.every((x) => x.occupied))
+    // Arrived: the seat is theirs, no longer "saved".
+    await fb.waitState((s) => s.seats[0]?.heldFor === '' && s.seats[0]?.heldUntil === 0)
     expect(fa.state.seats.map((s) => [s.isBot, s.civ])).toEqual(seatsBefore)
     expect(fa.state.ranked).toBe(false)
     expect(fa.state.phase).toBe('civ_select')
@@ -246,6 +254,9 @@ describe('rematch', () => {
       // Three seated; West is still held for its player.
       await f0.waitState((s) => s.seats.filter((x) => x.occupied).length === 3)
       expect(f0.state.seats[1]?.occupied).toBe(false)
+      expect(f0.state.seats[1]?.heldFor).toBe(p1.state.seats[1]?.displayName)
+      // The declined seat was never held.
+      expect(f0.state.seats[2]?.heldFor).toBe('')
       for (const p of [...players, f0, g, f3]) await p.leave()
     }
   })

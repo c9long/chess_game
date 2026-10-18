@@ -486,6 +486,7 @@ export async function loadReplay(db: Executor, matchId: string): Promise<StoredR
       seat: matchEvents.seat,
       type: matchEvents.type,
       payload: matchEvents.payload,
+      clockRemainingMs: matchEvents.clockRemainingMs,
     })
     .from(matchEvents)
     .where(

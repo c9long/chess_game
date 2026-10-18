@@ -41,6 +41,8 @@ export function clearSeat(seat: SeatState): void {
   seat.connected = false
   seat.graceDeadline = 0
   seat.status = ''
+  seat.heldFor = ''
+  seat.heldUntil = 0
 }
 
 export function seatHuman(

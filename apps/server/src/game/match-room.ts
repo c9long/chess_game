@@ -431,12 +431,24 @@ export class MatchRoom
     )
   }
 
-  /** Rematch seats still held (expired holds are dropped). */
+  /** Rematch seats still held (expired holds are dropped, and their seats show it). */
   private liveHolds(now = Date.now()) {
     for (const [userId, h] of this.holds) {
-      if (h.until <= now || this.hasSeated(userId)) this.holds.delete(userId)
+      if (h.until <= now || this.hasSeated(userId)) this.dropHold(userId)
     }
     return this.holds
+  }
+
+  /** Ends a rematch seat hold; the seat stops showing "Saved for …" (unless someone sits there). */
+  private dropHold(userId: string) {
+    const h = this.holds.get(userId)
+    if (!h) return
+    this.holds.delete(userId)
+    const seat = this.state.seats[h.seat] as SeatState | undefined
+    if (seat && seat.heldUntil === h.until && seat.heldFor === h.name) {
+      seat.heldFor = ''
+      seat.heldUntil = 0
+    }
   }
 
   /** Refuses to fill a seat held for a rematch player who hasn't arrived yet. */
@@ -570,6 +582,10 @@ export class MatchRoom
           until,
           name: seat.displayName,
         })
+        // Everyone in the lobby sees whom the empty seat waits for.
+        const held = s.seats[i] as SeatState
+        held.heldFor = seat.displayName
+        held.heldUntil = until
       }
     })
     refreshLobbyPhase(s)
@@ -618,7 +634,9 @@ export class MatchRoom
     } else if (held && held.seat === seat) {
       ;(this.state.seats[seat] as SeatState).civ = held.civ
     }
-    this.holds.delete(player.userId)
+    // seatHuman cleared the seat's own hold; a hold elsewhere (the player took another seat)
+    // ends too.
+    this.dropHold(player.userId)
     this.svc.seats.set(player.userId, this.roomId)
     if (!this.hostUserId || (!this.hostSeated() && !this.hostClaimPending())) {
       this.hostUserId = player.userId
@@ -1747,13 +1765,17 @@ export class MatchRoom
     // agreed draw's action row is its game_end row (after the deciding draw_response); a
     // solo player's elimination ends the game with such a row too (replayed as a draw).
     const promotion = events.some((e) => e.type === 'promotion')
-    if (kind !== 'agreed_draw') {
-      const actionType: MatchEventType = kind === 'move' ? (promotion ? 'promotion' : 'move') : kind
-      const remaining = this.untimed
+    // The acting seat's time left after the action (the move log shows it): stored with the
+    // action's row and sent with the `events` / `moveLog` messages. None for an agreed draw.
+    const remaining =
+      this.untimed || kind === 'agreed_draw'
         ? null
         : offTurnKind
           ? clock.remainingAt(seat, now)
           : clock.remaining[seat]
+    const clockMs = remaining === null ? null : Math.max(0, Math.round(remaining))
+    if (kind !== 'agreed_draw') {
+      const actionType: MatchEventType = kind === 'move' ? (promotion ? 'promotion' : 'move') : kind
       this.record(
         seat,
         actionType,
@@ -1799,6 +1821,7 @@ export class MatchRoom
       notation,
       events,
       positionString: s.positionString,
+      clockMs,
     }
     this.moveLog.push(entry)
     const sync = this.clockSync(now)
@@ -1822,6 +1845,7 @@ export class MatchRoom
       positionString: s.positionString,
       seatToMove: s.seatToMove as SeatNum | -1,
       clock: sync,
+      clockMs,
     })
     this.drawAfterAction(kind, seat, events)
     this.resignAfterAction(kind, seat, events)

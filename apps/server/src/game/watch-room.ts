@@ -49,6 +49,8 @@ const SEAT_FIELDS = [
   'graceDeadline',
   'team',
   'status',
+  'heldFor',
+  'heldUntil',
 ] as const
 
 const EVENT_FIELDS = [

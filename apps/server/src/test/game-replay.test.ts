@@ -13,6 +13,7 @@ import { Game, type GameConfigInput } from '@game/rules'
 import { eq } from 'drizzle-orm'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import {
+  createLobby,
   createSolo,
   FakeBotClient,
   type GameHarness,
@@ -72,7 +73,10 @@ describe('move log and replays', () => {
         notation: ev?.notation,
         events: ev?.events,
         positionString: ev?.positionString,
+        // An untimed game has no clock times.
+        clockMs: null,
       })
+      expect(ev?.clockMs).toBeNull()
     }
 
     // Resigning ends the solo FFA game; the replay comes from the stored rows alone.
@@ -124,6 +128,50 @@ describe('move log and replays', () => {
     ).toBe(404)
     await p.leave()
   })
+
+  it('timed games: each action carries the mover’s time left, live, on reconnect and in the replay', async () => {
+    const creator = await guest(h)
+    const host = await createLobby(creator, { name: 'Clocked', timeControl: '3+2' })
+    for (const seat of [1, 2, 3]) host.send('addBot', { seat, level: '600' })
+    await host.waitState((s) => s.seats.every((x) => x.occupied), 5_000, 'bots seated')
+    host.send('setCiv', { civ: 'canada' })
+    await host.waitState((s) => s.seats[0]?.civ === 'canada')
+    host.send('setReady', { ready: true })
+    await host.waitState((s) => s.seats[0]?.ready === true)
+    host.send('startGame')
+    await host.waitState((s) => s.phase === 'in_game', 10_000, 'in_game')
+    await host.waitState((s) => s.seatToMove === 0 && s.actionSeq === 0)
+    host.send('move', { move: greedyMove(host.state.positionString) })
+    const mine = await host.waitMessage('events', (e) => e.seq === 1)
+    // 3 minutes, minus the think time, plus the 2 s increment.
+    expect(mine.clockMs).toBeGreaterThan(170_000)
+    expect(mine.clockMs).toBeLessThanOrEqual(182_000)
+    expect(mine.clockMs).toBe(Math.round(mine.clock.remainingMs[0]))
+    // The bots' moves carry their own clocks.
+    const bot = await host.waitMessage('events', (e) => e.seq === 2)
+    expect(bot.seat).toBe(1)
+    expect(typeof bot.clockMs).toBe('number')
+
+    host.drop()
+    await sleep(50)
+    await host.reconnect()
+    const log = await host.waitMessage('moveLog')
+    expect(log.entries[0]?.clockMs).toBe(mine.clockMs)
+    expect(log.entries.every((e) => typeof e.clockMs === 'number')).toBe(true)
+
+    host.send('resign')
+    const resign = await host.waitMessage('events', (e) => e.action === 'resign')
+    expect(typeof resign.clockMs).toBe('number')
+    await host.waitState((s) => s.phase === 'finished', 60_000, 'finished')
+    const matchId = host.state.matchId
+    expect((await finishedMatch(matchId))?.status).toBe('finished')
+    const replay = (await creator.get(`/api/matches/${matchId}/replay`))
+      .body as unknown as MatchReplayResponse
+    expect(replay.actions[0]?.clockMs).toBe(mine.clockMs)
+    const resigned = replay.actions.find((a) => a.action === 'resign')
+    expect(resigned?.clockMs).toBe(resign.clockMs)
+    await host.leave()
+  }, 90_000)
 
   it('refuses games still in progress and games from the old 12×12 board', async () => {
     const creator = await guest(h)
