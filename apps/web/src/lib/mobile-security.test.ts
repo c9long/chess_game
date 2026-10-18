@@ -186,6 +186,16 @@ describe('reconnect-store scope', () => {
     expect(store.loadReconnectToken('r')).toBeNull()
   })
 
+  it('a tab whose seat was taken over clears only its own copy', async () => {
+    const store = await import('./reconnect-store.ts')
+    // This tab may not have seen the other tab's newer write yet: the shared copy still holds
+    // this tab's own token, and must stay anyway (the other tab's write lands on that key).
+    store.saveReconnectToken('r', 'r:tab1')
+    store.clearReconnectToken('r', 'tab', 'r:tab1')
+    expect(sessionStorage.getItem('match:reconnect:r')).toBeNull()
+    expect(store.loadReconnectToken('r')).toBe('r:tab1')
+  })
+
   it('a finished game keeps only the tab copy; a full clear removes both', async () => {
     const store = await import('./reconnect-store.ts')
     store.saveReconnectToken('r', 'r:t')

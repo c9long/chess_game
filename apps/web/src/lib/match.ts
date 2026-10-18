@@ -104,6 +104,18 @@ export function forgetRoom(roomId: string, token?: string): void {
   clearReconnectToken(roomId, 'all', token)
 }
 
+/**
+ * The seat was taken over by another connection of this player (another tab, or the app after
+ * a relaunch), which has saved its own token: only this tab's copy goes. The shared
+ * localStorage copy is left to the new connection: tabs see each other's localStorage writes
+ * asynchronously, so this tab may still read its own old token there after the other tab
+ * saved its new one, and a compare-and-delete would then erase the new one. A copy left
+ * behind by a takeover from the app is refused by the server when used, and forgotten then.
+ */
+export function forgetReplacedRoom(roomId: string, token: string): void {
+  clearReconnectToken(roomId, 'tab', token)
+}
+
 /** A finished game: the longer-lived copy of its token goes (this tab can still reload it). */
 export function forgetFinishedRoom(roomId: string): void {
   clearReconnectToken(roomId, 'persistent')

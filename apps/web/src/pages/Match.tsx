@@ -12,6 +12,7 @@ import {
   checkConnection,
   errorCodeMessage,
   forgetFinishedRoom,
+  forgetReplacedRoom,
   forgetRoom,
   hasSavedToken,
   joinMatch,
@@ -172,11 +173,12 @@ export function useMatchFeed(
       // Another connection of this player took the seat over: a rejoin elsewhere (seatLost),
       // or a reconnect with the same token (Colyseus closes the old socket with 4002). That
       // tab or app keeps playing and has saved its own token, which this one must not delete.
-      forgetRoom(room.roomId, room.reconnectionToken)
       if (code === CLOSE_CODES.seatLost || code === 4002) {
+        forgetReplacedRoom(room.roomId, room.reconnectionToken)
         onClosed('replaced')
         return
       }
+      forgetRoom(room.roomId, room.reconnectionToken)
       onClosed(
         code === CLOSE_CODES.kicked
           ? 'kicked'

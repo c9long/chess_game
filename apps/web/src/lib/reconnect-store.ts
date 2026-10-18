@@ -86,23 +86,25 @@ export function loadReconnectToken(roomId: string, now = Date.now()): string | n
 }
 
 /**
- * Forgets a room's token. `scope: 'persistent'` keeps this tab's copy (a finished game).
+ * Forgets a room's token. `scope: 'persistent'` keeps this tab's copy (a finished game);
+ * `scope: 'tab'` keeps the shared localStorage copy (the seat was taken over elsewhere).
  * With `onlyToken`, each copy goes only while it still holds that token: another tab (or the
  * app after a relaunch) may have taken the seat over and saved its own, or a newer connection
  * in this tab may have saved a fresh one while an older attempt was failing.
  */
 export function clearReconnectToken(
   roomId: string,
-  scope: 'all' | 'persistent' = 'all',
+  scope: 'all' | 'persistent' | 'tab' = 'all',
   onlyToken?: string,
 ): void {
-  if (scope === 'all') {
+  if (scope !== 'persistent') {
     try {
       const store = session()
       const saved = store?.getItem(key(roomId))
       if (onlyToken === undefined || !saved || saved === onlyToken) store?.removeItem(key(roomId))
     } catch {}
   }
+  if (scope === 'tab') return
   try {
     const store = local()
     if (!store) return
