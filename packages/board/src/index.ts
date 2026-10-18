@@ -17,6 +17,7 @@
 
 export {
   type AnnounceContext,
+  type AnnounceVerbosity,
   describeSquare,
   describeStep,
   pieceWord,

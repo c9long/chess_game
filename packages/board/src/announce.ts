@@ -15,7 +15,17 @@ export interface AnnounceContext {
   readonly localSeat: Seat | null
   /** Announce the viewer's own check too (a host that says it elsewhere turns this off). */
   readonly ownCheck: boolean
+  /** Which moves are read (checks, defeats and the result always are). Default 'all'. */
+  readonly verbosity?: AnnounceVerbosity
 }
+
+/**
+ * How much of the game the moves live region reads:
+ * - `all`: every move (the default)
+ * - `own`: only the viewer's own moves, plus other seats' moves that take one of the viewer's
+ *   pieces; checks, defeats, frozen armies and the result are always read
+ */
+export type AnnounceVerbosity = 'all' | 'own'
 
 const SEATS: readonly Seat[] = ['south', 'west', 'north', 'east']
 
@@ -157,15 +167,22 @@ export function describeStep(
 ): string[] {
   const out: string[] = []
   let move: string | null = null
+  // `own` verbosity: another seat's move is read only when it takes one of the viewer's pieces.
+  const quiet = ctx.verbosity === 'own'
+  let moveSeat: Seat | null = null
+  let hitsMe = false
   const flush = () => {
-    if (move) out.push(`${move}.`)
+    if (move && (!quiet || moveSeat === ctx.localSeat || hitsMe)) out.push(`${move}.`)
     move = null
+    moveSeat = null
+    hitsMe = false
   }
   const tail: string[] = []
   for (const e of events) {
     switch (e.type) {
       case 'move_made':
         flush()
+        moveSeat = e.seat
         move =
           e.flag === 'castle'
             ? `${who(e.seat, ctx)} castled: ${pieceWord(e.piece)} ${e.from} to ${e.to}`
@@ -173,8 +190,12 @@ export function describeStep(
         break
       case 'capture': {
         const victim = `${whose(e.captured.owner, ctx)} ${pieceWord(e.captured.kind)}`
+        if (e.captured.owner === ctx.localSeat) hitsMe = true
         if (move) move += `, takes ${victim}`
-        else move = `${who(e.seat, ctx)} took ${victim} on ${e.square}`
+        else {
+          moveSeat = e.seat
+          move = `${who(e.seat, ctx)} took ${victim} on ${e.square}`
+        }
         break
       }
       case 'en_passant':
@@ -182,14 +203,18 @@ export function describeStep(
         break
       case 'promotion':
         if (move) move += `, promotes to ${pieceWord(e.kind)}`
-        else move = `${who(e.seat, ctx)} promoted to ${pieceWord(e.kind)} on ${e.square}`
+        else {
+          moveSeat = e.seat
+          move = `${who(e.seat, ctx)} promoted to ${pieceWord(e.kind)} on ${e.square}`
+        }
         break
       case 'castle':
         if (move) move += `, rook ${e.rookFrom} to ${e.rookTo}`
         break
       case 'pass':
         flush()
-        out.push(`${who(e.seat, ctx)} passed (no legal move).`)
+        if (!quiet || e.seat === ctx.localSeat)
+          out.push(`${who(e.seat, ctx)} passed (no legal move).`)
         break
       case 'defeat':
         tail.push(

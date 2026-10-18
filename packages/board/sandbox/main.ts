@@ -64,6 +64,7 @@ let options: BoardOptions = {
   colorblindPatterns: false,
   sound: true,
   volume: 0.6,
+  panMomentum: true,
 }
 
 const view = new BoardView({ ...options, onMoveIntent: (m) => play(m) })

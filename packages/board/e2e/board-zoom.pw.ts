@@ -467,3 +467,129 @@ test('reduced motion: zoom changes at once', async ({ page }) => {
   // No animation frames needed: the zoom is applied synchronously.
   expect(await zoom(page)).toBeGreaterThan(1.9)
 })
+
+/**
+ * A quick one-finger swipe from `p` by `d` (synthetic touch pointer events, a move every
+ * ~16 ms, so the release speed is real) and where `sq` sits on screen at the release.
+ */
+async function flick(page: Page, p: Pt, d: Pt, sq: string): Promise<Pt> {
+  return page.evaluate(
+    async ([p0, dd, square]) => {
+      const v = (
+        globalThis as unknown as {
+          __sandbox: {
+            view: {
+              canvas: HTMLCanvasElement
+              squareToClient(s: string): { x: number; y: number } | null
+            }
+          }
+        }
+      ).__sandbox.view
+      const cv = v.canvas
+      const ev = (type: string, x: number, y: number, buttons: number) =>
+        new PointerEvent(type, {
+          pointerId: 931,
+          pointerType: 'touch',
+          isPrimary: true,
+          clientX: x,
+          clientY: y,
+          button: 0,
+          buttons,
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+        })
+      const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
+      cv.dispatchEvent(ev('pointerdown', p0.x, p0.y, 1))
+      // Few, large steps: frames are slow here (software rendering), and the release speed
+      // only counts the last ~100 ms.
+      const steps = 4
+      for (let i = 1; i <= steps; i++) {
+        await wait(16)
+        const k = i / steps
+        cv.dispatchEvent(ev('pointermove', p0.x + dd.x * k, p0.y + dd.y * k, 1))
+      }
+      cv.dispatchEvent(ev('pointerup', p0.x + dd.x, p0.y + dd.y, 0))
+      const r = cv.getBoundingClientRect()
+      const q = v.squareToClient(square) as { x: number; y: number }
+      return { x: r.left + q.x, y: r.top + q.y }
+    },
+    [p, d, sq] as const,
+  )
+}
+
+test('a quick one-finger pan glides on and slows down; a touch stops it', async ({ page }) => {
+  await page.evaluate(() =>
+    (
+      globalThis as unknown as { __sandbox: { view: { setZoom(z: number, o: unknown): void } } }
+    ).__sandbox.view.setZoom(3, { animate: false }),
+  )
+  await settle(page)
+  const r = await canvasRect(page)
+  const c = { x: r.left + r.width / 2, y: r.top + r.height / 2 }
+  expect((await engineBoard(page)).pieces[await squareAt(page, c)]).toBeUndefined()
+  const start = await squarePoint(page, 'h8')
+  const atRelease = await flick(page, c, { x: 160, y: 0 }, 'h8')
+  // The finger moved the board by its own travel...
+  expect(atRelease.x - start.x).toBeGreaterThan(120)
+  await settle(page)
+  const after = await squarePoint(page, 'h8')
+  // ...and the board glided on the same way after it lifted.
+  expect(after.x - atRelease.x).toBeGreaterThan(40)
+  expect(Math.abs(after.y - atRelease.y)).toBeLessThan(3)
+  await shot(page, 'phone-390-fling')
+
+  // A finger on the gliding board stops it where it is (and that touch selects nothing).
+  const back = await flick(page, c, { x: -160, y: 0 }, 'h8')
+  await page.evaluate(() => {
+    const cv = (globalThis as unknown as { __sandbox: { view: { canvas: HTMLCanvasElement } } })
+      .__sandbox.view.canvas
+    const r2 = cv.getBoundingClientRect()
+    const init = (buttons: number): PointerEventInit => ({
+      pointerId: 932,
+      pointerType: 'touch',
+      isPrimary: true,
+      clientX: r2.left + r2.width / 2,
+      clientY: r2.top + r2.height / 2,
+      button: 0,
+      buttons,
+      bubbles: true,
+      cancelable: true,
+      composed: true,
+    })
+    cv.dispatchEvent(new PointerEvent('pointerdown', init(1)))
+    cv.dispatchEvent(new PointerEvent('pointerup', init(0)))
+  })
+  const stopped = await squarePoint(page, 'h8')
+  await settle(page)
+  const still = await squarePoint(page, 'h8')
+  expect(Math.abs(still.x - stopped.x)).toBeLessThan(1)
+  expect(stopped.x - back.x).toBeLessThan(40)
+})
+
+test('reduced motion (or panMomentum off): the board stops when the finger lifts', async ({
+  page,
+}) => {
+  for (const opts of [{ reducedMotion: true }, { reducedMotion: false, panMomentum: false }]) {
+    await page.evaluate((o) => {
+      const sb = (
+        globalThis as unknown as {
+          __sandbox: {
+            setOptions(o: unknown): void
+            view: { setZoom(z: number, o: unknown): void }
+          }
+        }
+      ).__sandbox
+      sb.setOptions(o)
+      sb.view.setZoom(1, { animate: false })
+      sb.view.setZoom(3, { animate: false })
+    }, opts)
+    await settle(page)
+    const r = await canvasRect(page)
+    const c = { x: r.left + r.width / 2, y: r.top + r.height / 2 }
+    const atRelease = await flick(page, c, { x: 160, y: 0 }, 'h8')
+    await settle(page)
+    const after = await squarePoint(page, 'h8')
+    expect(Math.abs(after.x - atRelease.x), JSON.stringify(opts)).toBeLessThan(1)
+  }
+})

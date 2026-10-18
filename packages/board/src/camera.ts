@@ -173,3 +173,71 @@ export function sameCamera(a: Camera, b: Camera): boolean {
     Math.abs(a.zoom - b.zoom) < 1e-3 && Math.abs(a.x - b.x) < 1e-2 && Math.abs(a.y - b.y) < 1e-2
   )
 }
+
+/** A pointer position during a pan (screen CSS px) and when it was seen (ms). */
+export interface PanSample {
+  readonly x: number
+  readonly y: number
+  readonly t: number
+}
+
+/**
+ * Momentum after a one-finger pan (a fling): the board glides on at the finger's release
+ * speed and slows down exponentially (time constant `tau`), like a scrolled list on a phone.
+ */
+export const FLING = {
+  /** Slower releases (px/ms) just stop. */
+  minSpeed: 0.25,
+  /** Release speeds are capped here (px/ms). */
+  maxSpeed: 4,
+  /** Deceleration time constant, ms. */
+  tau: 325,
+  /** The glide ends below this speed (px/ms). */
+  stopSpeed: 0.02,
+  /** Samples older than this before the release don't count (ms). */
+  windowMs: 100,
+  /** A finger that rested this long before lifting means no fling (ms). */
+  restMs: 60,
+} as const
+
+/**
+ * The finger's speed at release (px/ms, screen axes) from its recent samples, oldest first:
+ * the movement over the last `FLING.windowMs`. Zero when the finger rested before lifting.
+ */
+export function releaseVelocity(samples: readonly PanSample[], now: number): Vec {
+  const last = samples[samples.length - 1]
+  if (!last || now - last.t > FLING.restMs) return { x: 0, y: 0 }
+  let first = last
+  for (let i = samples.length - 1; i >= 0; i--) {
+    const s = samples[i] as PanSample
+    if (last.t - s.t > FLING.windowMs) break
+    first = s
+  }
+  // Slow frames: the sample before the last one counts if it is reasonably recent.
+  const before = samples[samples.length - 2]
+  if (first === last && before && last.t - before.t <= 2 * FLING.windowMs) first = before
+  const dt = last.t - first.t
+  if (dt <= 0) return { x: 0, y: 0 }
+  return { x: (last.x - first.x) / dt, y: (last.y - first.y) / dt }
+}
+
+/**
+ * The glide for a release velocity (px/ms): how long it lasts (ms) and its velocity after
+ * the speed cap, or null when the release was too slow to fling.
+ */
+export function flingPlan(v: Vec): { duration: number; velocity: Vec } | null {
+  const speed = Math.hypot(v.x, v.y)
+  if (!(speed >= FLING.minSpeed)) return null
+  const k = Math.min(1, FLING.maxSpeed / speed)
+  const capped = speed * k
+  return {
+    duration: FLING.tau * Math.log(capped / FLING.stopSpeed),
+    velocity: { x: v.x * k, y: v.y * k },
+  }
+}
+
+/** How far the glide has carried the board after `t` ms (screen px). */
+export function flingOffset(v: Vec, t: number): Vec {
+  const f = FLING.tau * (1 - Math.exp(-Math.max(0, t) / FLING.tau))
+  return { x: v.x * f, y: v.y * f }
+}

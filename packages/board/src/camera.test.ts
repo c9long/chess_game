@@ -5,8 +5,13 @@ import {
   type Camera,
   type CameraViewport,
   clampCamera,
+  FLING,
+  flingOffset,
+  flingPlan,
   IDENTITY_CAMERA,
+  type PanSample,
   panBy,
+  releaseVelocity,
   revealPoints,
   rubberZoom,
   sameCamera,
@@ -159,5 +164,70 @@ describe('camera', () => {
   it('compares cameras with a tolerance', () => {
     expect(sameCamera({ zoom: 2, x: 1, y: 1 }, { zoom: 2.0001, x: 1.001, y: 1 })).toBe(true)
     expect(sameCamera({ zoom: 2, x: 1, y: 1 }, { zoom: 2, x: 1.5, y: 1 })).toBe(false)
+  })
+})
+
+describe('fling (pan momentum)', () => {
+  const samples = (pts: [number, number, number][]): PanSample[] =>
+    pts.map(([x, y, t]) => ({ x, y, t }))
+
+  it('measures the release speed over the last 100 ms', () => {
+    const v = releaseVelocity(
+      samples([
+        [0, 0, 0],
+        [10, 0, 100],
+        [30, 10, 150],
+        [60, 20, 200],
+      ]),
+      205,
+    )
+    // From the sample at t=100 to t=200: 50 px right, 20 px down.
+    expect(v.x).toBeCloseTo(0.5)
+    expect(v.y).toBeCloseTo(0.2)
+  })
+
+  it('a finger that rested before lifting does not fling', () => {
+    const s = samples([
+      [0, 0, 0],
+      [40, 0, 40],
+    ])
+    expect(releaseVelocity(s, 200)).toEqual({ x: 0, y: 0 })
+    expect(releaseVelocity([], 10)).toEqual({ x: 0, y: 0 })
+    expect(releaseVelocity(samples([[5, 5, 10]]), 12)).toEqual({ x: 0, y: 0 })
+  })
+
+  it('slow frames: the sample before the last counts when it is recent enough', () => {
+    const v = releaseVelocity(
+      samples([
+        [0, 0, 0],
+        [30, 0, 150],
+      ]),
+      160,
+    )
+    expect(v.x).toBeCloseTo(0.2)
+    const old = releaseVelocity(
+      samples([
+        [0, 0, 0],
+        [30, 0, 400],
+      ]),
+      410,
+    )
+    expect(old).toEqual({ x: 0, y: 0 })
+  })
+
+  it('slow releases stop; fast ones glide, capped, and slow down', () => {
+    expect(flingPlan({ x: 0.1, y: 0.1 })).toBeNull()
+    const plan = flingPlan({ x: 1, y: 0 })
+    expect(plan).not.toBeNull()
+    expect(plan?.duration).toBeCloseTo(FLING.tau * Math.log(1 / FLING.stopSpeed))
+    const capped = flingPlan({ x: 0, y: -40 })
+    expect(capped?.velocity.y).toBeCloseTo(-FLING.maxSpeed)
+    // The glide covers at most v * tau and slows down over time.
+    const v = { x: 1, y: 0 }
+    const a = flingOffset(v, 100).x
+    const b = flingOffset(v, 200).x - a
+    expect(b).toBeLessThan(a)
+    expect(flingOffset(v, 1e6).x).toBeCloseTo(FLING.tau)
+    expect(flingOffset(v, 0).x).toBe(0)
   })
 })

@@ -102,6 +102,42 @@ describe('describeStep', () => {
     g.free()
   })
 
+  it("'own' verbosity reads only the viewer's moves, checks, defeats and the result", () => {
+    const quiet = (seat: 'south' | 'west' | 'north' | 'east'): AnnounceContext => ({
+      ...you(seat),
+      verbosity: 'own',
+    })
+    const g = Game.create({ mode: 'ffa' })
+    expect(step(g, (x) => x.applyMove('e2e4'), quiet('south')).text).toEqual([
+      'You: pawn e2 to e4.',
+    ])
+    expect(step(g, (x) => x.applyMove('a6c7'), quiet('south')).text).toEqual([])
+    g.free()
+    // Another seat's check is still said, its move is not.
+    const c = Game.fromPosition(
+      'ffa 8nK7/16/16/16/16/16/16/wK15/16/16/16/16/16/16/16/sK6sQ7eK S AAAA - - 0 0',
+    )
+    const checked = step(c, (x) => x.applyMove('h1i1'), quiet('north')).text
+    expect(checked.some((t) => t.startsWith('South:'))).toBe(false)
+    expect(checked).toContain("Check: West's king is under attack.")
+    c.free()
+    // A move that takes the viewer's piece is read, with the defeat it causes.
+    const k = Game.fromPosition(KING_HUNT)
+    const hunted = step(k, (x) => x.applyMove('i1i16'), quiet('north')).text
+    expect(hunted[0]).toBe('South: queen i1 to i16, takes your king.')
+    expect(hunted).toContain('You are defeated: leader captured.')
+    k.free()
+    // Timeouts, abandons and the result are always read.
+    const t = Game.create({ mode: 'ffa' })
+    expect(step(t, (x) => x.applyTimeout('south'), quiet('west')).text).toContain(
+      'South is defeated: out of time.',
+    )
+    step(t, (x) => x.applyAbandon('north'), quiet('west'))
+    const last = step(t, (x) => x.applyAbandon('east'), quiet('west')).text
+    expect(last.at(-1)).toBe('Game over. You win.')
+    t.free()
+  })
+
   it('announces timeouts, abandons and the result', () => {
     const g = Game.create({ mode: 'ffa' })
     expect(step(g, (x) => x.applyTimeout('south')).text).toContain(

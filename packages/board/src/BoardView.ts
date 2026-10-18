@@ -23,6 +23,7 @@ import {
 } from 'pixi.js'
 import {
   type AnnounceContext,
+  type AnnounceVerbosity,
   defaultSeatLabel,
   describeBareMove,
   describeResult,
@@ -37,8 +38,12 @@ import {
   type Camera,
   type CameraViewport,
   clampCamera,
+  flingOffset,
+  flingPlan,
   IDENTITY_CAMERA,
+  type PanSample,
   panBy,
+  releaseVelocity,
   revealPoints,
   rubberZoom,
   sameCamera,
@@ -117,6 +122,11 @@ export interface BoardOptions {
   readonly sound: boolean
   /** Sound volume 0..1. Default 0.6. */
   readonly volume: number
+  /**
+   * The zoomed board glides on after a quick one-finger pan (touch or pen) and slows down,
+   * like a scrolled list. Never under reduced motion. Default true.
+   */
+  readonly panMomentum: boolean
 }
 
 export interface SetSnapshotOptions {
@@ -164,6 +174,12 @@ export interface BoardViewInit extends Partial<BoardOptions> {
    * led to it are always heard first. The end of the game is read at once too. Default true.
    */
   announceTurn?: boolean
+  /**
+   * Which moves the moves live region reads (also `setAnnounceVerbosity`): 'all' (default)
+   * or 'own' (the viewer's own moves and moves that take their pieces; checks, defeats and
+   * the result are always read).
+   */
+  announceVerbosity?: AnnounceVerbosity
   /** Each text read in the moves live region (e.g. to repeat the final moves elsewhere). */
   onAnnounce?: (text: string) => void
   /**
@@ -556,8 +572,19 @@ export class BoardView {
         zoom: number
         anchor: Vec
       }
-    | { kind: 'pan'; id: number; x: number; y: number }
+    | {
+        kind: 'pan'
+        id: number
+        x: number
+        y: number
+        /** A finger or pen (only those fling). */
+        touch: boolean
+        /** Recent positions, for the release speed (a fling). */
+        samples: PanSample[]
+      }
     | null = null
+  /** The camera tween that is a fling's glide (also `#camTween` while it runs). */
+  #fling: Tween | null = null
   /** Pointers that took part in a gesture: ignored until they lift. */
   readonly #spent = new Set<number>()
   #lastTap: { time: number; x: number; y: number; square: number } | null = null
@@ -576,6 +603,7 @@ export class BoardView {
   #localSeat: Seat | null
   readonly #announceOwnCheck: boolean
   readonly #announceTurn: boolean
+  #announceVerbosity: AnnounceVerbosity
   readonly #onAnnounce: ((text: string) => void) | null
   /** The move this board just sent (its own move is confirmed soon, not batched). */
   #sentMove: { from: number; to: number } | null = null
@@ -590,6 +618,7 @@ export class BoardView {
     this.#localSeat = init.localSeat ?? null
     this.#announceOwnCheck = init.announceOwnCheck ?? true
     this.#announceTurn = init.announceTurn ?? true
+    this.#announceVerbosity = init.announceVerbosity ?? 'all'
     this.#onAnnounce = init.onAnnounce ?? null
     this.#zoomButtonMode = init.zoomButton ?? 'auto'
     this.#options = {
@@ -597,6 +626,7 @@ export class BoardView {
       colorblindPatterns: init.colorblindPatterns ?? false,
       sound: init.sound ?? true,
       volume: init.volume ?? 0.6,
+      panMomentum: init.panMomentum ?? true,
     }
     this.#sound.setEnabled(this.#options.sound)
     this.#sound.setVolume(this.#options.volume)
@@ -785,8 +815,12 @@ export class BoardView {
     if (events.length > 0)
       lines = describeStep(prev, next, events, turn ? { ...ctx, ownCheck: false } : ctx)
     else {
-      if (next.ply === prev.ply + 1 && this.#lastMove) {
-        const m = this.#lastMove
+      const m = this.#lastMove
+      if (
+        next.ply === prev.ply + 1 &&
+        m &&
+        (ctx.verbosity !== 'own' || (local !== null && m.seat === local))
+      ) {
         lines = [describeBareMove(next, m.from, m.to, m.seat, ctx)]
       }
       if (ended && next.outcome) lines.push(describeResult(next.outcome.result, ctx))
@@ -939,6 +973,7 @@ export class BoardView {
 
   setOptions(options: Partial<BoardOptions>): void {
     this.#options = { ...this.#options, ...options }
+    if (this.#options.reducedMotion || !this.#options.panMomentum) this.#stopFling()
     this.#sound.setEnabled(this.#options.sound)
     this.#sound.setVolume(this.#options.volume)
     if (!this.#ready) return
@@ -4126,6 +4161,20 @@ export class BoardView {
       return
     }
     if (this.#gesture || this.#spent.has(e.pointerId)) return
+    if (touch && this.#fling && this.#camTween === this.#fling && this.#fling.alive) {
+      // A finger on a gliding board stops it (like a scrolled list): this press only pans.
+      this.#stopFling()
+      this.#lastTap = null
+      this.#gesture = {
+        kind: 'pan',
+        id: e.pointerId,
+        x: e.global.x,
+        y: e.global.y,
+        touch: true,
+        samples: [{ x: e.global.x, y: e.global.y, t: performance.now() }],
+      }
+      return
+    }
     if (e.button !== 0 && !touch) {
       this.#select(-1)
       return
@@ -4217,7 +4266,14 @@ export class BoardView {
         // A drag that didn't start on a piece moves the zoomed board (selection kept).
         this.#press = null
         this.#lastTap = null
-        this.#gesture = { kind: 'pan', id: e.pointerId, x: press.x, y: press.y }
+        this.#gesture = {
+          kind: 'pan',
+          id: e.pointerId,
+          x: press.x,
+          y: press.y,
+          touch: press.touch,
+          samples: [{ x: press.x, y: press.y, t: performance.now() }],
+        }
         this.#setHover(-1)
         this.#updatePan(e.global.x, e.global.y)
         if (cv) cv.style.cursor = 'grabbing'
@@ -4274,6 +4330,7 @@ export class BoardView {
       this.#gesture = null
       const cv = this.#app?.canvas
       if (cv) cv.style.cursor = 'default'
+      if (g.touch) this.#startFling(releaseVelocity(g.samples, performance.now()))
       return
     }
     if (this.#spent.delete(id)) return
@@ -4412,7 +4469,8 @@ export class BoardView {
     const p = remaining >= 0 ? this.#pointers.get(remaining) : undefined
     if (p && z >= 1.04) {
       this.#spent.delete(remaining)
-      this.#gesture = { kind: 'pan', id: remaining, x: p.x, y: p.y }
+      // Lifting the other finger never flings: only a pan that started as one finger does.
+      this.#gesture = { kind: 'pan', id: remaining, x: p.x, y: p.y, touch: false, samples: [] }
     }
   }
 
@@ -4423,10 +4481,62 @@ export class BoardView {
     const dy = y - g.y
     g.x = x
     g.y = y
+    if (g.touch) {
+      g.samples.push({ x, y, t: performance.now() })
+      if (g.samples.length > 12) g.samples.shift()
+    }
     if (dx === 0 && dy === 0) return
     this.#anim.cancel(this.#camTween)
     this.#camTween = null
     this.#moveCamera(panBy(this.#camera, this.#viewport(), dx, dy))
+  }
+
+  /**
+   * The zoomed board glides on after a quick one-finger pan (velocity in px/ms) and slows
+   * down; it stops at the board's edge, when a finger touches the board, or on any other
+   * camera change. Off under reduced motion or with `panMomentum` off.
+   */
+  #startFling(v: Vec): void {
+    if (!this.#options.panMomentum || this.#options.reducedMotion) return
+    if (this.#camera.zoom <= 1.01) return
+    const plan = flingPlan(v)
+    if (!plan) return
+    this.#anim.cancel(this.#camTween)
+    let done = { x: 0, y: 0 }
+    const tween = this.#anim.add(
+      plan.duration,
+      (k) => {
+        const at = flingOffset(plan.velocity, k * plan.duration)
+        const dx = at.x - done.x
+        const dy = at.y - done.y
+        done = at
+        const before = this.#camera
+        const next = panBy(before, this.#viewport(), dx, dy)
+        if (sameCamera(next, before) && Math.hypot(dx, dy) > 0.5) {
+          // Against the edge on every axis it was moving along: nothing left to glide.
+          this.#stopFling()
+          return
+        }
+        this.#moveCamera(next)
+      },
+      {
+        ease: ease.linear,
+        done: () => {
+          if (this.#camTween === tween) this.#camTween = null
+          if (this.#fling === tween) this.#fling = null
+        },
+      },
+    )
+    this.#camTween = tween
+    this.#fling = tween
+  }
+
+  #stopFling(): void {
+    const f = this.#fling
+    this.#fling = null
+    if (!f) return
+    if (this.#camTween === f) this.#camTween = null
+    this.#anim.cancel(f)
   }
 
   /** A dragged piece near the viewport edge pans the zoomed board that way (`ms` since last frame). */
@@ -4753,6 +4863,7 @@ export class BoardView {
       seatLabel: this.#seatLabel,
       localSeat: this.#localSeat,
       ownCheck: this.#announceOwnCheck,
+      verbosity: this.#announceVerbosity,
     }
   }
 
@@ -4763,6 +4874,11 @@ export class BoardView {
   /** The viewer's own seat, said as "You" / "your" in announcements (`null`: none). */
   setLocalSeat(seat: Seat | null): void {
     this.#localSeat = seat
+  }
+
+  /** Which moves are announced from now on (see `BoardViewInit.announceVerbosity`). */
+  setAnnounceVerbosity(verbosity: AnnounceVerbosity): void {
+    this.#announceVerbosity = verbosity
   }
 
   /** The visible focus ring (keyboard use only). */
