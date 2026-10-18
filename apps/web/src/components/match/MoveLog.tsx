@@ -11,6 +11,7 @@ import {
 } from 'react'
 import {
   attackedIn,
+  clockText,
   groupRounds,
   isTurnItem,
   itemLabel,
@@ -86,30 +87,48 @@ function Cell({
 }) {
   const marks = itemMarks(item)
   const muted = item.kind !== 'move'
+  const clock = item.clockMs
+  const notation = (
+    <span aria-hidden="true" className="flex min-w-0 items-baseline gap-px">
+      <span
+        className={`truncate ${muted ? 'font-sans text-[11px] italic text-parchment/60' : future ? 'text-parchment/60' : ''}`}
+        style={
+          muted || future ? undefined : { color: current ? undefined : seatTextHex(item.seat) }
+        }
+      >
+        {itemText(item)}
+      </span>
+      {[...marks].map((m) => (
+        <span
+          key={m}
+          className={future ? 'text-parchment/60' : m === '×' ? 'text-gold' : 'text-danger-light'}
+        >
+          {m}
+        </span>
+      ))}
+    </span>
+  )
   const body = (
     <>
       <span className="sr-only">{itemLabel(item)}</span>
-      <span aria-hidden="true" className="flex min-w-0 items-baseline gap-px">
-        <span
-          className={`truncate ${muted ? 'font-sans text-[11px] italic text-parchment/60' : future ? 'text-parchment/60' : ''}`}
-          style={
-            muted || future ? undefined : { color: current ? undefined : seatTextHex(item.seat) }
-          }
-        >
-          {itemText(item)}
-        </span>
-        {[...marks].map((m) => (
+      {clock === null ? (
+        notation
+      ) : (
+        // The mover's time left after the move, small and muted under the notation.
+        <span className="flex min-w-0 flex-col leading-[1.1]">
+          {notation}
           <span
-            key={m}
-            className={future ? 'text-parchment/60' : m === '×' ? 'text-gold' : 'text-danger-light'}
+            aria-hidden="true"
+            className={`text-[10px] ${future ? 'text-parchment/35' : 'text-parchment/50'}`}
+            data-testid="move-log-clock"
           >
-            {m}
+            {clockText(clock)}
           </span>
-        ))}
-      </span>
+        </span>
+      )}
     </>
   )
-  const cls = `flex h-6 w-full min-w-0 items-center rounded-md px-1 text-left font-mono text-[12px] tracking-tight tabular-nums ${
+  const cls = `flex ${clock === null ? 'h-6' : 'min-h-6'} w-full min-w-0 items-center rounded-md px-1 text-left font-mono text-[12px] tracking-tight tabular-nums ${
     current ? 'bg-parchment/[0.12] text-parchment ring-1 ring-gold/60' : ''
   }`
   if (onSelect) {

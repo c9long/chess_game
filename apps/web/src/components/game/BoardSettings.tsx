@@ -1,3 +1,4 @@
+import { useId } from 'react'
 import { canVibrate } from '../../lib/feedback.ts'
 import { useMediaQuery } from '../../lib/media.ts'
 import { isNative } from '../../lib/platform.ts'
@@ -22,6 +23,36 @@ function Toggle({
         onChange={(e) => onChange(e.target.checked)}
       />
     </label>
+  )
+}
+
+/** What the board's screen-reader announcements read (moves live region). */
+function AnnounceSetting() {
+  const prefs = usePrefs()
+  const id = useId()
+  const hintId = useId()
+  return (
+    <div className="flex flex-col gap-0.5 py-1">
+      <div className="flex items-center justify-between gap-3 text-sm text-parchment/75">
+        <label htmlFor={id} className="cursor-pointer hover:text-parchment">
+          Read out moves
+        </label>
+        <select
+          id={id}
+          value={prefs.announceMoves}
+          onChange={(e) => prefs.set({ announceMoves: e.target.value === 'own' ? 'own' : 'all' })}
+          aria-describedby={hintId}
+          className="h-8 rounded-md border border-parchment/20 bg-ink/60 px-2 text-sm text-parchment"
+          data-testid="announce-moves"
+        >
+          <option value="all">Every move</option>
+          <option value="own">Only mine</option>
+        </select>
+      </div>
+      <p id={hintId} className="text-[11px] text-parchment/50">
+        For screen readers. “Only mine” still reads checks, captures of your pieces and results.
+      </p>
+    </div>
   )
 }
 
@@ -130,6 +161,7 @@ export function BoardSettings({ id }: { id: string }) {
           checked={prefs.reducedMotion}
           onChange={(v) => prefs.set({ reducedMotion: v })}
         />
+        <AnnounceSetting />
       </div>
       <h2 className="mt-3 mb-2 border-t border-parchment/10 pt-3 text-[11px] font-semibold tracking-[0.2em] text-parchment/50 uppercase">
         Keyboard

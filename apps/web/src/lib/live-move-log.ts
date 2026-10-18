@@ -27,7 +27,10 @@ export function appendEntry(
   const last = entries.at(-1)
   if (last && e.seq <= last.seq) return entries
   const { seq, action, seat, notation, events, positionString } = e
-  return [...entries, { seq, action, seat, notation, events, positionString }]
+  return [
+    ...entries,
+    { seq, action, seat, notation, events, positionString, clockMs: e.clockMs ?? null },
+  ]
 }
 
 /** Starts collecting a room's move log (once per room object). */

@@ -7,6 +7,16 @@ export interface BoardPrefs {
   vibration: boolean
   colorblindPatterns: boolean
   reducedMotion: boolean
+  /**
+   * What the board's screen-reader announcements read: every move ('all'), or only your own
+   * moves, moves that take your pieces, checks and results ('own').
+   */
+  announceMoves: 'all' | 'own'
+}
+
+/** Allowed values of the non-boolean preferences (anything else falls back to the default). */
+const CHOICES: { [K in keyof BoardPrefs]?: readonly BoardPrefs[K][] } = {
+  announceMoves: ['all', 'own'],
 }
 
 const KEY = 'board:prefs'
@@ -19,6 +29,7 @@ function load(): BoardPrefs {
     reducedMotion:
       typeof window !== 'undefined' &&
       window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true,
+    announceMoves: 'all',
   }
   try {
     const raw = localStorage.getItem(KEY)
@@ -26,11 +37,15 @@ function load(): BoardPrefs {
     const saved = JSON.parse(raw) as Record<string, unknown>
     // Known keys only: settings that no longer exist (e.g. the old attacked-leader glow,
     // replaced by the check indicator) are dropped.
-    const prefs = { ...defaults }
+    const prefs: Record<string, unknown> = { ...defaults }
     for (const key of Object.keys(defaults) as (keyof BoardPrefs)[]) {
-      if (typeof saved[key] === 'boolean') prefs[key] = saved[key]
+      const value = saved[key]
+      const choices = CHOICES[key] as readonly unknown[] | undefined
+      if (choices ? choices.includes(value) : typeof value === typeof defaults[key]) {
+        prefs[key] = value
+      }
     }
-    return prefs
+    return prefs as unknown as BoardPrefs
   } catch {
     return defaults
   }

@@ -201,9 +201,32 @@ describe('move log model', () => {
     })
     const one = appendEntry([], entry(1))
     expect(one).toEqual([
-      { seq: 1, action: 'move', seat: 0, notation: 'e2e4', events: [], positionString: 'p1' },
+      {
+        seq: 1,
+        action: 'move',
+        seat: 0,
+        notation: 'e2e4',
+        events: [],
+        positionString: 'p1',
+        clockMs: null,
+      },
     ])
     expect(appendEntry(one, entry(1))).toBe(one)
     expect(appendEntry(one, entry(2)).map((e) => e.seq)).toEqual([1, 2])
+    // The mover's clock after the action travels with it.
+    expect(appendEntry(one, { ...entry(2), clockMs: 271_400 }).at(-1)?.clockMs).toBe(271_400)
+  })
+
+  it('keeps each move’s clock time (moves only) and says it to screen readers', () => {
+    const items = logItems([
+      { ...move(0, 'e2e4'), clockMs: 272_000 },
+      { ...move(1, 'b7c7', [], 2), clockMs: 8_400 },
+      { ...move(2, 'h15h13', [], 3) },
+      { seq: 4, action: 'resign', seat: 3, notation: null, events: [], attacked: NONE, clockMs: 5 },
+    ])
+    expect(items.map((i) => i.clockMs)).toEqual([272_000, 8_400, null, null])
+    expect(itemLabel(items[0] as never)).toBe('South: e2e4, 4:32 left')
+    expect(itemLabel(items[1] as never)).toBe('West: b7c7, 0:08.4 left')
+    expect(itemLabel(items[2] as never)).toBe('North: h15h13')
   })
 })

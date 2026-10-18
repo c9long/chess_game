@@ -18,6 +18,7 @@ import {
 } from '@game/rules'
 import { SEAT_LABEL } from '../components/match/labels.ts'
 import { pieceName } from './civ-info.ts'
+import { formatClock } from './clock.ts'
 
 /** One game action with what the engine said about it. */
 export interface LogStep {
@@ -29,6 +30,8 @@ export interface LogStep {
   events: readonly GameEvent[]
   /** Per seat, after the action: an active seat's leader is under attack (engine snapshot). */
   attacked: readonly boolean[]
+  /** The acting seat's time left after the action (ms, from the server), or null / absent. */
+  clockMs?: number | null | undefined
 }
 
 export type LogItemKind = 'move' | 'pass' | 'timeout' | 'abandon' | 'resign' | 'agreed_draw'
@@ -54,6 +57,8 @@ export interface LogItem {
   defeats: { seat: number; reason: DefeatReason }[]
   /** The result, when this action ended the game. */
   result: GameResult | null
+  /** Moves: the mover's time left after the move (ms), or null (untimed, or not known). */
+  clockMs: number | null
 }
 
 /** Turn items fill a seat's cell in a round; notes (off-turn actions) follow the round's row. */
@@ -102,6 +107,7 @@ export function itemsOfStep(
     checks: [],
     defeats: [],
     result: null,
+    clockMs: null,
   })
   const kind: LogItemKind = step.action
   const main = base(
@@ -110,6 +116,7 @@ export function itemsOfStep(
     kind === 'move' ? (step.notation ?? '') : '',
     0,
   )
+  if (kind === 'move' && typeof step.clockMs === 'number') main.clockMs = step.clockMs
   const passes: LogItem[] = []
   for (const e of step.events) {
     switch (e.type) {
@@ -247,11 +254,17 @@ export function itemLabel(item: LogItem, endReason?: string): string {
       parts.push(itemText(item, endReason))
   }
   if (item.checks.length > 0) parts.push(`check on ${item.checks.map(seatText).join(' and ')}`)
+  if (item.kind === 'move' && item.clockMs !== null) parts.push(`${clockText(item.clockMs)} left`)
   for (const d of item.defeats) {
     if (d.seat === item.seat && (d.reason === item.kind || item.kind === 'timeout')) continue
     parts.push(`${seatText(d.seat)} defeated, ${DEFEAT_TEXT[d.reason]}`)
   }
   return parts.join(', ')
+}
+
+/** A move's clock time in the log: "4:32", "0:08.4" under 20 s. */
+export function clockText(ms: number): string {
+  return formatClock(ms)
 }
 
 /** Short result text for the end of the log. */

@@ -10,7 +10,7 @@ import {
 } from '@game/rules'
 import { useReducedMotion } from 'motion/react'
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router'
+import { useNavigate, useParams } from 'react-router'
 import {
   actionFromEvents,
   type CheckAction,
@@ -43,7 +43,7 @@ import { defeatReasonLabel } from './labels.ts'
 import { MoveLogPanel, useLiveLogItems } from './MoveLog.tsx'
 import { RankedBadge } from './RankedBadge.tsx'
 import { rematchNotice } from './Rematch.tsx'
-import { SpectatorCount } from './Spectators.tsx'
+import { SpectatorCount, WatchLinkButton } from './Spectators.tsx'
 import { MODE_LABEL, seatHex, seatName, teamLabel } from './seats.ts'
 
 interface Position {
@@ -273,6 +273,7 @@ function Board({
       sound: usePrefs.getState().sound,
       colorblindPatterns: usePrefs.getState().colorblindPatterns,
       reducedMotion: usePrefs.getState().reducedMotion,
+      announceVerbosity: usePrefs.getState().announceMoves,
       // A check made while it isn't the viewer's turn waits for their turn ("Your move. Check:
       // ..."), and the check announcer says a self-check (docs/RULES.md "Check indicators").
       announceOwnCheck: false,
@@ -315,6 +316,10 @@ function Board({
       reducedMotion: prefs.reducedMotion,
     })
   }, [prefs.sound, prefs.colorblindPatterns, prefs.reducedMotion])
+
+  useEffect(() => {
+    viewRef.current?.setAnnounceVerbosity(prefs.announceMoves)
+  }, [prefs.announceMoves])
 
   useEffect(() => {
     if (viewGen === 0) return
@@ -514,6 +519,9 @@ export function GameRoom({
   onLeave?: () => void
 }) {
   const navigate = useNavigate()
+  // The match room's id (the page's `/match/:roomId` or `/watch/:roomId`; a spectator's
+  // `room` is the watch room), for the shareable watch link.
+  const matchRoomId = useParams().roomId ?? room.roomId
   const { ready, error } = useRulesReady()
   const prefs = usePrefs()
   const systemReduced = useReducedMotion()
@@ -596,6 +604,12 @@ export function GameRoom({
       return
     }
     navigate('/play')
+    await leaveMatch()
+  }
+
+  /** The finished game's replay: leaves the room (like "Back to lobbies") and opens it. */
+  async function watchReplay(matchId: string) {
+    navigate(`/history/${matchId}`)
     await leaveMatch()
   }
 
@@ -700,6 +714,9 @@ export function GameRoom({
               // Spectators on phones see it in their banner below instead.
               className={spectator ? 'hidden wide:inline-flex' : 'inline-flex'}
             />
+            {inGame ? (
+              <WatchLinkButton roomId={matchRoomId} state={state} notify={feed.notify} />
+            ) : null}
           </span>
         </header>
 
@@ -836,6 +853,7 @@ export function GameRoom({
           friendAction={(i) => friendAction(i, false)}
           room={spectator ? undefined : room}
           spectator={spectator}
+          {...(spectator ? {} : { onReplay: (id: string) => void watchReplay(id) })}
         />
       ) : null}
 

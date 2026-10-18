@@ -110,6 +110,7 @@ export function GameOver({
   friendAction,
   room,
   spectator = false,
+  onReplay,
 }: {
   feed: MatchFeed
   /**
@@ -131,6 +132,8 @@ export function GameOver({
   room?: MatchRoom | undefined
   /** Watching: no rematch, and "Stop watching" to leave. */
   spectator?: boolean
+  /** Players: open the saved game's replay (leaves the room). Shown once the game is saved. */
+  onReplay?: (matchId: string) => void
 }) {
   const { state, gameOver, mySeat } = feed
   const { session } = useAppState()
@@ -414,6 +417,16 @@ export function GameOver({
           <Button variant="ghost" onClick={onClose}>
             View board
           </Button>
+          {/* The replay exists once the result is saved (`gameOver`); players only. */}
+          {onReplay && gameOver?.matchId && !aborted && mySeat >= 0 ? (
+            <Button
+              variant="ghost"
+              onClick={() => onReplay(gameOver.matchId)}
+              data-testid="watch-replay"
+            >
+              Watch replay
+            </Button>
+          ) : null}
           <Button onClick={onLeave} data-testid="back-to-lobbies">
             {spectator
               ? 'Stop watching'

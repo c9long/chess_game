@@ -242,7 +242,15 @@ function SeatCard({
   const [level, setLevel] = useState('1200')
   const color = seatHex(index)
   const reduce = useReducedMotion()
-  const bodyKey = seat.occupied ? (seat.isBot ? 'bot' : `p-${seat.displayName}`) : 'open'
+  // Rematch lobby: an empty seat kept for a player who accepted, until they arrive.
+  const heldFor = !seat.occupied && seat.heldFor ? seat.heldFor : ''
+  const bodyKey = seat.occupied
+    ? seat.isBot
+      ? 'bot'
+      : `p-${seat.displayName}`
+    : heldFor
+      ? `held-${heldFor}`
+      : 'open'
 
   return (
     <article
@@ -335,6 +343,8 @@ function SeatCard({
                 ) : null}
               </div>
             </div>
+          ) : heldFor ? (
+            <HeldSeat name={heldFor} until={seat.heldUntil ?? 0} color={color} />
           ) : (
             <div className="flex flex-1 flex-col justify-center gap-3">
               <p className="flex items-center gap-2 text-sm text-parchment/55">
@@ -390,6 +400,49 @@ function SeatCard({
         </motion.div>
       </AnimatePresence>
     </article>
+  )
+}
+
+/** Seconds left until `until` (server ms; ticks once a second while counting). */
+function useSecondsLeft(until: number): number {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (until <= 0) return
+    const id = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(id)
+  }, [until])
+  return Math.max(0, Math.ceil((until - now) / 1000))
+}
+
+/**
+ * A rematch lobby's empty seat held for the player who accepted ("Saved for …"), until they
+ * arrive or the hold runs out (the server then clears it and the seat opens up).
+ */
+function HeldSeat({ name, until, color }: { name: string; until: number; color: string }) {
+  const left = useSecondsLeft(until)
+  return (
+    <div className="flex flex-1 flex-col justify-center gap-1.5" data-testid="seat-held">
+      <p className="flex min-w-0 items-baseline gap-2 text-sm text-parchment/75">
+        <span
+          aria-hidden="true"
+          className="h-2 w-2 shrink-0 rounded-full border"
+          style={{ borderColor: color }}
+        />
+        <span className="min-w-0 [overflow-wrap:anywhere]">
+          Saved for <span className="font-semibold text-parchment">{name}</span>
+        </span>
+      </p>
+      <p className="text-xs text-parchment/50">
+        Rematch: their seat and civilization wait for them
+        {left > 0 ? (
+          <>
+            {' '}
+            for <span className="tabular-nums">{left}</span> s more
+          </>
+        ) : null}
+        .
+      </p>
+    </div>
   )
 }
 

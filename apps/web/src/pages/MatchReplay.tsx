@@ -1,4 +1,5 @@
 import { BoardView } from '@game/board'
+import { TIME_CONTROLS } from '@game/config'
 import {
   applyReplayAction,
   isUntimed,
@@ -42,7 +43,7 @@ import {
 } from '../components/match/seats.ts'
 import { Alert, Card, CenteredPage, Spinner } from '../components/ui.tsx'
 import { ApiError, api } from '../lib/api.ts'
-import { itemLabel, type LogStep, logItems } from '../lib/move-log.ts'
+import { clockText, itemLabel, type LogStep, logItems } from '../lib/move-log.ts'
 import { usePrefs } from '../lib/prefs.ts'
 import { useRulesReady } from '../lib/rules.ts'
 
@@ -83,6 +84,7 @@ function simulate(replay: MatchReplayResponse): Simulation {
         events,
         attacked: [...game.snapshot().leaderUnderAttack],
         positionString: game.positionString(),
+        clockMs: a.clockMs ?? null,
       })
     }
     const final = game.positionString()
@@ -146,6 +148,8 @@ function ReplayBoard({
   const prefs = usePrefs()
   const shown = useRef(positionString)
   shown.current = positionString
+  /** The board has its first perspective (later changes turn it, animated). */
+  const turned = useRef(false)
 
   useEffect(() => {
     const el = host.current
@@ -154,14 +158,17 @@ function ReplayBoard({
       sound: usePrefs.getState().sound,
       colorblindPatterns: usePrefs.getState().colorblindPatterns,
       reducedMotion: usePrefs.getState().reducedMotion,
+      announceVerbosity: usePrefs.getState().announceMoves,
       // A replay is nobody's turn: no "Your move." lines.
       announceTurn: false,
     })
     viewRef.current = view
+    turned.current = false
     if (import.meta.env.DEV) {
       // Development-only hook for scripted browser checks (never in production builds).
       ;(window as unknown as { __replayBoard?: unknown }).__replayBoard = {
         position: () => shown.current,
+        perspective: () => view.perspective,
       }
     }
     let live = true
@@ -187,8 +194,14 @@ function ReplayBoard({
   }, [prefs.sound, prefs.colorblindPatterns, prefs.reducedMotion])
 
   useEffect(() => {
+    viewRef.current?.setAnnounceVerbosity(prefs.announceMoves)
+  }, [prefs.announceMoves])
+
+  // The first perspective is set at once; a change the viewer picks turns the board.
+  useEffect(() => {
     if (viewGen === 0) return
-    viewRef.current?.setPerspective(seatName(perspective), { animate: false })
+    viewRef.current?.setPerspective(seatName(perspective), { animate: turned.current })
+    turned.current = true
     viewRef.current?.setLocalSeat(localSeat >= 0 ? seatName(localSeat) : null)
   }, [viewGen, perspective, localSeat])
 
@@ -248,11 +261,14 @@ function Players({
   detail,
   statuses,
   showPlaces = true,
+  clocks = null,
 }: {
   detail: MatchDetailResponse
   statuses: readonly string[] | null
   /** Replay: places only at the end, so stepping through doesn't give the result away. */
   showPlaces?: boolean
+  /** Replay of a timed game: each seat's time left after its last action shown, ms. */
+  clocks?: readonly (number | null)[] | null
 }) {
   return (
     <section aria-label="Players">
@@ -285,13 +301,26 @@ function Players({
                     {out ? ` · ${STATUS_LABEL[status] ?? status}` : ''}
                   </span>
                 </span>
-                {showPlaces ? (
-                  <Medal
-                    place={p.placement}
-                    size="sm"
-                    label={p.placement ? ordinal(p.placement) : undefined}
-                  />
-                ) : null}
+                {/* Phones (two cards a row): the clock sits above the medal, so the name
+                    keeps its room; the side panel has them side by side. */}
+                <span className="flex shrink-0 flex-col items-end gap-0.5 wide:flex-row wide:items-center wide:gap-2">
+                  {clocks?.[p.seat] != null ? (
+                    <span
+                      className="rounded-md bg-ink/50 px-1 py-px font-mono text-[11px] tabular-nums text-parchment/75 wide:px-1.5 wide:py-0.5 wide:text-xs"
+                      data-testid={`replay-clock-${seatName(p.seat)}`}
+                    >
+                      <span className="sr-only">Time left: </span>
+                      {clockText(clocks[p.seat] as number)}
+                    </span>
+                  ) : null}
+                  {showPlaces ? (
+                    <Medal
+                      place={p.placement}
+                      size="sm"
+                      label={p.placement ? ordinal(p.placement) : undefined}
+                    />
+                  ) : null}
+                </span>
               </li>
             )
           })}
@@ -334,6 +363,11 @@ function Viewer({
   const items = useMemo(() => logItems(sim.steps), [sim.steps])
   const me = detail.players.find((p) => p.isYou)
   const mySeat = me?.seat ?? -1
+  // Whose side the board is seen from: your own seat at first, any seat on request.
+  const [perspective, setPerspective] = useState(mySeat >= 0 ? mySeat : 0)
+  const baseMs = isUntimed(detail.timeControl)
+    ? null
+    : (TIME_CONTROLS[detail.timeControl as keyof typeof TIME_CONTROLS]?.baseMs ?? null)
   const names = useMemo(
     () =>
       [0, 1, 2, 3].map((s) => {
@@ -395,6 +429,9 @@ function Viewer({
         go(last)
       } else if ((e.key === ' ' && !onButton) || e.key === 'k' || e.key === 'K') {
         togglePlay()
+      } else if (e.key === 'r' || e.key === 'R') {
+        // Turn the board to the next seat (South, West, North, East).
+        setPerspective((p) => (p + 1) % 4)
       } else return
       e.preventDefault()
     }
@@ -428,6 +465,17 @@ function Viewer({
     go(to)
   }
   const atEnd = index >= last
+  // Each seat's clock as of the step shown: its time left after its last action so far (the
+  // starting time before its first), from the server's stored times. Timed games only.
+  const clocks = useMemo(() => {
+    if (baseMs === null) return null
+    const out: (number | null)[] = [baseMs, baseMs, baseMs, baseMs]
+    for (let i = 0; i <= index; i++) {
+      const st = sim.steps[i]
+      if (st && st.seat >= 0 && typeof st.clockMs === 'number') out[st.seat] = st.clockMs
+    }
+    return out
+  }, [baseMs, index, sim.steps])
   const result = END_REASON_LABEL[detail.endReason ?? replay.endReason ?? ''] ?? ''
   const myPlace = me?.placement ?? null
   const ctl = 'w-10 !px-0'
@@ -437,8 +485,9 @@ function Viewer({
       className={[
         'safe-bottom-6 mx-auto flex w-full max-w-[1500px] flex-col gap-3 px-4 pt-3',
         'wide:grid wide:grid-cols-[auto_minmax(320px,360px)] wide:items-start wide:justify-center wide:gap-6 wide:py-4',
-        // Phones: header 64 + title block 92 + controls 96 + gaps and padding 40.
-        '[--board:max(min(100%,300px),min(100%,calc(100dvh_-_292px_-_var(--safe-top)_-_var(--safe-bottom))))]',
+        // Phones: header 64 + title block 92 + controls 136 (with the perspective row) + gaps
+        // and padding 40.
+        '[--board:max(min(100%,300px),min(100%,calc(100dvh_-_332px_-_var(--safe-top)_-_var(--safe-bottom))))]',
         'wide:[--board:min(calc(100vw_-_440px_-_var(--safe-left)_-_var(--safe-right)),calc(100dvh_-_96px_-_var(--safe-top)_-_var(--safe-bottom)))]',
       ].join(' ')}
       data-testid="replay"
@@ -449,7 +498,7 @@ function Viewer({
           snapshot={snapshot}
           events={events}
           animate={forward}
-          perspective={mySeat >= 0 ? mySeat : 0}
+          perspective={perspective}
           localSeat={mySeat}
           positionString={ps}
         />
@@ -594,17 +643,58 @@ function Viewer({
               {index < 0 ? 'Start' : `${index + 1} / ${total}`}
             </span>
           </div>
+          <fieldset className="flex min-w-0 items-center gap-2" data-testid="replay-perspective">
+            <legend className="sr-only">View the board from</legend>
+            <span aria-hidden="true" className="shrink-0 text-xs text-parchment/60">
+              View from
+            </span>
+            <div className="flex min-w-0 flex-1 gap-1">
+              {[0, 1, 2, 3].map((s) => {
+                const on = perspective === s
+                return (
+                  <button
+                    key={s}
+                    type="button"
+                    aria-pressed={on}
+                    onClick={() => setPerspective(s)}
+                    className={`flex h-8 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-md border px-1.5 text-xs font-semibold ${
+                      on
+                        ? 'border-gold/60 bg-gold/15 text-parchment'
+                        : 'border-parchment/15 text-parchment/70 hover:bg-parchment/[0.06] hover:text-parchment'
+                    }`}
+                    title={
+                      s === mySeat ? `${SEAT_LABEL[seatName(s)]} (you)` : SEAT_LABEL[seatName(s)]
+                    }
+                    data-testid={`replay-view-${seatName(s)}`}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className="h-2 w-2 shrink-0 rounded-full"
+                      style={{ backgroundColor: seatHex(s) }}
+                    />
+                    <span className="truncate">{SEAT_LABEL[seatName(s)]}</span>
+                    {s === mySeat ? <span className="sr-only">(you)</span> : null}
+                  </button>
+                )
+              })}
+            </div>
+          </fieldset>
           <p className="sr-only" role="status" aria-live="polite" data-testid="replay-announcer">
             {jumpNote}
           </p>
           <p className="hidden text-[11px] text-parchment/55 sm:block" aria-hidden="true">
-            ← → step · Space play or pause · Home / End
+            ← → step · Space play or pause · Home / End · R turn the board
           </p>
           {settingsOpen ? <BoardSettings id={settingsId} /> : null}
         </section>
 
         <div className="order-4 wide:order-none">
-          <Players detail={detail} statuses={snapshot.statuses} showPlaces={atEnd} />
+          <Players
+            detail={detail}
+            statuses={snapshot.statuses}
+            showPlaces={atEnd}
+            clocks={clocks}
+          />
         </div>
 
         <section
