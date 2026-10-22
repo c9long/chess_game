@@ -1,7 +1,7 @@
 /**
  * Accessible overlay primitives (dialogs, confirm dialogs, popovers, bottom sheets, tooltips,
- * toasts) built on Radix UI
- * and styled with our tokens. See docs/ui-libraries.md.
+ * toasts) built on Radix UI and styled with the design tokens. See docs/DESIGN.md and
+ * docs/ui-libraries.md.
  *
  * Bundle rule: import this module only from lazily loaded code (a lazy page, or a component
  * loaded with React.lazy), never from an eagerly loaded page or from ui.tsx, so Radix stays out
@@ -27,14 +27,22 @@ import {
 } from 'react'
 import { Button, cx } from './ui.tsx'
 
+const closeButtonClass =
+  'flex shrink-0 items-center justify-center rounded-control text-faint transition-colors duration-150 hover:bg-parchment/[0.06] hover:text-parchment'
+
+/** Dialog buttons: under a hairline rule, right-aligned; stacked (primary on top) on phones. */
+const actionsClass =
+  'mt-6 flex flex-col-reverse gap-2 border-t border-rule pt-5 sm:flex-row sm:justify-end'
+
 const overlayClass =
-  'fixed inset-0 z-50 bg-black/60 backdrop-blur-[2px] data-[state=closed]:animate-overlay-out data-[state=open]:animate-overlay-in'
+  'fixed inset-0 z-50 bg-black/65 backdrop-blur-[2px] data-[state=closed]:animate-overlay-out data-[state=open]:animate-overlay-in'
 
 const contentClass =
   'fixed top-1/2 left-1/2 z-50 w-[calc(100vw-2rem-var(--safe-left)-var(--safe-right))] max-w-md -translate-x-1/2 -translate-y-1/2 ' +
   // Tall dialogs scroll inside the screen's safe area (notch and home indicator).
   'max-h-[calc(100dvh-2rem-var(--safe-top)-var(--safe-bottom))] overflow-y-auto ' +
-  'rounded-2xl border border-parchment/10 bg-panel p-6 text-parchment shadow-2xl shadow-black/60 ring-1 ring-black/30 sm:p-7 ' +
+  // A drawer pulled onto the table: panel, engraved brass edge, the largest radius in the system.
+  'rounded-sheet border border-rule-brass bg-panel p-6 text-parchment shadow-lift sm:p-7 ' +
   'focus:outline-none data-[state=closed]:animate-pop-out data-[state=open]:animate-pop-in'
 
 /**
@@ -96,22 +104,18 @@ export function Dialog({
             onClosed?.()
           }}
         >
-          <RadixDialog.Title className="pr-8 font-display text-xl font-semibold tracking-tight">
+          <RadixDialog.Title className="pr-8 font-display text-heading font-semibold">
             {title}
           </RadixDialog.Title>
           {description ? (
-            <RadixDialog.Description className="mt-2 text-sm leading-relaxed text-parchment/65">
+            <RadixDialog.Description className="mt-2 text-ui text-pretty text-muted">
               {description}
             </RadixDialog.Description>
           ) : null}
           {children ? <div className="mt-5">{children}</div> : null}
-          {actions ? (
-            <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-              {actions}
-            </div>
-          ) : null}
+          {actions ? <div className={actionsClass}>{actions}</div> : null}
           <RadixDialog.Close
-            className="absolute top-4 right-4 flex h-8 w-8 items-center justify-center rounded-md text-parchment/55 transition-colors hover:bg-parchment/5 hover:text-parchment"
+            className={cx(closeButtonClass, 'absolute top-4 right-4 h-9 w-9')}
             aria-label="Close"
           >
             <X aria-hidden="true" className="h-4 w-4" />
@@ -186,17 +190,17 @@ export function ConfirmDialog({
             onClosed?.()
           }}
         >
-          <AlertDialog.Title className="font-display text-xl font-semibold tracking-tight">
+          <AlertDialog.Title className="font-display text-heading font-semibold">
             {title}
           </AlertDialog.Title>
           {description ? (
-            <AlertDialog.Description className="mt-2 text-sm leading-relaxed text-parchment/65">
+            <AlertDialog.Description className="mt-2 text-ui text-pretty text-muted">
               {description}
             </AlertDialog.Description>
           ) : null}
-          <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <div className={actionsClass}>
             <AlertDialog.Cancel asChild>
-              <Button variant="ghost">{cancelLabel}</Button>
+              <Button variant="quiet">{cancelLabel}</Button>
             </AlertDialog.Cancel>
             <Button
               variant={tone === 'danger' ? 'danger' : 'primary'}
@@ -212,9 +216,6 @@ export function ConfirmDialog({
     </AlertDialog.Root>
   )
 }
-
-const closeButtonClass =
-  'flex shrink-0 items-center justify-center rounded-md text-parchment/55 transition-colors hover:bg-parchment/5 hover:text-parchment focus-visible:outline-2 focus-visible:outline-gold'
 
 /**
  * A non-modal popover anchored to its trigger (a dialog the size of a card): click or Enter
@@ -260,12 +261,12 @@ export function Popover({
           className={cx(
             // No overflow here: it would clip the arrow, which sits outside the box. The inner
             // wrapper scrolls instead.
-            'relative z-50 w-[min(22rem,calc(100vw-2rem))] rounded-2xl border border-gold/25 bg-panel text-parchment shadow-2xl shadow-black/70 ring-1 ring-black/40',
+            'relative z-50 w-[min(22rem,calc(100vw-2rem))] rounded-panel border border-rule-brass bg-panel text-parchment shadow-lift',
             'origin-(--radix-popover-content-transform-origin) focus:outline-none data-[state=closed]:animate-pop-out data-[state=open]:animate-pop-in',
             className,
           )}
         >
-          <div className="max-h-(--radix-popover-content-available-height) overflow-y-auto overscroll-contain rounded-2xl p-4 [scrollbar-width:thin]">
+          <div className="max-h-(--radix-popover-content-available-height) overflow-y-auto overscroll-contain rounded-panel p-4 [scrollbar-width:thin]">
             {children}
           </div>
           <RadixPopover.Close
@@ -278,7 +279,7 @@ export function Popover({
               carry the border colour; it overlaps the box by 1px to cover the border there. */}
           <RadixPopover.Arrow asChild width={16} height={8}>
             <svg aria-hidden="true" viewBox="0 0 16 8" className="-translate-y-px overflow-visible">
-              <path d="M0 0 L8 8 L16 0" className="fill-panel stroke-gold/25" strokeWidth={1} />
+              <path d="M0 0 L8 8 L16 0" className="fill-panel stroke-rule-brass" strokeWidth={1} />
             </svg>
           </RadixPopover.Arrow>
         </RadixPopover.Content>
@@ -320,14 +321,14 @@ export function BottomSheet({
           aria-describedby={undefined}
           data-testid={testId}
           className={cx(
-            'fixed inset-x-0 bottom-0 z-50 max-h-[85dvh] overflow-y-auto rounded-t-2xl border border-b-0 border-gold/25 bg-panel px-4 pt-2 pb-[calc(1rem+var(--safe-bottom))] text-parchment shadow-2xl shadow-black/70',
+            'fixed inset-x-0 bottom-0 z-50 max-h-[85dvh] overflow-y-auto rounded-t-sheet border border-b-0 border-rule-brass bg-panel px-4 pt-2 pb-[calc(1rem+var(--safe-bottom))] text-parchment shadow-lift',
             'pr-[calc(1rem+var(--safe-right))] pl-[calc(1rem+var(--safe-left))] focus:outline-none data-[state=closed]:animate-sheet-out data-[state=open]:animate-sheet-in',
             className,
           )}
         >
           <span
             aria-hidden="true"
-            className="mx-auto mb-2 block h-1 w-10 rounded-full bg-parchment/25"
+            className="mx-auto mb-2 block h-1 w-10 rounded-full bg-parchment/30"
           />
           {children}
           <RadixDialog.Close
@@ -375,10 +376,10 @@ export function Tooltip({
           side={side}
           sideOffset={6}
           collisionPadding={8}
-          className="z-50 max-w-xs rounded-md border border-parchment/10 bg-panel px-2.5 py-1.5 text-xs leading-snug text-parchment shadow-lg shadow-black/50 data-[state=closed]:animate-overlay-out data-[state=delayed-open]:animate-pop-in data-[state=instant-open]:animate-pop-in"
+          className="z-50 max-w-xs rounded-plate border border-rule-strong bg-panel-raised px-2.5 py-1.5 text-caption text-parchment shadow-lift data-[state=closed]:animate-overlay-out data-[state=delayed-open]:animate-pop-in data-[state=instant-open]:animate-pop-in"
         >
           {content}
-          <RadixTooltip.Arrow className="fill-panel" width={10} height={5} />
+          <RadixTooltip.Arrow className="fill-panel-raised" width={10} height={5} />
         </RadixTooltip.Content>
       </RadixTooltip.Portal>
     </RadixTooltip.Root>
@@ -424,9 +425,9 @@ export function ToastViewport({ children }: { children: ReactNode }) {
   }, [])
   const value = useMemo(() => push, [push])
   const accents = {
-    info: 'before:bg-seat-west',
-    success: 'before:bg-seat-east',
-    error: 'before:bg-seat-south',
+    info: 'before:bg-brass',
+    success: 'before:bg-ok',
+    error: 'before:bg-destructive-light',
   }
   return (
     <ToastContext.Provider value={value}>
@@ -441,8 +442,8 @@ export function ToastViewport({ children }: { children: ReactNode }) {
               if (!open) setItems((list) => list.filter((x) => x.id !== t.id))
             }}
             className={cx(
-              'relative overflow-hidden rounded-xl border border-parchment/10 bg-panel py-3 pr-10 pl-5 text-sm text-parchment shadow-xl shadow-black/50',
-              'before:absolute before:inset-y-0 before:left-0 before:w-1',
+              'relative overflow-hidden rounded-panel border border-rule-brass bg-panel py-3 pr-10 pl-5 text-ui text-parchment shadow-lift',
+              'before:absolute before:inset-y-0 before:left-0 before:w-[3px]',
               accents[t.tone ?? 'info'],
               'data-[state=closed]:animate-overlay-out data-[state=open]:animate-toast-in',
               'data-[swipe=move]:translate-x-(--radix-toast-swipe-move-x) data-[swipe=end]:animate-overlay-out',
@@ -450,12 +451,10 @@ export function ToastViewport({ children }: { children: ReactNode }) {
           >
             <Toast.Title className="font-semibold">{t.title}</Toast.Title>
             {t.description ? (
-              <Toast.Description className="mt-0.5 text-parchment/70">
-                {t.description}
-              </Toast.Description>
+              <Toast.Description className="mt-0.5 text-muted">{t.description}</Toast.Description>
             ) : null}
             <Toast.Close
-              className="absolute top-2.5 right-2.5 flex h-6 w-6 items-center justify-center rounded text-parchment/50 hover:text-parchment"
+              className={cx(closeButtonClass, 'absolute top-2 right-2 h-7 w-7')}
               aria-label="Dismiss"
             >
               <X aria-hidden="true" className="h-3.5 w-3.5" />
