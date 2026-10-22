@@ -93,10 +93,23 @@ import {
   TAG_USER,
 } from './motion.ts'
 import { MoveIndex } from './moves.ts'
-import { bandColor, bandGain, FROZEN_BASE, lightFor, seatColor } from './palette.ts'
+import {
+  BOARD_MATERIALS,
+  bandColor,
+  FROZEN_BASE,
+  HIGHLIGHT,
+  lightFor,
+  seatColor,
+} from './palette.ts'
 import { Particles } from './particles.ts'
 import { type AnimationPlan, planTransition, soundCues } from './plan.ts'
-import { BOARD_FRAGMENT, BOARD_VERTEX, DISSOLVE_FRAGMENT } from './shaders.ts'
+import {
+  BAND_INNER,
+  BAND_OUTER,
+  BOARD_FRAGMENT,
+  BOARD_VERTEX,
+  DISSOLVE_FRAGMENT,
+} from './shaders.ts'
 import { SoundEngine, type SoundKind } from './sound.ts'
 import {
   canvasTexture,
@@ -193,6 +206,22 @@ export interface BoardViewInit extends Partial<BoardOptions> {
 const SEATS: readonly Seat[] = ['south', 'west', 'north', 'east']
 
 /**
+ * Resolves once the coordinates' UI face has loaded, after `ms` at the latest, or at once
+ * where the Font Loading API (or the face itself) is missing.
+ */
+function uiFontReady(ms = 1200): Promise<void> {
+  const fonts = (globalThis as { document?: Document }).document?.fonts
+  if (!fonts?.load) return Promise.resolve()
+  return Promise.race([
+    fonts.load(`600 12px ${UI_FONT}`).then(
+      () => undefined,
+      () => undefined,
+    ),
+    new Promise<void>((r) => setTimeout(r, ms)),
+  ])
+}
+
+/**
  * Frame width, medallion size and outer margin, in squares. The margin only has to clear the
  * medallions, which overhang the frame by about 0.42 squares (kept tight: on the 16×16 board
  * every pixel of a phone's width goes to the squares).
@@ -219,16 +248,23 @@ const SETTLE_EASE = outBackWith(1.6)
 const MEDAL_IN_EASE = outBackWith(1.4)
 const PROMO_EASE = outBackWith(1.5)
 const HINT_EASE = outBackWith(1.7)
-/** Highlight colour of the last move (both square shades). */
-const LAST_MOVE_FILL = 0xffd66e
+/** Highlight colour of the last move (both square shades): a soft brass wash. */
+const LAST_MOVE_FILL = hexToNumber(HIGHLIGHT.lastMove)
+/** The selected piece's square: the gold that marks "to move" across the app. */
+const SELECT_GOLD = hexToNumber(HIGHLIGHT.gold)
+/** Coordinates are set in the app's UI face (Inter), with system fallbacks. */
+const UI_FONT =
+  '"Inter Variable", Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif'
+/** Coordinate text: parchment, the app's text colour. */
+const LABEL_FILL = HIGHLIGHT.parchment
 /**
  * Check indicator: the ring and square wash, and the tint of the glow under the leader. A hot
  * vermilion that no seat colour uses (South is crimson), with a light inner line as a cue that
  * doesn't depend on hue (colour-blind players, a red piece on the square).
  */
-const CHECK_RED = 0xff5a1f
-const CHECK_GLOW = 0xff7a3a
-const CHECK_INNER = 0xfff1e0
+const CHECK_RED = hexToNumber(HIGHLIGHT.danger)
+const CHECK_GLOW = 0xff6a2c
+const CHECK_INNER = hexToNumber(HIGHLIGHT.dangerLight)
 /** Hover and selection lift. */
 const HOVER_LIFT = 0.22
 const SELECT_LIFT = 0.3
@@ -645,6 +681,9 @@ export class BoardView {
     this.#app = app
     const rect = parent.getBoundingClientRect()
     this.#res = deviceResolution()
+    // The coordinates' face loads alongside the renderer, so labels are never cached in a
+    // fallback face.
+    const fontReady = uiFontReady()
     await app.init({
       width: Math.max(1, rect.width),
       height: Math.max(1, rect.height),
@@ -657,6 +696,7 @@ export class BoardView {
       preference: 'webgl',
       powerPreference: 'high-performance',
     })
+    await fontReady
     if (this.#destroyed) {
       // destroy() ran while the renderer was starting.
       app.destroy(true)
@@ -1154,15 +1194,15 @@ export class BoardView {
         const t = new Text({
           text: label,
           style: {
-            fontFamily: 'Georgia, "Palatino Linotype", "Book Antiqua", Palatino, serif',
+            fontFamily: UI_FONT,
             fontSize: 12,
             fontWeight: '600',
-            fill: '#e9d3a0',
-            dropShadow: { color: '#000000', alpha: 0.7, blur: 2, distance: 1, angle: Math.PI / 2 },
+            fill: LABEL_FILL,
+            dropShadow: { color: '#000000', alpha: 0.55, blur: 1, distance: 1, angle: Math.PI / 2 },
           },
         })
         t.anchor.set(0.5)
-        t.alpha = 0.82
+        t.alpha = 0.8
         texts.push(t)
         this.#labels.addChild(t)
       }
@@ -1385,26 +1425,21 @@ export class BoardView {
       if (st === 'removed') c = mixHex(shadeHex(c, 0.5), '#3a3430', 0.75)
       else if (st === 'frozen') c = mixHex(c, FROZEN_BASE, 0.75)
       else if (st === 'defeated') c = mixHex(c, '#4a4440', 0.45)
-      return new Float32Array(hexToRgb(shadeHex(c, 0.9)))
+      return new Float32Array(hexToRgb(shadeHex(c, 0.92)))
     }
-    const gain = (s: Seat) => (this.#shownStatusOf(seatOrder(s)) === 'active' ? bandGain(s) : 1)
     const uniforms = {
       uSize: { value: new Float32Array([extent, extent]), type: 'vec2<f32>' },
       uSq: { value: square, type: 'f32' },
       uFrame: { value: frame, type: 'f32' },
       uPx: { value: 1 / (square * this.#rasterRes), type: 'f32' },
-      uLight: { value: new Float32Array(hexToRgb('#e2c89a')), type: 'vec3<f32>' },
-      uDark: { value: new Float32Array(hexToRgb('#8c5633')), type: 'vec3<f32>' },
-      uWood: { value: new Float32Array(hexToRgb('#4a2617')), type: 'vec3<f32>' },
-      uBrass: { value: new Float32Array(hexToRgb('#d2ab5f')), type: 'vec3<f32>' },
+      uLight: { value: new Float32Array(hexToRgb(BOARD_MATERIALS.light)), type: 'vec3<f32>' },
+      uDark: { value: new Float32Array(hexToRgb(BOARD_MATERIALS.dark)), type: 'vec3<f32>' },
+      uWood: { value: new Float32Array(hexToRgb(BOARD_MATERIALS.frame)), type: 'vec3<f32>' },
+      uBrass: { value: new Float32Array(hexToRgb(BOARD_MATERIALS.brass)), type: 'vec3<f32>' },
       uSeatS: { value: seatRgb('south'), type: 'vec3<f32>' },
       uSeatW: { value: seatRgb('west'), type: 'vec3<f32>' },
       uSeatN: { value: seatRgb('north'), type: 'vec3<f32>' },
       uSeatE: { value: seatRgb('east'), type: 'vec3<f32>' },
-      uGain: {
-        value: new Float32Array([gain('south'), gain('west'), gain('north'), gain('east')]),
-        type: 'vec4<f32>',
-      },
       uSeed: { value: 0.37, type: 'f32' },
     } as const
     if (!this.#boardMesh) {
@@ -1466,7 +1501,7 @@ export class BoardView {
     this.#boardShadow.width = sh.width / shadowRes
     this.#boardShadow.height = sh.height / shadowRes
     const lightSize = Math.min(512, Math.ceil(extent * 0.5))
-    const radius = 0.16 / (BOARD_SIZE + 2 * FRAME)
+    const radius = 0.12 / (BOARD_SIZE + 2 * FRAME)
     BoardView.#swapTexture(this.#light, canvasTexture(drawLighting(lightSize, radius)))
   }
 
@@ -1494,8 +1529,9 @@ export class BoardView {
       t.resolution = this.#rasterRes
       // Upright labels turn with the perspective, so allow for either orientation.
       const labelR = Math.max(t.width, t.height) / 2
-      // Out from the field far enough that two-digit ranks don't reach into it.
-      const off = Math.min(frame * 0.5, Math.max(frame * 0.27, labelR + 1))
+      // Out from the field far enough that two-digit ranks don't reach into it, and clear of
+      // the seat banner.
+      const off = Math.min(frame * 0.34, Math.max(frame * 0.27, labelR + 1))
       let along =
         side === 0 || side === 2 ? (k + 0.5) * sq - half : (BOARD_SIZE - 1 - k + 0.5) * sq - half
       const dy = r - (half + off)
@@ -1526,10 +1562,12 @@ export class BoardView {
       // The medallion art's bezel radius is 0.46 of the sprite; drawn at the active size.
       const r = sq * MEDALLION * MEDALLION_ACTIVE * 0.46 + Math.max(1, sq * 0.02)
       m.ring.clear()
-      m.ring.circle(0, 0, r).stroke({
-        color: hexToNumber(lightFor(bandColor(SEATS[i] as Seat))),
-        width: Math.max(2, sq * 0.04),
-        alpha: 0.95,
+      // The seat to move: a gold ring, the same gold as "to move" on the nameplates.
+      m.ring.circle(0, 0, r).stroke({ color: SELECT_GOLD, width: Math.max(2, sq * 0.045) })
+      m.ring.circle(0, 0, r + Math.max(1.5, sq * 0.035)).stroke({
+        color: 0x14100c,
+        width: Math.max(1, sq * 0.02),
+        alpha: 0.7,
       })
       m.ring.position.set(p[0], p[1])
       this.#sizeMedallion(i)
@@ -1539,8 +1577,8 @@ export class BoardView {
       g.height = sq * 1.5
     })
     // Dims over the bands of the seats not to move.
-    const a = half + frame * 0.5
-    const b = frame * 0.26
+    const a = half + frame * BAND_INNER
+    const b = frame * (BAND_OUTER - BAND_INNER)
     const len = sq * (BOARD_SIZE - 0.36)
     this.#bandDims.children.forEach((d, i) => {
       const sp = d as Sprite
@@ -1555,28 +1593,24 @@ export class BoardView {
     this.#bandGlowOut.visible = false
     this.#bandOutFade = 0
     // Selection, hovered target and illegal-drop flash: drawn once per size, moved and faded.
-    const w = Math.max(1.5, sq * 0.04)
+    // Selection: a gold wash with a crisp gold edge set just inside the square.
+    const w = Math.max(1.5, sq * 0.05)
     this.#selGfx.clear()
     this.#selGfx
       .rect(0, 0, sq, sq)
-      .fill({ color: 0xffd25e, alpha: 0.25 })
-      .roundRect(
-        w / 2 + sq * 0.03,
-        w / 2 + sq * 0.03,
-        sq - w - sq * 0.06,
-        sq - w - sq * 0.06,
-        sq * 0.1,
-      )
-      .stroke({ color: 0xffe9a0, alpha: 0.8, width: w })
-    const tw = Math.max(3, sq * 0.05)
+      .fill({ color: SELECT_GOLD, alpha: 0.28 })
+      .roundRect(w / 2, w / 2, sq - w, sq - w, sq * 0.06)
+      .stroke({ color: SELECT_GOLD, alpha: 0.95, width: w })
+    // Drop target under a dragged piece: a parchment wash and edge (neutral, any seat).
+    const tw = Math.max(2.5, sq * 0.06)
     this.#targetGfx.clear()
     this.#targetGfx
       .rect(0, 0, sq, sq)
-      .fill({ color: 0xffe9a0, alpha: 0.28 })
+      .fill({ color: hexToNumber(HIGHLIGHT.parchment), alpha: 0.24 })
       .rect(tw / 2, tw / 2, sq - tw, sq - tw)
-      .stroke({ color: 0xffe9a0, width: tw })
+      .stroke({ color: hexToNumber(HIGHLIGHT.parchment), alpha: 0.9, width: tw })
     this.#flashGfx.clear()
-    this.#flashGfx.rect(0, 0, sq, sq).fill({ color: 0xff4d3d, alpha: 1 })
+    this.#flashGfx.rect(0, 0, sq, sq).fill({ color: hexToNumber(HIGHLIGHT.illegal), alpha: 1 })
     for (const sp of [this.#halo, this.#hoverGlow]) {
       sp.width = sq * 1.3
       sp.height = sq * 1.3
@@ -1594,11 +1628,11 @@ export class BoardView {
     }
     const { square: sq, frame } = this.#layout
     const half = (sq * BOARD_SIZE) / 2
-    const d = half + frame * 0.63
+    const d = half + frame * ((BAND_INNER + BAND_OUTER) / 2)
     const color = bandColor(SEATS[i] as Seat)
     g.tint = hexToNumber(mixHex(color, '#ffffff', 0.08))
     g.width = sq * (BOARD_SIZE + 0.2)
-    g.height = frame * 0.62
+    g.height = frame * (BAND_OUTER - BAND_INNER) * 2.4
     g.rotation = i === 1 || i === 3 ? Math.PI / 2 : 0
     if (i === 0) g.position.set(0, d)
     else if (i === 1) g.position.set(-d, 0)
@@ -1877,7 +1911,7 @@ export class BoardView {
       justifyContent: 'flex-end',
       border: '0',
       background: 'transparent',
-      color: '#f1d58f',
+      color: '#f4efe6',
       cursor: 'pointer',
       touchAction: 'manipulation',
       userSelect: 'none',
@@ -1945,9 +1979,9 @@ export class BoardView {
         'justify-content:center',
         'box-sizing:border-box',
         'border-radius:50%',
-        'border:1px solid rgba(210,171,95,0.65)',
-        'background:rgba(22,15,11,0.85)',
-        'box-shadow:0 2px 6px rgba(0,0,0,0.5)',
+        'border:1px solid rgba(201,165,90,0.6)',
+        'background:rgba(38,35,31,0.92)',
+        'box-shadow:inset 0 1px 0 rgba(255,240,210,0.06),0 1px 3px rgba(0,0,0,0.5)',
         'pointer-events:auto',
       ].join(';')
       b.innerHTML = `<span style="${disc}"><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="10" cy="10" r="5.5"/><path d="M7 10h6"/>${bar}<path d="m14.5 14.5 3.5 3.5"/></svg></span>`
@@ -1966,11 +2000,11 @@ export class BoardView {
       const t = new Text({
         text: '',
         style: {
-          fontFamily: 'Georgia, "Palatino Linotype", "Book Antiqua", Palatino, serif',
+          fontFamily: UI_FONT,
           fontSize: 11,
-          fontWeight: '700',
-          fill: '#f3e3b8',
-          stroke: { color: '#1a110b', width: 3, join: 'round' },
+          fontWeight: '600',
+          fill: LABEL_FILL,
+          stroke: { color: '#14120f', width: 3, join: 'round' },
         },
       })
       t.anchor.set(0.5)
@@ -2027,7 +2061,7 @@ export class BoardView {
       const bottom = showBottom ? H : Math.min(H, fieldBottom)
       band.rect(0, top, EDGE_BAND_PX + 2, bottom - top)
     }
-    if (showBottom || showLeft) band.fill({ color: 0x1a110b, alpha: 0.6 })
+    if (showBottom || showLeft) band.fill({ color: 0x1d1b19, alpha: 0.7 })
     for (let i = 0; i < BOARD_SIZE; i++) {
       // Bottom: one label per column, named by the axis that runs across the screen.
       const tb = this.#edgeTexts[i] as Text
@@ -3424,7 +3458,7 @@ export class BoardView {
     for (let i = 0; i < 4; i++) {
       const dim = this.#bandDims.children[i] as Sprite
       const m = this.#medallions[i] as Medallion
-      const dimTo = to >= 0 && i !== to ? 0.18 : 0
+      const dimTo = to >= 0 && i !== to ? 0.26 : 0
       const scaleTo = i === to ? MEDALLION_ACTIVE : 1
       const glowTo = i === to ? 1 : 0
       if (!animate) {
@@ -3546,13 +3580,13 @@ export class BoardView {
       this.#squareOrigin(i, this.#tmpVec)
       const x = this.#tmpVec.x
       const y = this.#tmpVec.y
-      ring.rect(x, y, sq, sq).fill({ color: CHECK_RED, alpha: 0.22 })
+      ring.rect(x, y, sq, sq).fill({ color: CHECK_RED, alpha: 0.16 })
       ring
-        .roundRect(x + w / 2, y + w / 2, sq - w, sq - w, sq * 0.08)
+        .roundRect(x + w / 2, y + w / 2, sq - w, sq - w, sq * 0.06)
         .stroke({ color: CHECK_RED, width: w, alpha: 1 })
       const wi = Math.max(1, w * 0.3)
       ring
-        .roundRect(x + w + wi / 2, y + w + wi / 2, sq - 2 * w - wi, sq - 2 * w - wi, sq * 0.05)
+        .roundRect(x + w + wi / 2, y + w + wi / 2, sq - 2 * w - wi, sq - 2 * w - wi, sq * 0.04)
         .stroke({ color: CHECK_INNER, width: wi, alpha: 0.9 })
       this.#checkSquares.push(i)
     }
@@ -3579,15 +3613,16 @@ export class BoardView {
     const x = this.#tmpVec.x
     const y = this.#tmpVec.y
     const dark = ((i % BOARD_SIZE) + Math.floor(i / BOARD_SIZE)) % 2 === 0
-    const fill = dest ? (dark ? 0.46 : 0.3) : dark ? 0.27 : 0.17
-    const w = Math.max(1.5, sq * 0.05)
-    const inset = w / 2 + sq * 0.035
+    const fill = dest ? (dark ? 0.36 : 0.34) : dark ? 0.22 : 0.2
+    const w = Math.max(1.5, sq * 0.045)
+    const inset = w / 2 + sq * 0.04
     g.clear()
     g.rect(x, y, sq, sq).fill({ color: LAST_MOVE_FILL, alpha: fill })
-    g.roundRect(x + inset, y + inset, sq - 2 * inset, sq - 2 * inset, sq * 0.1).stroke({
+    // The mover, in its seat colour (lightened so it reads on walnut too).
+    g.roundRect(x + inset, y + inset, sq - 2 * inset, sq - 2 * inset, sq * 0.06).stroke({
       color: hexToNumber(lightFor(seatColor(seat))),
       width: w,
-      alpha: dest ? 0.75 : 0.45,
+      alpha: dest ? 1 : 0.7,
     })
   }
 
@@ -4010,11 +4045,11 @@ export class BoardView {
     const pulse = reduced ? 0.6 : 0.5 + 0.5 * Math.sin(this.#time * 2.4)
     const band = this.#bandGlow
     band.visible = this.#turnShown >= 0 && this.#bandFade > 0.001
-    if (band.visible) band.alpha = (0.5 + 0.3 * pulse) * this.#bandGlowGain * this.#bandFade
+    if (band.visible) band.alpha = (0.42 + 0.2 * pulse) * this.#bandGlowGain * this.#bandFade
     const out = this.#bandGlowOut
-    if (out.visible) out.alpha = (0.5 + 0.3 * pulse) * this.#bandOutGain * this.#bandOutFade
+    if (out.visible) out.alpha = (0.42 + 0.2 * pulse) * this.#bandOutGain * this.#bandOutFade
     for (const m of this.#medallions) {
-      if (m.glow.visible) m.glow.alpha = (0.35 + 0.4 * pulse) * m.glowFade
+      if (m.glow.visible) m.glow.alpha = (0.3 + 0.25 * pulse) * m.glowFade
     }
     // Selected piece: a halo that breathes at 1.6 Hz (steady under reduced motion).
     if (this.#halo.visible) {
@@ -4719,7 +4754,7 @@ export class BoardView {
     const by0 = Math.max(0, cy - ext / 2)
     const backdrop = new Graphics()
       .rect(bx0, by0, Math.min(W, cx + ext / 2) - bx0, Math.min(H, cy + ext / 2) - by0)
-      .fill({ color: 0x07050a, alpha: 0.5 })
+      .fill({ color: 0x0e0d0b, alpha: 0.5 })
     backdrop.eventMode = 'static'
     backdrop.on('pointertap', () => this.#closePromo(true))
     container.addChild(backdrop)
@@ -4741,9 +4776,13 @@ export class BoardView {
     const startY = dir > 0 ? g.y - tile / 2 : g.y + tile / 2 - total
     const startClamped = Math.min(bottom - total, Math.max(top, startY))
     const panel = new Graphics()
-      .roundRect(x - tile / 2 - gap, startClamped - gap, tile + gap * 2, total + gap * 2, sq * 0.22)
-      .fill({ color: 0x17110d, alpha: 0.94 })
-      .stroke({ color: 0xd2ab5f, alpha: 0.9, width: Math.max(1.5, sq * 0.04) })
+      .roundRect(x - tile / 2 - gap, startClamped - gap, tile + gap * 2, total + gap * 2, sq * 0.2)
+      .fill({ color: 0x26231f, alpha: 0.97 })
+      .stroke({
+        color: hexToNumber(BOARD_MATERIALS.brass),
+        alpha: 0.6,
+        width: Math.max(1, sq * 0.03),
+      })
     container.addChild(panel)
     const tiles: Container[] = []
     const atlas = this.#atlas
@@ -4752,12 +4791,12 @@ export class BoardView {
       start: { x: 0, y: 0 },
       end: { x: 0, y: 1 },
       colorStops: [
-        { offset: 0, color: '#f1e5c8' },
-        { offset: 1, color: '#d8c49a' },
+        { offset: 0, color: '#f4efe6' },
+        { offset: 1, color: '#e2d8c5' },
       ],
       textureSpace: 'local',
     })
-    const radius = sq * 0.16
+    const radius = sq * 0.1
     choices.forEach((kind, idx) => {
       const t = new Container()
       t.position.set(x, startClamped + idx * (tile + gap) + tile / 2)
@@ -4788,7 +4827,7 @@ export class BoardView {
       const ringW = Math.max(3, sq * 0.05)
       const hl = new Graphics()
         .roundRect(-tile / 2 - ringW / 2, -tile / 2 - ringW / 2, tile + ringW, tile + ringW, radius)
-        .stroke({ color: 0xe4c06a, width: ringW })
+        .stroke({ color: SELECT_GOLD, width: ringW })
       hl.visible = false
       const sp = new Sprite(atlas ? atlas.piece(kind, owner) : Texture.EMPTY)
       sp.anchor.set(0.5)

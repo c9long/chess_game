@@ -28,6 +28,33 @@ export const SEAT_STYLES: Readonly<Record<Seat, SeatStyle>> = {
 }
 
 /**
+ * Board materials (the shader's base colours). The squares are a pale, low-chroma maple and a
+ * dark, greyed walnut: every seat colour sits well apart from both in lightness or hue, so the
+ * pieces stay the strongest shapes even on 20 px squares (palette.test.ts checks the margins).
+ * The frame is a deeper walnut than the dark squares, divided from them by a brass inlay line.
+ */
+export const BOARD_MATERIALS = {
+  light: '#eadcc0',
+  dark: '#654d3c',
+  frame: '#4a3425',
+  brass: '#c9a55a',
+} as const
+
+/**
+ * Board-wide highlight colours, shared with the app's tokens: gold for the selected piece (the
+ * same gold that marks "to move"), parchment for drop targets, and the danger vermilion that
+ * only the check warning uses.
+ */
+export const HIGHLIGHT = {
+  gold: '#e6b42a',
+  lastMove: '#e9c76b',
+  parchment: '#f4efe6',
+  danger: '#ff5a1f',
+  dangerLight: '#ffd2b8',
+  illegal: '#e0553f',
+} as const
+
+/**
  * Body colour of frozen pieces: a cool slate that sits between the light and
  * dark square shades, so frozen armies stay readable on both.
  */
@@ -37,19 +64,19 @@ export const FROZEN_BASE = '#7f858e'
 export const FROZEN_OUTLINE = '#24272c'
 
 /**
- * Colour of a seat's frame band and turn glow. Usually the base colour; Gold
- * uses its brighter metallic tone, since the band's dye darkens it to khaki.
+ * Colour of a seat's enamel banner and turn glow. Usually the base colour; Gold uses a
+ * slightly brighter tone so it reads as gold, not ochre, next to the brass hairlines.
  */
 export function bandColor(seat: Seat): string {
-  return seat === 'north' ? '#f0c242' : SEAT_STYLES[seat].base
+  return seat === 'north' ? '#e6b02a' : SEAT_STYLES[seat].base
 }
 
 /**
- * Extra brightness for a seat's frame band dye (1 = none). Gold needs more
- * lift than the darker hues to read as gold rather than olive.
+ * Extra brightness for a seat's frame band (1 = none). The banner is flat enamel now, so no
+ * seat needs lifting; kept for callers that scale a band colour.
  */
-export function bandGain(seat: Seat): number {
-  return seat === 'north' ? 1.6 : 1
+export function bandGain(_seat: Seat): number {
+  return 1
 }
 
 /**

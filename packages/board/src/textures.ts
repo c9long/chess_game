@@ -348,7 +348,7 @@ export async function drawMedallion(
         : state === 'defeated'
           ? '#cdb98a'
           : '#e8c66a'
-  const edgeColor = state === 'frozen' || state === 'removed' ? '#4a4f56' : '#5e461a'
+  const edgeColor = state === 'frozen' || state === 'removed' ? '#3d4248' : '#3a2810'
   const [img, edge] = await Promise.all([emblemImage(civ, glyphColor), emblemImage(civ, edgeColor)])
 
   const c = canvas(size, size)
@@ -368,52 +368,52 @@ export async function drawMedallion(
   g.fill()
   g.restore()
 
-  // Brass bezel.
+  // Brass bezel: the app's brass, brushed rather than mirror-bright.
   const bezel = g.createLinearGradient(cx - R, cy - R, cx + R, cy + R)
   const metal =
-    state === 'removed' ? ['#d8d4cc', '#8d8a84', '#5b5853'] : ['#f6e3a6', '#c09a52', '#6e5022']
+    state === 'removed' ? ['#d8d4cc', '#8d8a84', '#5b5853'] : ['#efd9a0', '#c9a55a', '#7a5d2c']
   bezel.addColorStop(0, metal[0] as string)
-  bezel.addColorStop(0.5, metal[1] as string)
+  bezel.addColorStop(0.55, metal[1] as string)
   bezel.addColorStop(1, metal[2] as string)
   g.beginPath()
   g.arc(cx, cy, R, 0, Math.PI * 2)
   g.fillStyle = bezel
   g.fill()
 
-  if (gold) {
-    // A pale rim so the bezel separates from the gold ring and enamel.
-    g.beginPath()
-    g.arc(cx, cy, R - Math.max(1, size * 0.012), 0, Math.PI * 2)
-    g.lineWidth = Math.max(1, size * 0.02)
-    g.strokeStyle = '#fff0c0'
-    g.stroke()
-  }
+  // An engraved line round the bezel's inner edge.
+  const r1 = R * 0.84
+  g.beginPath()
+  g.arc(cx, cy, R * 0.9, 0, Math.PI * 2)
+  g.lineWidth = Math.max(1, size * 0.012)
+  g.strokeStyle = 'rgba(40,28,12,0.55)'
+  g.stroke()
 
-  // Seat-colour ring.
-  const r1 = R * 0.9
+  // Enamel field in the seat colour, deepening toward the rim. Gold is laid darker (amber),
+  // so the brass glyph still stands out from it.
+  const disc = g.createRadialGradient(cx - r1 * 0.3, cy - r1 * 0.35, r1 * 0.1, cx, cy, r1)
+  disc.addColorStop(0, gold ? '#8a5f10' : mixHex(seatBase, '#000000', 0.2))
+  disc.addColorStop(1, gold ? '#3a2706' : mixHex(seatBase, '#000000', 0.62))
   g.beginPath()
   g.arc(cx, cy, r1, 0, Math.PI * 2)
-  const ring = g.createLinearGradient(cx, cy - r1, cx, cy + r1)
-  ring.addColorStop(0, shadeHex(seatBase, 1.18))
-  ring.addColorStop(1, shadeHex(seatBase, gold ? 0.75 : 0.6))
-  g.fillStyle = ring
-  g.fill()
-
-  // Enamel disc.
-  const r2 = R * 0.82
-  const disc = g.createRadialGradient(cx - r2 * 0.3, cy - r2 * 0.35, r2 * 0.1, cx, cy, r2)
-  disc.addColorStop(0, gold ? '#7a5410' : mixHex(seatBase, '#000000', 0.42))
-  disc.addColorStop(1, gold ? '#2e1f05' : mixHex(seatBase, '#000000', 0.78))
-  g.beginPath()
-  g.arc(cx, cy, r2, 0, Math.PI * 2)
   g.fillStyle = disc
   g.fill()
+  // A thin lip of brighter enamel just inside the bezel, so the seat colour reads at a glance.
+  g.beginPath()
+  g.arc(cx, cy, r1 - Math.max(1, size * 0.02), 0, Math.PI * 2)
+  g.lineWidth = Math.max(1, size * 0.03)
+  g.strokeStyle = shadeHex(seatBase, gold ? 1.05 : 1.12)
+  g.globalAlpha = 0.85
+  g.stroke()
+  g.globalAlpha = 1
+  g.beginPath()
+  g.arc(cx, cy, r1, 0, Math.PI * 2)
   g.lineWidth = Math.max(1, size * 0.012)
   g.strokeStyle = 'rgba(0,0,0,0.6)'
   g.stroke()
+  const r2 = r1
 
   // Emblem: a darker metal edge (the glyph drawn offset around itself), then the glyph.
-  const e = r2 * 1.7
+  const e = r2 * 1.62
   g.save()
   g.globalAlpha = state === 'removed' ? 0.6 : 1
   g.shadowColor = 'rgba(0,0,0,0.65)'
@@ -438,7 +438,7 @@ export async function drawMedallion(
   g.arc(cx, cy, r2, 0, Math.PI * 2)
   g.clip()
   const gloss = g.createLinearGradient(cx, cy - r2, cx, cy + r2 * 0.2)
-  gloss.addColorStop(0, 'rgba(255,255,255,0.22)')
+  gloss.addColorStop(0, 'rgba(255,255,255,0.14)')
   gloss.addColorStop(1, 'rgba(255,255,255,0)')
   g.fillStyle = gloss
   g.beginPath()
@@ -730,7 +730,7 @@ export function drawLighting(size: number, radius: number): HTMLCanvasElement {
     size * 0.18,
     size * 0.85,
   )
-  l.addColorStop(0, 'rgba(255,238,205,0.13)')
+  l.addColorStop(0, 'rgba(255,238,205,0.09)')
   l.addColorStop(0.5, 'rgba(255,232,195,0.04)')
   l.addColorStop(1, 'rgba(255,232,195,0)')
   g.fillStyle = l

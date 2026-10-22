@@ -1,15 +1,24 @@
+/* Board sandbox (dev only). Colours, type and radii follow the app's tokens (docs/DESIGN.md):
+   the board sits on baize, the control rail is the room's ink with panel-toned groups. */
 :root {
-  --bg-0: #0c0a09;
-  --bg-1: #16110e;
-  --panel: rgba(24, 18, 14, 0.86);
-  --panel-2: rgba(36, 27, 21, 0.9);
-  --line: rgba(210, 171, 95, 0.18);
-  --line-strong: rgba(210, 171, 95, 0.42);
-  --brass: #d2ab5f;
-  --brass-hi: #f1d58f;
-  --text: #efe4d0;
-  --muted: #a99a84;
-  --danger: #e0705f;
+  --ink: #1d1b19;
+  --panel: #26231f;
+  --panel-raised: #2e2a25;
+  --baize: #1f2a25;
+  --parchment: #f4efe6;
+  --muted: #c4bdb1;
+  --faint: #a59e93;
+  --brass: #c9a55a;
+  --gold: #d4a017;
+  --rule: rgb(244 239 230 / 0.1);
+  --rule-strong: rgb(244 239 230 / 0.2);
+  --rule-brass: rgb(201 165 90 / 0.32);
+  --destructive-light: #f0a397;
+  --ok: #8fd0ae;
+  --font-display:
+    "Fraunces Variable", "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  --font-sans:
+    "Inter Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   color-scheme: dark;
 }
 
@@ -21,84 +30,66 @@ html,
 body {
   margin: 0;
   height: 100%;
-  background: var(--bg-0);
-  color: var(--text);
-  font:
-    13px / 1.4 system-ui,
-    -apple-system,
-    "Segoe UI",
-    Roboto,
-    sans-serif;
+  background: var(--ink);
+  color: var(--parchment);
+  font: 14px / 1.45 var(--font-sans);
 }
 
 #app {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 360px;
   height: 100vh;
-  background:
-    radial-gradient(1200px 900px at 38% 45%, #2a1f17 0%, #17110d 55%, #0b0908 100%), var(--bg-0);
 }
 
+/* The table: plain baize, as on the app's play routes. */
 #stage {
   position: relative;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
+  background: var(--baize);
 }
 
 #panel {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 14px 14px 12px;
-  background: linear-gradient(180deg, rgba(28, 21, 16, 0.94), rgba(16, 12, 10, 0.96));
-  border-left: 1px solid var(--line);
+  padding: 16px 16px 12px;
+  background: var(--ink);
+  border-left: 1px solid var(--rule-brass);
   overflow-y: auto;
   min-height: 0;
 }
 
 header {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
+  flex-direction: column;
+  gap: 2px;
+  padding-bottom: 12px;
 }
 
 header h1 {
   margin: 0;
-  font:
-    600 15px / 1.2 Georgia,
-    "Palatino Linotype",
-    serif;
-  letter-spacing: 0.02em;
-  color: var(--brass-hi);
+  font: 600 21px / 1.3 var(--font-display);
+  letter-spacing: -0.01em;
+  color: var(--parchment);
 }
 
 .tag {
-  font-size: 10px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: #1b130d;
-  background: var(--brass);
-  padding: 2px 6px;
-  border-radius: 3px;
-  font-weight: 700;
+  font-size: 12px;
+  color: var(--faint);
 }
 
+/* Groups are rows separated by rules, not a stack of cards. */
 section {
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 10px;
+  padding: 12px 0;
+  border-top: 1px solid var(--rule);
 }
 
 section h2 {
   margin: 0 0 8px;
-  font-size: 10.5px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--muted);
+  font-size: 14px;
   font-weight: 600;
+  color: var(--muted);
 }
 
 .row {
@@ -111,53 +102,65 @@ section h2 {
 button,
 select {
   font: inherit;
-  color: var(--text);
-  background: var(--panel-2);
-  border: 1px solid var(--line);
+  font-size: 14px;
+  color: var(--parchment);
+  background: transparent;
+  border: 1px solid var(--rule-strong);
   border-radius: 6px;
-  padding: 5px 9px;
+  padding: 5px 10px;
   cursor: pointer;
   transition:
     border-color 120ms,
     background 120ms;
 }
 
+select {
+  background: var(--panel);
+}
+
 button:hover,
 select:hover {
-  border-color: var(--line-strong);
-  background: rgba(56, 42, 31, 0.95);
+  border-color: var(--brass);
+  background: var(--panel-raised);
 }
 
 button:focus-visible,
 select:focus-visible,
-input:focus-visible {
-  outline: 2px solid var(--brass);
-  outline-offset: 1px;
+input:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
 }
 
+/* The chosen option of a segmented control: brass edge and a quiet fill (gold is kept for the
+   one primary action, and the sandbox has none). */
 button.on {
-  background: linear-gradient(180deg, #e3c37c, #b88f45);
-  color: #1b130d;
-  border-color: #f1d58f;
-  font-weight: 650;
+  background: rgb(201 165 90 / 0.16);
+  border-color: var(--brass);
+  color: var(--parchment);
+  font-weight: 600;
 }
 
 button.small {
-  padding: 3px 7px;
-  font-size: 11.5px;
+  padding: 3px 8px;
+  font-size: 12px;
 }
 
 .seg {
   display: inline-flex;
-  border: 1px solid var(--line);
-  border-radius: 7px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 6px;
   overflow: hidden;
 }
 
 .seg button {
   border: 0;
   border-radius: 0;
-  border-right: 1px solid var(--line);
+  border-right: 1px solid var(--rule);
+}
+
+.seg button.on {
+  box-shadow: inset 0 -2px 0 var(--brass);
 }
 
 .seg button:last-child {
@@ -165,15 +168,21 @@ button.small {
 }
 
 .status {
-  font-size: 12.5px;
-  color: var(--text);
-  min-height: 18px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+  font-size: 14px;
+  color: var(--parchment);
+  min-height: 20px;
 }
 
 .status .muted {
-  color: var(--muted);
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
 }
 
+/* Seats read like the app's nameplates: a brass-edged plate, the seat colour down its inner
+   edge, the name in Fraunces. */
 .seats {
   display: grid;
   gap: 6px;
@@ -181,25 +190,25 @@ button.small {
 
 .seat {
   display: grid;
-  grid-template-columns: 26px 1fr auto;
-  gap: 4px 8px;
+  grid-template-columns: 24px 1fr auto;
+  gap: 4px 10px;
   align-items: center;
-  padding: 6px 7px;
-  border-radius: 8px;
-  border: 1px solid transparent;
-  background: rgba(0, 0, 0, 0.18);
+  padding: 8px 10px 8px 12px;
+  border-radius: 4px;
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--seat);
+  background: var(--panel);
+  box-shadow: inset 0 1px 0 rgb(255 240 210 / 0.06);
 }
 
 .seat.to-move {
-  border-color: var(--seat);
-  box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--seat) 35%, transparent),
-    0 0 18px -6px var(--seat);
+  border-color: var(--gold);
+  border-left-color: var(--seat);
 }
 
 .seat .emblem {
-  width: 26px;
-  height: 26px;
+  width: 24px;
+  height: 24px;
   color: var(--seat);
   grid-row: span 2;
 }
@@ -211,43 +220,45 @@ button.small {
 }
 
 .seat .name {
-  font-weight: 650;
+  font: 600 16px / 1.3 var(--font-display);
 }
 
 .seat .name small {
-  font-weight: 400;
-  color: var(--muted);
-  margin-left: 4px;
+  font: 400 12px / 1 var(--font-sans);
+  color: var(--faint);
+  margin-left: 6px;
+}
+
+.seat.to-move .name small {
+  color: var(--gold);
 }
 
 .badge {
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  padding: 1px 6px;
+  font-size: 12px;
+  padding: 1px 8px;
   border-radius: 999px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--rule-strong);
   color: var(--muted);
   justify-self: end;
 }
 
 .badge.active {
-  color: #a7e3b4;
-  border-color: rgba(120, 200, 140, 0.4);
+  color: var(--ok);
+  border-color: rgb(143 208 174 / 0.4);
 }
 
 .badge.frozen {
   color: #bfe0ff;
-  border-color: rgba(150, 200, 255, 0.45);
+  border-color: rgb(150 200 255 / 0.45);
 }
 
 .badge.defeated {
-  color: #f0c38a;
-  border-color: rgba(240, 180, 110, 0.4);
+  color: var(--destructive-light);
+  border-color: rgb(240 163 151 / 0.4);
 }
 
 .badge.removed {
-  color: #9a8e80;
+  color: var(--faint);
 }
 
 .seat .controls {
@@ -259,7 +270,7 @@ button.small {
 
 .seat select {
   padding: 2px 4px;
-  font-size: 11.5px;
+  font-size: 12px;
   max-width: 120px;
 }
 
@@ -268,11 +279,10 @@ label.toggle {
   align-items: center;
   gap: 6px;
   padding: 4px 8px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--rule);
   border-radius: 6px;
   cursor: pointer;
   user-select: none;
-  background: var(--panel-2);
 }
 
 label.toggle input {
@@ -292,23 +302,20 @@ label.toggle input {
   list-style: none;
   overflow-y: auto;
   flex: 1;
-  font:
-    12px / 1.5 ui-monospace,
-    "SF Mono",
-    Menlo,
-    Consolas,
-    monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
 }
 
 .log li {
   display: flex;
-  gap: 6px;
-  padding: 1px 2px;
-  border-bottom: 1px dashed rgba(210, 171, 95, 0.08);
+  gap: 8px;
+  padding: 2px 2px;
+  border-bottom: 1px solid var(--rule);
 }
 
 .log li .ply {
-  color: var(--muted);
+  color: var(--faint);
   min-width: 26px;
   text-align: right;
 }
@@ -322,23 +329,20 @@ label.toggle input {
 }
 
 .log li.major {
-  color: var(--brass-hi);
+  color: var(--brass);
 }
 
 textarea {
   width: 100%;
   height: 52px;
   resize: vertical;
-  font:
-    11px / 1.3 ui-monospace,
-    Menlo,
-    Consolas,
-    monospace;
-  color: var(--text);
-  background: rgba(0, 0, 0, 0.3);
-  border: 1px solid var(--line);
+  font: 12px / 1.35 var(--font-sans);
+  color: var(--parchment);
+  background: var(--panel);
+  border: 1px solid var(--rule-strong);
   border-radius: 6px;
-  padding: 5px;
+  padding: 6px;
+  box-shadow: inset 0 1px 3px rgb(0 0 0 / 0.45);
 }
 
 .toast {
@@ -346,12 +350,13 @@ textarea {
   left: 50%;
   bottom: 18px;
   transform: translateX(-50%);
-  background: rgba(30, 12, 10, 0.92);
-  border: 1px solid rgba(224, 112, 95, 0.6);
-  color: #ffd8cf;
-  padding: 7px 12px;
-  border-radius: 8px;
-  font-size: 12.5px;
+  background: var(--panel);
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--destructive-light);
+  color: var(--parchment);
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-size: 14px;
   opacity: 0;
   transition: opacity 160ms;
   pointer-events: none;
@@ -363,17 +368,23 @@ textarea {
 
 .hover-readout {
   position: absolute;
-  left: 14px;
+  left: 16px;
   top: 12px;
-  font:
-    600 12px / 1 Georgia,
-    serif;
-  letter-spacing: 0.06em;
-  color: rgba(239, 228, 208, 0.55);
+  font: 600 14px / 1 var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  color: rgb(244 239 230 / 0.65);
 }
 
 .mt {
-  margin-top: 7px;
+  margin-top: 8px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  button,
+  select,
+  .toast {
+    transition: none;
+  }
 }
 
 /* Phone widths: the board on top (square, full width), the panel scrolls below it. */
@@ -387,7 +398,7 @@ textarea {
 
   #panel {
     border-left: 0;
-    border-top: 1px solid var(--line);
+    border-top: 1px solid var(--rule-brass);
     overflow-y: visible;
   }
 }

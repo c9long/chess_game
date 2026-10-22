@@ -1,8 +1,8 @@
 /**
  * GLSL sources (PixiJS GL programs: `in`/`out`, `finalColor`, `texture()`).
- * The board is drawn procedurally (no image assets): inlaid maple/walnut
- * squares with per-square grain, a rosewood frame with brass inlays and a
- * seat-coloured band along each home edge.
+ * The board is drawn procedurally (no image assets): pale maple and dark walnut
+ * squares with per-square grain, a walnut frame with a brass inlay line round
+ * the field, and a brass-edged enamel banner in the seat colour along each home edge.
  */
 
 import { BOARD_SIZE } from './geometry.ts'
@@ -10,6 +10,16 @@ import { BOARD_SIZE } from './geometry.ts'
 /** Board size and half size as GLSL float literals. */
 const N = BOARD_SIZE.toFixed(1)
 const HALF = (BOARD_SIZE / 2).toFixed(1)
+
+/**
+ * The seat banner's inner and outer edges, as fractions of the frame width out from the field.
+ * The coordinates sit between the field and the banner; BoardView places the turn glow and
+ * the dims over the same strip.
+ */
+export const BAND_INNER = 0.55
+export const BAND_OUTER = 0.79
+const BAND_T0 = BAND_INNER.toFixed(3)
+const BAND_T1 = BAND_OUTER.toFixed(3)
 
 const NOISE = /* glsl */ `
 float hash12(vec2 p) {
@@ -70,13 +80,13 @@ uniform vec3 uSeatS;
 uniform vec3 uSeatW;
 uniform vec3 uSeatN;
 uniform vec3 uSeatE;
-uniform vec4 uGain;     // per-seat band dye brightness (S, W, N, E)
 uniform float uSeed;
 
 ${NOISE}
 
-// Wood with the grain running along w.x.
-vec3 wood(vec2 w, vec3 base, float contrast, float seed, float freq) {
+// Wood with the grain running along w.x. 'contrast' sets the figure (growth rings), 'fine'
+// the fibre and pore texture; both drop on small squares, where they only read as noise.
+vec3 wood(vec2 w, vec3 base, float contrast, float fine, float seed, float freq) {
   w += seed * vec2(17.13, 31.7);
   float warp = fbm(w * vec2(0.3, 1.1));
   float ring = w.y * freq + warp * 2.2 + 0.8 * fbm(w * vec2(0.1, 0.4) + 5.0);
@@ -85,9 +95,9 @@ vec3 wood(vec2 w, vec3 base, float contrast, float seed, float freq) {
   float fiber = vnoise(vec2(w.x * 1.1, w.y * 34.0));
   float pores = vnoise(vec2(w.x * 5.0, w.y * 110.0));
   float v = 1.0 - contrast * (1.0 - late) * 0.5;
-  v *= 0.93 + 0.1 * fiber;
-  v *= 0.97 + 0.05 * pores;
-  v *= 0.9 + 0.18 * fbm(w * 0.16 + 3.0);
+  v *= 1.0 + fine * (0.1 * fiber - 0.05);
+  v *= 1.0 + fine * (0.05 * pores - 0.025);
+  v *= 0.94 + 0.12 * fbm(w * 0.16 + 3.0);
   return base * v;
 }
 
@@ -105,6 +115,8 @@ void main() {
   float fw = uFrame / uSq;
   vec2 q = (p - uFrame) / uSq;   // field is [0, N]^2 (N = board size), y down (rank N at the top)
   float aa = uPx;
+  // Wood figure is kept quiet on phone-sized squares so the pieces stay the strongest shapes.
+  float detail = smoothstep(16.0, 44.0, uSq);
   vec3 col;
 
   float ox = max(-q.x, q.x - ${N});
@@ -112,7 +124,7 @@ void main() {
   float outside = max(ox, oy);
 
   if (outside <= 0.0) {
-    // ---- playing field -------------------------------------------------
+    // ---- playing field: pale maple and dark walnut -----------------------
     vec2 cell = floor(q);
     vec2 f = q - cell;
     float file = cell.x;
@@ -120,63 +132,69 @@ void main() {
     bool dark = mod(file + rank, 2.0) < 0.5;
     float sid = hash12(cell + uSeed * 13.0);
     vec2 w = dark ? vec2(q.y, q.x) : q;
-    vec3 base = (dark ? uDark : uLight) * (0.95 + 0.1 * sid);
-    col = wood(w * vec2(0.8, 1.0) + sid * 9.0, base, dark ? 0.34 : 0.16, sid, dark ? 1.5 : 1.1);
-    // Inlay seams between squares.
+    vec3 base = (dark ? uDark : uLight) * (0.97 + 0.06 * sid);
+    // Maple is kept smoother than walnut: its fibre would read as streaks behind the pieces.
+    float figure = (dark ? 0.24 : 0.08) * mix(0.45, 1.0, detail);
+    float fine = (dark ? 1.0 : 0.5) * mix(0.4, 1.0, detail);
+    col = wood(w * vec2(0.8, 1.0) + sid * 9.0, base, figure, fine, sid, dark ? 1.5 : 1.1);
+    // Fine inlay seams between squares.
     float d = min(min(f.x, 1.0 - f.x), min(f.y, 1.0 - f.y));
-    col *= mix(0.78, 1.0, smoothstep(0.0, 1.4 * aa, d));
-    col *= 1.0 + 0.035 * (1.0 - smoothstep(1.4 * aa, 5.0 * aa, d));
-    // Ambient occlusion where the field meets the raised frame.
+    col *= mix(0.88, 1.0, smoothstep(0.0, 1.2 * aa, d));
+    // Ambient occlusion where the field meets the frame.
     float e = min(min(q.x, ${N} - q.x), min(q.y, ${N} - q.y));
-    col *= mix(0.72, 1.0, smoothstep(0.0, 0.2, e));
+    col *= mix(0.8, 1.0, smoothstep(0.0, 0.14, e));
   } else {
-    // ---- frame (mitred corners, grain along each edge) ------------------
+    // ---- walnut frame (mitred corners, grain along each edge) ------------
     float t = outside / fw;     // 0 at the field, 1 at the outer edge
+    float ta = aa / fw;         // one device pixel in frame units
     int side;                   // 0 S (bottom), 1 W (left), 2 N (top), 3 E (right)
     if (ox > oy) side = q.x < 0.0 ? 1 : 3;
     else side = q.y > ${N} ? 0 : 2;
     bool horiz = side == 0 || side == 2;
     float along = horiz ? q.x : q.y;
     vec2 w = horiz ? q : q.yx;
-    col = wood(w * vec2(0.5, 1.4) + float(side) * 7.3, uWood, 0.55, float(side) + 1.0, 2.0);
+    col = wood(w * vec2(0.5, 1.4) + float(side) * 7.3, uWood, 0.4, mix(0.5, 1.0, detail),
+      float(side) + 1.0, 2.0);
 
-    // Profile: a raised inner lip, a cove, a flat, and a rounded outer edge.
-    float prof = 1.0;
-    prof *= 1.0 + 0.22 * exp(-pow((t - 0.12) / 0.045, 2.0));
-    prof *= 1.0 - 0.22 * exp(-pow((t - 0.22) / 0.05, 2.0));
-    prof *= 1.0 + 0.14 * exp(-pow((t - 0.93) / 0.03, 2.0));
-    prof *= mix(1.0, 0.5, smoothstep(0.955, 1.0, t));
+    // Profile: a shadowed fillet at the field, a flat rail, a rounded outer edge.
+    float prof = mix(0.62, 1.0, smoothstep(0.0, 0.07, t));
+    prof *= 1.0 + 0.1 * exp(-pow((t - 0.9) / 0.035, 2.0));
+    prof *= mix(1.0, 0.55, smoothstep(0.95, 1.0, t));
     col *= prof;
 
-    // Seat band: dyed inlay along the home edge with brass borders.
+    // The brass inlay line (stringing) right round the field, at least ~1.3 device px wide.
+    float i0 = 0.035;
+    float i1 = i0 + max(0.045, 1.3 * ta);
+    float brassN = 0.9 + 0.2 * vnoise(p * 0.8);
+    float inlay = band(t, i0, i1, ta);
+    col = mix(col, uBrass * brassN * 1.05, inlay);
+
+    // Seat banner: a strip of flat enamel in the seat colour along the home edge, edged with
+    // brass hairlines like the nameplates.
     vec3 seat = side == 0 ? uSeatS : side == 1 ? uSeatW : side == 2 ? uSeatN : uSeatE;
-    float gain = side == 0 ? uGain.x : side == 1 ? uGain.y : side == 2 ? uGain.z : uGain.w;
-    float t0 = 0.5;
-    float t1 = 0.76;
+    float t0 = ${BAND_T0};
+    float t1 = ${BAND_T1};
     float endA = 0.18;
     float endB = ${N} - 0.18;
-    float inBand = band(t, t0, t1, aa / fw) * band(along, endA, endB, aa);
-    float lum = dot(col, vec3(0.299, 0.587, 0.114)) / max(0.001, dot(uWood, vec3(0.299, 0.587, 0.114)));
-    vec3 dyed = mix(col, seat * (0.42 + 0.42 * lum) * gain, 0.72 + 0.18 * clamp(gain - 1.0, 0.0, 1.0));
-    dyed *= 0.82 + 0.22 * exp(-pow((t - (t0 + 0.07)) / 0.06, 2.0));
-    dyed *= 1.0 - 0.25 * smoothstep(t1 - 0.1, t1, t);
-    col = mix(col, dyed, inBand);
-    float rim = band(t, t0 - 0.018, t0, aa / fw) + band(t, t1, t1 + 0.018, aa / fw);
+    float ends = band(along, endA, endB, aa);
+    float inBand = band(t, t0, t1, ta) * ends;
+    float across = clamp((t - t0) / (t1 - t0), 0.0, 1.0);
+    // Enamel: a faint convex sheen across, a darker lower lip, a little surface variation.
+    vec3 enamel = seat * (0.9 + 0.16 * exp(-pow((across - 0.38) / 0.22, 2.0)));
+    enamel *= 1.0 - 0.18 * smoothstep(0.7, 1.0, across);
+    enamel *= 0.98 + 0.04 * vnoise(vec2(along * 6.0, across * 3.0));
+    col = mix(col, enamel, inBand);
+    float hw = max(0.022, 1.0 * ta);
+    float rim = band(t, t0 - hw, t0, ta) + band(t, t1, t1 + hw, ta);
     rim *= band(along, endA - 0.02, endB + 0.02, aa);
-    float brassN = 0.85 + 0.3 * vnoise(p * 0.7);
-    col = mix(col, uBrass * brassN, clamp(rim, 0.0, 1.0) * 0.75);
-
-    // Brass inlay lines at the field edge and near the outer edge.
-    float inner = band(t, 0.025, 0.06, aa / fw);
-    float outerL = band(t, 0.975, 0.99, aa / fw);
-    col = mix(col, uBrass * (0.9 + 0.25 * vnoise(p * 0.9)), max(inner, outerL * 0.8));
+    col = mix(col, uBrass * brassN, clamp(rim, 0.0, 1.0) * 0.9);
 
     // Mitre joint.
-    col *= mix(0.6, 1.0, smoothstep(0.0, 1.2 * aa, abs(ox - oy)));
+    col *= mix(0.72, 1.0, smoothstep(0.0, 1.2 * aa, abs(ox - oy)));
   }
 
   // Outer silhouette: rounded corners, anti-aliased.
-  float sd = sdRoundBox(q - ${HALF}, vec2(${HALF} + fw), 0.16);
+  float sd = sdRoundBox(q - ${HALF}, vec2(${HALF} + fw), 0.12);
   float alpha = 1.0 - smoothstep(-aa, aa, sd);
   finalColor = vec4(col * alpha, alpha);
 }

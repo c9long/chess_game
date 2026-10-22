@@ -1,7 +1,7 @@
 import type { Seat } from '@game/rules'
 import { describe, expect, it } from 'vitest'
 import { hexToRgb, perceivedDistance, srgbToLinear, VISION_TYPES } from './color.ts'
-import { FROZEN_BASE, SEAT_STYLES } from './palette.ts'
+import { BOARD_MATERIALS, FROZEN_BASE, SEAT_STYLES } from './palette.ts'
 
 /** WCAG relative luminance. */
 function luminance(hex: string): number {
@@ -16,8 +16,8 @@ function contrast(a: string, b: string): number {
 }
 
 /** Square base colours from the board shader (BoardView uniforms). */
-const MAPLE = '#e2c89a'
-const WALNUT = '#8c5633'
+const MAPLE = BOARD_MATERIALS.light
+const WALNUT = BOARD_MATERIALS.dark
 
 const SEATS: Seat[] = ['south', 'west', 'north', 'east']
 
@@ -46,6 +46,17 @@ describe('seat palette', () => {
       const base = SEAT_STYLES[seat].base
       expect(contrast(base, MAPLE), `${seat} on maple`).toBeGreaterThan(1.35)
     }
+  })
+
+  it('keeps piece bodies apart from dark walnut squares', () => {
+    for (const seat of [...SEATS.map((s) => SEAT_STYLES[s].base), FROZEN_BASE]) {
+      // Normal vision: clearly apart in hue or lightness (OKLab).
+      expect(perceivedDistance(seat, WALNUT), `${seat} on walnut`).toBeGreaterThan(0.15)
+    }
+  })
+
+  it('separates the frame from the dark squares', () => {
+    expect(contrast(BOARD_MATERIALS.dark, BOARD_MATERIALS.frame)).toBeGreaterThan(1.25)
   })
 
   it('puts frozen grey between the two square shades', () => {

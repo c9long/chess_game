@@ -13,6 +13,10 @@ import japanSvg from '@game/assets/emblems/japan.svg?raw'
 import maliSvg from '@game/assets/emblems/mali.svg?raw'
 import russiaSvg from '@game/assets/emblems/russia.svg?raw'
 import usaSvg from '@game/assets/emblems/usa.svg?raw'
+// The app's faces (Fraunces for names, Inter for UI and the board's coordinates), taken from
+// the web app's installed fonts so the sandbox needs no dependencies of its own.
+import '../../../apps/web/node_modules/@fontsource-variable/fraunces/wght.css'
+import '../../../apps/web/node_modules/@fontsource-variable/inter/wght.css'
 import { APP_NAME, CIVILIZATIONS } from '@game/config'
 import {
   type CivId,
@@ -304,14 +308,15 @@ function render(): void {
           : r.type === 'teams_draw'
             ? 'Draw'
             : 'Move-limit tie',
-      el('span', { className: 'muted', textContent: ` · ply ${s.ply}` }),
+      el('span', { className: 'muted', textContent: `Ply ${s.ply}` }),
     )
   } else {
     statusEl.append(
       `${SEAT_LABEL[s.seatToMove]} to move`,
+      el('span', { className: 'muted', textContent: `Ply ${s.ply}` }),
       el('span', {
         className: 'muted',
-        textContent: ` · ply ${s.ply} · quiet ${s.noProgress}/${s.moveLimit}`,
+        textContent: `Quiet moves ${s.noProgress} of ${s.moveLimit}`,
       }),
     )
   }
@@ -372,7 +377,10 @@ function render(): void {
           SEAT_LABEL[seat],
           el('small', { textContent: style.name }),
         ),
-        el('span', { className: `badge ${status}`, textContent: status }),
+        el('span', {
+          className: `badge ${status}`,
+          textContent: status.charAt(0).toUpperCase() + status.slice(1),
+        }),
         el(
           'div',
           { className: 'controls' },
@@ -418,7 +426,7 @@ panel.append(
     'header',
     {},
     el('h1', { textContent: APP_NAME }),
-    el('span', { className: 'tag', textContent: 'Dev sandbox' }),
+    el('span', { className: 'tag', textContent: 'Board sandbox, for development only' }),
   ),
   el(
     'section',
