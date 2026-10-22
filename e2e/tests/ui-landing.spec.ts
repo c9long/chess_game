@@ -24,13 +24,16 @@ test('landing: demo board loads after first paint, emblems, CTAs, no console err
   await page.reload()
   await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
 
-  // The copy matches the 16×16 board everywhere (hero, demo label, value props).
+  // The copy matches the 16×16 board everywhere (hero, demo label, how a game goes).
   await expect(
     page.getByText('Four players. Sixteen by sixteen. One civ left standing.'),
   ).toBeVisible()
   await expect(page.getByRole('img', { name: /on the 16 by 16 board/ })).toHaveCount(1)
-  await expect(page.getByText('16×16 board', { exact: true })).toBeVisible()
-  await expect(page.getByText('256 squares, four armies')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'How a game goes', level: 2 })).toBeVisible()
+  await expect(page.getByText(/sets up on one side of a 16×16 board/)).toBeVisible()
+  await expect(
+    page.getByRole('img', { name: /Turn order: South, West, North, East/ }),
+  ).toBeAttached()
   const bodyText = await page.locator('body').innerText()
   expect(bodyText).not.toMatch(/twelve|12\s*(×|x|by)\s*12|144 squares/i)
 

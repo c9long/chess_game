@@ -10,7 +10,7 @@
  * 0×0 while paused, with the canvas pinned to its pixel size so its last frame stays visible.
  */
 import { BoardView } from '@game/board'
-import { Game, initRules } from '@game/rules'
+import { Game, initRules, type Seat, type SeatStatus, type Snapshot } from '@game/rules'
 import { useEffect, useRef, useState } from 'react'
 import {
   DEMO_GAMES,
@@ -37,11 +37,30 @@ function prefersReducedMotion(): boolean {
   return globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
 }
 
-export default function DemoBoard({ onReady }: { onReady?: () => void }) {
+/** What the landing page's nameplates show: who sits where, who moves, who is out. */
+export interface DemoTable {
+  /** Civ slug per seat, in seat order (south, west, north, east). */
+  readonly civs: readonly string[]
+  readonly statuses: readonly SeatStatus[]
+  readonly seatToMove: Seat
+  readonly ply: number
+  readonly isOver: boolean
+}
+
+export default function DemoBoard({
+  onReady,
+  onTable,
+}: {
+  onReady?: () => void
+  /** Called with the table after every move and new game. */
+  onTable?: (table: DemoTable) => void
+}) {
   const host = useRef<HTMLDivElement>(null)
   const stageRef = useRef<HTMLDivElement>(null)
   const readyRef = useRef(onReady)
   readyRef.current = onReady
+  const tableRef = useRef(onTable)
+  tableRef.current = onTable
   const [shown, setShown] = useState(false)
 
   useEffect(() => {
@@ -56,6 +75,15 @@ export default function DemoBoard({ onReady }: { onReady?: () => void }) {
     let game: Game | null = null
     let ctx: DemoContext | null = null
     let round = Math.floor(Math.random() * DEMO_GAMES.length)
+    let civs: readonly string[] = []
+    const report = (snap: Snapshot) =>
+      tableRef.current?.({
+        civs,
+        statuses: snap.statuses,
+        seatToMove: snap.seatToMove,
+        ply: snap.ply,
+        isOver: snap.isOver,
+      })
     let onScreen = true
     const still = prefersReducedMotion()
     // Decorative and inert: no zoom button, no live regions.
@@ -70,6 +98,7 @@ export default function DemoBoard({ onReady }: { onReady?: () => void }) {
       game?.free()
       const demo = DEMO_GAMES[round % DEMO_GAMES.length] as (typeof DEMO_GAMES)[number]
       round++
+      civs = demo.civs
       game = Game.create({ mode: 'ffa', civs: demo.civs })
       ctx = { start: game.snapshot(), random: seededRandom(demo.seed) }
     }
@@ -114,7 +143,11 @@ export default function DemoBoard({ onReady }: { onReady?: () => void }) {
       const snap = game.snapshot()
       if (snap.isOver || snap.ply >= MAX_PLY) {
         newGame()
-        if (game) view.setSnapshot((game as Game).snapshot(), { animate: true })
+        if (game) {
+          const fresh = (game as Game).snapshot()
+          view.setSnapshot(fresh, { animate: true })
+          report(fresh)
+        }
         el.dataset.ply = '0'
         schedule(MOVE_MS * 1.5)
         return
@@ -127,6 +160,7 @@ export default function DemoBoard({ onReady }: { onReady?: () => void }) {
       const events = game.applyMove(move.notation)
       const next = game.snapshot()
       view.setSnapshot(next, { events })
+      report(next)
       el.dataset.ply = String(next.ply)
       schedule(next.isOver ? RESTART_MS : MOVE_MS)
     }
@@ -187,6 +221,7 @@ export default function DemoBoard({ onReady }: { onReady?: () => void }) {
         if (game) {
           const first = (game as Game).snapshot()
           view.setSnapshot(first, { animate: false })
+          report(first)
           el.dataset.ply = String(first.ply)
         }
         setShown(true)

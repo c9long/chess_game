@@ -8,7 +8,7 @@ export default function CivMedallions() {
       renderGlyph={(slug) => (
         <CivEmblem
           civ={slug}
-          className="medallion-glyph h-[58%] w-[58%] animate-fade-in text-brass"
+          className="medallion-glyph h-[60%] w-[60%] animate-fade-in text-brass"
         />
       )}
     />
