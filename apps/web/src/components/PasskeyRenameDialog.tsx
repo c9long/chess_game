@@ -58,7 +58,7 @@ export default function PasskeyRenameDialog({
         />
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <DialogClose>
-            <Button variant="ghost">Cancel</Button>
+            <Button variant="quiet">Cancel</Button>
           </DialogClose>
           <Button
             type="submit"

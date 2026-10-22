@@ -6,14 +6,11 @@ import { isGuest, useAppState } from '../lib/app-state.tsx'
 import { authClient } from '../lib/auth-client.ts'
 import { AuthCard } from './AuthCard.tsx'
 import { Clickwrap } from './Clickwrap.tsx'
-import { Alert, Button, Card, CenteredPage, Field, Spinner } from './ui.tsx'
+import { Alert, Button, CenteredPage, cx, Field, inputClass, Spinner } from './ui.tsx'
 
 export function Loading() {
   return (
-    <div
-      className="flex min-h-[50vh] items-center justify-center text-parchment/60"
-      aria-live="polite"
-    >
+    <div className="flex min-h-[50vh] items-center justify-center text-faint" aria-live="polite">
       <Spinner />
       <span className="sr-only">Loading</span>
     </div>
@@ -35,9 +32,8 @@ const MONTHS = [
   'December',
 ]
 
-const inputClass =
-  'h-11 w-full rounded-lg border border-parchment/20 bg-ink/60 px-3 text-parchment outline-none transition-[border-color,box-shadow] duration-150 hover:border-parchment/35 focus:border-gold focus:ring-2 focus:ring-gold/30'
-const selectClass = `select cursor-pointer ${inputClass}`
+const selectClass = cx(inputClass, 'select cursor-pointer')
+const dobLabel = 'flex min-w-0 flex-col gap-1.5 text-ui font-medium text-parchment'
 
 /** Neutral date-of-birth screen (PLAN §8): nothing pre-selected, no cutoff mentioned. */
 function DateOfBirthScreen({ onDone }: { onDone: () => Promise<void> }) {
@@ -78,9 +74,9 @@ function DateOfBirthScreen({ onDone }: { onDone: () => Promise<void> }) {
   return (
     <AuthCard title={`Welcome to ${APP_NAME}`} subtitle="Please enter your date of birth.">
       <form onSubmit={submit} className="flex flex-col gap-5" data-testid="dob-form">
-        <fieldset className="grid grid-cols-[1.6fr_1fr_1.2fr] gap-3">
+        <fieldset className="grid grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)_minmax(0,1.15fr)] gap-3">
           <legend className="sr-only">Date of birth</legend>
-          <label className="flex flex-col gap-1.5 text-sm font-medium text-parchment/85">
+          <label className={dobLabel}>
             Month
             <select
               className={selectClass}
@@ -99,7 +95,7 @@ function DateOfBirthScreen({ onDone }: { onDone: () => Promise<void> }) {
               ))}
             </select>
           </label>
-          <label className="flex flex-col gap-1.5 text-sm font-medium text-parchment/85">
+          <label className={dobLabel}>
             Day
             <select
               className={selectClass}
@@ -118,10 +114,10 @@ function DateOfBirthScreen({ onDone }: { onDone: () => Promise<void> }) {
               ))}
             </select>
           </label>
-          <label className="flex flex-col gap-1.5 text-sm font-medium text-parchment/85">
+          <label className={dobLabel}>
             Year
             <input
-              className={inputClass}
+              className={cx(inputClass, 'tabular-nums')}
               inputMode="numeric"
               pattern="[0-9]{4}"
               maxLength={4}
@@ -134,7 +130,7 @@ function DateOfBirthScreen({ onDone }: { onDone: () => Promise<void> }) {
           </label>
         </fieldset>
         {error ? <Alert>{error}</Alert> : null}
-        <Button type="submit" disabled={!complete} busy={busy}>
+        <Button type="submit" size="lg" disabled={!complete} busy={busy}>
           Continue
         </Button>
       </form>
@@ -145,11 +141,18 @@ function DateOfBirthScreen({ onDone }: { onDone: () => Promise<void> }) {
 function Refusal() {
   return (
     <CenteredPage>
-      <Card className="text-center">
-        <p className="text-lg" data-testid="age-refusal">
+      <section className="relative overflow-hidden rounded-panel border border-rule-brass bg-surface-rail px-6 py-10 shadow-rim sm:px-8">
+        <span
+          aria-hidden="true"
+          className="absolute top-0 left-6 h-0.5 w-10 bg-brass/80 sm:left-8"
+        />
+        <p
+          className="font-display text-heading leading-snug text-balance"
+          data-testid="age-refusal"
+        >
           Sorry, we can&apos;t create an account right now.
         </p>
-      </Card>
+      </section>
     </CenteredPage>
   )
 }
@@ -167,9 +170,9 @@ export function AgeGate({ requireAge = true }: { requireAge?: boolean }) {
   if (state === 'unreachable' || (configError && state !== 'blocked')) {
     return (
       <CenteredPage>
-        <div className="flex flex-col items-center gap-4" data-testid="server-unreachable">
+        <div className="flex flex-col gap-3" data-testid="server-unreachable">
           <Alert>We can&apos;t reach the server right now.</Alert>
-          <p className="flex items-center gap-2 text-sm text-parchment/60" aria-live="polite">
+          <p className="flex items-center gap-2 pl-1 text-ui text-faint" aria-live="polite">
             <Spinner /> Reconnecting automatically…
           </p>
         </div>
@@ -213,6 +216,7 @@ export function AcceptanceGate() {
         <Clickwrap checked={checked} onChange={setChecked} />
         {error ? <Alert>{error}</Alert> : null}
         <Button
+          size="lg"
           disabled={!checked}
           busy={busy}
           onClick={async () => {
@@ -298,7 +302,7 @@ export function UsernameGate() {
           data-testid="choose-username"
         />
         {error ? <Alert>{error}</Alert> : null}
-        <Button type="submit" busy={busy} disabled={!name}>
+        <Button type="submit" size="lg" busy={busy} disabled={!name}>
           Continue
         </Button>
       </form>

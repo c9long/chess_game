@@ -1,7 +1,8 @@
 import { ARBITRATION_NOTICE, DISPUTE_OPTION } from '@game/config'
 import { Link } from 'react-router'
+import { cx, textLinkClass } from './ui.tsx'
 
-const linkClass = 'font-semibold text-gold underline-offset-2 hover:underline'
+const linkClass = cx(textLinkClass, 'font-medium')
 
 /**
  * Clickwrap notice (PLAN §8): an unchecked box with the links right beside it and no age
@@ -17,7 +18,7 @@ export function Clickwrap({
 }) {
   return (
     <div className="flex flex-col gap-2">
-      <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-parchment/15 bg-ink/40 p-4 text-sm leading-relaxed transition-colors duration-150 hover:border-parchment/30 has-checked:border-gold/40 has-checked:bg-gold/5">
+      <label className="flex cursor-pointer items-start gap-3 rounded-control border border-rule-strong bg-black/20 px-4 py-3.5 text-ui leading-relaxed text-parchment shadow-well transition-colors duration-150 hover:border-parchment/35 has-checked:border-rule-brass">
         <input
           type="checkbox"
           checked={checked}
@@ -37,7 +38,7 @@ export function Clickwrap({
         </span>
       </label>
       {DISPUTE_OPTION === 'A' ? (
-        <p className="px-1 text-xs text-parchment/60" data-testid="arbitration-notice">
+        <p className="px-1 text-caption text-faint" data-testid="arbitration-notice">
           {ARBITRATION_NOTICE}
         </p>
       ) : null}

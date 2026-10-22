@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
-import { AuthCard } from '../components/AuthCard.tsx'
+import { AuthCard, authLinkClass } from '../components/AuthCard.tsx'
 import { Loading } from '../components/Gates.tsx'
 import { Alert, linkButtonClass } from '../components/ui.tsx'
 import { useAppState } from '../lib/app-state.tsx'
 import { authClient } from '../lib/auth-client.ts'
 
-const primaryLink = linkButtonClass('primary', 'w-full')
+const primaryLink = linkButtonClass('primary', 'w-full', 'lg')
 
 /**
  * Confirms an email address. Opening the link only verifies the address: the server signs
@@ -49,7 +49,17 @@ export function VerifyEmail() {
         ? 'Your account is ready. Sign in to start playing.'
         : undefined
   return (
-    <AuthCard title={title} subtitle={subtitle}>
+    <AuthCard
+      title={title}
+      subtitle={subtitle}
+      below={
+        state === 'error' ? (
+          <Link to="/sign-in" className={authLinkClass}>
+            Go to sign in
+          </Link>
+        ) : undefined
+      }
+    >
       {state === 'signed-in' ? (
         <Link to="/" className={primaryLink} data-testid="verified-continue">
           Continue
@@ -59,15 +69,12 @@ export function VerifyEmail() {
           Sign in
         </Link>
       ) : (
-        <>
-          <Alert>This verification link is invalid or has expired.</Alert>
-          <Link to="/resend-verification" className={`${primaryLink} mt-4`}>
+        <div className="flex flex-col gap-4">
+          <Alert>This verification link is invalid or has expired. Ask for a new one below.</Alert>
+          <Link to="/resend-verification" className={primaryLink}>
             Get a new link
           </Link>
-          <Link to="/sign-in" className="mt-4 block text-center text-sm text-gold hover:underline">
-            Go to sign in
-          </Link>
-        </>
+        </div>
       )}
     </AuthCard>
   )

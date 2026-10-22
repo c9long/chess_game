@@ -1,10 +1,14 @@
-import type { ReactNode } from 'react'
-import { BrandMark } from './BrandMark.tsx'
-import { Card, CenteredPage, PageTitle } from './ui.tsx'
+import { type ReactNode, useId } from 'react'
+import { cx, textLinkClass } from './ui.tsx'
 
 /**
- * The shared frame of the sign-in, sign-up, guest and recovery screens: brand mark, centred
- * title and subtitle, the form, and an optional line under the card.
+ * The shared frame of the sign-in, sign-up, guest, recovery and gate screens: a brass-edged
+ * plate on the room's ink with the title set left like an engraving, the form, and an optional
+ * foot strip under a rule for the other way through ("New here? Create account").
+ *
+ * Keep these screens short. In a 1280×720 window a taller page scrolls, and a click that lands
+ * while the Turnstile widget finishes can then be lost (attack-auth.spec.ts, "check-email
+ * resend"; every spec that uses startAsGuest). See docs/ui-libraries.md.
  */
 export function AuthCard({
   title,
@@ -15,26 +19,51 @@ export function AuthCard({
   title: string
   subtitle?: ReactNode
   children: ReactNode
-  /** Shown under the card (e.g. "New here? Create account"). */
+  /** The plate's foot strip, under a rule (e.g. "New here? Create account"). */
   below?: ReactNode
 }) {
+  const titleId = useId()
   return (
-    <CenteredPage>
-      {/* The mark straddles the card's top edge and reaches 24px into it; the extra top padding
-          keeps it clear of the title. From sm the card moves up by the same 8px it grew, so the
-          page keeps its height: in a 1280×720 window a taller page scrolls, and a click that
-          lands while the Turnstile widget finishes can then be lost (attack-auth.spec.ts,
-          "check-email resend"). See docs/ui-libraries.md. */}
-      <Card className="relative pt-9 sm:-mt-2 sm:pt-10">
-        <div className="absolute -top-6 left-1/2 -translate-x-1/2">
-          <span className="block rounded-2xl bg-panel p-1 shadow-[0_10px_30px_-10px_rgba(212,160,23,0.55)] ring-1 ring-parchment/10">
-            <BrandMark className="h-10 w-10" />
-          </span>
+    <div className="mx-auto flex w-full max-w-md flex-col px-4 py-8 sm:py-14">
+      <section
+        aria-labelledby={titleId}
+        className="relative overflow-hidden rounded-panel border border-rule-brass bg-surface-rail shadow-rim"
+      >
+        {/* A short engraved brass mark on the plate's top edge, above the title. */}
+        <span
+          aria-hidden="true"
+          className="absolute top-0 left-5 h-0.5 w-10 bg-brass/80 sm:left-8"
+        />
+        <div className="px-5 pt-6 pb-6 sm:px-8 sm:pt-8 sm:pb-8">
+          <header className="mb-6">
+            <h1
+              id={titleId}
+              className={cx(
+                'font-display font-semibold text-balance',
+                // Long titles ("Welcome to <title>") step down so they stay at two lines.
+                // The plate is narrow, so the scale tops out at 32px rather than text-title's 36.
+                title.length > 26
+                  ? 'text-[1.625rem] leading-tight tracking-tight'
+                  : 'text-[1.75rem] leading-tight sm:text-[2rem]',
+              )}
+            >
+              {title}
+            </h1>
+            {subtitle ? (
+              <div className="mt-2 max-w-[60ch] text-body text-pretty text-muted">{subtitle}</div>
+            ) : null}
+          </header>
+          {children}
         </div>
-        <PageTitle title={title} subtitle={subtitle} align="center" />
-        {children}
-      </Card>
-      {below ? <div className="mt-6 text-center text-sm text-parchment/60">{below}</div> : null}
-    </CenteredPage>
+        {below ? (
+          <div className="border-t border-rule bg-black/15 px-5 py-4 text-ui text-muted sm:px-8">
+            {below}
+          </div>
+        ) : null}
+      </section>
+    </div>
   )
 }
+
+/** The link in an AuthCard's foot strip or under a form. */
+export const authLinkClass = cx(textLinkClass, 'font-semibold')

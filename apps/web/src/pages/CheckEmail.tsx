@@ -1,6 +1,6 @@
 import { type FormEvent, useState } from 'react'
 import { Link, useLocation } from 'react-router'
-import { AuthCard } from '../components/AuthCard.tsx'
+import { AuthCard, authLinkClass } from '../components/AuthCard.tsx'
 import { DevMailHint } from '../components/DevMailHint.tsx'
 import { Turnstile } from '../components/Turnstile.tsx'
 import { Alert, Button, Field } from '../components/ui.tsx'
@@ -49,13 +49,21 @@ export function CheckEmail() {
           'Enter the address you signed up with and we’ll send a new link.'
         ) : fromSignup ? (
           <>
-            We sent a verification link to <strong className="text-parchment">{fromSignup}</strong>.
-            Open it to finish creating your account. If you already had an account with this
+            We sent a verification link to{' '}
+            <strong className="font-semibold [overflow-wrap:anywhere] text-parchment">
+              {fromSignup}
+            </strong>
+            . Open it to finish creating your account. If you already had an account with this
             address, we sent sign-in help there instead.
           </>
         ) : (
           'We sent you a verification link. Open it to finish creating your account.'
         )
+      }
+      below={
+        <Link to="/sign-in" className={authLinkClass}>
+          Back to sign in
+        </Link>
       }
     >
       <form onSubmit={resend} className="flex flex-col gap-4">
@@ -78,12 +86,14 @@ export function CheckEmail() {
         )}
         <Turnstile key={widgetKey} siteKey={config?.turnstileSiteKey} onToken={setToken} />
         {error ? <Alert>{error}</Alert> : null}
-        <Button type="submit" variant="secondary" busy={busy} disabled={!token || !email}>
+        <Button
+          type="submit"
+          variant={fromSignup ? 'secondary' : 'primary'}
+          busy={busy}
+          disabled={!token || !email}
+        >
           {resendOnly ? 'Send link' : 'Resend email'}
         </Button>
-        <Link to="/sign-in" className="text-center text-sm text-gold hover:underline">
-          Back to sign in
-        </Link>
       </form>
     </AuthCard>
   )

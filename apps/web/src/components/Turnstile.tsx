@@ -1,5 +1,6 @@
 import { ShieldCheck } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
+import { Button } from './ui.tsx'
 
 declare global {
   interface Window {
@@ -104,14 +105,15 @@ export function Turnstile({
   return (
     <div className="flex flex-col gap-2">
       {/* Reserved 65px slot (the widget's height), with a quiet stand-in underneath until the
-          widget's frame covers it, so the form doesn't jump when it loads. */}
-      <div className="relative min-h-[65px] w-full">
+          widget's frame covers it, so the form doesn't jump when it loads. When the check fails
+          the slot folds away and the error takes its place. */}
+      <div className={`relative w-full ${failed ? '' : 'min-h-[65px]'}`}>
         {failed ? null : (
           <div
             aria-hidden="true"
-            className={`absolute inset-0 flex items-center justify-center gap-2 rounded-lg border border-dashed border-parchment/15 text-xs text-parchment/60 transition-opacity duration-300 ${rendered ? 'opacity-0' : 'opacity-100'}`}
+            className={`absolute inset-0 flex items-center justify-center gap-2 rounded-control border border-dashed border-rule-strong text-caption text-faint transition-opacity duration-300 ${rendered ? 'opacity-0' : 'opacity-100'}`}
           >
-            <ShieldCheck className="h-4 w-4 text-parchment/40" />
+            <ShieldCheck className="h-4 w-4 text-brass/70" />
             Checking that you’re human…
           </div>
         )}
@@ -119,24 +121,27 @@ export function Turnstile({
             add a few pixels under the 65px frame and shift the form when the widget appears. */}
         <div
           ref={ref}
-          className="relative flex min-h-[65px] w-full justify-center text-[0px] leading-none"
+          className={`relative flex w-full justify-center text-[0px] leading-none ${failed ? '' : 'min-h-[65px]'}`}
           data-testid="turnstile"
         />
       </div>
       {failed ? (
         <div
           role="alert"
-          className="flex items-center justify-between gap-3 rounded-lg border border-seat-south/50 bg-seat-south/10 px-4 py-3 text-sm"
+          className="relative flex items-center justify-between gap-3 overflow-hidden rounded-control border border-rule bg-surface-rail py-2.5 pr-2.5 pl-5 text-ui before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:bg-destructive-light"
           data-testid="turnstile-error"
         >
-          <span>The anti-bot check couldn’t load. Disable content blockers or try again.</span>
-          <button
-            type="button"
-            className="shrink-0 font-semibold text-gold hover:underline"
+          <span>
+            The anti-bot check couldn’t load. Turn off content blockers for this site, then retry.
+          </span>
+          <Button
+            variant="secondary"
+            size="sm"
+            className="shrink-0"
             onClick={() => setAttempt((n) => n + 1)}
           >
             Retry
-          </button>
+          </Button>
         </div>
       ) : null}
     </div>

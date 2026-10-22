@@ -1,6 +1,6 @@
 import { type FormEvent, useState } from 'react'
 import { Link, useNavigate } from 'react-router'
-import { AuthCard } from '../components/AuthCard.tsx'
+import { AuthCard, authLinkClass } from '../components/AuthCard.tsx'
 import { Clickwrap } from '../components/Clickwrap.tsx'
 import { Turnstile } from '../components/Turnstile.tsx'
 import { Alert, Button, Field } from '../components/ui.tsx'
@@ -88,7 +88,7 @@ export function SignUp() {
       below={
         <>
           Already have an account?{' '}
-          <Link to="/sign-in" className="font-semibold text-gold hover:underline">
+          <Link to="/sign-in" className={authLinkClass}>
             Sign in
           </Link>
         </>
@@ -132,7 +132,7 @@ export function SignUp() {
         <Clickwrap checked={checked} onChange={setChecked} />
         <Turnstile key={widgetKey} siteKey={config?.turnstileSiteKey} onToken={setToken} />
         {error ? <Alert>{error}</Alert> : null}
-        <Button type="submit" disabled={!ready} busy={busy}>
+        <Button type="submit" size="lg" disabled={!ready} busy={busy}>
           Create account
         </Button>
       </form>

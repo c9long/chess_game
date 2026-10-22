@@ -13,7 +13,7 @@ export function NativeSignIn() {
       title="Sign in"
       subtitle="Signing in from the app isn’t available yet in this test build."
     >
-      <p className="text-sm text-parchment/70" data-testid="native-sign-in">
+      <p className="text-body text-muted" data-testid="native-sign-in">
         Soon you’ll sign in, create an account or play as a guest on our website, then return here
         signed in.
       </p>

@@ -1,5 +1,6 @@
 import { Link } from 'react-router'
 import { useAppState } from '../lib/app-state.tsx'
+import { textLinkClass } from './ui.tsx'
 
 /**
  * Development builds only, and only when the server stores emails in its dev mailbox instead
@@ -11,14 +12,11 @@ export function DevMailHint({ email }: { email?: string | undefined }) {
   const to = email ? `?to=${encodeURIComponent(email)}` : ''
   return (
     <div
-      className="rounded-lg border border-dashed border-gold/50 bg-gold/5 px-4 py-3 text-sm text-parchment/85"
+      className="rounded-control border border-dashed border-rule-brass px-4 py-3 text-ui text-muted"
       data-testid="dev-mail-hint"
     >
-      <strong className="text-gold">Local development:</strong> emails aren’t really sent. Open the{' '}
-      <Link
-        to={`/dev/mail${to}`}
-        className="font-semibold text-gold underline-offset-2 hover:underline"
-      >
+      On this computer emails aren’t really sent. Open the{' '}
+      <Link to={`/dev/mail${to}`} className={`${textLinkClass} font-medium`}>
         dev mailbox
       </Link>{' '}
       to read this one and click its link.

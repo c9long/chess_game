@@ -1,10 +1,10 @@
 import { KeyRound } from 'lucide-react'
 import { type FormEvent, useState } from 'react'
 import { Link, Navigate, useLocation, useNavigate, useSearchParams } from 'react-router'
-import { AuthCard } from '../components/AuthCard.tsx'
+import { AuthCard, authLinkClass } from '../components/AuthCard.tsx'
 import { Clickwrap } from '../components/Clickwrap.tsx'
 import { Turnstile } from '../components/Turnstile.tsx'
-import { Alert, Button, Divider, Field } from '../components/ui.tsx'
+import { Alert, Button, Divider, Field, textLinkClass } from '../components/ui.tsx'
 import {
   acceptCurrentLegal,
   api,
@@ -26,9 +26,9 @@ export const PROVIDER_LABELS: Record<OAuthProvider, string> = {
 /** Under a "This account has been suspended." error: where to appeal (Terms §8.2). */
 function SuspendedHelp() {
   return (
-    <p className="text-sm text-parchment/70" data-testid="suspended-help">
+    <p className="text-ui text-muted" data-testid="suspended-help">
       If you think this is a mistake, see “Appeals” (section 8.2) in the{' '}
-      <Link to="/terms" className="text-gold underline-offset-2 hover:underline">
+      <Link to="/terms" className={textLinkClass}>
         Terms of Service
       </Link>
       .
@@ -165,7 +165,7 @@ export function SignIn() {
       below={
         <>
           New here?{' '}
-          <Link to="/sign-up" className="font-semibold text-gold hover:underline">
+          <Link to="/sign-up" className={authLinkClass}>
             Create account
           </Link>
         </>
@@ -173,7 +173,7 @@ export function SignIn() {
     >
       {guest ? (
         <label
-          className="mb-5 flex cursor-pointer items-start gap-3 rounded-lg border border-gold/30 bg-gold/5 p-4 text-sm leading-relaxed"
+          className="mb-6 flex cursor-pointer items-start gap-3 rounded-control border border-rule-brass bg-black/15 px-4 py-3.5 text-ui leading-relaxed text-parchment"
           data-testid="keep-guest"
         >
           <input
@@ -183,8 +183,12 @@ export function SignIn() {
             className="checkbox mt-0.5"
           />
           <span>
-            Move my games as <strong>{displayName(guest)}</strong> to the account I sign in to.
-            Untick this if it isn’t your guest (for example on a shared computer).
+            Move my games as{' '}
+            <strong className="font-display font-semibold">{displayName(guest)}</strong> to the
+            account I sign in to.{' '}
+            <span className="text-muted">
+              Untick this if it isn’t your guest (for example on a shared computer).
+            </span>
           </span>
         </label>
       ) : null}
@@ -219,8 +223,11 @@ export function SignIn() {
           value={password}
           onChange={(e) => setPassword(e.target.value)}
         />
-        <div className="-mt-2 text-right text-sm">
-          <Link to="/forgot-password" className="text-parchment/60 hover:text-gold">
+        <div className="-mt-1.5 text-right text-ui">
+          <Link
+            to="/forgot-password"
+            className="rounded-[2px] text-muted underline decoration-transparent underline-offset-[3px] transition-colors duration-150 hover:text-parchment hover:decoration-brass/60"
+          >
             Forgot password?
           </Link>
         </div>
@@ -229,6 +236,7 @@ export function SignIn() {
         {error && suspended ? <SuspendedHelp /> : null}
         <Button
           type="submit"
+          size="lg"
           disabled={!token || !identifier || !password}
           busy={busy === 'password'}
         >
@@ -240,7 +248,7 @@ export function SignIn() {
         <>
           <Divider label="or" />
           <div className="flex flex-col gap-3">
-            <p className="mt-2 text-xs text-parchment/60">
+            <p className="text-caption text-faint">
               {ageGate(true) === 'ok'
                 ? 'Signing in with another service creates an account if you don’t have one yet.'
                 : 'Signing in with another service works for an account you already have. New here? Choose Create account.'}

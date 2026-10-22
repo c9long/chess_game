@@ -64,10 +64,23 @@ export function Device() {
     else setResult(kind === 'approve' ? 'approved' : 'denied')
   }
 
-  const clientName = pending?.clientId ? deviceClientName(pending.clientId) : 'an app'
+  // Sentence start: "The desktop game app", "An app" (an unknown client id stays as it is).
+  const clientName = (pending?.clientId ? deviceClientName(pending.clientId) : 'an app').replace(
+    /^(the|an) /,
+    (m) => m.charAt(0).toUpperCase() + m.slice(1),
+  )
 
   return (
-    <AuthCard title="Connect a device" subtitle="Enter the code shown on your other device.">
+    <AuthCard
+      title="Connect a device"
+      subtitle={
+        result
+          ? undefined
+          : pending
+            ? 'Check the request before you approve it.'
+            : 'Enter the code shown on your other device.'
+      }
+    >
       {result ? (
         <Alert tone={result === 'approved' ? 'success' : 'info'}>
           {result === 'approved'
@@ -75,37 +88,59 @@ export function Device() {
             : 'Request denied. Nothing was connected.'}
         </Alert>
       ) : pending ? (
-        <div className="flex flex-col gap-4" data-testid="device-confirm">
-          <p className="text-sm leading-relaxed">
-            <strong>{clientName}</strong> wants to sign in to your account
-            {session ? (
-              <>
-                {' '}
-                <strong>{displayName(session.user)}</strong>
-              </>
-            ) : null}{' '}
-            with code <code className="font-mono text-gold">{pending.userCode}</code>.
+        <div className="flex flex-col gap-5" data-testid="device-confirm">
+          <p className="text-body text-pretty">
+            <strong className="font-semibold">{clientName}</strong> wants to sign in to your
+            account.
           </p>
-          <Alert tone="info">
+          <dl className="divide-y divide-rule border-y border-rule text-ui">
+            {session ? (
+              <div className="flex items-baseline justify-between gap-4 py-3">
+                <dt className="text-faint">Account</dt>
+                <dd className="min-w-0 truncate font-display text-body font-semibold">
+                  {displayName(session.user)}
+                </dd>
+              </div>
+            ) : null}
+            <div className="flex items-baseline justify-between gap-4 py-3">
+              <dt className="text-faint">Code</dt>
+              <dd className="text-body font-semibold tracking-[0.08em] tabular-nums">
+                {pending.userCode}
+              </dd>
+            </div>
+          </dl>
+          <Alert tone="warning">
             Only approve this if you started signing in on your own device just now. If someone sent
             you this link or code, deny it: approving gives them access to your account.
           </Alert>
-          <label className="flex items-start gap-3 text-sm">
+          <label className="flex cursor-pointer items-start gap-3 text-ui text-parchment">
             <input
               type="checkbox"
               checked={mine}
               onChange={(e) => setMine(e.target.checked)}
-              className="mt-0.5 h-5 w-5 shrink-0 accent-gold"
+              className="checkbox mt-0.5"
               data-testid="device-mine"
             />
             I started this sign-in on my own device.
           </label>
           {error ? <Alert>{error}</Alert> : null}
-          <div className="flex gap-3">
-            <Button busy={busy === 'approve'} disabled={!mine} onClick={() => act('approve')}>
+          <div className="flex flex-col gap-3 sm:flex-row-reverse sm:justify-start">
+            <Button
+              size="lg"
+              className="sm:flex-1"
+              busy={busy === 'approve'}
+              disabled={!mine}
+              onClick={() => act('approve')}
+            >
               Approve
             </Button>
-            <Button variant="ghost" busy={busy === 'deny'} onClick={() => act('deny')}>
+            <Button
+              size="lg"
+              variant="secondary"
+              className="sm:flex-1"
+              busy={busy === 'deny'}
+              onClick={() => act('deny')}
+            >
               Deny
             </Button>
           </div>
@@ -117,10 +152,13 @@ export function Device() {
             value={code}
             onChange={(e) => setCode(e.target.value)}
             autoComplete="off"
+            autoCapitalize="characters"
+            spellCheck={false}
+            hint="It looks like ABCD-EFGH."
             required
           />
           {error ? <Alert>{error}</Alert> : null}
-          <Button type="submit" busy={busy === 'lookup'} disabled={!userCode}>
+          <Button type="submit" size="lg" busy={busy === 'lookup'} disabled={!userCode}>
             Continue
           </Button>
         </form>

@@ -1,6 +1,14 @@
 import { Fragment, useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router'
-import { Alert, Button, Field } from '../components/ui.tsx'
+import {
+  Alert,
+  Button,
+  EmptyState,
+  Field,
+  PageTitle,
+  RuleList,
+  textLinkClass,
+} from '../components/ui.tsx'
 
 interface StoredEmail {
   id: number
@@ -22,7 +30,7 @@ function Linkified({ text }: { text: string }) {
             // biome-ignore lint/suspicious/noArrayIndexKey: static split of one message
             key={i}
             href={part}
-            className="break-all font-semibold text-gold underline underline-offset-2"
+            className={`${textLinkClass} font-medium break-all`}
             data-testid="dev-mail-link"
           >
             {part}
@@ -75,21 +83,16 @@ export function DevMail() {
 
   return (
     <div className="mx-auto w-full max-w-3xl px-4 py-8 sm:py-12">
-      <p className="text-xs font-semibold uppercase tracking-[0.3em] text-gold">
-        Local development
-      </p>
-      <h1 className="mt-1 font-display text-3xl font-semibold tracking-tight">Dev mailbox</h1>
-      <p className="mt-2 text-sm text-parchment/65">
-        On your computer the server doesn’t send email. Every verification and password-reset email
-        lands here instead. Click the link inside to continue. This page updates by itself and
-        doesn’t exist on the live site.
-      </p>
+      <PageTitle
+        title="Dev mailbox"
+        subtitle="On this computer the server doesn’t send email. Every verification and password-reset email lands here instead: open it and follow the link inside. The list updates by itself, and this page doesn’t exist on the live site."
+      />
 
-      <div className="mt-6 flex flex-wrap items-end gap-3">
+      <div className="flex flex-wrap items-end gap-3">
         <Field
           label="Show emails sent to"
           type="email"
-          placeholder="all addresses"
+          placeholder="All addresses"
           value={filter}
           onChange={(e) =>
             setParams(e.target.value ? { to: e.target.value } : {}, { replace: true })
@@ -101,7 +104,7 @@ export function DevMail() {
         </Button>
       </div>
 
-      <div className="mt-6">
+      <div className="mt-8">
         {status === 'unavailable' ? (
           <Alert>
             The dev mailbox isn’t available. Check that the server is running in development (`pnpm
@@ -109,27 +112,26 @@ export function DevMail() {
             and that you opened this page on localhost.
           </Alert>
         ) : messages.length === 0 && status === 'ok' ? (
-          <div className="rounded-2xl border border-dashed border-parchment/15 px-6 py-14 text-center text-parchment/60">
-            No emails yet{filter ? ` for ${filter}` : ''}. Sign up or ask for a password reset and
-            the email appears here within a second or two.
-          </div>
+          <EmptyState title={filter ? `No emails for ${filter} yet` : 'No emails yet'}>
+            Sign up or ask for a password reset, and the email appears here within a second or two.
+          </EmptyState>
         ) : (
-          <ul className="flex flex-col gap-3" data-testid="dev-mailbox">
+          <RuleList data-testid="dev-mailbox">
             {messages.map((m) => (
-              <li key={m.id} className="rounded-2xl border border-parchment/10 bg-panel/85 p-5">
-                <div className="flex flex-wrap items-baseline justify-between gap-2">
-                  <h2 className="font-semibold">{m.subject}</h2>
-                  <span className="text-xs text-parchment/50">
+              <li key={m.id} className="py-5">
+                <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                  <h2 className="text-body font-semibold text-parchment">{m.subject}</h2>
+                  <span className="text-caption text-faint tabular-nums">
                     {new Date(m.sentAt).toLocaleTimeString()}
                   </span>
                 </div>
-                <p className="mt-0.5 text-xs text-parchment/55">To: {m.to}</p>
-                <pre className="mt-3 whitespace-pre-wrap break-words font-sans text-sm leading-relaxed text-parchment/85">
+                <p className="mt-0.5 text-ui break-all text-faint">To: {m.to}</p>
+                <pre className="mt-3 max-w-[72ch] font-sans text-ui leading-relaxed break-words whitespace-pre-wrap text-muted">
                   <Linkified text={m.text} />
                 </pre>
               </li>
             ))}
-          </ul>
+          </RuleList>
         )}
       </div>
     </div>

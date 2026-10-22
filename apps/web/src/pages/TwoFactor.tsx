@@ -69,9 +69,11 @@ export function TwoFactor() {
     <AuthCard
       title="Two-step verification"
       subtitle={
-        mode === 'totp'
-          ? 'Enter the 6-digit code from your authenticator app.'
-          : 'Enter one of your backup codes. Each code works once.'
+        expired
+          ? undefined
+          : mode === 'totp'
+            ? 'Enter the 6-digit code from your authenticator app.'
+            : 'Enter one of your backup codes. Each code works once.'
       }
     >
       {expired ? (
@@ -80,7 +82,7 @@ export function TwoFactor() {
           <Link
             to="/sign-in"
             state={{ from: returnTo }}
-            className={linkButtonClass('primary')}
+            className={linkButtonClass('primary', undefined, 'lg')}
             data-testid="two-factor-restart"
           >
             Sign in again
@@ -98,7 +100,7 @@ export function TwoFactor() {
             onChange={(e) => setCode(e.target.value)}
             data-testid="two-factor-code"
           />
-          <label className="flex cursor-pointer items-center gap-3 text-sm text-parchment/75">
+          <label className="flex cursor-pointer items-center gap-3 text-ui text-parchment">
             <input
               type="checkbox"
               checked={trustDevice}
@@ -108,12 +110,11 @@ export function TwoFactor() {
             Trust this device for 30 days
           </label>
           {error ? <Alert>{error}</Alert> : null}
-          <Button type="submit" busy={busy} disabled={!code}>
+          <Button type="submit" size="lg" busy={busy} disabled={!code}>
             Verify
           </Button>
-          <button
-            type="button"
-            className="text-sm text-parchment/60 hover:text-gold"
+          <Button
+            variant="quiet"
             onClick={() => {
               setMode(mode === 'totp' ? 'backup' : 'totp')
               setCode('')
@@ -121,7 +122,7 @@ export function TwoFactor() {
             }}
           >
             {mode === 'totp' ? 'Use a backup code instead' : 'Use your authenticator app instead'}
-          </button>
+          </Button>
         </form>
       )}
     </AuthCard>

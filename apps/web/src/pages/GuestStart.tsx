@@ -53,6 +53,7 @@ export function GuestStart() {
         <Turnstile key={widgetKey} siteKey={config?.turnstileSiteKey} onToken={setToken} />
         {error ? <Alert>{error}</Alert> : null}
         <Button
+          size="lg"
           disabled={!checked || !token}
           busy={busy}
           onClick={start}
