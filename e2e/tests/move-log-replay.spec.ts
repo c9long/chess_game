@@ -2,7 +2,14 @@ import { AxeBuilder } from '@axe-core/playwright'
 import { expect, type Page, test } from '@playwright/test'
 import postgres from 'postgres'
 import { E2E_DATABASE_URL } from '../env.ts'
-import { chooseCiv, playMove, position, startAsGuest, YOUR_TURN } from './helpers.ts'
+import {
+  chooseCiv,
+  playMove,
+  position,
+  solidBackdropForAxe,
+  startAsGuest,
+  YOUR_TURN,
+} from './helpers.ts'
 
 const SHOTS = process.env.E2E_SCREENSHOTS
 
@@ -11,7 +18,7 @@ test.use({ viewport: { width: 1280, height: 800 } })
 /** axe-core WCAG A/AA scan (as in ui-a11y.spec.ts): no serious or critical violations. */
 async function audit(page: Page, name: string) {
   await page.waitForTimeout(600)
-  await page.addStyleTag({ content: 'body { background: #322b1e !important; }' })
+  await solidBackdropForAxe(page)
   const results = await new AxeBuilder({ page })
     .withTags(['wcag2a', 'wcag2aa'])
     .exclude('[data-testid="board"] canvas')

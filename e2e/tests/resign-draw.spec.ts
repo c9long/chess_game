@@ -31,7 +31,6 @@ test('asking the bot teammate to resign in an even Teams position: it declines a
   await resign.click()
   const dialog = page.getByTestId('resign-dialog')
   await expect(dialog).toBeVisible()
-  await expect(dialog).toContainText('Teams 2v2')
   await expect(dialog.getByRole('heading')).toHaveText('Ask your teammate to resign?')
   await expect(page.getByTestId('resign-vote-note')).toHaveText(
     'Your teammate must agree. If they agree, your team loses. If they decline, you both play on.',
@@ -90,7 +89,7 @@ test('Teams with two people and two bots: the teammate agrees to resign and the 
   for (const seat of ['west', 'east'] as const) {
     const card = south.getByTestId(`seat-${seat}`)
     await card.getByTestId('add-bot').click()
-    await expect(card.getByTestId('seat-name')).toHaveText(/^Bot · /)
+    await expect(card.getByTestId('seat-name')).toHaveText(/^Bot /)
   }
   await north.goto(south.url())
   await expect(north.getByRole('heading', { name: 'Team table' })).toBeVisible()

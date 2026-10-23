@@ -61,7 +61,7 @@ async function teamsGame(browser: Browser, name: string) {
   for (const seat of ['west', 'east'] as const) {
     const card = S.getByTestId(`seat-${seat}`)
     await card.getByTestId('add-bot').click()
-    await expect(card.getByTestId('seat-name')).toHaveText(/^Bot · /)
+    await expect(card.getByTestId('seat-name')).toHaveText(/^Bot /)
   }
   await N.goto(S.url())
   await expect(N.getByRole('heading', { name })).toBeVisible()

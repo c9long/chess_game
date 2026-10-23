@@ -27,7 +27,7 @@ test('guest creates a lobby, fills it with bots, plays and sees the result', asy
     const card = page.getByTestId(`seat-${seat}`)
     await card.getByTestId('bot-level').selectOption(level)
     await card.getByTestId('add-bot').click()
-    await expect(card.getByTestId('seat-name')).toHaveText(`Bot · ${level}`)
+    await expect(card.getByTestId('seat-name')).toHaveText(`Bot ${level}`)
   }
 
   // Choose a civilization: its emblem appears next to the username, then ready up.

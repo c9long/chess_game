@@ -157,3 +157,19 @@ export async function playMove(page: Page, from: string, to: string) {
   }
   await expect.poll(() => position(page), { timeout: 10_000 }).not.toBe(before)
 }
+
+/**
+ * Before an axe scan. The room (ink) is a solid colour and needs nothing. On the table (baize
+ * routes) the felt grain is a background image, which axe can't measure: it reports every text
+ * node on it as "incomplete" instead of checking it. A solid stand-in at the felt's lightest
+ * point (baize plus the grain) replaces it, so passing here means passing everywhere on it.
+ * Returns a function that puts the real background back.
+ */
+export async function solidBackdropForAxe(page: Page): Promise<() => Promise<void>> {
+  const baize = await page.evaluate(() => document.documentElement.dataset.surface === 'baize')
+  if (!baize) return async () => {}
+  const style = await page.addStyleTag({ content: 'body { background: #29352f !important; }' })
+  return async () => {
+    await style.evaluate((el) => (el as Element).remove())
+  }
+}

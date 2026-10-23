@@ -67,7 +67,7 @@ test('guest plays an untimed game against three bots', async ({ page }) => {
   }
   await expect(page.getByTestId('board')).toBeVisible({ timeout: 20_000 })
   await expect(page.getByTestId('turn-banner')).toHaveText(YOUR_TURN, { timeout: 20_000 })
-  await expect(page.getByText('Free-for-all · Untimed')).toBeVisible()
+  await expect(page.getByText('Free-for-all, untimed')).toBeVisible()
   await expect(page.getByTestId('clock')).toHaveCount(0)
   await expect(page.getByTestId('start-game')).toHaveCount(0)
 
@@ -76,7 +76,7 @@ test('guest plays an untimed game against three bots', async ({ page }) => {
   await expect(page.getByTestId('player-south')).toContainText('(you)')
   for (const seat of ['west', 'north', 'east']) {
     const row = page.getByTestId(`player-${seat}`)
-    await expect(row).toContainText('Bot · 1500')
+    await expect(row).toContainText('Bot 1500')
     await expect(row).not.toContainText('Mali')
   }
 
@@ -116,9 +116,12 @@ test('guest plays an untimed game against three bots', async ({ page }) => {
   await expect(page.getByTestId('vs-bots')).toBeVisible()
   await expect(async () => {
     await page.goto('/history')
-    await expect(page.getByTestId('match-history')).toContainText('Untimed · vs bots', {
-      timeout: 2_000,
-    })
+    await expect(page.getByTestId('match-history')).toContainText(
+      'Free-for-all, untimed, against bots',
+      {
+        timeout: 2_000,
+      },
+    )
   }).toPass({ timeout: 10_000 })
   await expect(page.getByTestId('match-history')).toContainText('4th place')
   await expect(page.getByTestId('match-history')).toContainText('You were eliminated')

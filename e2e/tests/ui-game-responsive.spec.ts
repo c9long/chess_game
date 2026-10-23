@@ -46,7 +46,7 @@ test('game screen fits phones and tablets: board, players and actions without sc
     await expect(page.getByTestId('resign')).toBeInViewport({ ratio: 1 })
     await expect(page.getByTestId('offer-draw')).toBeInViewport({ ratio: 1 })
     await expect(page.getByRole('button', { name: 'Leave game' })).toBeInViewport({ ratio: 1 })
-    await expect(page.getByText('Free-for-all · Untimed')).toBeVisible()
+    await expect(page.getByText('Free-for-all, untimed')).toBeVisible()
   }
 
   // Board settings open from the gear and list the keyboard controls.
@@ -90,6 +90,6 @@ test('lobby room fits phones and tablets: seats, civ dropdown and Ready/Start re
   const west = page.getByTestId('seat-west')
   await west.getByTestId('bot-level').selectOption('1500')
   await west.getByTestId('add-bot').click()
-  await expect(west.getByTestId('seat-name')).toHaveText('Bot · 1500')
+  await expect(west.getByTestId('seat-name')).toHaveText('Bot 1500')
   expect(await horizontalOverflow(page)).toBe(0)
 })

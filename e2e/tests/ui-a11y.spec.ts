@@ -1,6 +1,12 @@
 import { AxeBuilder } from '@axe-core/playwright'
 import { expect, type Page, test } from '@playwright/test'
-import { chooseCiv, passAgeScreen, signUpAndVerify, YOUR_TURN } from './helpers.ts'
+import {
+  chooseCiv,
+  passAgeScreen,
+  signUpAndVerify,
+  solidBackdropForAxe,
+  YOUR_TURN,
+} from './helpers.ts'
 
 /**
  * Accessibility audit: axe-core (WCAG 2.0 A and AA rules) on every main page, as a guest and
@@ -12,12 +18,7 @@ const BLOCKING = new Set(['serious', 'critical'])
 async function audit(page: Page, name: string, extraRules: readonly string[] = []) {
   // Let entrance transitions (fades, slides) finish so contrast is measured on final colors.
   await page.waitForTimeout(600)
-  // The page background is a CSS gradient (checkerboard plus a warm glow at the top), which
-  // axe can't measure: it reports every text node on it as "incomplete" instead of checking
-  // it. Swap in a solid stand-in so contrast is actually tested: the lightest visible point of
-  // that background (ink + the glow's ~8.6% gold at the top edge + the 2.5% checker square),
-  // so passing here means passing everywhere on it.
-  await page.addStyleTag({ content: 'body { background: #322b1e !important; }' })
+  await solidBackdropForAxe(page)
   const results = await new AxeBuilder({ page })
     .withTags(['wcag2a', 'wcag2aa', ...(extraRules.length > 0 ? ['best-practice'] : [])])
     // The live PixiJS board has its own aria-label and keyboard controls; axe can't read a

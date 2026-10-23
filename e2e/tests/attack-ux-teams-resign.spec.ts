@@ -65,7 +65,7 @@ async function teamsTable(
     for (const seat of ['west', 'east'] as const) {
       const card = S.getByTestId(`seat-${seat}`)
       await card.getByTestId('add-bot').click()
-      await expect(card.getByTestId('seat-name')).toHaveText(/^Bot · /)
+      await expect(card.getByTestId('seat-name')).toHaveText(/^Bot /)
     }
   }
   // Join order: 2 humans -> South, North (bots fill W/E); 4 humans -> S, W, N, E.

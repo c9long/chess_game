@@ -188,7 +188,7 @@ test('two players agree to a rematch: both land in a fresh lobby with their seat
   for (const seat of ['west', 'east'] as const) {
     const card = S.getByTestId(`seat-${seat}`)
     await card.getByTestId('add-bot').click()
-    await expect(card.getByTestId('seat-name')).toHaveText(/^Bot · /)
+    await expect(card.getByTestId('seat-name')).toHaveText(/^Bot /)
   }
   // The second player joins North: South's teammate.
   await N.goto(S.url())
@@ -230,7 +230,7 @@ test('two players agree to a rematch: both land in a fresh lobby with their seat
   }
   expect(roomIdOf(S)).toBe(roomIdOf(N))
   await expect(S.getByTestId('seat-north').getByTestId('seat-name')).toHaveText(/^Guest-\d{4}$/)
-  await expect(S.getByTestId('seat-west').getByTestId('seat-name')).toHaveText(/^Bot · /)
+  await expect(S.getByTestId('seat-west').getByTestId('seat-name')).toHaveText(/^Bot /)
   await expect(S.getByTestId('civ-select')).toHaveAttribute('data-value', 'mali')
   await expect(N.getByTestId('civ-select')).toHaveAttribute('data-value', 'japan')
   await S.waitForTimeout(500)

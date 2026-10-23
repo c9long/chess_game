@@ -5,13 +5,13 @@
  */
 import { AxeBuilder } from '@axe-core/playwright'
 import { expect, type Page, test } from '@playwright/test'
-import { startAsGuest } from './helpers.ts'
+import { solidBackdropForAxe, startAsGuest } from './helpers.ts'
 
 const OUT = process.env.UX_SHOTS ?? ''
 
 async function auditOpen(page: Page, name: string) {
   await page.waitForTimeout(400) // open animation
-  await page.addStyleTag({ content: 'body { background: #322b1e !important; }' })
+  await solidBackdropForAxe(page)
   const results = await new AxeBuilder({ page })
     .withTags(['wcag2a', 'wcag2aa', 'best-practice'])
     .analyze()

@@ -95,7 +95,7 @@ for (const size of [
     for (const seat of ['west', 'east'] as const) {
       const card = A.getByTestId(`seat-${seat}`)
       await card.getByTestId('add-bot').click()
-      await expect(card.getByTestId('seat-name')).toHaveText(/^Bot · /)
+      await expect(card.getByTestId('seat-name')).toHaveText(/^Bot /)
     }
     await B.goto(A.url())
     await expect(B.getByRole('heading', { name: lobbyName })).toBeVisible()

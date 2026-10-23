@@ -149,7 +149,7 @@ test('lobby: your civ’s folded card, and any seated civ’s details from its s
   const pop = page.getByTestId('civ-info-popover')
   await expect(pop).toBeVisible()
   await expect(westInfo).toHaveAttribute('aria-expanded', 'true')
-  await expect(pop.getByTestId('civ-card-kicker')).toHaveText(/^West · Bot · /)
+  await expect(pop.getByTestId('civ-card-kicker')).toHaveText(/^Bot \S+ at West$/)
   await expect(pop.getByTestId('civ-card')).toBeVisible()
   await auditCiv(page, '[data-testid="civ-info-popover"]', 'lobby: seat popover')
   if (SHOTS) {

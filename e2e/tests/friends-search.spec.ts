@@ -11,7 +11,7 @@ import { AxeBuilder } from '@axe-core/playwright'
 import { type Browser, expect, type Page, test } from '@playwright/test'
 import postgres from 'postgres'
 import { E2E_DATABASE_URL } from '../env.ts'
-import { signUpAndVerify, uniqueUser } from './helpers.ts'
+import { signUpAndVerify, solidBackdropForAxe, uniqueUser } from './helpers.ts'
 
 const OUT = process.env.UX_SHOTS ?? ''
 
@@ -24,10 +24,9 @@ async function shot(page: Page, name: string, fullPage = false) {
 /** axe-core WCAG A/AA scan (as in ui-a11y.spec): serious or critical violations fail. */
 async function audit(page: Page, name: string) {
   await page.waitForTimeout(600)
-  // The checkerboard gradient background can't be measured: a solid stand-in at its lightest.
-  const style = await page.addStyleTag({ content: 'body { background: #322b1e !important; }' })
+  const restore = await solidBackdropForAxe(page)
   const results = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa']).analyze()
-  await style.evaluate((el) => (el as Element).remove())
+  await restore()
   const blocking = results.violations
     .filter((v) => v.impact === 'serious' || v.impact === 'critical')
     .map((v) => `[${v.impact}] ${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`)
@@ -131,7 +130,7 @@ async function findAndAdd(A: Page, B: Page, aName: string, bName: string, tag: s
   const result = A.getByTestId('player-result').filter({ hasText: bName })
   await expect(result).toBeVisible()
   await expect(result.getByTestId('player-result-add')).toHaveAttribute('data-state', 'add')
-  await expect(result).toContainText('1288 · Free-for-all 3+2 · 3 games')
+  await expect(result).toContainText('1288 Elo, Free-for-all 3+2, 3 games')
   await expect(A.getByTestId('player-search-status')).toHaveText(
     new RegExp(`^\\d+ players? found for ${part}\\.$`),
   )
