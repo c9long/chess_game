@@ -27,22 +27,35 @@ import { type ReactNode, useCallback, useEffect, useId, useMemo, useRef, useStat
 import { Link, useParams } from 'react-router'
 import { CivEmblem, civName } from '../components/CivEmblem.tsx'
 import { BoardSettings } from '../components/game/BoardSettings.tsx'
-import { GameButton } from '../components/game/GameButton.tsx'
-import { ClockIcon, GearIcon } from '../components/game/icons.tsx'
+import { GearIcon } from '../components/game/icons.tsx'
 import { Medal } from '../components/game/Medal.tsx'
 import { MoveLog } from '../components/match/MoveLog.tsx'
 import { RankedBadge } from '../components/match/RankedBadge.tsx'
 import {
+  botName,
   END_REASON_LABEL,
   MODE_LABEL,
   ordinal,
   SEAT_LABEL,
   STATUS_LABEL,
-  seatHex,
   seatName,
+  seatsAround,
 } from '../components/match/seats.ts'
-import { Alert, Card, CenteredPage, Spinner } from '../components/ui.tsx'
+import {
+  Alert,
+  Button,
+  cx,
+  inputClass,
+  linkButtonClass,
+  Nameplate,
+  NoticePage,
+  SEAT_CLASSES,
+  SEAT_ORDER,
+  SeatDot,
+  Spinner,
+} from '../components/ui.tsx'
 import { ApiError, api } from '../lib/api.ts'
+import { useMediaQuery, WIDE_QUERY } from '../lib/media.ts'
 import { clockText, itemLabel, type LogStep, logItems } from '../lib/move-log.ts'
 import { usePrefs } from '../lib/prefs.ts'
 import { useRulesReady } from '../lib/rules.ts'
@@ -224,108 +237,202 @@ function ReplayBoard({
   )
 }
 
-function Chip({ children }: { children: ReactNode }) {
-  return (
-    <span className="inline-flex h-6 shrink-0 items-center gap-1 rounded-full border border-parchment/15 bg-ink/40 px-2 text-[11px] font-medium text-parchment/70">
-      {children}
-    </span>
-  )
-}
-
-function MatchChips({ detail }: { detail: MatchDetailResponse }) {
+/** "Free-for-all, 10+0, casual" (ranked games add the Ranked tag beside it). */
+function MatchMeta({ detail }: { detail: MatchDetailResponse }) {
   const untimed = isUntimed(detail.timeControl)
+  const line = [
+    MODE_LABEL[detail.mode] ?? detail.mode,
+    untimed ? 'untimed, against bots' : detail.timeControl,
+    !detail.ranked && !untimed ? 'casual' : null,
+  ]
+    .filter(Boolean)
+    .join(', ')
   return (
-    <div className="flex flex-wrap items-center gap-1.5">
-      <Chip>{MODE_LABEL[detail.mode]}</Chip>
-      <Chip>
-        {untimed ? (
-          'Untimed · vs bots'
-        ) : (
-          <>
-            <ClockIcon /> {detail.timeControl}
-          </>
-        )}
-      </Chip>
-      {detail.ranked ? <RankedBadge /> : untimed ? null : <Chip>Casual</Chip>}
-      <Chip>
+    <div className="flex flex-col gap-0.5 text-ui text-muted">
+      <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <span>{line}</span>
+        {detail.ranked ? <RankedBadge /> : null}
+      </p>
+      <p className="text-faint">
         <time dateTime={detail.startedAt}>
-          {new Date(detail.startedAt).toLocaleDateString(undefined, { dateStyle: 'medium' })}
+          {new Date(detail.startedAt).toLocaleDateString(undefined, { dateStyle: 'long' })}
         </time>
-      </Chip>
+      </p>
     </div>
   )
 }
 
-/** The players with their final places; dimmed (with their status) once out at this step. */
-function Players({
+type Player = MatchDetailResponse['players'][number]
+
+/** A player's nameplate at their side of the table. */
+function PlayerPlate({
+  p,
+  status,
+  toMove,
+  showPlace,
+  clock,
+  pos = 'bottom',
+  className,
+}: {
+  p: Player
+  /** This step's status ('active', 'defeated', ...), or null outside a replay. */
+  status: string | null
+  toMove: boolean
+  /** Replay: places only at the end, so stepping through doesn't give the result away. */
+  showPlace: boolean
+  /** Time left after the seat's last action shown (timed games), ms. */
+  clock: number | null | undefined
+  /** Where the plate sits around the table (wide screens stand the side plates upright). */
+  pos?: 'top' | 'left' | 'right' | 'bottom'
+  className?: string
+}) {
+  const wide = useMediaQuery(WIDE_QUERY)
+  const column = wide && (pos === 'left' || pos === 'right')
+  // The seat colour runs along the side that faces the board, as on the game screen.
+  const edge = !wide
+    ? 'left'
+    : pos === 'left'
+      ? 'right'
+      : pos === 'right'
+        ? 'left'
+        : pos === 'top'
+          ? 'bottom'
+          : 'top'
+  const out = status !== null && status !== 'active'
+  const state = out ? 'out' : showPlace && p.placement === 1 ? 'won' : toMove ? 'to-move' : 'idle'
+  // Phones: the placing leads the detail line instead of a disc, so the name keeps its room.
+  const placeInDetail = !wide && showPlace && p.placement ? p.placement : null
+  const detail = [
+    placeInDetail ? ordinal(placeInDetail) : null,
+    civName(p.civ),
+    out ? (STATUS_LABEL[status ?? ''] ?? status) : toMove ? 'to move' : null,
+  ]
+    .filter(Boolean)
+    .join(', ')
+  return (
+    <Nameplate
+      seat={p.seat}
+      size="sm"
+      state={state}
+      orient={column ? 'column' : 'row'}
+      edge={edge}
+      className={cx('w-full', column && 'min-h-36', className)}
+      data-testid={`replay-player-${seatName(p.seat)}`}
+      emblem={
+        // The civ's enamel medallion, as on the game screen's plates.
+        <span
+          className={cx(
+            'flex items-center justify-center rounded-full border border-brass/45 bg-black/20 shadow-plate',
+            column ? 'h-10 w-10' : wide ? 'h-8 w-8' : 'h-7 w-7',
+            SEAT_CLASSES[SEAT_ORDER[p.seat] ?? 'south'].text,
+            out && 'opacity-50 grayscale',
+          )}
+        >
+          <CivEmblem civ={p.civ} className={column ? 'h-6 w-6' : 'h-5 w-5'} />
+        </span>
+      }
+      name={
+        <>
+          {p.botLevel ? botName(p.botLevel) : p.name}
+          {/* Phones keep the name's room, as the game screen does. */}
+          {p.isYou ? (
+            <span className={wide ? 'font-sans font-normal text-faint' : 'sr-only'}> (you)</span>
+          ) : null}
+        </>
+      }
+      detail={detail}
+      trailing={
+        clock != null || (showPlace && p.placement && !placeInDetail) ? (
+          <span className="flex items-center gap-2">
+            {clock != null ? (
+              <span
+                className="text-ui font-semibold text-parchment"
+                data-testid={`replay-clock-${seatName(p.seat)}`}
+              >
+                <span className="sr-only">Time left: </span>
+                {clockText(clock)}
+              </span>
+            ) : null}
+            {showPlace && p.placement && !placeInDetail ? (
+              p.placement <= 3 ? (
+                <Medal place={p.placement} size="sm" label={ordinal(p.placement)} />
+              ) : (
+                <span className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-rule-strong text-caption font-semibold text-muted lining-nums tabular-nums">
+                  {ordinal(p.placement)}
+                </span>
+              )
+            ) : null}
+          </span>
+        ) : null
+      }
+    />
+  )
+}
+
+/**
+ * The four seats around a centre (the board, or a table in the game details): the viewer's
+ * seat at the bottom, then clockwise. Wide screens seat West and East beside the centre; phones
+ * pair West and North above it and South and East below, as the game screen does.
+ */
+function SeatsAround({
   detail,
-  statuses,
-  showPlaces = true,
-  clocks = null,
+  perspective,
+  plate,
+  children,
 }: {
   detail: MatchDetailResponse
-  statuses: readonly string[] | null
-  /** Replay: places only at the end, so stepping through doesn't give the result away. */
-  showPlaces?: boolean
-  /** Replay of a timed game: each seat's time left after its last action shown, ms. */
-  clocks?: readonly (number | null)[] | null
+  perspective: number
+  plate: (p: Player, pos: 'top' | 'left' | 'right' | 'bottom') => ReactNode
+  children: ReactNode
 }) {
+  const at = seatsAround(perspective)
+  const of = (seat: number, pos: 'top' | 'left' | 'right' | 'bottom') => {
+    const p = detail.players.find((x) => x.seat === seat)
+    return p ? plate(p, pos) : null
+  }
   return (
-    <section aria-label="Players">
-      <ol className="grid grid-cols-2 gap-1.5 min-[560px]:grid-cols-4 wide:grid-cols-1 wide:gap-1">
-        {[...detail.players]
-          .sort((a, b) => a.seat - b.seat)
-          .map((p) => {
-            const status = statuses?.[p.seat] ?? 'active'
-            const out = status !== 'active'
-            return (
-              <li
-                key={p.seat}
-                className={`flex min-w-0 items-center gap-2 rounded-xl border border-parchment/10 bg-ink/30 px-2.5 py-1.5 ${out ? 'opacity-60' : ''}`}
-                data-testid={`replay-player-${seatName(p.seat)}`}
-              >
-                <span
-                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full"
-                  style={{ backgroundColor: `${seatHex(p.seat)}26`, color: seatHex(p.seat) }}
-                >
-                  <CivEmblem civ={p.civ} className="h-5 w-5" />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-semibold">
-                    {p.botLevel ? `${civName(p.civ)} bot` : p.name}
-                    {p.isYou ? <span className="font-normal text-parchment/55"> (you)</span> : null}
-                  </span>
-                  <span className="block truncate text-[11px] text-parchment/55">
-                    {SEAT_LABEL[seatName(p.seat)]}
-                    {p.botLevel ? ` · ${p.botLevel === 'max' ? 'Max' : p.botLevel}` : ''}
-                    {out ? ` · ${STATUS_LABEL[status] ?? status}` : ''}
-                  </span>
-                </span>
-                {/* Phones (two cards a row): the clock sits above the medal, so the name
-                    keeps its room; the side panel has them side by side. */}
-                <span className="flex shrink-0 flex-col items-end gap-0.5 wide:flex-row wide:items-center wide:gap-2">
-                  {clocks?.[p.seat] != null ? (
-                    <span
-                      className="rounded-md bg-ink/50 px-1 py-px font-mono text-[11px] tabular-nums text-parchment/75 wide:px-1.5 wide:py-0.5 wide:text-xs"
-                      data-testid={`replay-clock-${seatName(p.seat)}`}
-                    >
-                      <span className="sr-only">Time left: </span>
-                      {clockText(clocks[p.seat] as number)}
-                    </span>
-                  ) : null}
-                  {showPlaces ? (
-                    <Medal
-                      place={p.placement}
-                      size="sm"
-                      label={p.placement ? ordinal(p.placement) : undefined}
-                    />
-                  ) : null}
-                </span>
-              </li>
-            )
-          })}
-      </ol>
+    <section
+      aria-label="Players"
+      className={cx(
+        'grid grid-cols-2 items-center gap-2 [grid-template-areas:"w_n"_"c_c"_"s_e"]',
+        'wide:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] wide:gap-3 wide:[grid-template-areas:"._n_."_"w_c_e"_"._s_."]',
+      )}
+    >
+      <div className="flex min-w-0 justify-center [grid-area:n]">
+        <div className="w-full wide:max-w-64">{of(at.top, 'top')}</div>
+      </div>
+      <div className="flex min-w-0 [grid-area:w] wide:justify-end">
+        <div className="w-full wide:w-40">{of(at.left, 'left')}</div>
+      </div>
+      <div className="flex min-w-0 justify-center [grid-area:c]">{children}</div>
+      <div className="flex min-w-0 [grid-area:e] wide:justify-start">
+        <div className="w-full wide:w-40">{of(at.right, 'right')}</div>
+      </div>
+      <div className="flex min-w-0 justify-center [grid-area:s]">
+        <div className="w-full wide:max-w-64">{of(at.bottom, 'bottom')}</div>
+      </div>
     </section>
+  )
+}
+
+/** A back link to the history list. */
+function BackLink() {
+  return (
+    <Link
+      to="/history"
+      className="-ml-1 inline-flex w-fit items-center gap-1 rounded-control py-1 pr-2 pl-1 text-ui font-medium text-muted transition-colors duration-150 hover:text-parchment"
+    >
+      <ChevronLeft aria-hidden="true" className="h-4 w-4" />
+      Match history
+    </Link>
+  )
+}
+
+function Kbd({ children }: { children: ReactNode }) {
+  return (
+    <kbd className="inline-flex h-5 min-w-5 items-center justify-center rounded-plate border border-rule-strong bg-black/20 px-1 font-sans text-caption text-muted">
+      {children}
+    </kbd>
   )
 }
 
@@ -478,67 +585,83 @@ function Viewer({
   }, [baseMs, index, sim.steps])
   const result = END_REASON_LABEL[detail.endReason ?? replay.endReason ?? ''] ?? ''
   const myPlace = me?.placement ?? null
+  const toMove = snapshot.isOver ? null : snapshot.seatToMove
   const ctl = 'w-10 !px-0'
 
   return (
     <div
       className={[
-        'safe-bottom-6 mx-auto flex w-full max-w-[1500px] flex-col gap-3 px-4 pt-3',
-        'wide:grid wide:grid-cols-[auto_minmax(320px,360px)] wide:items-start wide:justify-center wide:gap-6 wide:py-4',
-        // Phones: header 64 + title block 92 + controls 136 (with the perspective row) + gaps
-        // and padding 40.
-        '[--board:max(min(100%,300px),min(100%,calc(100dvh_-_332px_-_var(--safe-top)_-_var(--safe-bottom))))]',
-        'wide:[--board:min(calc(100vw_-_440px_-_var(--safe-left)_-_var(--safe-right)),calc(100dvh_-_96px_-_var(--safe-top)_-_var(--safe-bottom)))]',
+        'safe-bottom-6 mx-auto flex w-full max-w-[1500px] flex-col gap-4 px-4 pt-4',
+        'wide:grid wide:grid-cols-[auto_minmax(280px,320px)] wide:items-start wide:justify-center wide:gap-6 wide:py-4',
+        // Phones: the board fills the width, but leaves room under the header for the title,
+        // the plates above and below it and the controls (and never shrinks below 280px).
+        '[--board:max(min(100%,280px),min(100%,calc(100dvh_-_400px_-_var(--safe-top)_-_var(--safe-bottom))))]',
+        // Wide: beside a 320px rail with a 160px plate either side (plus gaps and padding:
+        // 720px), and under the header with a plate above and below (208px).
+        'wide:[--board:min(calc(100vw_-_720px_-_var(--safe-left)_-_var(--safe-right)),calc(100dvh_-_208px_-_var(--safe-top)_-_var(--safe-bottom)))]',
       ].join(' ')}
       data-testid="replay"
       data-verified={sim.verified ? 'true' : 'false'}
     >
-      <div className="order-2 flex min-w-0 justify-center wide:order-none">
-        <ReplayBoard
-          snapshot={snapshot}
-          events={events}
-          animate={forward}
+      <div className="order-2 min-w-0 wide:order-none">
+        <SeatsAround
+          detail={detail}
           perspective={perspective}
-          localSeat={mySeat}
-          positionString={ps}
-        />
+          plate={(p, pos) => (
+            <PlayerPlate
+              p={p}
+              status={snapshot.statuses[p.seat] ?? 'active'}
+              toMove={toMove === seatName(p.seat)}
+              showPlace={atEnd}
+              clock={clocks?.[p.seat]}
+              pos={pos}
+            />
+          )}
+        >
+          <ReplayBoard
+            snapshot={snapshot}
+            events={events}
+            animate={forward}
+            perspective={perspective}
+            localSeat={mySeat}
+            positionString={ps}
+          />
+        </SeatsAround>
       </div>
 
       <aside
         aria-label="Replay"
-        className="contents wide:sticky wide:top-4 wide:flex wide:h-[max(var(--board),min(34rem,calc(100dvh-96px)))] wide:flex-col wide:gap-3 wide:overflow-y-auto wide:rounded-2xl wide:border wide:border-parchment/10 wide:bg-panel/85 wide:p-4"
+        className="contents wide:sticky wide:top-4 wide:flex wide:h-[max(calc(var(--board)+120px),min(34rem,calc(100dvh-96px)))] wide:flex-col wide:gap-4 wide:overflow-y-auto wide:rounded-panel wide:border wide:border-rule-brass wide:bg-surface-rail wide:p-4 wide:shadow-rim"
       >
         <header className="order-1 flex min-w-0 flex-col gap-2 wide:order-none">
-          <Link
-            to="/history"
-            className="w-fit text-xs font-semibold text-gold underline-offset-2 hover:underline"
-          >
-            ← Match history
-          </Link>
+          <BackLink />
           <div className="flex min-w-0 items-baseline justify-between gap-3">
-            <h1 className="font-display text-xl font-semibold">Replay</h1>
-            <p className="shrink-0 text-xs text-parchment/60" data-testid="replay-outcome">
+            <h1 className="font-display text-title font-semibold">Replay</h1>
+            <p
+              className={cx('shrink-0 text-ui', myPlace === 1 ? 'text-gold' : 'text-muted')}
+              data-testid="replay-outcome"
+            >
               {myPlace ? `You finished ${ordinal(myPlace)}` : 'Finished'}
             </p>
           </div>
-          <MatchChips detail={detail} />
+          <MatchMeta detail={detail} />
         </header>
 
         <section
           aria-label="Replay controls"
-          className="order-3 flex flex-col gap-2 wide:order-none"
+          className="order-3 flex flex-col gap-3 wide:order-none wide:border-t wide:border-rule wide:pt-4"
         >
           {sim.error || !sim.verified ? (
             <div data-testid="replay-mismatch">
-              <Alert>
+              <Alert tone="warning">
                 This replay doesn’t reach the position the server recorded, so it may not show the
                 game exactly as it was played.
               </Alert>
             </div>
           ) : null}
           <div className="flex items-center gap-1">
-            <GameButton
-              variant="ghost"
+            <Button
+              variant="quiet"
               className={ctl}
               onClick={() => step(-1)}
               disabled={index < 0}
@@ -546,10 +669,10 @@ function Viewer({
               title="First position (Home)"
               data-testid="replay-first"
             >
-              <ChevronFirst className="h-5 w-5" aria-hidden="true" />
-            </GameButton>
-            <GameButton
-              variant="ghost"
+              <ChevronFirst className="!h-5 !w-5" aria-hidden="true" />
+            </Button>
+            <Button
+              variant="quiet"
               className={ctl}
               onClick={() => step(index - 1)}
               disabled={index < 0}
@@ -557,11 +680,11 @@ function Viewer({
               title="Previous move (←)"
               data-testid="replay-prev"
             >
-              <ChevronLeft className="h-5 w-5" aria-hidden="true" />
-            </GameButton>
-            <GameButton
+              <ChevronLeft className="!h-5 !w-5" aria-hidden="true" />
+            </Button>
+            <Button
               variant="primary"
-              className="w-12 !px-0"
+              className="w-14 !px-0"
               onClick={togglePlay}
               disabled={total === 0}
               aria-label={playing ? 'Pause' : 'Play'}
@@ -569,13 +692,13 @@ function Viewer({
               data-testid="replay-play"
             >
               {playing ? (
-                <Pause className="h-5 w-5" aria-hidden="true" />
+                <Pause className="!h-5 !w-5" aria-hidden="true" />
               ) : (
-                <Play className="h-5 w-5" aria-hidden="true" />
+                <Play className="!h-5 !w-5 fill-current" aria-hidden="true" />
               )}
-            </GameButton>
-            <GameButton
-              variant="ghost"
+            </Button>
+            <Button
+              variant="quiet"
               className={ctl}
               onClick={() => step(index + 1)}
               disabled={atEnd}
@@ -583,10 +706,10 @@ function Viewer({
               title="Next move (→)"
               data-testid="replay-next"
             >
-              <ChevronRight className="h-5 w-5" aria-hidden="true" />
-            </GameButton>
-            <GameButton
-              variant="ghost"
+              <ChevronRight className="!h-5 !w-5" aria-hidden="true" />
+            </Button>
+            <Button
+              variant="quiet"
               className={ctl}
               onClick={() => step(last)}
               disabled={atEnd}
@@ -594,27 +717,11 @@ function Viewer({
               title="Last position (End)"
               data-testid="replay-last"
             >
-              <ChevronLast className="h-5 w-5" aria-hidden="true" />
-            </GameButton>
-            <label htmlFor={speedId} className="sr-only">
-              Speed
-            </label>
-            <select
-              id={speedId}
-              value={speed}
-              onChange={(e) => setSpeed(Number(e.target.value) as (typeof SPEEDS)[number])}
-              className="ml-auto h-10 rounded-lg border border-parchment/20 bg-ink/40 px-2 text-sm text-parchment"
-              data-testid="replay-speed"
-            >
-              {SPEEDS.map((s) => (
-                <option key={s} value={s}>
-                  {s}×
-                </option>
-              ))}
-            </select>
-            <GameButton
-              variant="ghost"
-              className={`${ctl} ${settingsOpen ? 'bg-parchment/[0.08] text-parchment' : ''}`}
+              <ChevronLast className="!h-5 !w-5" aria-hidden="true" />
+            </Button>
+            <Button
+              variant="quiet"
+              className={cx(ctl, 'ml-auto', settingsOpen && 'bg-parchment/[0.08] text-parchment')}
               aria-label="Board settings"
               aria-expanded={settingsOpen}
               aria-controls={settingsId}
@@ -622,7 +729,7 @@ function Viewer({
               title="Board settings"
             >
               <GearIcon className="h-[18px] w-[18px]" />
-            </GameButton>
+            </Button>
           </div>
           <div className="flex items-center gap-3">
             <input
@@ -637,18 +744,33 @@ function Viewer({
               data-testid="replay-scrubber"
             />
             <span
-              className="shrink-0 text-xs tabular-nums text-parchment/65"
+              className="w-12 shrink-0 text-right text-ui text-muted lining-nums tabular-nums"
               data-testid="replay-position"
             >
               {index < 0 ? 'Start' : `${index + 1} / ${total}`}
             </span>
+            <label htmlFor={speedId} className="sr-only">
+              Speed
+            </label>
+            <div className="w-[4.5rem] shrink-0">
+              <select
+                id={speedId}
+                value={speed}
+                onChange={(e) => setSpeed(Number(e.target.value) as (typeof SPEEDS)[number])}
+                className={cx(inputClass, 'select text-ui lining-nums tabular-nums')}
+                data-testid="replay-speed"
+              >
+                {SPEEDS.map((s) => (
+                  <option key={s} value={s}>
+                    {s}×
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
-          <fieldset className="flex min-w-0 items-center gap-2" data-testid="replay-perspective">
-            <legend className="sr-only">View the board from</legend>
-            <span aria-hidden="true" className="shrink-0 text-xs text-parchment/60">
-              View from
-            </span>
-            <div className="flex min-w-0 flex-1 gap-1">
+          <fieldset className="min-w-0" data-testid="replay-perspective">
+            <legend className="mb-1.5 text-caption text-faint">View the board from</legend>
+            <div className="flex min-w-0 gap-1 rounded-control border border-rule-strong bg-black/20 p-1 shadow-well">
               {[0, 1, 2, 3].map((s) => {
                 const on = perspective === s
                 return (
@@ -657,21 +779,20 @@ function Viewer({
                     type="button"
                     aria-pressed={on}
                     onClick={() => setPerspective(s)}
-                    className={`flex h-8 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-md border px-1.5 text-xs font-semibold ${
+                    className={cx(
+                      'flex h-8 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-plate px-1 text-caption font-semibold transition-colors duration-150',
                       on
-                        ? 'border-gold/60 bg-gold/15 text-parchment'
-                        : 'border-parchment/15 text-parchment/70 hover:bg-parchment/[0.06] hover:text-parchment'
-                    }`}
+                        ? 'bg-panel-raised text-parchment shadow-plate ring-1 ring-brass/60'
+                        : 'text-muted hover:text-parchment',
+                    )}
                     title={
-                      s === mySeat ? `${SEAT_LABEL[seatName(s)]} (you)` : SEAT_LABEL[seatName(s)]
+                      s === mySeat
+                        ? `View from ${SEAT_LABEL[seatName(s)]} (you)`
+                        : `View from ${SEAT_LABEL[seatName(s)]}`
                     }
                     data-testid={`replay-view-${seatName(s)}`}
                   >
-                    <span
-                      aria-hidden="true"
-                      className="h-2 w-2 shrink-0 rounded-full"
-                      style={{ backgroundColor: seatHex(s) }}
-                    />
+                    <SeatDot seat={s} className="!h-2 !w-2" />
                     <span className="truncate">{SEAT_LABEL[seatName(s)]}</span>
                     {s === mySeat ? <span className="sr-only">(you)</span> : null}
                   </button>
@@ -682,24 +803,31 @@ function Viewer({
           <p className="sr-only" role="status" aria-live="polite" data-testid="replay-announcer">
             {jumpNote}
           </p>
-          <p className="hidden text-[11px] text-parchment/55 sm:block" aria-hidden="true">
-            ← → step · Space play or pause · Home / End · R turn the board
+          <p
+            className="hidden flex-wrap items-center gap-x-3 gap-y-1.5 text-caption text-faint sm:flex"
+            aria-hidden="true"
+          >
+            <span className="inline-flex items-center gap-1">
+              <Kbd>←</Kbd>
+              <Kbd>→</Kbd> step
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <Kbd>Space</Kbd> play
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <Kbd>Home</Kbd>
+              <Kbd>End</Kbd> jump
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <Kbd>R</Kbd> turn the board
+            </span>
           </p>
           {settingsOpen ? <BoardSettings id={settingsId} /> : null}
         </section>
 
-        <div className="order-4 wide:order-none">
-          <Players
-            detail={detail}
-            statuses={snapshot.statuses}
-            showPlaces={atEnd}
-            clocks={clocks}
-          />
-        </div>
-
         <section
           aria-label="Moves"
-          className="order-5 flex h-72 flex-col rounded-xl border border-parchment/10 bg-ink/25 pt-2.5 pb-1 wide:order-none wide:h-auto wide:min-h-40 wide:flex-1"
+          className="order-4 flex h-72 flex-col rounded-panel border border-black/30 bg-black/20 pt-2.5 pb-1 shadow-well wide:order-none wide:h-auto wide:min-h-40 wide:flex-1"
         >
           <MoveLog
             items={items}
@@ -713,17 +841,17 @@ function Viewer({
 
         <section
           aria-label="Result"
-          className="order-6 rounded-xl border border-parchment/10 bg-ink/25 px-3 py-2.5 text-xs text-parchment/70 wide:order-none"
+          className="order-5 flex flex-col gap-1 text-ui text-muted wide:order-none"
           data-testid="replay-result"
         >
-          <p>{result || 'Finished'}</p>
+          <p className="text-parchment">{result || 'Finished'}</p>
           {sim.verified ? (
             <p
-              className="mt-1 flex items-center gap-1 text-parchment/55"
+              className="flex items-start gap-1.5 text-caption text-faint"
               data-testid="replay-verified"
             >
-              <CircleCheck className="h-3.5 w-3.5 text-seat-east-light" aria-hidden="true" />
-              Replayed with the rules engine; matches the recorded final position
+              <CircleCheck className="mt-px h-3.5 w-3.5 shrink-0 text-ok" aria-hidden="true" />
+              Replayed with the rules engine. It reaches the recorded final position.
             </p>
           ) : null}
         </section>
@@ -769,30 +897,28 @@ export function MatchReplay() {
 
   if (load.kind === 'loading' || (replay && !sim && !rulesError)) {
     return (
-      <CenteredPage>
-        <div className="flex items-center justify-center gap-3 py-20 text-parchment/70">
-          <Spinner /> Loading the replay…
-        </div>
-      </CenteredPage>
+      <div className="flex items-center justify-center gap-3 py-24 text-muted" role="status">
+        <Spinner /> Loading the replay…
+      </div>
     )
   }
   if (load.kind === 'not-found' || load.kind === 'error') {
     return (
-      <CenteredPage>
-        <Card>
-          <h1 className="mb-3 font-display text-2xl font-semibold">
-            {load.kind === 'not-found' ? 'Game not found' : 'Couldn’t load this game'}
-          </h1>
-          <p className="mb-6 text-parchment/70">
-            {load.kind === 'not-found'
-              ? 'Only the players of a game can see its replay.'
-              : 'Please try again later.'}
-          </p>
-          <Link className="font-semibold text-gold hover:underline" to="/history">
+      <NoticePage
+        title={load.kind === 'not-found' ? 'Game not found' : 'This game didn’t load'}
+        emptyTitle={
+          load.kind === 'not-found' ? 'Only its players can open a game' : 'Something went wrong'
+        }
+        action={
+          <Link to="/history" className={linkButtonClass('primary')}>
             Back to match history
           </Link>
-        </Card>
-      </CenteredPage>
+        }
+      >
+        {load.kind === 'not-found'
+          ? 'Check the link, or open the game from your own match history.'
+          : 'Check your connection and reload the page.'}
+      </NoticePage>
     )
   }
   const { detail } = load
@@ -806,27 +932,33 @@ export function MatchReplay() {
       : detail.status === 'aborted'
         ? 'This game was cancelled, so there is no replay.'
         : 'This game hasn’t finished yet.'
+  const mine = detail.players.find((p) => p.isYou)
   return (
-    <div className="mx-auto w-full max-w-2xl px-4 py-8 sm:py-12">
-      <Link
-        to="/history"
-        className="text-xs font-semibold text-gold underline-offset-2 hover:underline"
-      >
-        ← Match history
-      </Link>
-      <h1 className="mt-2 mb-3 font-display text-3xl font-semibold tracking-tight">Game details</h1>
-      <MatchChips detail={detail} />
-      <div className="mt-5" data-testid="replay-unavailable">
+    <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-10 sm:py-14">
+      <header className="flex flex-col gap-2">
+        <BackLink />
+        <h1 className="font-display text-title font-semibold">Game details</h1>
+        <MatchMeta detail={detail} />
+      </header>
+      <div data-testid="replay-unavailable">
         <Alert tone="info">{message}</Alert>
       </div>
-      <div className="mt-5">
-        <Players detail={detail} statuses={null} />
-      </div>
-      {detail.endReason ? (
-        <p className="mt-4 text-sm text-parchment/65">
-          {END_REASON_LABEL[detail.endReason] ?? detail.endReason}
-        </p>
-      ) : null}
+      <SeatsAround
+        detail={detail}
+        perspective={mine?.seat ?? 0}
+        plate={(p, pos) => (
+          <PlayerPlate p={p} status={null} toMove={false} showPlace clock={null} pos={pos} />
+        )}
+      >
+        {/* The table, without a board: how the game ended. */}
+        <div className="flex aspect-square w-[min(100%,15rem)] items-center justify-center rounded-panel border-[6px] border-walnut bg-baize-deep p-5 text-center shadow-well">
+          <p className="text-ui text-muted">
+            {detail.endReason
+              ? (END_REASON_LABEL[detail.endReason] ?? detail.endReason)
+              : 'No result recorded'}
+          </p>
+        </div>
+      </SeatsAround>
     </div>
   )
 }

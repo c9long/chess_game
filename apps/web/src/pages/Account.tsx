@@ -2,18 +2,13 @@ import type { FriendRequestPolicy } from '@game/protocol'
 import { startAuthentication } from '@simplewebauthn/browser'
 import {
   Check,
-  Download,
   KeyRound,
   Link2,
   LockKeyhole,
   Mail,
   Plus,
-  ShieldCheck,
   Smartphone,
   TicketCheck,
-  Trash2,
-  TriangleAlert,
-  UserPlus,
 } from 'lucide-react'
 import { QRCodeSVG } from 'qrcode.react'
 import {
@@ -27,7 +22,17 @@ import {
   useState,
 } from 'react'
 import { Link, useLocation } from 'react-router'
-import { Alert, Button, cx, Field, linkButtonClass, Pill } from '../components/ui.tsx'
+import { Monogram } from '../components/social/FriendButton.tsx'
+import {
+  Alert,
+  Button,
+  cx,
+  Field,
+  linkButtonClass,
+  PageTitle,
+  Pill,
+  textLinkClass,
+} from '../components/ui.tsx'
 import {
   ApiError,
   api,
@@ -56,34 +61,28 @@ interface LinkedAccount {
   createdAt: Date | string
 }
 
-const iconClass = 'h-5 w-5'
-
 /**
- * A settings card: icon, heading and description on the left, actions on the right, and an
- * optional body below a divider.
+ * A settings section: heading and description with actions at the right (under them on
+ * phones), then an optional body. Sections are separated by a rule, not boxed. `danger` draws
+ * the section as a panel with a brick edge (deleting the account).
  */
 function Section({
   id,
-  icon,
   title,
   description,
   actions,
   children,
   tone = 'default',
   testId,
-  level = 2,
 }: {
   id: string
-  icon: ReactNode
   title: string
   description?: ReactNode
   actions?: ReactNode
   children?: ReactNode
   tone?: 'default' | 'danger'
   testId?: string
-  level?: 2 | 3
 }) {
-  const Heading = level === 2 ? 'h2' : 'h3'
   const danger = tone === 'danger'
   return (
     <section
@@ -91,53 +90,26 @@ function Section({
       data-testid={testId}
       aria-labelledby={`${id}-title`}
       className={cx(
-        'scroll-mt-6 rounded-2xl border shadow-lg shadow-black/20',
-        danger ? 'border-seat-south/40 bg-seat-south/[0.06]' : 'border-parchment/10 bg-panel/80',
+        'scroll-mt-6',
+        danger
+          ? 'relative overflow-hidden rounded-panel border border-destructive-light/30 bg-destructive/[0.08] p-5 shadow-rim before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:bg-destructive-light/70 sm:p-6'
+          : 'border-t border-rule pt-7',
       )}
     >
-      <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-start sm:justify-between sm:gap-6 sm:p-6">
-        <div className="flex min-w-0 gap-4">
-          <span
-            aria-hidden="true"
-            className={cx(
-              'grid h-10 w-10 shrink-0 place-items-center rounded-xl border',
-              danger
-                ? 'border-seat-south/40 bg-seat-south/10 text-seat-south-light'
-                : 'border-brass/30 bg-brass/10 text-brass',
-            )}
-          >
-            {icon}
-          </span>
-          <div className="min-w-0 pt-0.5">
-            <Heading
-              id={`${id}-title`}
-              className="font-display text-lg leading-tight font-semibold tracking-tight"
-            >
-              {title}
-            </Heading>
-            {description ? (
-              <p className="mt-1 text-sm leading-relaxed text-pretty text-parchment/60">
-                {description}
-              </p>
-            ) : null}
-          </div>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between sm:gap-8">
+        <div className="min-w-0">
+          <h2 id={`${id}-title`} className="font-display text-heading font-semibold">
+            {title}
+          </h2>
+          {description ? (
+            <p className="mt-1.5 max-w-[60ch] text-ui text-pretty text-faint">{description}</p>
+          ) : null}
         </div>
         {actions ? (
-          <div className="flex shrink-0 flex-wrap items-center gap-2 max-sm:pl-14 sm:justify-end">
-            {actions}
-          </div>
+          <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">{actions}</div>
         ) : null}
       </div>
-      {children ? (
-        <div
-          className={cx(
-            'border-t px-5 py-5 sm:px-6',
-            danger ? 'border-seat-south/25' : 'border-parchment/10',
-          )}
-        >
-          {children}
-        </div>
-      ) : null}
+      {children ? <div className="mt-5">{children}</div> : null}
     </section>
   )
 }
@@ -231,7 +203,7 @@ export function Account() {
           { id: 'privacy', label: 'Friend requests' },
         ]),
     { id: 'your-data', label: 'Your data' },
-    { id: 'danger-zone', label: 'Danger zone' },
+    { id: 'danger-zone', label: guest ? 'Delete guest account' : 'Delete account' },
   ]
   const active = useActiveSection(nav.map((n) => n.id))
 
@@ -240,23 +212,29 @@ export function Account() {
 
   return (
     <div className="mx-auto w-full max-w-5xl px-4 py-10 sm:py-14">
-      <header className="mb-6 lg:mb-8">
-        <h1 className="font-display text-title font-semibold tracking-tight">Account</h1>
-        <p className="mt-2 text-sm text-parchment/65">
-          {guest
-            ? 'You’re playing as a guest.'
-            : 'How you sign in, how we protect your account, and the data we keep.'}
-        </p>
-      </header>
+      <PageTitle
+        title="Account"
+        subtitle={
+          guest
+            ? 'You’re playing as a guest. Create an account to keep your games and play ranked.'
+            : 'How you sign in, how your account is protected, and the data we keep.'
+        }
+      />
 
-      {/* Phones and tablets: a scrollable row of section links. */}
-      <nav aria-label="Account sections" className="-mx-4 mb-5 overflow-x-auto px-4 lg:hidden">
-        <ul className="flex w-max gap-2 pb-1">
+      {/* Phones and tablets: the section links wrap onto as many lines as they need (nothing
+          hides off the edge), the current one marked with the brass bar. */}
+      <nav aria-label="Account sections" className="mb-6 border-b border-rule pb-2 lg:hidden">
+        <ul className="flex flex-wrap gap-x-1 gap-y-0.5">
           {nav.map((n) => (
             <li key={n.id}>
               <a
                 href={`#${n.id}`}
-                className="inline-flex h-9 items-center rounded-full border border-parchment/15 bg-panel/70 px-3.5 text-xs font-semibold whitespace-nowrap text-parchment/75 transition-colors hover:border-parchment/35 hover:text-parchment"
+                aria-current={active === n.id ? 'location' : undefined}
+                className={cx(
+                  'relative inline-flex h-9 items-center rounded-control px-2 text-ui font-medium whitespace-nowrap text-muted transition-colors duration-150 hover:text-parchment',
+                  'after:absolute after:inset-x-2 after:bottom-1 after:h-0.5 after:rounded-full after:bg-brass after:opacity-0 aria-[current]:text-parchment aria-[current]:after:opacity-100',
+                  n.id === 'danger-zone' && active !== n.id && 'text-destructive-light',
+                )}
               >
                 {n.label}
               </a>
@@ -267,18 +245,18 @@ export function Account() {
 
       <div className="lg:grid lg:grid-cols-[12.5rem_minmax(0,1fr)] lg:gap-10">
         <nav aria-label="Account sections" className="hidden lg:block">
-          <ul className="sticky top-6 flex flex-col gap-0.5 border-l border-parchment/10">
+          <ul className="sticky top-6 flex flex-col gap-0.5 border-l border-rule">
             {nav.map((n) => (
               <li key={n.id}>
                 <a
                   href={`#${n.id}`}
                   aria-current={active === n.id ? 'location' : undefined}
                   className={cx(
-                    '-ml-px block border-l-2 py-1.5 pl-4 text-sm transition-colors duration-150',
+                    '-ml-px block border-l-2 py-1.5 pl-4 text-ui transition-colors duration-150',
                     active === n.id
-                      ? 'border-gold font-semibold text-parchment'
-                      : 'border-transparent text-parchment/60 hover:border-parchment/30 hover:text-parchment',
-                    n.id === 'danger-zone' && active !== n.id && 'text-seat-south-light',
+                      ? 'border-brass font-semibold text-parchment'
+                      : 'border-transparent text-faint hover:border-parchment/30 hover:text-parchment',
+                    n.id === 'danger-zone' && active !== n.id && 'text-destructive-light',
                   )}
                 >
                   {n.label}
@@ -288,7 +266,7 @@ export function Account() {
           </ul>
         </nav>
 
-        <div className="flex min-w-0 flex-col gap-5">
+        <div className="flex min-w-0 flex-col gap-8">
           <ProfileCard
             name={displayName(user)}
             email={guest ? undefined : user.email}
@@ -311,12 +289,7 @@ export function Account() {
           )}
           <DataExport />
 
-          <div id="danger-zone" className="mt-4 flex scroll-mt-6 flex-col gap-3">
-            <h2 className="flex items-center gap-3 text-xs font-semibold tracking-[0.3em] text-seat-south-light uppercase">
-              <TriangleAlert aria-hidden="true" className="h-4 w-4" />
-              Danger zone
-              <span aria-hidden="true" className="h-px flex-1 bg-seat-south/25" />
-            </h2>
+          <div id="danger-zone" className="mt-2 scroll-mt-6">
             <DeleteAccount guest={guest} />
           </div>
         </div>
@@ -336,58 +309,41 @@ function ProfileCard({
   guest: boolean
   verified: boolean
 }) {
-  const initial = (name.trim()[0] ?? '?').toUpperCase()
   return (
     <section
       id="profile"
       aria-labelledby="profile-title"
-      className="relative scroll-mt-6 overflow-hidden rounded-2xl border border-parchment/10 bg-panel/80 shadow-lg shadow-black/20"
+      className="relative flex scroll-mt-6 flex-col gap-5 overflow-hidden rounded-plate border border-rule-brass bg-surface-rail py-5 pr-5 pl-6 shadow-plate sm:flex-row sm:items-center sm:justify-between sm:py-6 sm:pr-6 sm:pl-7"
     >
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-linear-to-b from-gold/10 to-transparent"
-      />
+      <span aria-hidden="true" className="absolute inset-y-0 left-0 w-1 bg-brass/70" />
       <h2 id="profile-title" className="sr-only">
         Profile
       </h2>
-      <div className="relative flex flex-col gap-5 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
-        <div className="flex min-w-0 items-center gap-4">
-          <span
-            aria-hidden="true"
-            className="grid h-16 w-16 shrink-0 place-items-center rounded-full bg-[conic-gradient(from_210deg,#e6b42a,#8a6a1c,#e6b42a,#c9a55a,#e6b42a)] p-[2px] shadow-[0_10px_30px_-12px_rgba(212,160,23,0.6)]"
+      <div className="flex min-w-0 items-center gap-4">
+        <Monogram name={name} size="lg" />
+        <div className="min-w-0">
+          <p
+            className="truncate font-display text-title leading-tight font-semibold"
+            data-testid="account-name"
           >
-            <span className="grid h-full w-full place-items-center rounded-full bg-[radial-gradient(circle_at_35%_30%,#3a332b,#1d1b19_75%)] font-display text-2xl font-semibold text-gold">
-              {initial}
-            </span>
-          </span>
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <span
-                className="truncate font-display text-xl font-semibold tracking-tight sm:text-2xl"
-                data-testid="account-name"
-              >
-                {name}
-              </span>
-              {guest ? (
-                <Pill tone="gold">Guest</Pill>
-              ) : verified ? (
-                <Pill tone="success">
-                  <Check aria-hidden="true" className="h-3 w-3" strokeWidth={3} />
-                  Verified
-                </Pill>
-              ) : null}
-            </div>
-            <p className="mt-1 text-sm break-all text-parchment/60">
-              {guest ? 'Temporary account in this browser' : email}
-            </p>
-          </div>
+            {name}
+          </p>
+          <p className="mt-1 flex flex-wrap items-center gap-2 text-ui text-muted">
+            <span className="break-all">{guest ? 'Guest account in this browser' : email}</span>
+            {guest ? null : verified ? (
+              <Pill tone="success">
+                <Check aria-hidden="true" className="h-3 w-3" strokeWidth={3} />
+                Verified
+              </Pill>
+            ) : null}
+          </p>
         </div>
-        {guest ? (
-          <Link to="/sign-up" className={linkButtonClass('primary')}>
-            Create account and keep your history
-          </Link>
-        ) : null}
       </div>
+      {guest ? (
+        <Link to="/sign-up" className={linkButtonClass('primary')}>
+          Create account and keep your history
+        </Link>
+      ) : null}
     </section>
   )
 }
@@ -403,13 +359,12 @@ function GuestReference() {
   return (
     <Section
       id="reference"
-      icon={<TicketCheck className={iconClass} />}
       title="Reference code"
       description="Guest accounts have no email address. If you write to us about your data (for example to request a copy or deletion), include this code and send the request from this browser session."
       testId="guest-reference"
     >
       <code
-        className="inline-block rounded-lg border border-gold/20 bg-ink/70 px-4 py-2 font-mono text-lg tracking-widest text-gold"
+        className="inline-block rounded-control border border-rule-strong bg-black/25 px-4 py-2 text-lead font-medium tracking-[0.06em] text-parchment shadow-well [font-feature-settings:'tnum','zero','ss02']"
         data-testid="reference-code"
       >
         {code ?? '…'}
@@ -450,9 +405,8 @@ interface PasskeyRow {
   createdAt?: Date | string | null
 }
 
-const listClass =
-  'divide-y divide-parchment/10 overflow-hidden rounded-xl border border-parchment/10'
-const rowClass = 'flex items-center justify-between gap-3 bg-ink/30 px-4 py-3 text-sm'
+const listClass = 'divide-y divide-rule border-y border-rule'
+const rowClass = 'flex min-h-14 items-center justify-between gap-3 py-3 text-ui'
 
 function Passkeys() {
   const [keys, setKeys] = useState<PasskeyRow[]>()
@@ -512,7 +466,6 @@ function Passkeys() {
   return (
     <Section
       id="passkeys-section"
-      icon={<KeyRound className={iconClass} />}
       title="Passkeys"
       description="Sign in with your device’s fingerprint, face or screen lock instead of a password."
       testId="passkeys"
@@ -529,12 +482,14 @@ function Passkeys() {
             {keys.map((k) => (
               <li key={k.id} className={cx(rowClass, 'flex-wrap')} data-testid="passkey-row">
                 <span className="flex min-w-[9rem] flex-1 items-center gap-3">
-                  <KeyRound aria-hidden="true" className="h-4 w-4 shrink-0 text-parchment/45" />
+                  <KeyRound aria-hidden="true" className="h-4 w-4 shrink-0 text-brass" />
                   <span className="min-w-0">
-                    <span className="block truncate font-medium">{k.name || 'Passkey'}</span>
+                    <span className="block truncate text-body font-medium">
+                      {k.name || 'Passkey'}
+                    </span>
                     {k.createdAt ? (
-                      <span className="block text-xs text-parchment/60">
-                        added {new Date(k.createdAt).toLocaleDateString()}
+                      <span className="block text-caption text-faint">
+                        Added {new Date(k.createdAt).toLocaleDateString()}
                       </span>
                     ) : null}
                   </span>
@@ -551,9 +506,9 @@ function Passkeys() {
                     Rename
                   </Button>
                   <Button
-                    variant="ghost"
+                    variant="quiet"
                     size="sm"
-                    className="enabled:hover:text-seat-south-light"
+                    className="enabled:hover:text-destructive-light"
                     onClick={(e) => {
                       removeOpener.current = e.currentTarget
                       setRemoving(k)
@@ -566,8 +521,10 @@ function Passkeys() {
             ))}
           </ul>
         ) : (
-          <p className="rounded-xl border border-dashed border-parchment/15 px-4 py-5 text-center text-sm text-parchment/55">
-            {keys ? 'No passkeys yet.' : 'Loading…'}
+          <p className="rounded-panel border border-dashed border-rule-strong px-4 py-5 text-ui text-muted">
+            {keys
+              ? 'No passkeys yet. Add one to sign in without typing your password.'
+              : 'Loading…'}
           </p>
         )}
         {error ? <Alert>{error}</Alert> : null}
@@ -708,7 +665,6 @@ function TwoFactorSettings({ enabled, hasPassword }: { enabled: boolean; hasPass
   return (
     <Section
       id="two-step"
-      icon={<ShieldCheck className={iconClass} />}
       title="Two-step verification"
       description="Ask for a code from an authenticator app when you sign in with a password."
       testId="two-factor"
@@ -718,10 +674,7 @@ function TwoFactorSettings({ enabled, hasPassword }: { enabled: boolean; hasPass
             <span className="sr-only">Status: </span>
             <span
               aria-hidden="true"
-              className={cx(
-                'h-1.5 w-1.5 rounded-full',
-                enabled ? 'bg-seat-east-light' : 'bg-parchment/40',
-              )}
+              className={cx('h-1.5 w-1.5 rounded-full', enabled ? 'bg-ok' : 'bg-parchment/40')}
             />
             {enabled ? 'On' : 'Off'}
           </Pill>
@@ -733,14 +686,19 @@ function TwoFactorSettings({ enabled, hasPassword }: { enabled: boolean; hasPass
         {setup ? (
           <div className="flex flex-col gap-5">
             <div className="flex flex-col items-start gap-5 sm:flex-row">
-              <div className="rounded-xl bg-parchment p-3 shadow-lg shadow-black/30">
-                <QRCodeSVG value={normalizeTotpUri(setup.uri)} size={168} level="M" />
+              <div className="rounded-control bg-parchment p-3 shadow-plate">
+                <QRCodeSVG
+                  value={normalizeTotpUri(setup.uri)}
+                  size={168}
+                  level="M"
+                  title="QR code for your authenticator app"
+                />
               </div>
-              <div className="flex min-w-0 flex-col gap-2 text-sm">
-                <p>Scan this code with your authenticator app.</p>
-                <p className="text-parchment/60">Can’t scan it? Enter this key instead:</p>
+              <div className="flex min-w-0 flex-col gap-2 text-ui">
+                <p className="text-body">Scan this code with your authenticator app.</p>
+                <p className="text-faint">Can’t scan it? Enter this key instead:</p>
                 <code
-                  className="rounded-lg border border-gold/20 bg-ink/70 px-2.5 py-1.5 font-mono break-all text-gold"
+                  className="rounded-control border border-rule-strong bg-black/25 px-2.5 py-1.5 break-all text-parchment shadow-well [font-feature-settings:'tnum','zero','ss02']"
                   data-testid="totp-secret"
                 >
                   {secret}
@@ -748,8 +706,8 @@ function TwoFactorSettings({ enabled, hasPassword }: { enabled: boolean; hasPass
               </div>
             </div>
             <div>
-              <p className="mb-2 text-sm font-medium">Backup codes</p>
-              <p className="mb-3 text-sm text-parchment/60">
+              <p className="mb-1 text-ui font-semibold">Backup codes</p>
+              <p className="mb-3 text-ui text-faint">
                 Save these somewhere safe. Each one signs you in once if you lose your device.
               </p>
               <BackupCodes codes={setup.backupCodes} />
@@ -767,7 +725,7 @@ function TwoFactorSettings({ enabled, hasPassword }: { enabled: boolean; hasPass
               <Button busy={busy} disabled={code.length < 6} onClick={confirm}>
                 Turn on
               </Button>
-              <Button variant="ghost" onClick={() => setSetup(undefined)}>
+              <Button variant="quiet" onClick={() => setSetup(undefined)}>
                 Cancel
               </Button>
             </div>
@@ -861,11 +819,11 @@ function BackupCodesLeft({
     // The server couldn't read the stored codes: the count is unknown, not zero.
     return (
       <div
-        className="flex items-start gap-2.5 rounded-xl border border-parchment/10 bg-ink/30 px-4 py-3 text-sm text-parchment/75"
+        className="flex items-start gap-2.5 border-y border-rule py-3 text-ui text-muted"
         data-testid="backup-codes-left"
         data-unknown="true"
       >
-        <TicketCheck aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-parchment/45" />
+        <TicketCheck aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-brass" />
         <span>
           We couldn’t check how many backup codes you have left. If you’re not sure you still have
           some, create a new set.
@@ -883,7 +841,7 @@ function BackupCodesLeft({
           key={i}
           className={cx(
             'h-1.5 w-3 rounded-full',
-            i < remaining ? 'bg-gold' : low ? 'bg-gold/20' : 'bg-parchment/15',
+            i < remaining ? (low ? 'bg-warn' : 'bg-brass') : 'bg-parchment/15',
           )}
         />
       ))}
@@ -892,11 +850,11 @@ function BackupCodesLeft({
   if (!low) {
     return (
       <div
-        className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-parchment/10 bg-ink/30 px-4 py-3 text-sm"
+        className="flex flex-wrap items-center gap-x-4 gap-y-2 border-y border-rule py-3 text-ui"
         data-testid="backup-codes-left"
       >
         <span className="flex items-center gap-2.5 font-medium">
-          <TicketCheck aria-hidden="true" className="h-4 w-4 text-parchment/45" />
+          <TicketCheck aria-hidden="true" className="h-4 w-4 text-brass" />
           {label}
         </span>
         {meter}
@@ -909,7 +867,7 @@ function BackupCodesLeft({
         <div className="flex flex-col gap-3">
           <div>
             <p className="font-semibold">{remaining === 0 ? 'No backup codes left' : label}</p>
-            <p className="mt-1 text-parchment/70">
+            <p className="mt-1 text-muted">
               Each code signs you in once if you lose your authenticator app. Create a new set so
               you don’t get locked out
               {needsPassword ? ': enter your current password, then choose Create new codes.' : '.'}
@@ -936,13 +894,13 @@ function BackupCodesLeft({
 function BackupCodes({ codes }: { codes: string[] }) {
   return (
     <ul
-      className="grid grid-cols-2 gap-2 font-mono text-sm sm:grid-cols-3"
+      className="grid grid-cols-2 gap-2 text-ui font-medium sm:grid-cols-3 [font-feature-settings:'tnum','zero','ss02']"
       data-testid="backup-codes"
     >
       {codes.map((c) => (
         <li
           key={c}
-          className="rounded-md border border-parchment/10 bg-ink/70 px-2 py-1.5 text-center tracking-wide"
+          className="rounded-plate border border-rule bg-black/25 px-2 py-1.5 text-center tracking-[0.04em] shadow-well"
         >
           {c}
         </li>
@@ -976,7 +934,6 @@ function LinkedAccounts({
   return (
     <Section
       id="linked"
-      icon={<Link2 className={iconClass} />}
       title="Linked accounts"
       description="Ways you can sign in to this account."
       testId="linked-accounts"
@@ -987,17 +944,17 @@ function LinkedAccounts({
             <li key={a.id} className={rowClass}>
               <span className="flex min-w-0 items-center gap-3">
                 {a.providerId === 'credential' ? (
-                  <Mail aria-hidden="true" className="h-4 w-4 shrink-0 text-parchment/45" />
+                  <Mail aria-hidden="true" className="h-4 w-4 shrink-0 text-brass" />
                 ) : (
-                  <Link2 aria-hidden="true" className="h-4 w-4 shrink-0 text-parchment/45" />
+                  <Link2 aria-hidden="true" className="h-4 w-4 shrink-0 text-brass" />
                 )}
-                <span className="truncate font-medium">{label(a.providerId)}</span>
+                <span className="truncate text-body font-medium">{label(a.providerId)}</span>
                 {primary?.id === a.id ? <Pill>Primary</Pill> : null}
               </span>
               {a.providerId !== 'credential' && (accounts?.length ?? 0) > 1 ? (
                 <Button
-                  variant="ghost"
-                  className="h-8 px-3"
+                  variant="quiet"
+                  size="sm"
                   onClick={async () => {
                     const { error: err } = await authClient.unlinkAccount({ accountId: a.id })
                     if (err) setError(authErrorMessage(err))
@@ -1030,9 +987,7 @@ function LinkedAccounts({
             ))}
           </div>
         ) : providers.length === 0 ? (
-          <p className="text-sm text-parchment/50">
-            No sign-in providers are configured on this server.
-          </p>
+          <p className="text-ui text-faint">No other sign-in services are set up on this server.</p>
         ) : null}
       </div>
     </Section>
@@ -1061,7 +1016,12 @@ function FriendRequestPrivacy() {
   useEffect(() => {
     fetchSocialSettings()
       .then((s) => setPolicy(s.friendRequests))
-      .catch(() => setStatus({ tone: 'error', text: 'Could not load this setting.' }))
+      .catch(() =>
+        setStatus({
+          tone: 'error',
+          text: 'This setting didn’t load. Reload the page to try again.',
+        }),
+      )
   }, [])
 
   async function choose(next: FriendRequestPolicy) {
@@ -1075,7 +1035,7 @@ function FriendRequestPrivacy() {
       setStatus({ tone: 'success', text: 'Saved.' })
     } catch {
       setPolicy(before)
-      setStatus({ tone: 'error', text: 'We couldn’t save that. Please try again.' })
+      setStatus({ tone: 'error', text: 'That didn’t save. Check your connection and try again.' })
     } finally {
       setSaving(false)
     }
@@ -1084,7 +1044,6 @@ function FriendRequestPrivacy() {
   return (
     <Section
       id="privacy"
-      icon={<UserPlus className={iconClass} />}
       title="Who can send me friend requests"
       description="If someone isn’t allowed to send you a request, they see the same message as for an unknown username, so they can’t tell which option you chose. Your public profile stays visible either way."
       testId="friend-request-privacy"
@@ -1100,10 +1059,11 @@ function FriendRequestPrivacy() {
           <label
             key={o.value}
             className={cx(
-              'flex cursor-pointer items-start gap-3 rounded-xl border px-4 py-3 transition-colors',
+              'flex cursor-pointer items-start gap-3 rounded-control border px-4 py-3 transition-colors duration-150',
+              'has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-gold',
               policy === o.value
-                ? 'border-gold/60 bg-gold/10'
-                : 'border-parchment/15 hover:border-parchment/35',
+                ? 'border-brass/70 bg-brass/10'
+                : 'border-rule-strong hover:border-parchment/35',
             )}
           >
             <input
@@ -1112,12 +1072,12 @@ function FriendRequestPrivacy() {
               value={o.value}
               checked={policy === o.value}
               onChange={() => void choose(o.value)}
-              className="mt-1 h-4 w-4 accent-[#d4a017]"
+              className="mt-1 h-4 w-4 accent-[var(--color-brass)]"
               data-testid={`friend-requests-${o.value}`}
             />
             <span className="min-w-0">
-              <span className="block text-sm font-semibold">{o.label}</span>
-              <span className="block text-xs leading-relaxed text-parchment/60">{o.hint}</span>
+              <span className="block text-ui font-semibold">{o.label}</span>
+              <span className="block text-caption text-muted">{o.hint}</span>
             </span>
           </label>
         ))}
@@ -1125,8 +1085,8 @@ function FriendRequestPrivacy() {
       <p
         role="status"
         className={cx(
-          'mt-2 min-h-5 text-xs',
-          status?.tone === 'error' ? 'text-seat-south-light' : 'text-seat-east-light',
+          'mt-2 min-h-5 text-caption',
+          status?.tone === 'error' ? 'text-destructive-light' : 'text-ok',
         )}
       >
         {status?.text ?? ''}
@@ -1160,7 +1120,7 @@ function DataExport() {
       a.remove()
       setTimeout(() => URL.revokeObjectURL(url), 1000)
     } catch {
-      setError('We couldn’t prepare your download. Please try again.')
+      setError('Your download didn’t start. Check your connection and try again.')
     } finally {
       setBusy(false)
     }
@@ -1168,7 +1128,6 @@ function DataExport() {
   return (
     <Section
       id="your-data"
-      icon={<Download className={iconClass} />}
       title="Your data"
       description="Download a copy of your profile, legal acceptances, ratings and match history (JSON)."
       actions={
@@ -1335,8 +1294,6 @@ function DeleteAccount({ guest }: { guest: boolean }) {
   return (
     <Section
       id="delete"
-      level={3}
-      icon={<Trash2 className={iconClass} />}
       title={guest ? 'Delete guest account' : 'Delete account'}
       tone="danger"
       description={
@@ -1388,14 +1345,8 @@ function DeleteAccount({ guest }: { guest: boolean }) {
               aria-describedby={hintId}
               data-testid="delete-step-up"
             >
-              <legend className="mb-2 text-sm font-medium text-parchment/85">
-                Confirm it’s you
-              </legend>
-              <p
-                id={hintId}
-                className="-mt-1 text-sm text-parchment/60"
-                data-testid="delete-step-up-hint"
-              >
+              <legend className="mb-2 text-ui font-semibold">Confirm it’s you</legend>
+              <p id={hintId} className="-mt-1 text-ui text-faint" data-testid="delete-step-up-hint">
                 You signed in more than a day ago, so we need to check it’s really you before
                 deleting your account.
               </p>
@@ -1405,11 +1356,11 @@ function DeleteAccount({ guest }: { guest: boolean }) {
                     <label
                       key={m}
                       className={cx(
-                        'inline-flex h-9 cursor-pointer items-center gap-2 rounded-full border px-3.5 text-sm font-medium transition-colors duration-150',
+                        'inline-flex h-9 cursor-pointer items-center gap-2 rounded-control border px-3.5 text-ui font-medium transition-colors duration-150',
                         'has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-gold',
                         method === m
-                          ? 'border-gold/60 bg-gold/10 text-parchment'
-                          : 'border-parchment/15 text-parchment/70 hover:border-parchment/35 hover:text-parchment',
+                          ? 'border-brass/70 bg-brass/10 text-parchment'
+                          : 'border-rule-strong text-muted hover:border-parchment/35 hover:text-parchment',
                       )}
                     >
                       <input
@@ -1438,11 +1389,8 @@ function DeleteAccount({ guest }: { guest: boolean }) {
                   className="sm:max-w-sm"
                 />
               ) : method === 'passkey' ? (
-                <p className="flex items-start gap-2.5 text-sm text-parchment/70">
-                  <KeyRound
-                    aria-hidden="true"
-                    className="mt-0.5 h-4 w-4 shrink-0 text-parchment/45"
-                  />
+                <p className="flex items-start gap-2.5 text-ui text-muted">
+                  <KeyRound aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-brass" />
                   Your browser will ask for one of this account’s passkeys.
                 </p>
               ) : (
@@ -1462,7 +1410,10 @@ function DeleteAccount({ guest }: { guest: boolean }) {
                   />
                   <button
                     type="button"
-                    className="-my-1 inline-flex min-h-8 items-center rounded-md py-1 text-sm font-medium text-gold underline-offset-4 hover:underline"
+                    className={cx(
+                      textLinkClass,
+                      '-my-1 inline-flex min-h-8 items-center py-1 text-ui',
+                    )}
                     onClick={() => {
                       setUseBackup((b) => !b)
                       setCode('')
@@ -1491,7 +1442,7 @@ function DeleteAccount({ guest }: { guest: boolean }) {
                   : 'Delete my account'}
             </Button>
             <Button
-              variant="ghost"
+              variant="quiet"
               onClick={() => {
                 reset()
                 setOpen(false)

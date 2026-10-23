@@ -113,7 +113,7 @@ export function authErrorMessage(
   switch (error.code) {
     case 'INVALID_EMAIL_OR_PASSWORD':
     case 'INVALID_USERNAME_OR_PASSWORD':
-      return 'That sign-in did not match an account.'
+      return 'Those details did not match an account. Check your email or username and password, or reset your password.'
     case 'INVALID_PASSWORD':
       return 'That password is incorrect.'
     case 'EMAIL_NOT_VERIFIED':

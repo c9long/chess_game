@@ -35,10 +35,10 @@ import {
 } from '../../lib/moderation.ts'
 import { socialNotice } from '../../lib/social.ts'
 import { ConfirmDialog, Dialog, DialogClose } from '../overlay.tsx'
-import { Alert, Button, cx } from '../ui.tsx'
+import { Alert, Button, cx, inputClass } from '../ui.tsx'
 
 const itemClass =
-  'flex min-h-10 cursor-pointer items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium outline-none select-none data-[highlighted]:bg-parchment/[0.07] data-[disabled]:opacity-50'
+  'flex min-h-10 cursor-pointer items-center gap-2.5 rounded-control px-3 py-2 text-ui font-medium outline-none select-none data-[highlighted]:bg-parchment/[0.07] data-[disabled]:cursor-default data-[disabled]:text-faint'
 
 export function PlayerMenu({
   name,
@@ -102,10 +102,10 @@ export function PlayerMenu({
             className={cx(
               // The hit area reaches about 44px tall (and a little wider) for touch, beyond
               // the small visible button.
-              'relative inline-flex shrink-0 items-center justify-center border text-parchment/65 transition-colors before:absolute before:-inset-x-0.5 hover:text-parchment data-[state=open]:bg-parchment/10 data-[state=open]:text-parchment',
+              'relative inline-flex shrink-0 items-center justify-center border border-rule text-muted transition-colors duration-150 before:absolute before:-inset-x-0.5 hover:border-rule-strong hover:text-parchment data-[state=open]:border-rule-brass data-[state=open]:bg-parchment/[0.07] data-[state=open]:text-parchment',
               compact
-                ? 'h-6 w-6 rounded-md border-parchment/15 before:-inset-y-2.5 hover:border-parchment/35'
-                : 'h-7 w-7 rounded-full border-parchment/15 before:-inset-y-2 hover:border-parchment/35',
+                ? 'h-6 w-6 rounded-plate before:-inset-y-2.5'
+                : 'h-8 w-8 rounded-control before:-inset-y-1.5',
               className,
             )}
             aria-label={`More for ${name}`}
@@ -120,10 +120,10 @@ export function PlayerMenu({
             align="end"
             sideOffset={6}
             collisionPadding={8}
-            className="z-50 min-w-48 rounded-xl border border-parchment/10 bg-panel p-1.5 text-parchment shadow-xl shadow-black/50 data-[state=closed]:animate-overlay-out data-[state=open]:animate-pop-in"
+            className="z-50 min-w-52 rounded-panel border border-rule-brass bg-panel p-1.5 text-parchment shadow-lift data-[state=closed]:animate-overlay-out data-[state=open]:animate-pop-in"
             data-testid="player-menu"
           >
-            <DropdownMenu.Label className="truncate px-3 pt-1.5 pb-1 text-xs text-parchment/65">
+            <DropdownMenu.Label className="mb-1 truncate border-b border-rule px-3 pt-1.5 pb-2 font-display text-ui font-semibold text-parchment">
               {name}
             </DropdownMenu.Label>
             {items.includes('block') ? (
@@ -135,7 +135,7 @@ export function PlayerMenu({
                 }}
                 data-testid="menu-block"
               >
-                <Ban aria-hidden="true" className="h-4 w-4 text-parchment/60" />
+                <Ban aria-hidden="true" className="h-4 w-4 text-faint" />
                 Block
               </DropdownMenu.Item>
             ) : null}
@@ -145,19 +145,19 @@ export function PlayerMenu({
                 onSelect={() => void unblock()}
                 data-testid="menu-unblock"
               >
-                <ShieldCheck aria-hidden="true" className="h-4 w-4 text-parchment/60" />
+                <ShieldCheck aria-hidden="true" className="h-4 w-4 text-faint" />
                 Unblock
               </DropdownMenu.Item>
             ) : null}
             {items.includes('report') ? (
               reported ? (
                 <DropdownMenu.Item className={itemClass} disabled data-testid="menu-reported">
-                  <Flag aria-hidden="true" className="h-4 w-4 text-parchment/60" />
+                  <Flag aria-hidden="true" className="h-4 w-4" />
                   Reported
                 </DropdownMenu.Item>
               ) : (
                 <DropdownMenu.Item
-                  className={cx(itemClass, 'text-seat-south-light')}
+                  className={cx(itemClass, 'text-destructive-light')}
                   onSelect={() => setDialog('report')}
                   data-testid="menu-report"
                 >
@@ -302,7 +302,7 @@ export function ReportDialog({
             aria-labelledby={groupId}
             {...(reasonMissing ? { 'aria-describedby': errorId } : {})}
           >
-            <legend id={groupId} className="mb-2 text-sm font-semibold">
+            <legend id={groupId} className="mb-2 text-ui font-semibold">
               What’s wrong?
             </legend>
             <div className="flex flex-col gap-2">
@@ -310,10 +310,11 @@ export function ReportDialog({
                 <label
                   key={o.id}
                   className={cx(
-                    'flex cursor-pointer items-start gap-3 rounded-xl border px-3 py-2.5 transition-colors',
+                    'flex cursor-pointer items-start gap-3 rounded-control border px-3 py-2.5 transition-colors duration-150',
+                    'has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-gold',
                     reason === o.id
-                      ? 'border-gold bg-gold/10'
-                      : 'border-parchment/15 hover:border-parchment/35',
+                      ? 'border-brass/70 bg-brass/10'
+                      : 'border-rule-strong hover:border-parchment/35',
                   )}
                 >
                   <input
@@ -328,23 +329,23 @@ export function ReportDialog({
                     }}
                     aria-invalid={reasonMissing || undefined}
                     {...(reasonMissing ? { 'aria-describedby': errorId } : {})}
-                    className="mt-1 accent-[var(--color-gold)]"
+                    className="mt-1 h-4 w-4 accent-[var(--color-brass)]"
                     data-testid={`report-reason-${o.id}`}
                   />
                   <span>
-                    <span className="block text-sm font-semibold">{o.label}</span>
-                    <span className="block text-xs text-parchment/60">{o.hint}</span>
+                    <span className="block text-ui font-semibold">{o.label}</span>
+                    <span className="block text-caption text-muted">{o.hint}</span>
                   </span>
                 </label>
               ))}
             </div>
           </fieldset>
           <div>
-            <label htmlFor={noteId} className="mb-1.5 flex justify-between text-sm font-semibold">
+            <label htmlFor={noteId} className="mb-1.5 flex justify-between text-ui font-semibold">
               <span>
-                Note <span className="font-normal text-parchment/65">(optional)</span>
+                Note <span className="font-normal text-faint">(optional)</span>
               </span>
-              <span className="font-normal text-parchment/65 tabular-nums">
+              <span className="font-normal text-faint lining-nums tabular-nums">
                 {note.length}/{REPORT_NOTE_MAX}
               </span>
             </label>
@@ -354,7 +355,7 @@ export function ReportDialog({
               maxLength={REPORT_NOTE_MAX}
               onChange={(e) => setNote(e.target.value)}
               rows={3}
-              className="w-full resize-y rounded-xl border border-parchment/15 bg-ink/40 px-3 py-2 text-sm text-parchment placeholder:text-parchment/35 focus:border-gold focus:outline-none"
+              className={cx(inputClass, 'h-auto resize-y py-2 text-ui')}
               placeholder="What happened? (Moves, times, anything that helps.)"
               data-testid="report-note"
             />
@@ -366,7 +367,7 @@ export function ReportDialog({
           ) : null}
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <DialogClose>
-              <Button variant="ghost">Cancel</Button>
+              <Button variant="quiet">Cancel</Button>
             </DialogClose>
             <Button type="submit" busy={busy} data-testid="report-send">
               <Flag aria-hidden="true" className="h-4 w-4" />

@@ -25,8 +25,8 @@ import {
   useSocial,
 } from '../../lib/social.ts'
 import { MODE_LABEL } from '../match/labels.ts'
-import { Button, cx, Field, Spinner } from '../ui.tsx'
-import { FriendButton } from './FriendButton.tsx'
+import { Button, cx, Field, linkButtonClass, Spinner } from '../ui.tsx'
+import { FriendButton, Monogram } from './FriendButton.tsx'
 
 const USERNAME_CHARS = /^[A-Za-z0-9_]*$/
 
@@ -37,10 +37,10 @@ const seatRelation = (r: PlayerSearchResult['relation']): SeatRelation =>
 function ratingText(r: PlayerSearchResult): string {
   const games = `${r.gamesPlayed} game${r.gamesPlayed === 1 ? '' : 's'}`
   if (!r.rating) return games
-  return `${r.rating.rating} · ${MODE_LABEL[r.rating.mode] ?? r.rating.mode} ${r.rating.timeControl} · ${games}`
+  return `${r.rating.rating} Elo, ${MODE_LABEL[r.rating.mode] ?? r.rating.mode} ${r.rating.timeControl}, ${games}`
 }
 
-function AddByUsername() {
+function AddByUsername({ primary }: { primary: boolean }) {
   const [name, setName] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string>()
@@ -110,6 +110,7 @@ function AddByUsername() {
       <Button
         type="submit"
         aria-busy={busy || undefined}
+        variant={primary ? 'primary' : 'secondary'}
         className={cx('sm:mt-[1.625rem]', busy && 'cursor-progress')}
         data-testid="add-by-username-send"
       >
@@ -126,23 +127,21 @@ function AddByUsername() {
 
 function ResultRow({ r, data }: { r: PlayerSearchResult; data: PlayerSearchResponse }) {
   return (
-    <li
-      className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-xl border border-parchment/10 bg-ink/40 px-3 py-2.5"
-      data-testid="player-result"
-    >
+    <li className="flex flex-wrap items-center gap-x-3 gap-y-2 py-3" data-testid="player-result">
+      <Monogram name={r.username} size="sm" />
       <div className="min-w-0 flex-1">
         {/* Out of the tab order: "View profile" is the same link, with a full label. */}
         <Link
           to={profilePath(r.username)}
           tabIndex={-1}
-          className="block truncate font-semibold underline-offset-2 hover:text-gold hover:underline"
+          className="block truncate font-display text-body font-semibold text-parchment underline-offset-[3px] hover:underline hover:decoration-brass"
           data-testid="player-result-name"
         >
           {r.username}
         </Link>
-        <p className="text-xs text-parchment/60 tabular-nums">{ratingText(r)}</p>
+        <p className="text-caption text-faint lining-nums">{ratingText(r)}</p>
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1">
         <FriendButton
           name={r.username}
           relation={seatRelation(r.relation)}
@@ -155,11 +154,10 @@ function ResultRow({ r, data }: { r: PlayerSearchResult; data: PlayerSearchRespo
         />
         <Link
           to={profilePath(r.username)}
-          className="inline-flex h-7 items-center rounded-full border border-parchment/20 px-2.5 text-xs font-semibold whitespace-nowrap text-parchment/80 hover:border-parchment/40"
+          className={linkButtonClass('quiet', 'px-2.5', 'sm')}
           aria-label={`View ${r.username}’s profile`}
         >
-          <span className="sm:hidden">Profile</span>
-          <span className="hidden sm:inline">View profile</span>
+          Profile
         </Link>
       </div>
     </li>
@@ -268,16 +266,16 @@ function PlayerSearch() {
         />
         <Search
           aria-hidden="true"
-          className="pointer-events-none absolute top-[2.4rem] left-3 h-4 w-4 text-parchment/45"
+          className="pointer-events-none absolute top-[2.4rem] left-3 h-4 w-4 text-faint"
         />
         {loading ? (
-          <span className="absolute top-[2.35rem] right-3 text-parchment/50">
+          <span className="absolute top-[2.35rem] right-3 text-faint">
             <Spinner />
           </span>
         ) : q ? (
           <button
             type="button"
-            className="absolute top-[1.875rem] right-1.5 flex h-8 w-8 items-center justify-center rounded-md text-parchment/55 hover:bg-parchment/5 hover:text-parchment"
+            className="absolute top-[1.875rem] right-1.5 flex h-8 w-8 items-center justify-center rounded-plate text-faint transition-colors duration-150 hover:bg-parchment/[0.06] hover:text-parchment"
             aria-label="Clear search"
             onClick={() => {
               setQ('')
@@ -296,7 +294,7 @@ function PlayerSearch() {
         {ready && data && !error ? (
           data.results.length === 0 ? (
             <p
-              className={cx('text-sm text-parchment/60', !fresh && 'opacity-70')}
+              className={cx('text-ui text-muted', !fresh && 'opacity-70')}
               data-testid="player-search-empty"
             >
               No players found for “{data.query}”.
@@ -309,7 +307,10 @@ function PlayerSearch() {
               <ul
                 aria-labelledby={listLabelId}
                 aria-busy={!fresh || undefined}
-                className={cx('flex flex-col gap-1.5 transition-opacity', !fresh && 'opacity-60')}
+                className={cx(
+                  'divide-y divide-rule border-y border-rule transition-opacity duration-150',
+                  !fresh && 'opacity-60',
+                )}
               >
                 {data.results.map((r) => (
                   <ResultRow key={r.username} r={r} data={data} />
@@ -323,13 +324,14 @@ function PlayerSearch() {
   )
 }
 
-export function FindPlayers() {
+/** `primary`: Send request is the page's main action (nobody on your list yet). */
+export function FindPlayers({ primary = false }: { primary?: boolean }) {
   return (
     <div
-      className="flex flex-col gap-6 rounded-2xl border border-parchment/10 bg-panel/80 p-4 sm:p-5"
+      className="grid gap-x-8 gap-y-6 rounded-panel border border-rule bg-surface-rail p-4 shadow-rim sm:p-5"
       data-testid="find-players"
     >
-      <AddByUsername />
+      <AddByUsername primary={primary} />
       <PlayerSearch />
     </div>
   )

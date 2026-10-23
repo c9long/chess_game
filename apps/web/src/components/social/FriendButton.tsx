@@ -54,15 +54,58 @@ const ICON = {
   pendingFull: UserX,
 } as const
 
-/** Per state: border, background and text. */
+/** Per state: border, background and text. Brass outline to act, gold when they asked you. */
 const TONE: Record<Shown, string> = {
-  add: 'border-gold/45 text-gold not-aria-disabled:hover:bg-gold/10',
-  // They asked you: the one filled button, so it stands apart from "Add".
-  accept: 'border-gold bg-gold text-ink not-aria-disabled:hover:bg-gold-bright',
-  sent: 'border-parchment/20 text-parchment/70',
-  friends: 'border-seat-east/40 text-seat-east-light',
-  friendsFull: 'border-parchment/15 text-parchment/60',
-  pendingFull: 'border-parchment/15 text-parchment/60',
+  add: 'border-rule-brass bg-parchment/[0.03] text-parchment not-aria-disabled:hover:border-brass/60 not-aria-disabled:hover:bg-parchment/[0.07]',
+  // They asked you: gold text and edge (not a fill: the screen's one gold button is elsewhere).
+  accept: 'border-gold/70 bg-gold/10 text-gold-bright not-aria-disabled:hover:bg-gold/20',
+  sent: 'border-rule text-muted',
+  friends: 'border-ok/35 text-ok',
+  friendsFull: 'border-rule text-faint',
+  pendingFull: 'border-rule text-faint',
+}
+
+/**
+ * A player's monogram: their initial in Fraunces on an enamel disc with a brass rim, the same
+ * for everyone (names, not colours, tell people apart). `online` adds a presence dot.
+ */
+export function Monogram({
+  name,
+  online,
+  size = 'md',
+}: {
+  name: string
+  online?: boolean | undefined
+  size?: 'sm' | 'md' | 'lg'
+}) {
+  const dims = {
+    sm: 'h-8 w-8 text-ui',
+    md: 'h-10 w-10 text-body',
+    lg: 'h-16 w-16 text-title sm:h-20 sm:w-20',
+  }[size]
+  return (
+    <span className="relative inline-flex shrink-0">
+      <span
+        aria-hidden="true"
+        className={cx(
+          'flex items-center justify-center rounded-full border border-rule-brass font-display font-semibold text-parchment shadow-plate',
+          'bg-[radial-gradient(circle_at_35%_30%,#3a352e,#26231f_70%)]',
+          dims,
+        )}
+      >
+        {([...name][0] ?? '?').toUpperCase()}
+      </span>
+      {online === undefined ? null : (
+        <span
+          aria-hidden="true"
+          className={cx(
+            'absolute -right-0.5 -bottom-0.5 h-3 w-3 rounded-full ring-2 ring-surface',
+            online ? 'bg-ok' : 'bg-parchment/30',
+          )}
+        />
+      )}
+    </span>
+  )
 }
 
 /**
@@ -81,6 +124,7 @@ export function FriendButton({
   onAccept,
   compact = false,
   shortOnPhones = false,
+  size = 'sm',
   className,
   testId,
 }: {
@@ -94,6 +138,8 @@ export function FriendButton({
   compact?: boolean
   /** Short text below 640px (tight rows such as the result screen). */
   shortOnPhones?: boolean
+  /** `sm` sits in a line of text (history, search results); `md` matches a small Button. */
+  size?: 'sm' | 'md'
   className?: string
   testId?: string
 }) {
@@ -164,7 +210,7 @@ export function FriendButton({
         <button
           type="button"
           className={cx(
-            'inline-flex h-6 min-w-6 shrink-0 items-center justify-center gap-1 rounded-md border text-[11px] font-semibold whitespace-nowrap transition-colors lg:px-1.5',
+            'inline-flex h-6 min-w-6 shrink-0 items-center justify-center gap-1 rounded-plate border text-caption font-semibold whitespace-nowrap transition-colors lg:px-1.5',
             'aria-disabled:cursor-default',
             TONE[shown],
             className,
@@ -195,7 +241,8 @@ export function FriendButton({
       <button
         type="button"
         className={cx(
-          'inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-xs font-semibold whitespace-nowrap transition-colors',
+          'inline-flex shrink-0 items-center gap-1.5 rounded-control border font-semibold whitespace-nowrap transition-colors duration-150',
+          size === 'md' ? 'h-9 px-3 text-ui' : 'h-7 px-2.5 text-caption',
           'aria-disabled:cursor-default',
           TONE[shown],
         )}
@@ -226,7 +273,7 @@ export function FriendButton({
         {announced}
       </span>
       {error ? (
-        <span role="alert" className="max-w-48 text-right text-[11px] text-seat-south-light">
+        <span role="alert" className="max-w-56 text-right text-caption text-destructive-light">
           {error}
         </span>
       ) : null}

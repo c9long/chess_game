@@ -12,7 +12,6 @@ import { gameClient, matchErrorCode } from '../../lib/match.ts'
 import {
   addIncomingChallenge,
   challengeEnded,
-  challengeSummary,
   declineChallenge,
   dropChallenge,
   onSocialNotice,
@@ -23,15 +22,16 @@ import {
   socialChanged,
   useSocial,
 } from '../../lib/social.ts'
+import { MODE_LABEL } from '../match/labels.ts'
 import { Dialog, type ToastInput, ToastViewport, useToast } from '../overlay.tsx'
-import { Button } from '../ui.tsx'
+import { Button, cx, textLinkClass } from '../ui.tsx'
 
 /** Refusals that retrying won't fix (signed out, a guest, too many tabs). */
 const FINAL_CODES = new Set(['unauthorized', 'account_required', 'too_many_attempts'])
 
 function FriendsLink({ children = 'Open Friends' }: { children?: ReactNode }) {
   return (
-    <Link to="/friends" className="font-semibold text-gold underline-offset-2 hover:underline">
+    <Link to="/friends" className={cx(textLinkClass, 'font-medium')}>
       {children}
     </Link>
   )
@@ -53,6 +53,13 @@ function useCountdown(iso: string | undefined): string {
 }
 
 const PROMPT_TEST_ID = 'challenge-prompt'
+
+/** "Free-for-all, 10+0, casual. Also invited: Ada." */
+function challengeLine(c: Challenge, viewerId: string): string {
+  const others = c.invitees.filter((i) => i.user.userId !== viewerId).map((i) => i.user.username)
+  const base = `${MODE_LABEL[c.mode] ?? c.mode}, ${c.timeControl}, casual.`
+  return others.length > 0 ? `${base} Also invited: ${others.join(', ')}.` : base
+}
 
 /** Whether a dialog other than the challenge prompt is open (it waits until that closes). */
 function useOtherDialogOpen(): boolean {
@@ -99,12 +106,12 @@ function ChallengePrompt({
         if (!open) onClose(c.id)
       }}
       title={`${c.from.username} challenges you`}
-      description={challengeSummary(c, viewerId)}
+      description={challengeLine(c, viewerId)}
       testId={PROMPT_TEST_ID}
       actions={
         <>
           <Button
-            variant="ghost"
+            variant="quiet"
             busy={busy}
             data-testid="challenge-decline"
             onClick={async () => {
@@ -134,9 +141,10 @@ function ChallengePrompt({
         </>
       }
     >
-      <p className="text-sm text-parchment/65" aria-live="off">
-        Expires in <span className="font-mono tabular-nums text-parchment">{left}</span>. You can
-        also answer from the <FriendsLink>Friends page</FriendsLink>.
+      <p className="text-ui text-muted" aria-live="off">
+        Expires in{' '}
+        <span className="font-semibold text-parchment lining-nums tabular-nums">{left}</span>. You
+        can also answer from the <FriendsLink>Friends page</FriendsLink>.
       </p>
     </Dialog>
   )

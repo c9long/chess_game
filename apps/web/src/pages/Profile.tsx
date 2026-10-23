@@ -10,14 +10,25 @@ import {
   type ProfileRating,
   type PublicProfileResponse,
 } from '@game/protocol'
-import { CalendarDays, Lock, Swords, Trophy } from 'lucide-react'
+import { Lock, Swords } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { CivMedallion } from '../components/civ/CivMedallion.tsx'
 import { MODE_LABEL } from '../components/match/labels.ts'
-import { FriendButton } from '../components/social/FriendButton.tsx'
+import { FriendButton, Monogram } from '../components/social/FriendButton.tsx'
 import { PlayerMenu } from '../components/social/PlayerMenu.tsx'
-import { Alert, Button, linkButtonClass, Pill, Spinner } from '../components/ui.tsx'
+import {
+  Alert,
+  Button,
+  cx,
+  EmptyState,
+  linkButtonClass,
+  Pill,
+  RuleList,
+  SectionHeading,
+  Spinner,
+  textLinkClass,
+} from '../components/ui.tsx'
 import { ApiError } from '../lib/api.ts'
 import { isGuest, useAppState } from '../lib/app-state.tsx'
 import {
@@ -26,23 +37,6 @@ import {
   sendFriendRequestByUsername,
   useSocial,
 } from '../lib/social.ts'
-
-const AVATAR_COLORS = ['#c0392b', '#2e6fd6', '#d4a017', '#1f9d6b', '#8e5bd6', '#d6662e']
-
-function BigAvatar({ name }: { name: string }) {
-  let h = 0
-  for (const ch of name) h = (h * 31 + (ch.codePointAt(0) ?? 0)) >>> 0
-  const color = AVATAR_COLORS[h % AVATAR_COLORS.length] as string
-  return (
-    <span
-      aria-hidden="true"
-      className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full font-display text-2xl font-semibold uppercase sm:h-20 sm:w-20 sm:text-3xl"
-      style={{ backgroundColor: `${color}2e`, color, boxShadow: `inset 0 0 0 1px ${color}55` }}
-    >
-      {[...name][0] ?? '?'}
-    </span>
-  )
-}
 
 /** "March 2026" from `YYYY-MM`. */
 function monthYear(ym: string): string {
@@ -55,28 +49,29 @@ function monthYear(ym: string): string {
   })
 }
 
-function RatingCard({ r }: { r: ProfileRating }) {
+/** One line of the ratings ledger: the bucket, the rating, then peak and games. */
+function RatingRow({ r }: { r: ProfileRating }) {
   return (
-    <li
-      className="rounded-2xl border border-parchment/10 bg-panel/80 px-4 py-3"
-      data-testid="profile-rating"
-    >
-      <p className="text-xs font-semibold tracking-wide text-parchment/60 uppercase">
-        {MODE_LABEL[r.mode] ?? r.mode} · {r.timeControl}
-      </p>
-      <p className="mt-1 flex items-baseline gap-2">
-        <span className="font-display text-3xl leading-none font-semibold tabular-nums">
+    <li className="flex items-center gap-4 py-3.5" data-testid="profile-rating">
+      <div className="min-w-0 flex-1">
+        <p className="text-body font-medium text-parchment">
+          {MODE_LABEL[r.mode] ?? r.mode}{' '}
+          <span className="lining-nums tabular-nums">{r.timeControl}</span>
+        </p>
+        <p className="text-ui text-faint lining-nums tabular-nums">
+          Peak {r.peak}, {r.gamesPlayed} ranked game{r.gamesPlayed === 1 ? '' : 's'}
+        </p>
+      </div>
+      <p className="flex shrink-0 flex-col items-end">
+        <span className="font-display text-title leading-none font-semibold lining-nums tabular-nums">
           {r.rating}
         </span>
         {r.provisional ? (
-          <span className="text-xs text-parchment/55">
+          <span className="mt-1 text-caption text-faint">
             provisional
             <span className="sr-only">: fewer ranked games than the leaderboard needs</span>
           </span>
         ) : null}
-      </p>
-      <p className="mt-1 text-xs text-parchment/55 tabular-nums">
-        Peak {r.peak} · {r.gamesPlayed} ranked game{r.gamesPlayed === 1 ? '' : 's'}
       </p>
     </li>
   )
@@ -84,22 +79,23 @@ function RatingCard({ r }: { r: ProfileRating }) {
 
 function NotFound() {
   return (
-    <div
-      className="mt-8 rounded-2xl border border-dashed border-parchment/15 px-6 py-12 text-center"
-      data-testid="profile-not-found"
-    >
-      <h1 className="font-display text-2xl font-semibold">Player not found</h1>
-      <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-parchment/65">
-        Check the spelling of the username, or search for players on your Friends page.
-      </p>
-      <div className="mt-6 flex flex-wrap justify-center gap-3">
-        <Link to="/friends" className={linkButtonClass('primary')}>
-          Find players
-        </Link>
-        <Link to="/leaderboard" className={linkButtonClass('secondary')}>
-          Leaderboard
-        </Link>
-      </div>
+    <div data-testid="profile-not-found">
+      <h1 className="mb-6 font-display text-title font-semibold">Player not found</h1>
+      <EmptyState
+        title="No player has that username"
+        action={
+          <div className="flex flex-wrap gap-3">
+            <Link to="/friends" className={linkButtonClass('primary')}>
+              Search for players
+            </Link>
+            <Link to="/leaderboard" className={linkButtonClass('quiet')}>
+              Leaderboard
+            </Link>
+          </div>
+        }
+      >
+        Check the spelling of the username, or search for the player on your Friends page.
+      </EmptyState>
     </div>
   )
 }
@@ -137,7 +133,7 @@ export function Profile() {
             message:
               err instanceof ApiError && err.status === 429
                 ? 'Too many profiles opened. Wait a moment and try again.'
-                : 'Could not load this profile. Please try again later.',
+                : 'This profile didn’t load. Check your connection and reload the page.',
           })
         }
       })
@@ -151,16 +147,17 @@ export function Profile() {
     else if (profile === null) document.title = `Player not found · ${APP_NAME}`
   }, [profile])
 
+  const page = 'mx-auto w-full max-w-3xl px-4 py-10 sm:py-14'
   if (error && profile === undefined) {
     return (
-      <div className="mx-auto w-full max-w-3xl px-4 py-8 sm:py-12">
+      <div className={page}>
         <Alert>{error}</Alert>
       </div>
     )
   }
   if (profile === undefined) {
     return (
-      <div className="mt-16 flex justify-center text-parchment/60" role="status">
+      <div className="mt-16 flex justify-center text-faint" role="status">
         <Spinner />
         <span className="sr-only">Loading profile…</span>
       </div>
@@ -168,7 +165,7 @@ export function Profile() {
   }
   if (profile === null) {
     return (
-      <div className="mx-auto w-full max-w-3xl px-4 py-8 sm:py-12">
+      <div className={page}>
         <NotFound />
       </div>
     )
@@ -185,31 +182,27 @@ export function Profile() {
   const canAdd = p.relation !== 'self' && !guest && !p.blockedByYou
 
   return (
-    <div className="mx-auto w-full max-w-3xl px-4 py-8 sm:py-12" data-testid="profile">
-      <header className="flex flex-wrap items-center gap-4 sm:gap-5">
-        <BigAvatar name={p.username} />
-        <div className="min-w-0 flex-1">
+    <div className={cx(page, 'flex flex-col gap-10')} data-testid="profile">
+      {/* The player's nameplate: monogram, name and when they joined, with the actions. */}
+      <header className="relative flex flex-wrap items-center gap-x-5 gap-y-4 overflow-hidden rounded-plate border border-rule-brass bg-surface-rail py-5 pr-5 pl-6 shadow-plate sm:py-6 sm:pr-6 sm:pl-7">
+        <span aria-hidden="true" className="absolute inset-y-0 left-0 w-1 bg-brass/70" />
+        <Monogram name={p.username} size="lg" />
+        <div className="min-w-0 flex-1 basis-56">
           {/* Wraps rather than truncates: the profile is where the full name must show. */}
           <h1
-            className="font-display text-2xl font-semibold tracking-tight break-all sm:text-3xl"
+            className="font-display text-title font-semibold wrap-anywhere"
             data-testid="profile-username"
           >
             {p.username}
           </h1>
-          <p className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-parchment/65">
-            <span className="inline-flex items-center gap-1.5">
-              <CalendarDays aria-hidden="true" className="h-4 w-4 text-parchment/45" />
-              Member since {monthYear(p.memberSince)}
-            </span>
-            <span className="inline-flex items-center gap-1.5 tabular-nums">
-              <Trophy aria-hidden="true" className="h-4 w-4 text-parchment/45" />
-              {p.gamesPlayed} game{p.gamesPlayed === 1 ? '' : 's'} played
-            </span>
+          <p className="mt-1.5 text-ui text-muted">Member since {monthYear(p.memberSince)}</p>
+          <p className="text-ui text-faint lining-nums tabular-nums">
+            {p.gamesPlayed} game{p.gamesPlayed === 1 ? '' : 's'} played
           </p>
         </div>
         <div className="flex w-full items-center gap-2 sm:w-auto">
           {p.relation === 'self' ? (
-            <Pill tone="gold">This is you</Pill>
+            <Pill tone="brass">This is you</Pill>
           ) : canAdd ? (
             <FriendButton
               name={p.username}
@@ -218,13 +211,13 @@ export function Profile() {
               outgoingFull={p.outgoingFull}
               onAdd={() => sendFriendRequestByUsername(p.username)}
               onAccept={() => (p.userId ? acceptFriendRequest(p.userId) : Promise.resolve())}
+              size="md"
               testId="profile-add"
             />
           ) : null}
           {p.relation === 'friends' && p.userId ? (
             <Button
               size="sm"
-              variant="secondary"
               onClick={() => navigate(`/friends?challenge=${encodeURIComponent(p.userId ?? '')}`)}
               data-testid="profile-challenge"
             >
@@ -233,63 +226,65 @@ export function Profile() {
             </Button>
           ) : null}
           {p.relation !== 'self' ? (
-            <PlayerMenu
-              name={p.username}
-              target={{ username: p.username }}
-              userId={p.userId}
-              viewerRegistered={!guest}
-              targetRegistered
-              blocked={p.blockedByYou}
-              reportable
-              className="ml-auto h-9 w-9 rounded-lg sm:ml-0"
-              testId="profile-menu"
-            />
+            <span className="ml-auto sm:ml-0">
+              <PlayerMenu
+                name={p.username}
+                target={{ username: p.username }}
+                userId={p.userId}
+                viewerRegistered={!guest}
+                targetRegistered
+                blocked={p.blockedByYou}
+                reportable
+                testId="profile-menu"
+              />
+            </span>
           ) : null}
         </div>
       </header>
 
-      {error ? (
-        <div className="mt-6">
-          <Alert>{error}</Alert>
+      {error || p.blockedByYou || guest ? (
+        <div className="-mt-4 flex flex-col gap-3">
+          {error ? <Alert>{error}</Alert> : null}
+          {p.blockedByYou ? (
+            <Alert tone="info">
+              You blocked this player. They can’t send you friend requests or challenges. To unblock
+              them, open the menu beside their name or go to your{' '}
+              <Link to="/friends" className={textLinkClass}>
+                Friends page
+              </Link>
+              .
+            </Alert>
+          ) : null}
+          {guest ? (
+            <p className="text-ui text-muted">
+              <Link to="/sign-up" className={cx(textLinkClass, 'font-semibold')}>
+                Create an account
+              </Link>{' '}
+              to add friends.
+            </p>
+          ) : null}
         </div>
-      ) : null}
-      {p.blockedByYou ? (
-        <div className="mt-6">
-          <Alert tone="info">
-            You blocked this player. They can’t send you friend requests or challenges. Unblock them
-            from the ⋮ menu or your Friends page.
-          </Alert>
-        </div>
-      ) : null}
-      {guest ? (
-        <p className="mt-4 text-sm text-parchment/65">
-          <Link
-            to="/sign-up"
-            className="font-semibold text-gold underline-offset-2 hover:underline"
-          >
-            Create an account
-          </Link>{' '}
-          to add friends.
-        </p>
       ) : null}
 
-      <section className="mt-8" aria-labelledby="profile-ratings">
-        <h2 id="profile-ratings" className="mb-3 font-display text-lg font-semibold">
-          Ratings
-        </h2>
+      <section aria-labelledby="profile-ratings">
+        <SectionHeading
+          id="profile-ratings"
+          title="Ratings"
+          description="Elo from ranked games. Each mode and time control has its own rating."
+        />
         {p.ratings.length === 0 ? (
-          <p className="text-sm text-parchment/60" data-testid="profile-unrated">
+          <p className="border-y border-rule py-4 text-ui text-muted" data-testid="profile-unrated">
             No ranked games yet.
           </p>
         ) : (
           <>
-            <ul className="grid gap-2 sm:grid-cols-2">
+            <RuleList>
               {p.ratings.map((r) => (
-                <RatingCard key={`${r.mode}-${r.timeControl}`} r={r} />
+                <RatingRow key={`${r.mode}-${r.timeControl}`} r={r} />
               ))}
-            </ul>
+            </RuleList>
             {p.ratings.some((r) => r.provisional) ? (
-              <p className="mt-2 text-xs text-parchment/55" aria-hidden="true">
+              <p className="mt-3 text-caption text-faint" aria-hidden="true">
                 Provisional: fewer than {LEADERBOARD_MIN_GAMES} ranked games, so not on the
                 leaderboard yet.
               </p>
@@ -298,31 +293,29 @@ export function Profile() {
         )}
       </section>
 
-      <section className="mt-8" aria-labelledby="profile-civ">
-        <h2 id="profile-civ" className="mb-3 font-display text-lg font-semibold">
-          Favourite civilization
-        </h2>
+      <section aria-labelledby="profile-civ">
+        <SectionHeading id="profile-civ" title="Favourite civilization" />
         {civ && p.favoriteCiv ? (
           <div
-            className="flex items-center gap-4 rounded-2xl border border-parchment/10 bg-panel/80 px-4 py-3"
+            className="flex items-center gap-4 border-y border-rule py-4"
             data-testid="profile-civ"
           >
             <CivMedallion civ={civ} size="xl" />
             <div className="min-w-0">
-              <p className="font-display text-xl font-semibold">{civ.name}</p>
-              <p className="text-xs text-parchment/60 tabular-nums">
-                Most played · {p.favoriteCiv.games} finished game
+              <p className="font-display text-heading font-semibold">{civ.name}</p>
+              <p className="text-ui text-faint lining-nums tabular-nums">
+                Most played, {p.favoriteCiv.games} finished game
                 {p.favoriteCiv.games === 1 ? '' : 's'}
               </p>
             </div>
           </div>
         ) : (
-          <p className="text-sm text-parchment/60">No finished games yet.</p>
+          <p className="border-y border-rule py-4 text-ui text-muted">No finished games yet.</p>
         )}
       </section>
 
-      <p className="mt-8 flex items-center gap-2 border-t border-parchment/10 pt-4 text-xs text-parchment/55">
-        <Lock aria-hidden="true" className="h-3.5 w-3.5" />
+      <p className="flex items-center gap-2 text-caption text-faint">
+        <Lock aria-hidden="true" className="h-3.5 w-3.5 text-brass" />
         Match history is private: only the players in a game can see it.
       </p>
     </div>

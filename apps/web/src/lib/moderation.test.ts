@@ -78,7 +78,7 @@ describe('reportCountsText', () => {
       '1 open report from 1 player',
     )
     expect(reportCountsText({ openReports: 3, openReporters: 2, totalReports: 5 })).toBe(
-      '3 open reports from 2 players · 5 in total',
+      '3 open reports from 2 players, 5 in total',
     )
   })
 })

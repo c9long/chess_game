@@ -20,7 +20,6 @@ import type {
 } from '@game/protocol'
 import { useEffect } from 'react'
 import { create } from 'zustand'
-import { MODE_LABEL } from '../components/match/labels.ts'
 import { ApiError, api } from './api.ts'
 
 interface SocialStore {
@@ -292,11 +291,4 @@ export function capsFrom(friends: FriendsResponse | null) {
     capReached: friends.friends.length >= friends.limits.maxFriends,
     outgoingFull: friends.outgoing.length >= friends.limits.maxOutgoing,
   }
-}
-
-/** "Free-for-all · 3+2 · Casual. Also invited: ana, li." */
-export function challengeSummary(c: Challenge, viewerId?: string): string {
-  const others = c.invitees.filter((i) => i.user.userId !== viewerId).map((i) => i.user.username)
-  const base = `${MODE_LABEL[c.mode] ?? c.mode} · ${c.timeControl} · Casual`
-  return others.length > 0 ? `${base}. Also invited: ${others.join(', ')}.` : `${base}.`
 }

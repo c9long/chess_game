@@ -19,7 +19,7 @@ export const REPORT_REASON_LABEL: Record<ReportReasonId, string> = Object.fromEn
   REPORT_REASON_OPTIONS.map((o) => [o.id, o.label]),
 ) as Record<ReportReasonId, string>
 
-/** "3 open reports from 2 players · 5 in total" */
+/** "3 open reports from 2 players, 5 in total" */
 export function reportCountsText(r: {
   openReports: number
   openReporters: number
@@ -27,7 +27,7 @@ export function reportCountsText(r: {
 }): string {
   const open = `${r.openReports} open report${r.openReports === 1 ? '' : 's'}`
   const from = `from ${r.openReporters} player${r.openReporters === 1 ? '' : 's'}`
-  const total = r.totalReports > r.openReports ? ` · ${r.totalReports} in total` : ''
+  const total = r.totalReports > r.openReports ? `, ${r.totalReports} in total` : ''
   return `${open} ${from}${total}`
 }
 

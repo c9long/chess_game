@@ -10,7 +10,7 @@ import { Link } from 'react-router'
 import { api } from '../../lib/api.ts'
 import { MODE_LABEL } from '../match/labels.ts'
 import { RankedBadge } from '../match/RankedBadge.tsx'
-import { linkButtonClass } from '../ui.tsx'
+import { linkButtonClass, RuleList, RuleRow, SectionHeading } from '../ui.tsx'
 
 const REFRESH_MS = 15_000
 
@@ -36,54 +36,70 @@ function useFriendGames(): FriendGamesResponse['games'] {
   return games
 }
 
+/** "Playing against bots, Free-for-all" or "Friday table, Teams 2v2, 3+2, password, 2 watching". */
+function gameLine(g: FriendGamesResponse['games'][number]): string {
+  const parts = [
+    g.solo ? 'Playing against bots' : g.name,
+    MODE_LABEL[g.mode] ?? g.mode,
+    g.solo ? null : g.timeControl,
+    g.locked ? 'password' : null,
+    g.spectators > 0 ? `${g.spectators} watching` : null,
+  ]
+  return parts.filter(Boolean).join(', ')
+}
+
 export function FriendsPlaying() {
   const games = useFriendGames()
   const id = useId()
   if (games.length === 0) return null
   return (
-    <section className="mt-8" aria-labelledby={id} data-testid="friends-playing">
-      <h2 id={id} className="mb-3 font-display text-lg font-semibold">
-        Playing now
-        <span className="ml-2 text-sm font-normal text-parchment/50 tabular-nums">
-          {games.length}
-        </span>
-      </h2>
-      <ul className="flex flex-col gap-2">
-        {games.map((g) => (
-          <li
-            key={g.roomId}
-            className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-2xl border border-parchment/10 bg-panel/80 px-4 py-3"
-            data-testid="friend-game"
-          >
-            <span
-              aria-hidden="true"
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-seat-west/20 text-parchment"
-            >
-              <Eye className="h-4 w-4" />
+    <section aria-labelledby={id} data-testid="friends-playing">
+      <SectionHeading
+        id={id}
+        ruled
+        title={
+          <>
+            Playing now
+            <span className="ml-2 font-sans text-ui font-normal text-faint lining-nums tabular-nums">
+              {games.length}
             </span>
-            <div className="min-w-0 flex-1">
-              <p className="truncate font-semibold">{g.friends.join(', ')}</p>
-              <p className="flex flex-wrap items-center gap-x-2 text-xs text-parchment/60">
-                <span className="truncate">
-                  {g.solo ? 'Playing against bots' : g.name} · {MODE_LABEL[g.mode] ?? g.mode}
-                  {g.solo ? '' : ` · ${g.timeControl}`}
-                  {g.locked ? ' · Password' : ''}
-                  {g.spectators > 0 ? ` · ${g.spectators} watching` : ''}
-                </span>
+          </>
+        }
+      />
+      <RuleList>
+        {games.map((g) => (
+          <RuleRow
+            key={g.roomId}
+            data-testid="friend-game"
+            name
+            leading={
+              <span
+                aria-hidden="true"
+                className="flex h-10 w-10 items-center justify-center rounded-full border border-rule-brass bg-baize text-brass shadow-plate"
+              >
+                <Eye className="h-4 w-4" />
+              </span>
+            }
+            title={g.friends.join(', ')}
+            detail={
+              <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                <span>{gameLine(g)}</span>
                 {g.ranked ? <RankedBadge /> : null}
-              </p>
-            </div>
-            <Link
-              to={`/watch/${g.roomId}`}
-              className={linkButtonClass('secondary', '', 'sm')}
-              aria-label={`Watch ${g.friends.join(', ')}`}
-              data-testid="friend-game-watch"
-            >
-              Watch
-            </Link>
-          </li>
+              </span>
+            }
+            trailing={
+              <Link
+                to={`/watch/${g.roomId}`}
+                className={linkButtonClass('secondary', '', 'sm')}
+                aria-label={`Watch ${g.friends.join(', ')}`}
+                data-testid="friend-game-watch"
+              >
+                Watch
+              </Link>
+            }
+          />
         ))}
-      </ul>
+      </RuleList>
     </section>
   )
 }
