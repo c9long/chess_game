@@ -93,8 +93,9 @@ ratings and counts, and never monospace. Keep body copy at `max-w-[65ch]`.
 | A group of controls | `<Panel tone title titleId actions>`, tone `rail`, `well` or `plain` |
 | A standalone form block on ink | `<Card>` |
 | Nothing to show yet | `<EmptyState title action>` with a sentence that invites the action |
+| A page that can't be shown (not found, closed, no access) | `<NoticePage title emptyTitle action>`: the h1, why, and one gold way out |
 | Inline message | `<Alert tone>`: `error`, `info`, `success` or `warning` |
-| Tag | `<Pill tone>` (sentence case) |
+| Tag | `<Pill tone>` (sentence case). Marks such as "You" or "Watching" are `brass`; `gold` only for "to move" or a winner |
 | A seat or player | `<Nameplate seat name detail emblem trailing state size>` |
 | Four players | `<SeatTable north west east south>{centre}</SeatTable>` |
 | Modal, confirm, popover, phone sheet, tooltip, toast | `Dialog`, `ConfirmDialog`, `Popover`, `BottomSheet`, `Tooltip`, `useToast` from `overlay.tsx` |
@@ -111,7 +112,7 @@ which is also the turn order.
 ```tsx
 <SeatTable
   stackBelow="lg"
-  north={<Nameplate seat="north" name="Japan bot" detail="1200" />}
+  north={<Nameplate seat="north" name="Bot 1200" detail="Japan" />}
   west={<Nameplate seat="west" name="Ada" detail="To move" state="to-move" trailing={<Clock />} />}
   east={<Nameplate seat="east" name="United States" detail="Out" state="out" />}
   south={<Nameplate seat="south" name="You" detail="Mali" emblem={<CivEmblem civ="mali" />} />}
@@ -124,8 +125,16 @@ which is also the turn order.
   dimmed) or `won` (gold). The seat colour runs down its inner edge. Plates size to their
   content, so give them a width (`w-56`, `w-full`) when they should line up.
 - `SeatTable` centre: give it an explicit width, because its column sizes to it. Below
-  `stackBelow` (`sm`, `md`, `lg` or `never`), North stays above and South below the centre, and
-  West and East move under it side by side.
+  `stackBelow` (`sm`, `md`, `lg` or `never`), the plates sit in two pairs: West and North above
+  the centre, South and East below it (clockwise from the bottom left, the turn order). The
+  game screen and the replay use the same phone layout.
+- One plate, one name everywhere (lobby, game, result, replay): the player's name, or a bot's
+  strength ("Bot 1200"), in Fraunces; the civ is the detail and the civ's medallion the emblem.
+  Sentences name a bot by its civ ("the Japan bot"), since three bots can share a strength.
+- Plates beside a board stand upright (`Nameplate orient="column"`, `edge` facing the board) and
+  reserve every row (status, clock), so the two side plates match and nothing jumps each turn.
+  Once a game is over each plate shows its placing. On phones, names get the whole first line:
+  "(you)" is for screen readers only and the clock or placing moves to the detail line.
 - For plates drawn along a board edge (rotated, like the landing demo), use `Nameplate` inside
   the page's own positioning; the plate itself doesn't rotate.
 

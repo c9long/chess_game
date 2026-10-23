@@ -483,7 +483,7 @@ export function EmptyState({
   action,
   className,
 }: {
-  title: string
+  title?: string | undefined
   children?: ReactNode
   action?: ReactNode
   className?: string
@@ -495,9 +495,40 @@ export function EmptyState({
         className,
       )}
     >
-      <p className="font-display text-heading font-semibold">{title}</p>
+      {title ? <p className="font-display text-heading font-semibold">{title}</p> : null}
       {children ? <div className="max-w-[60ch] text-body text-muted">{children}</div> : null}
       {action ? <div className="mt-1">{action}</div> : null}
+    </div>
+  )
+}
+
+/**
+ * A whole page that stands in for one that can't be shown (not found, closed, no access): the
+ * page's h1, then an empty state that says why and offers one way out (a gold action).
+ */
+export function NoticePage({
+  title,
+  emptyTitle,
+  children,
+  action,
+  before,
+  testId,
+}: {
+  title: string
+  emptyTitle?: string
+  children?: ReactNode
+  action: ReactNode
+  /** Above the title (e.g. a back link). */
+  before?: ReactNode
+  testId?: string | undefined
+}) {
+  return (
+    <div className="mx-auto w-full max-w-2xl px-4 py-10 sm:py-14" data-testid={testId}>
+      {before}
+      <PageTitle title={title} />
+      <EmptyState title={emptyTitle} action={action}>
+        {children}
+      </EmptyState>
     </div>
   )
 }
@@ -531,12 +562,14 @@ export function Pill({
   children,
   className,
 }: {
-  tone?: 'muted' | 'success' | 'gold' | 'danger'
+  /** `brass` for marks such as "You" or "Watching"; `gold` only for "to move" or a winner. */
+  tone?: 'muted' | 'success' | 'brass' | 'gold' | 'danger'
   children: ReactNode
   className?: string
 }) {
   const tones = {
     muted: 'border-rule-strong text-muted',
+    brass: 'border-brass/50 text-brass',
     success: 'border-ok/40 text-ok',
     gold: 'border-gold/45 text-gold',
     danger: 'border-destructive-light/45 text-destructive-light',
@@ -629,6 +662,8 @@ export function Nameplate({
   trailing,
   state = 'idle',
   size = 'md',
+  orient = 'row',
+  edge = orient === 'column' ? 'right' : 'left',
   className,
   ...rest
 }: Omit<HTMLAttributes<HTMLDivElement>, 'title'> & {
@@ -639,39 +674,64 @@ export function Nameplate({
   trailing?: ReactNode
   state?: NameplateState
   size?: 'sm' | 'md'
+  /** `column`: an upright plate for the sides of a board (emblem above, centred text). */
+  orient?: 'row' | 'column'
+  /** The side the seat colour runs along: the one facing the board or table. */
+  edge?: 'left' | 'right' | 'top' | 'bottom'
 }) {
   const s = toSeat(seat)
   const out = state === 'out'
   const lit = state === 'to-move' || state === 'won'
+  const column = orient === 'column'
+  const bar = {
+    left: 'inset-y-0 left-0 w-1',
+    right: 'inset-y-0 right-0 w-1',
+    top: 'inset-x-0 top-0 h-1',
+    bottom: 'inset-x-0 bottom-0 h-1',
+  }[edge]
+  // Room for the colour bar on its side.
+  const pad = column
+    ? 'px-2.5 pt-3 pb-2.5'
+    : size === 'sm'
+      ? edge === 'left'
+        ? 'py-1.5 pr-2.5 pl-3.5'
+        : 'px-2.5 py-1.5'
+      : edge === 'left'
+        ? 'py-2 pr-3 pl-4'
+        : 'px-3 py-2'
   return (
     <div
       data-seat={s}
       data-state={state}
       className={cx(
-        'relative inline-flex min-w-0 items-center overflow-hidden rounded-plate border bg-surface-rail shadow-plate',
+        'relative inline-flex min-w-0 overflow-hidden rounded-plate border bg-surface-rail shadow-plate',
         'transition-[border-color,box-shadow,opacity] duration-200',
-        size === 'sm' ? 'gap-2 py-1.5 pr-2.5 pl-3.5' : 'gap-3 py-2 pr-3 pl-4',
-        lit ? 'border-gold/80 shadow-[0_0_0_1px_rgb(212_160_23/0.35)]' : 'border-rule-brass',
-        out && 'opacity-75',
+        column
+          ? 'flex-col items-center gap-1.5 text-center'
+          : cx('items-center', size === 'sm' ? 'gap-2' : 'gap-3'),
+        pad,
+        // Out: a plain rule edge and a struck-through name. The text keeps its contrast (no
+        // opacity on the plate), only the colour bar fades.
+        lit
+          ? 'border-gold/80 shadow-[0_0_0_1px_rgb(212_160_23/0.35)]'
+          : out
+            ? 'border-rule'
+            : 'border-rule-brass',
         className,
       )}
       {...rest}
     >
       <span
         aria-hidden="true"
-        className={cx(
-          'absolute inset-y-0 left-0 w-1',
-          SEAT_CLASSES[s].bg,
-          out && 'opacity-40 saturate-50',
-        )}
+        className={cx('absolute', bar, SEAT_CLASSES[s].bg, out && 'opacity-40 saturate-50')}
       />
       {emblem ? <span className="shrink-0">{emblem}</span> : null}
-      <span className="min-w-0 flex-1">
+      <span className={cx('min-w-0', column ? 'w-full' : 'flex-1')}>
         <span
           className={cx(
-            'block truncate font-display font-semibold text-parchment',
+            'block truncate font-display font-semibold',
             size === 'sm' ? 'text-ui' : 'text-body',
-            out && 'line-through decoration-parchment/60 decoration-1',
+            out ? 'text-muted line-through decoration-parchment/60 decoration-1' : 'text-parchment',
           )}
         >
           {name}
@@ -697,8 +757,9 @@ export function Nameplate({
  * Four seats around a table: North above the centre, West and East beside it, South below,
  * from the viewer's side. `children` is the centre (the board, a table graphic, a lobby
  * summary); give it an explicit width (e.g. `w-[var(--board)]`), as its column sizes to it.
- * Below `stackBelow` (default `lg`) North stays above and South below the centre, and West and
- * East move under it side by side, so nothing is squeezed beside a phone-width board.
+ * Below `stackBelow` (default `lg`) the plates sit in two pairs, as on the game screen: West
+ * and North above the centre, South and East below it (clockwise from the bottom left, the
+ * turn order), so nothing is squeezed beside a phone-width board.
  */
 export function SeatTable({
   north,
@@ -726,14 +787,14 @@ export function SeatTable({
     never:
       'grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] [grid-template-areas:"._n_."_"w_c_e"_"._s_."]',
   }[stackBelow]
-  // Stacked, the side seats sit under the centre, West left and East right.
+  // Stacked, West and North pair up above the centre, South and East below it.
   const toward = {
     sm: ['sm:justify-end', 'sm:justify-start'],
     md: ['md:justify-end', 'md:justify-start'],
     lg: ['lg:justify-end', 'lg:justify-start'],
     never: ['justify-end', 'justify-start'],
   }[stackBelow]
-  const stacked = '[grid-template-areas:"n_n"_"c_c"_"s_s"_"w_e"]'
+  const stacked = '[grid-template-areas:"w_n"_"c_c"_"s_e"]'
   return (
     <div
       className={cx(

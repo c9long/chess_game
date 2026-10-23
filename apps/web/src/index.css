@@ -23,6 +23,10 @@
   --color-baize-rail: #283530;
   --color-baize-deep: #18211d;
   --color-walnut: #3a2a20;
+  /* The board's squares (BOARD_MATERIALS in packages/board/src/palette.ts), for the miniature
+     tables in the lobby and on Play, so they look like the real board. */
+  --color-board-light: #eadcc0;
+  --color-board-dark: #654d3c;
 
   /* Text. Parchment is primary; muted and faint are solid tones that pass 4.5:1 on every surface
      above (faint is the floor: 4.8:1 on baize-rail). With opacity, parchment/65 is the floor on
@@ -424,6 +428,10 @@
   *::after {
     /* biome-ignore lint/complexity/noImportantStyles: reduced motion must override component styles */
     animation-duration: 0.01ms !important;
+    /* Infinite loops (spinners, pulsing dots) stop after one pass instead of flickering through
+       thousands of cycles a second. */
+    /* biome-ignore lint/complexity/noImportantStyles: reduced motion must override component styles */
+    animation-iteration-count: 1 !important;
     /* biome-ignore lint/complexity/noImportantStyles: reduced motion must override component styles */
     transition-duration: 0.01ms !important;
   }
@@ -437,7 +445,8 @@
 }
 .legal-doc h1 {
   font-family: var(--font-display);
-  font-size: 2rem;
+  font-size: var(--text-title);
+  line-height: var(--text-title--line-height);
   font-weight: 600;
   margin: 0 0 1rem;
   color: var(--color-parchment);
@@ -472,17 +481,21 @@
   margin: 0.25rem 0;
 }
 .legal-doc a {
-  color: var(--color-gold);
+  color: var(--color-parchment);
   text-decoration: underline;
-  text-underline-offset: 2px;
+  text-decoration-color: var(--color-brass);
+  text-underline-offset: 3px;
+}
+.legal-doc a:hover {
+  text-decoration-color: var(--color-parchment);
 }
 .legal-doc strong {
   color: var(--color-parchment);
 }
 .legal-doc blockquote {
-  border-left: 3px solid rgb(212 160 23 / 0.6);
+  border-left: 3px solid var(--color-brass);
   padding-left: 1rem;
-  color: rgb(244 239 230 / 0.7);
+  color: var(--color-muted);
 }
 .legal-doc code {
   font-size: 0.9em;

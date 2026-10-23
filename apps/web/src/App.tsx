@@ -1,10 +1,9 @@
 import { APP_NAME } from '@game/config'
 import { lazy, useEffect } from 'react'
 import { Link, Route, Routes, useLocation, useNavigate } from 'react-router'
-import { BrandMark } from './components/BrandMark.tsx'
 import { AcceptanceGate, AgeGate, RequireAuth, UsernameGate } from './components/Gates.tsx'
 import { Shell } from './components/Shell.tsx'
-import { buttonBase, buttonVariants, CenteredPage, PageTitle } from './components/ui.tsx'
+import { linkButtonClass, NoticePage } from './components/ui.tsx'
 import { AppStateProvider } from './lib/app-state.tsx'
 import { setTwoFactorHandler } from './lib/auth-client.ts'
 import { isNative } from './lib/platform.ts'
@@ -61,24 +60,19 @@ function NotFound() {
     return () => window.clearTimeout(id)
   }, [])
   return (
-    <CenteredPage>
-      <div className="flex flex-col items-center py-10 text-center" data-testid="not-found">
-        <BrandMark className="mb-6 h-14 w-14" />
-        <p className="mb-2 text-xs font-semibold uppercase tracking-[0.3em] text-gold">404</p>
-        <PageTitle
-          title="Page not found"
-          subtitle="This square is empty. The page may have moved, or the link may be mistyped."
-        />
-        <div className="flex flex-wrap justify-center gap-3">
-          <Link to="/" className={`${buttonBase} ${buttonVariants.primary}`}>
-            Back to the start
-          </Link>
-          <Link to="/play" className={`${buttonBase} ${buttonVariants.secondary}`}>
-            Find a game
-          </Link>
-        </div>
-      </div>
-    </CenteredPage>
+    <NoticePage
+      testId="not-found"
+      title="Page not found"
+      emptyTitle="Nothing sits at this address"
+      action={
+        <Link to="/" className={linkButtonClass('primary')}>
+          Back to the start
+        </Link>
+      }
+    >
+      The page may have moved, or the link may be mistyped. Check the address, or start again from
+      the home page.
+    </NoticePage>
   )
 }
 

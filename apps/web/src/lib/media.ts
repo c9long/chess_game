@@ -12,3 +12,7 @@ export function useMediaQuery(query: string): boolean {
     () => false,
   )
 }
+
+/** The `wide:` variant in index.css: wide screens, and phones held sideways. */
+export const WIDE_QUERY =
+  '(min-width: 64rem), (orientation: landscape) and (max-height: 31.99rem) and (min-width: 40rem)'

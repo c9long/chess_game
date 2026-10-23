@@ -167,7 +167,7 @@ export function Landing() {
               {isGuest(user) ? (
                 <Link
                   to="/sign-up"
-                  className="group inline-flex items-center justify-center gap-2 self-center rounded-lg border border-gold/40 bg-gold/5 px-4 py-2.5 text-sm font-semibold text-gold transition-colors duration-150 hover:border-gold/70 hover:bg-gold/10 lg:self-start"
+                  className={linkButtonClass('secondary', 'self-center lg:self-start')}
                 >
                   <UserPlus aria-hidden="true" className="h-4 w-4" />
                   Create account and keep your history
@@ -282,9 +282,12 @@ function DemoTableFrame({ table, children }: { table: DemoTable | null; children
         <span className={cx('font-semibold', out ? 'line-through decoration-1' : null)}>
           {(civ && CIVILIZATIONS.find((c) => c.slug === civ)?.name) || SEAT_LABEL[seat]}
         </span>
-        <span className={cx(toMove || won ? 'text-gold' : 'text-parchment/65')}>
-          {won ? 'wins' : out ? 'out' : toMove ? 'to move' : SEAT_LABEL[seat]}
-        </span>
+        {/* Until the civs are known the plate shows only the seat (not "North North"). */}
+        {civ ? (
+          <span className={cx(toMove || won ? 'text-gold' : 'text-parchment/65')}>
+            {won ? 'wins' : out ? 'out' : toMove ? 'to move' : SEAT_LABEL[seat]}
+          </span>
+        ) : null}
       </span>
     )
   }
@@ -398,16 +401,17 @@ function PlayTile({
       to={to}
       data-testid={testId}
       className={cx(
-        'group relative flex items-start gap-4 rounded-2xl border p-5 text-left transition-[background-color,border-color,box-shadow,transform] duration-150 ease-out active:translate-y-px',
+        'group relative flex items-start gap-4 rounded-panel border p-5 text-left transition-[background-color,border-color,transform] duration-150 ease-out active:translate-y-px',
+        // The screen's one gold action; the other tile is a brass-edged panel.
         primary
-          ? 'border-gold/70 bg-gold text-ink shadow-[0_14px_36px_-16px_rgba(212,160,23,0.75)] hover:bg-gold-bright'
-          : 'border-parchment/15 bg-panel/80 text-parchment hover:border-gold/50 hover:bg-panel',
+          ? 'border-gold/70 bg-gold text-ink hover:bg-gold-bright'
+          : 'border-rule-brass bg-panel text-parchment hover:border-brass/70 hover:bg-panel-raised',
       )}
     >
       <span
         className={cx(
-          'grid h-11 w-11 shrink-0 place-items-center rounded-xl',
-          primary ? 'bg-ink/10 text-ink' : 'bg-gold/10 text-gold',
+          'grid h-11 w-11 shrink-0 place-items-center rounded-control',
+          primary ? 'bg-ink/10 text-ink' : 'bg-brass/10 text-brass',
         )}
       >
         {icon}

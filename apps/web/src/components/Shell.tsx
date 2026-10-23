@@ -289,14 +289,20 @@ export function Shell() {
               ) : pathname === '/' || age !== 'ok' ? null : (
                 // Signed out: a way in from any page (the landing page has its own buttons).
                 <>
-                  <NavItem to="/leaderboard" from="md" testId="nav-leaderboard">
+                  {/* Phones too: signed out there is no menu, so this is the way to it. */}
+                  <NavItem to="/leaderboard" testId="nav-leaderboard">
                     Leaderboard
                   </NavItem>
                   <NavItem to="/sign-in">Sign in</NavItem>
                   <span className="hidden sm:contents">
-                    <Link to="/sign-up" className={linkButtonClass('secondary', undefined, 'sm')}>
-                      Create account
-                    </Link>
+                    {/* On its own page it is a nav item marked as current, like Sign in. */}
+                    {pathname === '/sign-up' ? (
+                      <NavItem to="/sign-up">Create account</NavItem>
+                    ) : (
+                      <Link to="/sign-up" className={linkButtonClass('secondary', undefined, 'sm')}>
+                        Create account
+                      </Link>
+                    )}
                   </span>
                 </>
               )}
