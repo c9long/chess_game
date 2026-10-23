@@ -47,7 +47,7 @@ export function CivEmblem({
   if (!svg) {
     return (
       <span
-        className={`${className} inline-block rounded-full border border-dashed border-parchment/30`}
+        className={`${className} inline-block rounded-full border border-dashed border-rule-strong`}
         role="img"
         aria-label="No civilization chosen"
       />

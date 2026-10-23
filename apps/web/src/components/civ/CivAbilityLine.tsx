@@ -9,7 +9,7 @@ export function abilityPrefix(count: number): string {
 }
 
 /**
- * A civ's ability names on one line (a gold star, then the names in italic, joined with " · "),
+ * A civ's ability names on one line (a brass star, then the names in italic, joined with commas),
  * for civ list rows, the picker trigger, lobby seats and player rows. Nothing for a civ that
  * plays the standard army. `highlight`: a search match in the joined names. The names truncate
  * within whatever width the caller gives (e.g. `max-w-full` in an `items-start` column).
@@ -42,8 +42,8 @@ export function CivAbilityLine({
       <AbilityStar className="h-2 w-2" />
       <span
         className={cx(
-          'min-w-0 truncate font-display leading-tight text-gold-bright italic',
-          size === 'md' ? 'text-[12.5px]' : 'text-xs',
+          'min-w-0 truncate font-display leading-tight text-brass italic',
+          size === 'md' ? 'text-ui' : 'text-caption',
         )}
       >
         <span className="sr-only">{abilityPrefix(info.abilities.length)}</span>

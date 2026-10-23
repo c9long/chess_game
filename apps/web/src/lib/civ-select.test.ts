@@ -160,9 +160,9 @@ describe('searchHit', () => {
         { id: 'b', name: 'Second Rule', summary: 'Two', details: 'Two more.' },
       ],
     }
-    expect(abilityNames(twin)).toBe('First Rule · Second Rule')
+    expect(abilityNames(twin)).toBe('First Rule, Second Rule')
     expect(abilityNames(null)).toBe('')
-    expect(searchHit('Twin', twin, 'second')).toEqual({ field: 'ability', range: [13, 19] })
+    expect(searchHit('Twin', twin, 'second')).toEqual({ field: 'ability', range: [12, 18] })
   })
 })
 

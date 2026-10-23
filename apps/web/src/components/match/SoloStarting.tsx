@@ -1,19 +1,22 @@
+import { useReducedMotion } from 'motion/react'
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { leaveMatch, type MatchRoom, matchApi } from '../../lib/match.ts'
+import { usePrefs } from '../../lib/prefs.ts'
 import type { MatchFeed } from '../../pages/Match.tsx'
-import { CivEmblem, civName } from '../CivEmblem.tsx'
 import { Button, Spinner } from '../ui.tsx'
-import { MODE_LABEL, SEAT_LABEL, seatHex, seatName } from './seats.ts'
+import { CountdownRing, LineupTable, useCountdownSecs } from './LobbyRoom.tsx'
+import { MODE_LABEL } from './seats.ts'
 
 /**
  * A solo game between create and the first move: the server seats the bots and starts by
- * itself, so this only shows the line-up and the countdown (no lobby controls).
+ * itself, so this only shows who sits where around the table and the countdown (no lobby
+ * controls).
  */
 export function SoloStarting({ room, feed }: { room: MatchRoom; feed: MatchFeed }) {
   const navigate = useNavigate()
   const send = useMemo(() => matchApi(room).send, [room])
-  const { state } = feed
+  const { state, mySeat } = feed
   // The server starts the countdown at once; only offer a manual start if it stalls
   // (e.g. a start that failed and was reported as an error).
   const [stalled, setStalled] = useState(false)
@@ -30,51 +33,41 @@ export function SoloStarting({ room, feed }: { room: MatchRoom; feed: MatchFeed 
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-2xl flex-col items-center px-4 py-12 text-center sm:py-20">
-      <p className="text-xs font-semibold uppercase tracking-[0.3em] text-gold">
-        Singleplayer · {MODE_LABEL[state.mode]} · Untimed
+    <div className="mx-auto flex w-full max-w-3xl flex-col items-center px-4 py-10 sm:py-16">
+      <h1 className="text-center font-display text-title font-semibold">{state.name}</h1>
+      <p className="mt-2 text-center text-ui text-muted">
+        {MODE_LABEL[state.mode]}, untimed. You play against three bots.
       </p>
-      <h1 className="mt-2 font-display text-3xl font-semibold tracking-tight">{state.name}</h1>
-      <ul className="mt-8 grid w-full grid-cols-2 gap-3 sm:grid-cols-4" data-testid="solo-lineup">
-        {state.seats.map((seat, i) => (
-          <li
-            // biome-ignore lint/suspicious/noArrayIndexKey: seats are fixed positions
-            key={i}
-            className="flex flex-col items-center gap-2 rounded-2xl border border-parchment/10 bg-panel/80 px-3 py-4"
-          >
-            <span
-              className="flex h-12 w-12 items-center justify-center rounded-full border bg-ink/60"
-              style={{ borderColor: `${seatHex(i)}99`, color: seatHex(i) }}
-            >
-              {seat.civ ? <CivEmblem civ={seat.civ} className="h-7 w-7" /> : <Spinner />}
-            </span>
-            <span className="text-sm font-semibold">
-              {seat.isBot
-                ? `Bot · ${seat.botLevel === 'max' ? 'Max' : seat.botLevel}`
-                : seat.occupied
-                  ? 'You'
-                  : '…'}
-            </span>
-            <span className="text-xs text-parchment/55">
-              {seat.civ ? civName(seat.civ) : ''} · {SEAT_LABEL[seatName(i)]}
-            </span>
-          </li>
-        ))}
-      </ul>
-      {state.phase === 'countdown' ? (
-        <InlineCountdown endsAt={state.countdownEndsAt} />
-      ) : (
-        <p className="mt-8 flex items-center gap-3 text-parchment/65" aria-live="polite">
-          <Spinner /> Setting up the board…
-        </p>
-      )}
-      <div className="mt-6 flex gap-2">
+      <div className="mt-8 w-full">
+        <LineupTable
+          state={state}
+          viewer={mySeat}
+          youLabel
+          testId="solo-lineup"
+          plateClass="w-full sm:w-52"
+        >
+          <div className="flex justify-center sm:px-3">
+            {state.phase === 'countdown' ? (
+              <SoloCountdown endsAt={state.countdownEndsAt} />
+            ) : (
+              <div
+                className="flex h-32 w-32 flex-col items-center justify-center gap-2 rounded-full bg-baize-deep/90 px-4 text-center text-caption text-muted shadow-well"
+                aria-live="polite"
+              >
+                <Spinner className="text-brass" />
+                Setting up the board
+              </div>
+            )}
+          </div>
+        </LineupTable>
+      </div>
+      <div className="mt-8 flex gap-2">
         {stalled ? (
           <Button onClick={() => send('startGame', {})} data-testid="solo-start">
             Start now
           </Button>
         ) : null}
-        <Button variant="ghost" onClick={leave}>
+        <Button variant="quiet" onClick={leave}>
           Cancel
         </Button>
       </div>
@@ -82,20 +75,15 @@ export function SoloStarting({ room, feed }: { room: MatchRoom; feed: MatchFeed 
   )
 }
 
-/** The start countdown under the line-up (no overlay: the line-up stays readable). */
-function InlineCountdown({ endsAt }: { endsAt: number }) {
-  const [now, setNow] = useState(Date.now())
-  useEffect(() => {
-    const id = window.setInterval(() => setNow(Date.now()), 100)
-    return () => window.clearInterval(id)
-  }, [])
-  const secs = Math.max(1, Math.ceil((endsAt - now) / 1000))
+/** The start countdown at the table's centre (no overlay: the seats stay readable). */
+function SoloCountdown({ endsAt }: { endsAt: number }) {
+  const systemReduced = useReducedMotion()
+  const prefReduced = usePrefs((s) => s.reducedMotion)
+  const secs = useCountdownSecs(endsAt)
   return (
-    <div className="mt-8 flex flex-col items-center" data-testid="solo-countdown">
-      <p className="text-xs font-semibold uppercase tracking-[0.35em] text-gold">Game starting</p>
-      <p className="mt-1 font-display text-6xl font-semibold tabular-nums" aria-live="assertive">
-        {secs}
-      </p>
+    <div className="flex flex-col items-center" data-testid="solo-countdown">
+      <span className="sr-only">Game starting in</span>
+      <CountdownRing secs={secs} reduce={Boolean(systemReduced) || prefReduced} />
     </div>
   )
 }

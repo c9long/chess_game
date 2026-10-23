@@ -9,7 +9,7 @@ import {
   ROOM_NAMES,
   UNTIMED,
 } from '@game/protocol'
-import { Eye } from 'lucide-react'
+import { Clock, Eye, Lock, Users } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import {
   type FormEvent,
@@ -24,12 +24,27 @@ import { Link, useNavigate, useSearchParams } from 'react-router'
 import { CivEmblem, civName } from '../components/CivEmblem.tsx'
 import { CivSelect } from '../components/CivSelect.tsx'
 import { CivCard } from '../components/civ/CivCard.tsx'
-import { ClockIcon, LockIcon } from '../components/game/icons.tsx'
+import { SeatEmblem, TableBoard } from '../components/match/LobbyRoom.tsx'
 import { RankedBadge } from '../components/match/RankedBadge.tsx'
 import { SpectatorCount } from '../components/match/Spectators.tsx'
-import { SEAT_LABEL, seatHex, seatName } from '../components/match/seats.ts'
+import { botName, SEAT_LABEL, seatHex, seatName } from '../components/match/seats.ts'
 import { Dialog, DialogClose } from '../components/overlay.tsx'
-import { Alert, Button, Card, Field, Spinner } from '../components/ui.tsx'
+import {
+  Alert,
+  Button,
+  cx,
+  EmptyState,
+  Field,
+  inputClass,
+  linkButtonClass,
+  Nameplate,
+  Pill,
+  RuleList,
+  SeatTable,
+  SectionHeading,
+  Spinner,
+  textLinkClass,
+} from '../components/ui.tsx'
 import { displayName, isGuest, useAppState } from '../lib/app-state.tsx'
 import {
   createMatch,
@@ -67,13 +82,79 @@ const FILTER_LABEL: Record<LobbyFilter, string> = {
   casual: 'Casual',
 }
 
-/** A two-way choice button (mode, time control). */
-const choice = (active: boolean) =>
-  `h-11 flex-1 rounded-lg border px-3 text-sm font-semibold transition focus-visible:outline-2 focus-visible:outline-gold ${
-    active
-      ? 'border-gold bg-gold/15 text-parchment'
-      : 'border-parchment/20 text-parchment/70 hover:border-parchment/40'
-  }`
+/**
+ * A row of mutually exclusive choices (mode, time control, list filter) as toggle buttons in a
+ * recessed track; the chosen one is raised with a brass edge.
+ */
+function Segmented<T extends string>({
+  legend,
+  options,
+  value,
+  onChange,
+  hint,
+  size = 'md',
+  label = (o) => o,
+  trailing,
+  testId,
+}: {
+  legend: string
+  options: readonly T[]
+  value: T
+  onChange: (v: T) => void
+  hint?: ReactNode
+  size?: 'sm' | 'md'
+  label?: (o: T) => ReactNode
+  trailing?: (o: T) => ReactNode
+  testId?: (o: T) => string
+}) {
+  const hintId = useId()
+  return (
+    <fieldset
+      className="flex min-w-0 flex-col gap-1.5"
+      aria-describedby={hint ? hintId : undefined}
+    >
+      <legend
+        className={cx('mb-1.5 text-ui font-medium text-parchment', size === 'sm' && 'sr-only')}
+      >
+        {legend}
+      </legend>
+      <div
+        className={cx(
+          'flex rounded-control border border-rule-strong bg-black/20 p-1 shadow-well',
+          size === 'sm' ? 'w-fit' : 'w-full',
+        )}
+      >
+        {options.map((o) => {
+          const on = value === o
+          return (
+            <button
+              key={o}
+              type="button"
+              aria-pressed={on}
+              onClick={() => onChange(o)}
+              data-testid={testId?.(o)}
+              className={cx(
+                'flex items-center justify-center gap-1.5 rounded-[4px] border font-semibold whitespace-nowrap transition-[color,background-color,border-color] duration-150',
+                size === 'sm' ? 'h-8 px-3 text-caption' : 'h-9 flex-1 px-3 text-ui',
+                on
+                  ? 'border-rule-brass bg-parchment/[0.09] text-parchment shadow-rim'
+                  : 'border-transparent text-muted hover:text-parchment',
+              )}
+            >
+              {label(o)}
+              {trailing?.(o)}
+            </button>
+          )
+        })}
+      </div>
+      {hint ? (
+        <p id={hintId} className="text-caption text-faint">
+          {hint}
+        </p>
+      ) : null}
+    </fieldset>
+  )
+}
 
 function ModeChoice({
   mode,
@@ -85,27 +166,16 @@ function ModeChoice({
   teamsHint: string
 }) {
   return (
-    <fieldset className="flex flex-col gap-2">
-      <legend className="mb-1.5 text-sm font-medium text-parchment/85">Mode</legend>
-      <div className="flex gap-2">
-        {(['ffa', 'teams'] as const).map((m) => (
-          <button
-            key={m}
-            type="button"
-            aria-pressed={mode === m}
-            className={choice(mode === m)}
-            onClick={() => onChange(m)}
-          >
-            {MODE_LABEL[m]}
-          </button>
-        ))}
-      </div>
-      <p className="text-xs text-parchment/55">
-        {mode === 'ffa'
-          ? 'Every player for themselves. Last civilization standing wins.'
-          : teamsHint}
-      </p>
-    </fieldset>
+    <Segmented
+      legend="Mode"
+      options={['ffa', 'teams'] as const}
+      value={mode}
+      onChange={onChange}
+      label={(m) => MODE_LABEL[m]}
+      hint={
+        mode === 'ffa' ? 'Every player for themselves. Last civilization standing wins.' : teamsHint
+      }
+    />
   )
 }
 
@@ -113,10 +183,65 @@ function botLevelText(level: string): string {
   return level === 'max' ? 'Max strength' : `Elo ${level}`
 }
 
+/**
+ * Who sits where in a game against bots, as it is set up: you at South, three bots around the
+ * table (your partner opposite in Teams). Updates as the choices change.
+ */
+function SeatPreview({
+  civ,
+  level,
+  mode,
+  className,
+}: {
+  civ: string
+  level: string
+  mode: 'ffa' | 'teams'
+  className?: string
+}) {
+  const bot = (i: number) => (
+    <Nameplate
+      seat={i}
+      size="sm"
+      name={botName(level)}
+      detail={mode === 'teams' ? (i === 2 ? 'Your partner' : 'Opponent') : 'Random civilization'}
+      className="w-full max-w-[11.5rem]"
+    />
+  )
+  return (
+    <div className={className} aria-hidden="true">
+      <SeatTable
+        stackBelow="never"
+        className="gap-2.5"
+        north={bot(2)}
+        west={bot(1)}
+        east={bot(3)}
+        south={
+          <Nameplate
+            seat={0}
+            size="sm"
+            name="You"
+            detail={civ ? civName(civ) : 'Choose a civilization'}
+            emblem={civ ? <SeatEmblem index={0} civ={civ} size="sm" /> : undefined}
+            className="w-full max-w-[11.5rem]"
+          />
+        }
+      >
+        <TableBoard
+          seats={[{ occupied: true, civ }, ...[1, 2, 3].map(() => ({ occupied: false, civ: '' }))]}
+          viewer={0}
+          emblems={false}
+          className="w-24"
+        />
+      </SeatTable>
+    </div>
+  )
+}
+
 /** Singleplayer: the player at South against three bots, untimed. */
 function PlayVsBots({ blocked }: { blocked: boolean }) {
   const navigate = useNavigate()
   const levelId = useId()
+  const levelHintId = useId()
   const civLabelId = useId()
   const [civ, setCiv] = useState('')
   const [level, setLevel] = useState('1200')
@@ -148,26 +273,34 @@ function PlayVsBots({ blocked }: { blocked: boolean }) {
     <section
       id="vs-bots"
       aria-labelledby="vs-bots-title"
-      className="mb-10 overflow-hidden rounded-2xl border border-gold/25 bg-gradient-to-br from-gold/[0.07] via-panel/90 to-panel/90 p-5 shadow-[0_24px_60px_-40px_rgba(212,160,23,0.6)] sm:p-7"
+      className="rounded-panel border border-rule-brass bg-surface-rail p-5 shadow-rim sm:p-8"
       data-testid="vs-bots"
     >
-      <form className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_340px]" onSubmit={start} noValidate>
-        <div className="min-w-0">
-          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-gold">Singleplayer</p>
-          <h2
-            id="vs-bots-title"
-            className="mt-1 font-display text-3xl font-semibold tracking-tight"
-          >
+      <form
+        className="grid gap-x-12 gap-y-8 lg:grid-cols-[minmax(0,1fr)_22rem]"
+        onSubmit={start}
+        noValidate
+      >
+        <div className="flex min-w-0 flex-col">
+          <h2 id="vs-bots-title" className="font-display text-title font-semibold">
             Play vs bots
           </h2>
-          <p className="mt-1 mb-5 max-w-xl text-sm text-parchment/65">
-            You play South. Three bots take West, North and East, each with a random civilization.
-            No clocks: take as long as you like.
+          <p className="mt-2 max-w-[56ch] text-body text-pretty text-muted">
+            You play South against three bots, each with a random civilization. There are no clocks,
+            so take as long as you like.
           </p>
-          <h3 id={civLabelId} className="mb-2 text-sm font-medium text-parchment/85">
-            Your civilization
-          </h3>
-          <div className="max-w-md">
+          <SeatPreview
+            civ={civ}
+            level={level}
+            mode={mode}
+            className="mt-8 hidden justify-center rounded-panel border border-black/30 bg-baize px-4 py-8 shadow-well sm:flex"
+          />
+        </div>
+        <div className="flex min-w-0 flex-col gap-6">
+          <div>
+            <h3 id={civLabelId} className="mb-1.5 text-ui font-medium text-parchment">
+              Your civilization
+            </h3>
             <CivSelect
               value={civ}
               onChange={setCiv}
@@ -177,17 +310,16 @@ function PlayVsBots({ blocked }: { blocked: boolean }) {
             />
             {civ ? <CivCard civ={civ} variant="attached" fold="rest" headingLevel={4} /> : null}
           </div>
-        </div>
-        <div className="flex flex-col gap-5 lg:pt-14">
           <div className="flex flex-col gap-1.5">
-            <label htmlFor={levelId} className="text-sm font-medium text-parchment/85">
+            <label htmlFor={levelId} className="text-ui font-medium text-parchment">
               Bot strength
             </label>
             <select
               id={levelId}
               value={level}
               onChange={(e) => setLevel(e.target.value)}
-              className="h-11 rounded-lg border border-parchment/20 bg-ink/60 px-3 text-parchment outline-none transition focus:border-gold focus:ring-2 focus:ring-gold/30"
+              className={cx(inputClass, 'select')}
+              aria-describedby={levelHintId}
               data-testid="bot-level"
             >
               {BOT_LEVEL_LABELS.map((l) => (
@@ -196,7 +328,9 @@ function PlayVsBots({ blocked }: { blocked: boolean }) {
                 </option>
               ))}
             </select>
-            <p className="text-xs text-parchment/55">All three bots play at this level.</p>
+            <p id={levelHintId} className="text-caption text-faint">
+              All three bots play at this level.
+            </p>
           </div>
           <ModeChoice
             mode={mode}
@@ -204,17 +338,17 @@ function PlayVsBots({ blocked }: { blocked: boolean }) {
             teamsHint="You and the North bot against West and East."
           />
           {error ? <Alert>{error}</Alert> : null}
-          <div className="mt-auto flex flex-col gap-2">
+          <div className="flex flex-col gap-2">
             <Button
               type="submit"
+              size="lg"
               busy={busy}
               disabled={!civ || blocked}
-              className="h-12"
               data-testid="start-solo"
             >
               Start game
             </Button>
-            <p className="text-center text-xs text-parchment/65" aria-live="polite">
+            <p className="text-center text-caption text-faint" aria-live="polite">
               {busy
                 ? 'Setting up the game…'
                 : blocked
@@ -315,12 +449,17 @@ function CreateLobby() {
   }
 
   return (
-    <Card className="lg:sticky lg:top-6 lg:self-start">
-      <h2 className="font-display text-xl font-semibold">Create a lobby</h2>
-      <p className="mt-1 mb-5 text-xs text-parchment/55">
-        Blind pick: everyone chooses a civilization at once. Draft with bans is coming soon.
+    <section
+      aria-labelledby="create-lobby-title"
+      className="rounded-panel border border-rule bg-surface-rail p-5 shadow-rim sm:p-6 lg:sticky lg:top-6 lg:self-start"
+    >
+      <h2 id="create-lobby-title" className="font-display text-heading font-semibold">
+        Create a lobby
+      </h2>
+      <p className="mt-1 mb-6 text-ui text-faint">
+        Everyone picks a civilization at the same time. Drafting with bans is on the way.
       </p>
-      <form className="flex flex-col gap-5" onSubmit={submit} noValidate>
+      <form className="flex flex-col gap-6" onSubmit={submit} noValidate>
         <Field
           label="Lobby name"
           value={name}
@@ -334,27 +473,18 @@ function CreateLobby() {
           onChange={setMode}
           teamsHint="South and North against West and East. Partners sit opposite each other."
         />
-        <fieldset className="flex flex-col gap-2">
-          <legend className="mb-1.5 text-sm font-medium text-parchment/85">Time control</legend>
-          <div className="flex gap-2">
-            {(Object.keys(TIME_CONTROLS) as (keyof typeof TIME_CONTROLS)[]).map((tc) => (
-              <button
-                key={tc}
-                type="button"
-                aria-pressed={timeControl === tc}
-                className={choice(timeControl === tc)}
-                onClick={() => setTimeControl(tc)}
-              >
-                {tc}
-              </button>
-            ))}
-          </div>
-          <p className="text-xs text-parchment/55">
-            {timeControl === '10+0'
+        <Segmented
+          legend="Time control"
+          options={Object.keys(TIME_CONTROLS) as (keyof typeof TIME_CONTROLS)[]}
+          value={timeControl}
+          onChange={setTimeControl}
+          label={(tc) => <span className="tabular-nums">{tc}</span>}
+          hint={
+            timeControl === '10+0'
               ? '10 minutes per player, no increment.'
-              : '3 minutes per player, plus 2 seconds per move.'}
-          </p>
-        </fieldset>
+              : '3 minutes per player, plus 2 seconds per move.'
+          }
+        />
         <RankedToggle ranked={ranked && !guest} guest={guest} onChange={setRanked} />
         <Field
           label="Password (optional)"
@@ -366,16 +496,22 @@ function CreateLobby() {
           hint={
             password
               ? 'Private lobby: players need this password to join.'
-              : 'Empty: a public lobby anyone can join.'
+              : 'Leave empty for a public lobby anyone can join.'
           }
           data-testid="lobby-password"
         />
         {error ? <Alert>{error}</Alert> : null}
-        <Button type="submit" busy={busy} disabled={Boolean(nameError)} data-testid="create-lobby">
+        <Button
+          type="submit"
+          variant="secondary"
+          busy={busy}
+          disabled={Boolean(nameError)}
+          data-testid="create-lobby"
+        >
           Create lobby
         </Button>
       </form>
-    </Card>
+    </section>
   )
 }
 
@@ -391,15 +527,17 @@ function RankedToggle({
 }) {
   const hintId = useId()
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-1.5">
       <label
-        className={`flex items-center justify-between gap-4 rounded-lg border px-3 py-2.5 transition ${
-          ranked ? 'border-gold/60 bg-gold/10' : 'border-parchment/20'
-        } ${guest ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:border-parchment/40'}`}
+        className={cx(
+          'flex items-center justify-between gap-4 rounded-control border px-3 py-2.5 transition-colors duration-150',
+          ranked ? 'border-brass/60 bg-brass/[0.07]' : 'border-rule-strong',
+          guest ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:border-parchment/35',
+        )}
       >
         <span className="flex flex-col">
-          <span className="text-sm font-semibold text-parchment">Ranked</span>
-          <span className="text-xs text-parchment/55">Elo-rated · players with accounts only</span>
+          <span className="text-ui font-semibold text-parchment">Ranked</span>
+          <span className="text-caption text-faint">Rated games, for players with accounts</span>
         </span>
         <span className="relative inline-flex shrink-0">
           <input
@@ -413,14 +551,14 @@ function RankedToggle({
             onChange={(e) => onChange(e.target.checked)}
             data-testid="ranked-toggle"
           />
-          <span className="h-6 w-11 rounded-full bg-parchment/20 transition peer-checked:bg-gold peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-gold" />
-          <span className="pointer-events-none absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-parchment shadow transition peer-checked:translate-x-5" />
+          <span className="h-6 w-11 rounded-full bg-parchment/20 shadow-well transition-colors duration-150 peer-checked:bg-brass peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-gold" />
+          <span className="pointer-events-none absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-parchment shadow-plate transition-transform duration-150 peer-checked:translate-x-5" />
         </span>
       </label>
-      <p id={hintId} className="text-xs text-parchment/55" data-testid="ranked-hint">
+      <p id={hintId} className="text-caption text-faint" data-testid="ranked-hint">
         {guest ? (
           <>
-            <Link to="/sign-up" className="font-semibold text-gold hover:underline">
+            <Link to="/sign-up" className={cx(textLinkClass, 'font-semibold')}>
               Create an account
             </Link>{' '}
             to play ranked.
@@ -488,9 +626,9 @@ function JoinPasswordDialog({
           data-testid="join-password"
         />
         {error ? <Alert>{error}</Alert> : null}
-        <div className="mt-2 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+        <div className="mt-2 flex flex-col-reverse gap-2 border-t border-rule pt-4 sm:flex-row sm:justify-end">
           <DialogClose>
-            <Button variant="ghost">Cancel</Button>
+            <Button variant="quiet">Cancel</Button>
           </DialogClose>
           <Button type="submit" busy={busy} disabled={!password} data-testid="join-submit">
             Join
@@ -502,11 +640,11 @@ function JoinPasswordDialog({
 }
 
 /**
- * One pip per seat (South, West, North, East), in that seat's colour when taken, so the pips
- * line up with the seat-tinted civ emblems beside them. Falls back to filling in seat order
- * when the listing has no `occupied` array.
+ * A table seen from above: one bar per side in that seat's colour when the seat is taken, a
+ * faint outline when it's open (South at the bottom, West left, North top, East right). Falls
+ * back to filling in seat order when the listing has no `occupied` array.
  */
-function SeatPips({
+function TableGlyph({
   filled,
   occupied,
 }: {
@@ -514,21 +652,27 @@ function SeatPips({
   occupied: readonly boolean[] | undefined
 }) {
   const taken = (i: number) => (occupied ? Boolean(occupied[i]) : i < filled)
+  const bars = [
+    'bottom-0.5 left-2.5 right-2.5 h-[3px]',
+    'left-0.5 top-2.5 bottom-2.5 w-[3px]',
+    'top-0.5 left-2.5 right-2.5 h-[3px]',
+    'right-0.5 top-2.5 bottom-2.5 w-[3px]',
+  ]
   return (
-    <span className="flex items-center gap-2">
-      <span className="flex gap-1" role="img" aria-label={`${filled} of 4 seats filled`}>
-        {[0, 1, 2, 3].map((i) => (
-          <span
-            key={i}
-            className={`h-2.5 w-2.5 rounded-full transition-colors ${taken(i) ? '' : 'border border-parchment/30'}`}
-            style={taken(i) ? { backgroundColor: seatHex(i) } : undefined}
-            data-seat-taken={taken(i) ? 'true' : 'false'}
-          />
-        ))}
-      </span>
-      <span aria-hidden="true" className="text-xs font-semibold tabular-nums text-parchment/60">
-        {filled}/4
-      </span>
+    <span
+      className="relative block h-11 w-11 shrink-0 rounded-plate border border-rule bg-baize shadow-well"
+      role="img"
+      aria-label={`${filled} of 4 seats filled`}
+    >
+      <span className="absolute inset-[9px] rounded-[2px] bg-walnut/80 ring-1 ring-black/40" />
+      {bars.map((pos, i) => (
+        <span
+          key={pos}
+          className={cx('absolute rounded-full', pos, taken(i) ? null : 'bg-parchment/15')}
+          style={taken(i) ? { backgroundColor: seatHex(i) } : undefined}
+          data-seat-taken={taken(i) ? 'true' : 'false'}
+        />
+      ))}
     </span>
   )
 }
@@ -547,7 +691,7 @@ function SeatedCivs({ civs }: { civs: readonly string[] | undefined }) {
     .join(', ')}`
   return (
     <span
-      className="flex items-center gap-1"
+      className="flex items-center -space-x-1"
       role="img"
       aria-label={label}
       data-testid="seated-civs"
@@ -555,8 +699,8 @@ function SeatedCivs({ civs }: { civs: readonly string[] | undefined }) {
       {seated.map((c) => (
         <span
           key={c.seat}
-          className="grid h-6 w-6 place-items-center rounded-md border bg-ink/50"
-          style={{ borderColor: `${seatHex(c.seat)}99`, color: seatHex(c.seat) }}
+          className="grid h-7 w-7 place-items-center rounded-full border bg-baize-deep ring-2 ring-surface"
+          style={{ borderColor: `${seatHex(c.seat)}aa`, color: seatHex(c.seat) }}
           title={`${civName(c.civ)} (${SEAT_LABEL[seatName(c.seat)]})`}
           data-civ={c.civ}
         >
@@ -567,51 +711,182 @@ function SeatedCivs({ civs }: { civs: readonly string[] | undefined }) {
   )
 }
 
-function Chip({ children, title }: { children: ReactNode; title?: string }) {
+/** One fact in a lobby row's detail line. */
+function RowFact({ children, icon }: { children: ReactNode; icon?: ReactNode }) {
   return (
-    <span
-      className="inline-flex h-6 shrink-0 items-center gap-1 rounded-full border border-parchment/15 bg-ink/40 px-2 text-[11px] font-medium text-parchment/70"
-      title={title}
-    >
+    <li className="flex items-center gap-1.5 [&>svg]:h-3.5 [&>svg]:w-3.5 [&>svg]:shrink-0">
+      {icon}
       {children}
-    </span>
+    </li>
   )
 }
 
-const EMPTY_CELLS = Array.from({ length: 16 }, (_, i) => ({
-  id: `c${i}`,
-  x: i % 4,
-  y: Math.floor(i / 4),
-})).filter((c) => (c.x + c.y) % 2 === 0)
+function LobbyRow({
+  r,
+  mine,
+  guest,
+  blocked,
+  joining,
+  onJoin,
+}: {
+  r: Listing
+  mine: boolean
+  guest: boolean
+  blocked: boolean
+  joining: boolean
+  onJoin: (opener: HTMLElement) => void
+}) {
+  const live = isLive(r)
+  const full = !live && r.metadata.seatsFilled >= 4
+  const watchClass = linkButtonClass('secondary', 'min-w-24', 'sm')
+  let action: ReactNode
+  if (live) {
+    action = mine ? (
+      <Link to={`/match/${r.roomId}`} className={watchClass} data-testid="watch-game">
+        Your game
+      </Link>
+    ) : (
+      <Link
+        to={`/watch/${r.roomId}`}
+        className={watchClass}
+        aria-label={`Watch ${r.metadata.name}`}
+        data-testid="watch-game"
+      >
+        <Eye aria-hidden="true" />
+        Watch
+      </Link>
+    )
+  } else if (full && !mine) {
+    // A full lobby can't be joined, but it can be watched until it starts.
+    action = (
+      <Link
+        to={`/watch/${r.roomId}`}
+        className={watchClass}
+        aria-label={`Full. Watch ${r.metadata.name}`}
+        data-testid="watch-lobby"
+      >
+        <Eye aria-hidden="true" />
+        Watch
+      </Link>
+    )
+  } else {
+    action = (
+      <>
+        {mine ? null : (
+          <Link
+            to={`/watch/${r.roomId}`}
+            className={linkButtonClass('quiet', 'w-9 px-0', 'sm')}
+            aria-label={`Watch ${r.metadata.name}`}
+            title="Watch"
+            data-testid="watch-lobby"
+          >
+            <Eye aria-hidden="true" />
+          </Link>
+        )}
+        {r.metadata.ranked && guest && !full ? (
+          <Link
+            to="/sign-up"
+            className={linkButtonClass('secondary', undefined, 'sm')}
+            title="Ranked games are for players with an account"
+            data-testid="join-lobby"
+          >
+            Create account to join
+          </Link>
+        ) : (
+          <Button
+            variant={full ? 'quiet' : 'secondary'}
+            size="sm"
+            className="min-w-20"
+            busy={joining}
+            disabled={full || blocked || (r.metadata.ranked && guest)}
+            onClick={(e) => onJoin(e.currentTarget)}
+            data-testid="join-lobby"
+          >
+            {full ? 'Full' : 'Join'}
+          </Button>
+        )}
+      </>
+    )
+  }
 
-/** A small board with the four seat colours, for the empty lobby list. */
-function EmptyTables() {
   return (
-    <svg viewBox="0 0 64 64" className="h-16 w-16" aria-hidden="true">
-      <rect
-        x="6"
-        y="6"
-        width="52"
-        height="52"
-        rx="6"
-        className="fill-ink/60 stroke-parchment/20"
-        strokeWidth="1.5"
-      />
-      {EMPTY_CELLS.map((c) => (
-        <rect
-          key={c.id}
-          x={12 + c.x * 10}
-          y={12 + c.y * 10}
-          width="10"
-          height="10"
-          className="fill-parchment/10"
-        />
-      ))}
-      <circle cx="32" cy="58" r="4" fill={seatHex(0)} />
-      <circle cx="6" cy="32" r="4" fill={seatHex(1)} />
-      <circle cx="32" cy="6" r="4" fill={seatHex(2)} />
-      <circle cx="58" cy="32" r="4" fill={seatHex(3)} />
-    </svg>
+    <motion.li
+      layout="position"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: full ? 0.7 : 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.18, ease: 'easeOut' }}
+      className="flex flex-wrap items-center gap-x-4 gap-y-3 py-4 sm:flex-nowrap"
+    >
+      <div className="flex min-w-0 flex-1 basis-56 items-center gap-4">
+        <TableGlyph filled={r.metadata.seatsFilled} occupied={r.metadata.occupied} />
+        <div className="min-w-0 flex-1">
+          <p className="flex min-w-0 items-center gap-2">
+            {r.metadata.locked ? (
+              <span className="shrink-0 text-brass" title="Private: password required">
+                <Lock aria-hidden="true" className="h-4 w-4" />
+              </span>
+            ) : null}
+            <span className="truncate font-display text-lead font-semibold text-parchment">
+              {r.metadata.name}
+            </span>
+          </p>
+          <ul className="mt-1 flex flex-wrap items-center gap-x-3.5 gap-y-1 text-ui text-faint">
+            <RowFact icon={<Users aria-hidden="true" />}>
+              {MODE_LABEL[r.metadata.mode as 'ffa' | 'teams'] ?? r.metadata.mode}
+            </RowFact>
+            <RowFact icon={<Clock aria-hidden="true" />}>
+              <span className="tabular-nums" title="Time control">
+                {r.metadata.timeControl}
+              </span>
+            </RowFact>
+            <RowFact>
+              <span className="tabular-nums" aria-hidden="true">
+                {r.metadata.seatsFilled} of 4 seated
+              </span>
+            </RowFact>
+            <RowFact>{r.metadata.ranked ? <RankedBadge /> : 'Casual'}</RowFact>
+            {r.metadata.locked ? <RowFact>Private</RowFact> : null}
+            {r.metadata.phase === 'countdown' ? (
+              <RowFact>
+                <Pill tone="brass">Starting</Pill>
+              </RowFact>
+            ) : live ? (
+              <RowFact>
+                <Pill>In game</Pill>
+              </RowFact>
+            ) : null}
+            {(r.metadata.spectators ?? 0) > 0 ? (
+              <RowFact>
+                <SpectatorCount count={r.metadata.spectators ?? 0} />
+              </RowFact>
+            ) : null}
+          </ul>
+        </div>
+      </div>
+      <div className="ml-auto flex shrink-0 items-center gap-3">
+        <SeatedCivs civs={r.metadata.civs} />
+        <span className="flex items-center gap-1.5">{action}</span>
+      </div>
+    </motion.li>
+  )
+}
+
+function ListStatus({ status }: { status: 'connecting' | 'live' | 'error' }) {
+  return (
+    <span className="flex items-center gap-2 text-caption text-faint" aria-live="polite">
+      {status === 'connecting' ? (
+        <>
+          <Spinner className="h-3 w-3" /> Connecting
+        </>
+      ) : status === 'live' ? (
+        <>
+          <span aria-hidden="true" className="h-2 w-2 rounded-full bg-ok" /> Live
+        </>
+      ) : (
+        <span className="text-destructive-light">Disconnected</span>
+      )}
+    </span>
   )
 }
 
@@ -678,249 +953,112 @@ export function Play() {
 
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:py-12">
+      <h1 className="sr-only">Play</h1>
       {current ? (
-        <div className="mb-6">
-          <Alert tone="info">
-            You have a seat in “{(current.state as { name?: string })?.name ?? 'a lobby'}”.{' '}
-            <button
-              type="button"
-              className="font-semibold text-gold underline-offset-2 hover:underline"
-              onClick={() => navigate(`/match/${current.roomId}`)}
-            >
-              Return to it
-            </button>
-          </Alert>
-        </div>
+        <Alert tone="info" className="mb-6">
+          You have a seat in “{(current.state as { name?: string })?.name ?? 'a lobby'}”.{' '}
+          <button
+            type="button"
+            className={cx(textLinkClass, 'font-semibold')}
+            onClick={() => navigate(`/match/${current.roomId}`)}
+          >
+            Return to it
+          </button>
+        </Alert>
       ) : null}
       <PlayVsBots blocked={Boolean(current)} />
-      <div className="grid gap-8 lg:grid-cols-[1fr_380px]">
-        <section aria-labelledby="lobbies-title">
-          <div className="mb-5 flex items-end justify-between gap-4">
-            <div>
-              <h1 id="lobbies-title" className="font-display text-3xl font-semibold tracking-tight">
-                Lobbies
-              </h1>
-              <p className="mt-1 text-sm text-parchment/60">
-                Join an open table, or create your own and fill empty seats with bots.
-              </p>
-            </div>
-            <span className="flex items-center gap-2 text-xs text-parchment/65" aria-live="polite">
-              {status === 'connecting' ? (
-                <>
-                  <Spinner /> Connecting
-                </>
-              ) : status === 'live' ? (
-                <>
-                  <span className="h-2 w-2 rounded-full bg-seat-east" /> Live
-                </>
-              ) : (
-                <span className="text-seat-south-light">Disconnected</span>
+      <div className="mt-14 grid gap-10 lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-12">
+        <section aria-labelledby="lobbies-title" className="min-w-0">
+          <SectionHeading
+            id="lobbies-title"
+            title={<span className="text-title">Lobbies</span>}
+            description="Join an open table, watch a game in progress, or create your own lobby."
+            actions={<ListStatus status={status} />}
+          />
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
+            <Segmented
+              legend="Show lobbies"
+              size="sm"
+              options={['all', 'ranked', 'casual'] as const}
+              value={filter}
+              onChange={setFilter}
+              label={(f) => FILTER_LABEL[f]}
+              trailing={(f) => (
+                <span className="font-normal tabular-nums text-faint">{counts[f]}</span>
               )}
-            </span>
-          </div>
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-            <fieldset className="inline-flex rounded-lg border border-parchment/15 bg-ink/40 p-1">
-              <legend className="sr-only">Show lobbies</legend>
-              {(['all', 'ranked', 'casual'] as const).map((f) => (
-                <button
-                  key={f}
-                  type="button"
-                  aria-pressed={filter === f}
-                  onClick={() => setFilter(f)}
-                  className={`h-8 rounded-md px-3 text-xs font-semibold transition focus-visible:outline-2 focus-visible:outline-gold ${
-                    filter === f
-                      ? 'bg-parchment/10 text-parchment'
-                      : 'text-parchment/60 hover:text-parchment'
-                  }`}
-                  data-testid={`lobby-filter-${f}`}
-                >
-                  {FILTER_LABEL[f]}
-                  <span className="ml-1.5 tabular-nums text-parchment/45">{counts[f]}</span>
-                </button>
-              ))}
-            </fieldset>
+              testId={(f) => `lobby-filter-${f}`}
+            />
             <Link
               to="/leaderboard"
-              className="text-xs font-semibold text-gold underline-offset-2 hover:underline"
+              className={cx(textLinkClass, 'text-ui')}
               data-testid="play-leaderboard-link"
             >
-              Leaderboard →
+              See the leaderboard
             </Link>
           </div>
-          {error ? (
-            <div className="mb-4">
-              <Alert>{error}</Alert>
-            </div>
-          ) : null}
+          {error ? <Alert className="my-4">{error}</Alert> : null}
           {status === 'error' ? (
-            <Alert>
+            <Alert className="mt-4">
               Could not load the lobby list. Check that you are signed in (or playing as a guest)
               and reload the page.
             </Alert>
           ) : sorted.length === 0 && status === 'live' ? (
-            <div className="flex flex-col items-center rounded-2xl border border-dashed border-parchment/15 bg-panel/30 px-6 py-12 text-center">
-              <EmptyTables />
-              <h2 className="mt-4 font-display text-xl font-semibold">
-                {filter === 'ranked' ? 'No ranked tables' : 'No open tables'}
-              </h2>
-              <p className="mt-1 max-w-sm text-sm text-parchment/60">
-                {filter === 'ranked'
-                  ? 'Create a ranked lobby and invite players with accounts.'
-                  : 'Start one and invite friends, or fill the empty seats with bots.'}
-              </p>
-              <div className="mt-5 flex flex-wrap justify-center gap-2">
-                {current ? null : (
-                  <Button
-                    className="h-10"
-                    onClick={() => {
-                      const input = document.querySelector<HTMLInputElement>(
-                        '[data-testid="lobby-name"]',
-                      )
-                      input?.focus()
-                      input?.select()
-                    }}
-                  >
-                    Create a lobby
-                  </Button>
-                )}
-                <Button
-                  variant="secondary"
-                  className="h-10"
-                  onClick={() =>
-                    document.getElementById('vs-bots')?.scrollIntoView({ behavior: 'smooth' })
-                  }
-                >
-                  Play vs bots
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <ul className="flex flex-col gap-3" data-testid="lobby-list">
-              <AnimatePresence initial={false} mode="popLayout">
-                {sorted.map((r) => {
-                  const live = isLive(r)
-                  const full = !live && r.metadata.seatsFilled >= 4
-                  const mine = current?.roomId === r.roomId
-                  return (
-                    <motion.li
-                      key={r.roomId}
-                      layout
-                      initial={{ opacity: 0, y: 6 }}
-                      animate={{ opacity: full ? 0.6 : 1, y: 0 }}
-                      exit={{ opacity: 0, scale: 0.98 }}
-                      transition={{ duration: 0.18, ease: 'easeOut' }}
-                      className="grid gap-3 rounded-2xl border border-parchment/10 bg-panel/80 px-4 py-3.5 transition-[border-color,translate] duration-150 hover:-translate-y-px hover:border-parchment/20 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center sm:gap-5 sm:px-5 sm:py-4"
+            <EmptyState
+              className="mt-4"
+              title={
+                filter === 'ranked' ? 'No ranked tables right now' : 'No open tables right now'
+              }
+              action={
+                <div className="flex flex-wrap gap-2">
+                  {current ? null : (
+                    <Button
+                      variant="secondary"
+                      onClick={() => {
+                        const input = document.querySelector<HTMLInputElement>(
+                          '[data-testid="lobby-name"]',
+                        )
+                        input?.focus()
+                        input?.select()
+                      }}
                     >
-                      <div className="min-w-0">
-                        <p className="flex min-w-0 items-center gap-2 font-semibold">
-                          {r.metadata.locked ? (
-                            <span className="shrink-0 text-gold" title="Private: password required">
-                              <LockIcon />
-                            </span>
-                          ) : null}
-                          <span className="truncate">{r.metadata.name}</span>
-                        </p>
-                        <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                          <Chip>
-                            {MODE_LABEL[r.metadata.mode as 'ffa' | 'teams'] ?? r.metadata.mode}
-                          </Chip>
-                          <Chip title="Time control">
-                            <ClockIcon /> {r.metadata.timeControl}
-                          </Chip>
-                          {r.metadata.ranked ? <RankedBadge /> : <Chip>Casual</Chip>}
-                          {r.metadata.locked ? <Chip>Private</Chip> : null}
-                          {r.metadata.phase === 'countdown' ? (
-                            <Chip>Starting</Chip>
-                          ) : r.metadata.phase === 'in_game' ? (
-                            <Chip>In game</Chip>
-                          ) : null}
-                          <SpectatorCount
-                            count={r.metadata.spectators ?? 0}
-                            className="ml-1 inline-flex"
-                          />
-                        </div>
-                      </div>
-                      <div className="flex items-center justify-between gap-3 sm:contents">
-                        <span className="flex items-center gap-3">
-                          <SeatedCivs civs={r.metadata.civs} />
-                          <SeatPips
-                            filled={r.metadata.seatsFilled}
-                            occupied={r.metadata.occupied}
-                          />
-                        </span>
-                        {live ? (
-                          mine ? (
-                            <Link
-                              to={`/match/${r.roomId}`}
-                              className="inline-flex h-10 min-w-20 items-center justify-center rounded-lg border border-parchment/20 px-4 text-sm font-semibold whitespace-nowrap hover:border-parchment/40"
-                              data-testid="watch-game"
-                            >
-                              Your game
-                            </Link>
-                          ) : (
-                            <Link
-                              to={`/watch/${r.roomId}`}
-                              className="inline-flex h-10 min-w-20 items-center justify-center gap-1.5 rounded-lg border border-parchment/20 px-4 text-sm font-semibold whitespace-nowrap hover:border-gold/60 hover:text-gold"
-                              aria-label={`Watch ${r.metadata.name}`}
-                              data-testid="watch-game"
-                            >
-                              <Eye aria-hidden="true" className="h-4 w-4" />
-                              Watch
-                            </Link>
-                          )
-                        ) : full && !mine ? (
-                          // A full lobby can't be joined, but it can be watched until it starts.
-                          <Link
-                            to={`/watch/${r.roomId}`}
-                            className="inline-flex h-10 min-w-20 items-center justify-center gap-1.5 rounded-lg border border-parchment/20 px-4 text-sm font-semibold whitespace-nowrap hover:border-gold/60 hover:text-gold"
-                            aria-label={`Full. Watch ${r.metadata.name}`}
-                            data-testid="watch-lobby"
-                          >
-                            <Eye aria-hidden="true" className="h-4 w-4" />
-                            Watch
-                          </Link>
-                        ) : (
-                          <span className="flex items-center gap-2">
-                            {mine ? null : (
-                              <Link
-                                to={`/watch/${r.roomId}`}
-                                className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-parchment/15 text-parchment/75 hover:border-gold/60 hover:text-gold"
-                                aria-label={`Watch ${r.metadata.name}`}
-                                title="Watch"
-                                data-testid="watch-lobby"
-                              >
-                                <Eye aria-hidden="true" className="h-4 w-4" />
-                              </Link>
-                            )}
-                            {r.metadata.ranked && guest && !full ? (
-                              <Link
-                                to="/sign-up"
-                                className="inline-flex h-10 items-center rounded-lg border border-gold/50 px-4 text-sm font-semibold whitespace-nowrap text-gold hover:border-gold hover:bg-gold/10"
-                                title="Ranked games are for players with an account"
-                                data-testid="join-lobby"
-                              >
-                                Create account to join
-                              </Link>
-                            ) : (
-                              <Button
-                                variant={full ? 'ghost' : 'secondary'}
-                                className="h-10 min-w-20"
-                                busy={joining === r.roomId}
-                                disabled={full || Boolean(current) || (r.metadata.ranked && guest)}
-                                onClick={(e) => join(r, e.currentTarget)}
-                                data-testid="join-lobby"
-                              >
-                                {full ? 'Full' : 'Join'}
-                              </Button>
-                            )}
-                          </span>
-                        )}
-                      </div>
-                    </motion.li>
-                  )
-                })}
+                      Create a lobby
+                    </Button>
+                  )}
+                  <Button
+                    variant="quiet"
+                    onClick={() =>
+                      document.getElementById('vs-bots')?.scrollIntoView({ behavior: 'smooth' })
+                    }
+                  >
+                    Play vs bots
+                  </Button>
+                </div>
+              }
+            >
+              {filter === 'ranked'
+                ? 'Create a ranked lobby and invite players with accounts.'
+                : 'Start one and invite friends, or fill the empty seats with bots.'}
+            </EmptyState>
+          ) : sorted.length === 0 ? (
+            <p className="flex items-center gap-2 border-y border-rule py-6 text-ui text-faint">
+              <Spinner className="h-3.5 w-3.5" /> Looking for open tables
+            </p>
+          ) : (
+            <RuleList data-testid="lobby-list">
+              <AnimatePresence initial={false} mode="popLayout">
+                {sorted.map((r) => (
+                  <LobbyRow
+                    key={r.roomId}
+                    r={r}
+                    mine={current?.roomId === r.roomId}
+                    guest={guest}
+                    blocked={Boolean(current)}
+                    joining={joining === r.roomId}
+                    onJoin={(opener) => join(r, opener)}
+                  />
+                ))}
               </AnimatePresence>
-            </ul>
+            </RuleList>
           )}
         </section>
         {current ? null : <CreateLobby />}

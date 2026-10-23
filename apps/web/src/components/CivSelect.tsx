@@ -13,7 +13,7 @@
  * their emblem, ability names and ability summaries (`CIV_INFO` in `@game/config`), with the
  * matched text marked.
  *
- * Rows: medallion and name; a civ with abilities adds one gold line with the ability names.
+ * Rows: medallion and name; a civ with abilities adds one brass line with the ability names.
  * With `preview` on a wide screen (1024px+), the open list gets a pane showing the highlighted
  * civ's full card.
  *
@@ -264,14 +264,14 @@ export function CivSelect({
           data-testid={testId}
           data-value={value}
           className={cx(
-            'civ-trigger group/civ relative flex w-full min-w-0 items-center gap-3 rounded-xl border text-left transition-[border-color,background-color,box-shadow] duration-150',
-            'border-parchment/15 bg-gradient-to-b from-parchment/[0.06] to-ink/50 shadow-[inset_0_1px_0_rgb(255_255_255/0.05),0_10px_24px_-18px_rgb(0_0_0/0.9)]',
-            'hover:border-gold/45 hover:from-gold/[0.08] data-[state=open]:border-gold/70 data-[state=open]:shadow-[0_0_0_3px_rgb(212_160_23/0.18)]',
-            'disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-parchment/15',
+            'civ-trigger group/civ relative flex w-full min-w-0 items-center gap-3 rounded-control border text-left transition-[border-color,background-color,box-shadow] duration-150',
+            'border-rule-strong bg-black/20 shadow-well',
+            'enabled:hover:border-brass/55 data-[state=open]:border-gold/80 data-[state=open]:shadow-[0_0_0_3px_rgb(212_160_23/0.2)]',
+            'disabled:cursor-not-allowed disabled:opacity-50',
             size === 'lg' ? 'h-14 pr-3 pl-1.5' : 'h-12 pr-2.5 pl-1.5',
             // Joined to a card below: square bottom corners, and the focus ring drawn inside the
             // border so it doesn't cut across the card.
-            attached && 'rounded-b-none border-b-parchment/10 focus-visible:outline-offset-[-2px]',
+            attached && 'rounded-b-none border-b-rule focus-visible:outline-offset-[-2px]',
             className,
           )}
         >
@@ -285,10 +285,10 @@ export function CivSelect({
                 'max-w-full min-w-0 truncate',
                 selected
                   ? cx(
-                      'font-display font-semibold leading-tight tracking-tight text-parchment',
-                      size === 'lg' ? 'text-lg' : 'text-base',
+                      'font-display font-semibold leading-tight text-parchment',
+                      size === 'lg' ? 'text-lead' : 'text-body',
                     )
-                  : 'text-sm text-parchment/55',
+                  : 'text-body text-faint',
               )}
             >
               {selected ? selected.name : placeholder}
@@ -304,7 +304,7 @@ export function CivSelect({
           </span>
           <span
             aria-hidden="true"
-            className="grid h-7 w-7 shrink-0 place-items-center rounded-md border border-gold/25 bg-ink/40 text-gold/80 transition group-hover/civ:border-gold/50 group-hover/civ:text-gold group-data-[state=open]/civ:border-gold/60 group-data-[state=open]/civ:text-gold"
+            className="grid h-7 w-7 shrink-0 place-items-center rounded-plate border border-rule-brass text-brass transition-colors duration-150 group-hover/civ:border-brass/60 group-data-[state=open]/civ:border-gold/60 group-data-[state=open]/civ:text-gold"
           >
             <ChevronDown className="h-4 w-4 transition-transform duration-200 group-data-[state=open]/civ:rotate-180" />
           </span>
@@ -342,9 +342,9 @@ export function CivSelect({
           }}
           onKeyDown={onListKeyDown}
           className={cx(
-            'z-50 flex max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-xl',
+            'z-50 flex max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-panel',
             withPane ? 'w-[44rem] flex-row' : 'w-[max(var(--radix-popover-trigger-width),17rem)]',
-            'border border-gold/30 bg-panel text-parchment shadow-2xl shadow-black/70 ring-1 ring-black/40',
+            'border border-rule-brass bg-panel text-parchment shadow-lift',
             'origin-(--radix-popover-content-transform-origin) data-[state=closed]:animate-pop-out data-[state=open]:animate-pop-in',
           )}
           style={{
@@ -354,10 +354,10 @@ export function CivSelect({
           }}
         >
           <div className={cx('flex min-h-0 min-w-0 flex-col', withPane ? 'w-[22rem]' : 'w-full')}>
-            <div className="relative shrink-0 border-b border-parchment/10 bg-gradient-to-b from-gold/[0.07] to-transparent p-2">
+            <div className="relative shrink-0 border-b border-rule p-2">
               <Search
                 aria-hidden="true"
-                className="pointer-events-none absolute top-1/2 left-5 h-4 w-4 -translate-y-1/2 text-parchment/45"
+                className="pointer-events-none absolute top-1/2 left-5 h-4 w-4 -translate-y-1/2 text-faint"
               />
               <input
                 ref={inputRef}
@@ -377,7 +377,7 @@ export function CivSelect({
                 value={query}
                 onChange={(e) => onQuery(e.target.value)}
                 data-testid={`${testId}-search`}
-                className="h-10 w-full rounded-lg border border-parchment/15 bg-ink/70 pr-3 pl-9 text-sm text-parchment outline-none transition placeholder:text-parchment/60 focus:border-gold/70 focus:ring-2 focus:ring-gold/25"
+                className="h-10 w-full rounded-control border border-rule-strong bg-black/25 pr-3 pl-9 text-body text-parchment shadow-well outline-none transition-[border-color,box-shadow] duration-150 placeholder:text-faint focus:border-gold focus:ring-2 focus:ring-gold/30"
               />
             </div>
             <div
@@ -407,8 +407,8 @@ export function CivSelect({
                 />
               ))}
               {options.length === 0 ? (
-                <p className="px-3 py-6 text-center text-sm text-parchment/55">
-                  No civilization matches “{query.trim()}”.
+                <p className="px-3 py-6 text-center text-ui text-faint">
+                  No civilization matches “{query.trim()}”. Try a shorter name or an ability.
                 </p>
               ) : null}
             </div>
@@ -430,25 +430,25 @@ function PreviewPane({ civ }: { civ: CivOption | undefined }) {
   return (
     <div
       aria-hidden="true"
-      className="flex min-h-0 min-w-0 flex-1 flex-col border-l border-parchment/10 bg-gradient-to-b from-gold/[0.04] to-transparent"
+      className="flex min-h-0 min-w-0 flex-1 flex-col border-l border-rule bg-black/10"
       data-testid="civ-preview"
     >
       <div className="min-h-0 flex-1 overflow-y-auto p-5 [scrollbar-width:thin]">
         {civ ? (
           <CivCard civ={civ.slug} variant="full" />
         ) : (
-          <p className="text-sm text-parchment/55">Highlight a civilization to read about it.</p>
+          <p className="text-ui text-faint">Highlight a civilization to read about it.</p>
         )}
       </div>
-      <p className="shrink-0 border-t border-parchment/[0.06] px-5 py-2 text-[11px] text-parchment/60">
-        ↑↓ browse · Enter choose
+      <p className="shrink-0 border-t border-rule px-5 py-2 text-caption text-faint">
+        Arrow keys to browse, Enter to choose
       </p>
     </div>
   )
 }
 
 /**
- * One civ in the open list: medallion and name, then its ability names in gold (if any). When
+ * One civ in the open list: medallion and name, then its ability names in brass (if any). When
  * the search matched an ability summary or the emblem, that text shows as an extra line with
  * the match marked. Screen readers hear the abilities through `aria-describedby`.
  */
@@ -497,18 +497,18 @@ function CivRow({
       onPointerMove={onHover}
       onClick={onChoose}
       className={cx(
-        'civ-row relative flex min-h-14 cursor-pointer items-center py-1 gap-3 rounded-lg pr-3 pl-1.5 transition-colors duration-100 select-none',
-        'before:absolute before:inset-y-2.5 before:left-0 before:w-0.5 before:rounded-full before:bg-gold before:opacity-0 before:transition-opacity',
-        active && 'bg-gold/[0.11] before:opacity-100',
-        selected && !active && 'bg-parchment/[0.04]',
+        'civ-row relative flex min-h-14 cursor-pointer items-center gap-3 rounded-control py-1 pr-3 pl-1.5 transition-colors duration-100 select-none',
+        'before:absolute before:inset-y-2.5 before:left-0 before:w-0.5 before:rounded-full before:bg-brass before:opacity-0 before:transition-opacity',
+        active && 'bg-parchment/[0.07] before:opacity-100',
+        selected && !active && 'bg-parchment/[0.03]',
       )}
     >
       <CivMedallion civ={civ} size="md" />
       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
         <span
           className={cx(
-            'line-clamp-2 min-w-0 font-display text-base leading-tight font-semibold tracking-tight',
-            selected ? 'text-gold-bright' : active ? 'text-parchment' : 'text-parchment/80',
+            'line-clamp-2 min-w-0 font-display text-body leading-tight font-semibold',
+            selected || active ? 'text-parchment' : 'text-muted',
           )}
         >
           <Highlight text={civ.name} range={hit?.field === 'name' ? hit.range : null} />
@@ -521,7 +521,7 @@ function CivRow({
         />
         {extra ? (
           <span
-            className="line-clamp-2 text-[11px] leading-snug text-parchment/65"
+            className="line-clamp-2 text-caption leading-snug text-faint"
             aria-hidden={extra.hidden || undefined}
           >
             <Highlight text={extra.text} range={extra.range} />
@@ -534,7 +534,7 @@ function CivRow({
         </span>
       ) : null}
       {selected ? (
-        <Check aria-hidden="true" className="h-4 w-4 shrink-0 text-gold" strokeWidth={2.5} />
+        <Check aria-hidden="true" className="h-4 w-4 shrink-0 text-brass" strokeWidth={2.5} />
       ) : null}
     </div>
   )

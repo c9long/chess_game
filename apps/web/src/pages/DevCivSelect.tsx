@@ -18,13 +18,19 @@ SYNTHETIC[99] = { slug: 'aland', name: 'Åland' }
 export function DevCivSelect() {
   const [civ, setCiv] = useState('')
   return (
-    <div className="mx-auto max-w-md px-4 py-10">
-      <h1 id="dev-civ-label" className="mb-3 font-display text-lg font-semibold">
+    <div className="mx-auto max-w-md px-4 py-10 sm:py-16">
+      <h1 id="dev-civ-label" className="font-display text-heading font-semibold">
         Synthetic roster (120 civs)
       </h1>
+      <p className="mt-1 mb-5 text-ui text-faint">
+        Development only: checks that the civ list filters and scrolls at roster scale.
+      </p>
       <CivSelect value={civ} onChange={setCiv} labelId="dev-civ-label" civs={SYNTHETIC} />
-      <p className="mt-3 text-sm text-parchment/70" data-testid="dev-civ-value">
-        {civ || 'none'}
+      <p className="mt-4 text-ui text-muted">
+        Chosen:{' '}
+        <span className="font-semibold text-parchment" data-testid="dev-civ-value">
+          {civ || 'none'}
+        </span>
       </p>
     </div>
   )

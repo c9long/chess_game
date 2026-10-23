@@ -75,9 +75,9 @@ export function civKeywords(info: CivInfo | null): string {
   ].join(FIELD_SEP)
 }
 
-/** Ability names on one line, as rows and seats show them ("Magna Carta · Other"). */
+/** Ability names on one line, as rows and seats show them ("Magna Carta, Other"). */
 export function abilityNames(info: CivInfo | null): string {
-  return info ? info.abilities.map((a) => a.name).join(' · ') : ''
+  return info ? info.abilities.map((a) => a.name).join(', ') : ''
 }
 
 /** A [start, end) range of UTF-16 offsets in the original text. */

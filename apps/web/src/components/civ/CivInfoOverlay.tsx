@@ -36,8 +36,8 @@ export function CivInfoOverlay({
 }: {
   civ: string
   /**
-   * Who sits there, in the seat colour: the seat label in small capitals, then the player's
-   * name as written (or "Bot · 1500").
+   * Who sits there, in the seat colour: "Ada at West", "Bot 1500 at North" (the player's name
+   * as written, then the seat).
    */
   kicker?: { seat: string; who: string } | undefined
   kickerColor?: string | undefined
@@ -58,7 +58,7 @@ export function CivInfoOverlay({
       kicker={
         kicker ? (
           <>
-            <span className="tracking-wider uppercase">{kicker.seat}</span> · {kicker.who}
+            <span className="text-parchment">{kicker.who}</span> at {kicker.seat}
           </>
         ) : undefined
       }

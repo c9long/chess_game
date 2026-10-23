@@ -25,11 +25,12 @@ function useCountdown(iso: string | undefined): string {
 
 function Invitees({ c }: { c: Challenge }) {
   return (
-    <span className="text-parchment/65">
+    <span className="text-muted">
       {c.invitees.map((i, n) => (
         <span key={i.user.userId ?? i.user.username}>
           {n > 0 ? ', ' : ''}
-          {i.user.username} <span className="text-parchment/55">({STATUS[i.status]})</span>
+          <span className="font-display font-semibold text-parchment">{i.user.username}</span>{' '}
+          <span className="text-faint">({STATUS[i.status]})</span>
         </span>
       ))}
     </span>
@@ -50,11 +51,15 @@ export function LobbyInvite({ roomId }: { roomId: string }) {
 
   if (open) {
     return (
-      <p className="mt-1 text-xs text-parchment/65" data-testid="lobby-invite-open">
-        Invitation open for <span className="font-mono text-parchment tabular-nums">{left}</span>
-        {' · '}
-        <Invitees c={open} />
-      </p>
+      <div className="mt-2 text-ui text-muted" data-testid="lobby-invite-open">
+        <p>
+          The invitation stays open for{' '}
+          <span className="font-semibold text-parchment tabular-nums">{left}</span>.
+        </p>
+        <p className="mt-0.5">
+          Invited: <Invitees c={open} />
+        </p>
+      </div>
     )
   }
   if (!ended) return null
@@ -66,11 +71,11 @@ export function LobbyInvite({ roomId }: { roomId: string }) {
 
   return (
     <div
-      className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs"
+      className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2 text-ui"
       data-testid="lobby-invite-ended"
     >
-      <p className="text-parchment/70">
-        Invitation ended: only players already seated can come back.
+      <p className="text-muted">
+        The invitation has ended. Only players already seated can come back.
       </p>
       {again.length > 0 ? (
         <Button
@@ -94,7 +99,7 @@ export function LobbyInvite({ roomId }: { roomId: string }) {
         </Button>
       ) : null}
       {error ? (
-        <p role="alert" className="w-full text-seat-south-light">
+        <p role="alert" className="w-full text-destructive-light">
           {error}
         </p>
       ) : null}

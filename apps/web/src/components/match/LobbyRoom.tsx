@@ -1,11 +1,24 @@
 import { BOT_LEVELS, civInfo } from '@game/config'
 import type { MatchStateJson, SeatStateJson } from '@game/protocol/state'
-import { Info } from 'lucide-react'
+import {
+  Armchair,
+  Check,
+  Clock,
+  Copy,
+  Crown,
+  Ellipsis,
+  EyeOff,
+  Globe,
+  Info,
+  Lock,
+  Mail,
+  Plus,
+  Users,
+} from 'lucide-react'
 import { AnimatePresence, motion, useAnimate, useReducedMotion } from 'motion/react'
-import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { type ReactNode, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { leaveMatch, type MatchRoom, matchApi } from '../../lib/match.ts'
-import { useMediaQuery } from '../../lib/media.ts'
 import { usePrefs } from '../../lib/prefs.ts'
 import type { MatchFeed } from '../../pages/Match.tsx'
 import { CivEmblem, civName } from '../CivEmblem.tsx'
@@ -13,25 +26,31 @@ import { CIV_SELECT_CONTENT_ATTR, CivSelect } from '../CivSelect.tsx'
 import { CivAbilityLine } from '../civ/CivAbilityLine.tsx'
 import { CivCard } from '../civ/CivCard.tsx'
 import { CivInfoOverlay, civInfoLabel } from '../civ/CivInfoOverlay.tsx'
-import { CheckIcon, CopyIcon, CrownIcon, DotsIcon, PlusIcon } from '../game/icons.tsx'
 import { LobbyInvite } from '../social/LobbyInvite.tsx'
-import { Button } from '../ui.tsx'
+import {
+  Button,
+  cx,
+  inputClass,
+  Nameplate,
+  Panel,
+  Pill,
+  SEAT_CLASSES,
+  SEAT_ORDER,
+  SeatTable,
+} from '../ui.tsx'
 import { RankedBadge } from './RankedBadge.tsx'
 import {
+  botName,
   MODE_LABEL,
   SEAT_LABEL,
-  seatColorName,
   seatHex,
   seatName,
+  seatsAround,
   seatTextHex,
   teamLabel,
 } from './seats.ts'
 
 const LEVEL_LABELS = BOT_LEVELS.map(String)
-
-function levelText(level: string): string {
-  return level === 'max' ? 'Max' : level
-}
 
 /** Bot strength on a 1..5 scale (for the pip meter), from its place in BOT_LEVELS. */
 function strengthPips(level: string): number {
@@ -40,23 +59,39 @@ function strengthPips(level: string): number {
   return Math.max(1, Math.ceil(((i + 1) / LEVEL_LABELS.length) * 5))
 }
 
-function Badge({ children, tone = 'muted' }: { children: string; tone?: 'muted' | 'gold' | 'ok' }) {
-  const tones = {
-    muted: 'border-parchment/20 text-parchment/65',
-    gold: 'border-gold/50 bg-gold/10 text-gold',
-    ok: 'border-seat-east/50 bg-seat-east/10 text-[#7fd8b7]',
-  }
+const smallSelect = cx(inputClass, 'select h-9 min-w-0 px-2 text-ui')
+
+/**
+ * A seat's civ emblem on an enamel disc in the seat's colour. Decorative (nearby text names
+ * the civ) unless `named`, which makes it an image named after the civ.
+ */
+export function SeatEmblem({
+  index,
+  civ,
+  size = 'md',
+  named = false,
+}: {
+  index: number
+  civ: string
+  size?: 'sm' | 'md' | 'lg'
+  named?: boolean
+}) {
+  const color = seatHex(index)
+  const box = { sm: 'h-7 w-7', md: 'h-9 w-9', lg: 'h-11 w-11' }[size]
+  const glyph = { sm: 'h-4 w-4', md: 'h-5 w-5', lg: 'h-7 w-7' }[size]
   return (
     <span
-      className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold tracking-wider whitespace-nowrap uppercase ${tones[tone]}`}
+      className={cx('grid shrink-0 place-items-center rounded-full border', box)}
+      style={{ borderColor: `${color}99`, backgroundColor: `${color}1f`, color }}
     >
-      {children}
+      {civ ? (
+        <CivEmblem civ={civ} className={glyph} {...(named ? {} : { title: '' })} />
+      ) : (
+        <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-current opacity-60" />
+      )}
     </span>
   )
 }
-
-const selectClass =
-  'h-9 min-w-0 rounded-lg border border-parchment/20 bg-ink/70 px-2 text-sm text-parchment outline-none focus:border-gold'
 
 /** Host controls for an occupied seat, tucked into a "⋯" menu. */
 function SeatMenu({
@@ -87,18 +122,20 @@ function SeatMenu({
     return () => document.removeEventListener('pointerdown', onDown)
   }, [])
   const s = index as 0 | 1 | 2 | 3
+  const menuButton =
+    'h-9 rounded-control border border-rule-strong text-ui font-semibold text-parchment transition-colors duration-150 hover:border-destructive-light/60 hover:text-destructive-light'
   return (
     <details ref={ref} className="group relative">
       <summary
-        className="flex h-8 w-8 cursor-pointer list-none items-center justify-center rounded-lg text-parchment/60 hover:bg-parchment/10 hover:text-parchment group-open:bg-parchment/10 group-open:text-parchment [&::-webkit-details-marker]:hidden"
+        className="flex h-8 w-8 cursor-pointer list-none items-center justify-center rounded-control text-faint transition-colors duration-150 hover:bg-parchment/[0.07] hover:text-parchment group-open:bg-parchment/[0.07] group-open:text-parchment [&::-webkit-details-marker]:hidden"
         aria-label={`Seat options (${SEAT_LABEL[seatName(index)]})`}
         title="Seat options"
       >
-        <DotsIcon />
+        <Ellipsis aria-hidden="true" className="h-4 w-4" />
       </summary>
-      <div className="absolute top-9 right-0 z-30 flex w-56 flex-col gap-2 rounded-xl tracking-normal normal-case border border-parchment/15 bg-panel p-3 shadow-2xl shadow-black/60">
+      <div className="absolute top-9 right-0 z-30 flex w-60 flex-col gap-3 rounded-panel border border-rule-brass bg-panel p-3 shadow-lift">
         {seat.isBot ? (
-          <div className="flex flex-col gap-1 text-xs text-parchment/60">
+          <div className="flex flex-col gap-1.5 text-ui text-muted">
             <span id={civLabelId}>
               {/* Screen readers hear which seat this changes ("West bot Civilization France"). */}
               <span className="sr-only">{SEAT_LABEL[seatName(index)]} bot </span>
@@ -113,10 +150,10 @@ function SeatMenu({
             />
           </div>
         ) : null}
-        <label className="flex flex-col gap-1 text-xs text-parchment/60">
+        <label className="flex flex-col gap-1.5 text-ui text-muted">
           Move to seat
           <select
-            className={selectClass}
+            className={smallSelect}
             value=""
             onChange={(e) => {
               if (!e.target.value) return
@@ -135,7 +172,7 @@ function SeatMenu({
         {seat.isBot ? (
           <button
             type="button"
-            className="h-9 rounded-lg border border-parchment/15 text-sm font-semibold text-parchment/80 hover:border-seat-south-light/60 hover:text-seat-south-light"
+            className={menuButton}
             onClick={() => {
               send('removeBot', { seat: s })
               close()
@@ -146,13 +183,13 @@ function SeatMenu({
         ) : !me ? (
           <button
             type="button"
-            className="h-9 rounded-lg border border-parchment/15 text-sm font-semibold text-parchment/80 hover:border-seat-south-light/60 hover:text-seat-south-light"
+            className={menuButton}
             onClick={() => {
               send('kick', { seat: s })
               close()
             }}
           >
-            Kick player
+            Remove player
           </button>
         ) : null}
       </div>
@@ -164,28 +201,28 @@ function StrengthMeter({ level }: { level: string }) {
   const pips = strengthPips(level)
   return (
     <span
-      className="flex items-center gap-2 text-[11px] whitespace-nowrap text-parchment/60"
+      className="flex items-center gap-2 text-caption whitespace-nowrap text-faint"
       title={`Bot strength: ${level === 'max' ? 'maximum' : `Elo ${level}`}`}
     >
       <span className="flex gap-0.5" aria-hidden="true">
         {[1, 2, 3, 4, 5].map((p) => (
           <span
             key={p}
-            className={`h-1.5 w-2 rounded-full sm:w-3 ${p <= pips ? 'bg-parchment/70' : 'bg-parchment/15'}`}
+            className={cx('h-1.5 w-2.5 rounded-full', p <= pips ? 'bg-brass' : 'bg-parchment/15')}
           />
         ))}
       </span>
-      {level === 'max' ? 'Max' : `Elo ${level}`}
+      {level === 'max' ? 'Max strength' : `Elo ${level}`}
     </span>
   )
 }
 
 /**
- * The civ line on a seat card, as a button that opens the civ's details (popover, or a bottom
- * sheet on phones). The hit area is 44px tall; negative margins keep the card's layout.
+ * The civ line on a seat plate, as a button that opens the civ's details (popover, or a bottom
+ * sheet on phones). The hit area is 44px tall; negative margins keep the plate's layout.
  */
 function SeatCivButton({ index, seat, civ }: { index: number; seat: SeatStateJson; civ: string }) {
-  const who = seat.isBot ? `Bot · ${levelText(seat.botLevel)}` : seat.displayName
+  const who = seat.isBot ? botName(seat.botLevel) : seat.displayName
   return (
     <CivInfoOverlay
       civ={civ}
@@ -200,16 +237,16 @@ function SeatCivButton({ index, seat, civ }: { index: number; seat: SeatStateJso
           data-testid={`civ-info-${seatName(index)}`}
           // The visible box hugs the text (so its focus ring does too); an invisible layer
           // widens the hit area into the gaps around it without covering the name above or
-          // the badges below.
-          className="group/civinfo relative -mx-1 mt-0.5 flex w-fit max-w-[calc(100%+0.5rem)] min-w-0 flex-col items-start gap-0.5 rounded-md px-1 py-0.5 text-left before:absolute before:-inset-x-1 before:-top-0.5 before:-bottom-2 focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-gold"
+          // the tags below.
+          className="group/civinfo relative -mx-1 mt-0.5 flex w-fit max-w-[calc(100%+0.5rem)] min-w-0 flex-col items-start gap-0.5 rounded-plate px-1 py-0.5 text-left before:absolute before:-inset-x-1 before:-top-0.5 before:-bottom-2"
         >
-          <span className="flex max-w-full min-w-0 items-center gap-1 text-xs text-parchment/55 group-hover/civinfo:text-parchment/80">
-            <span className="truncate decoration-dotted underline-offset-2 group-hover/civinfo:underline group-focus-visible/civinfo:underline">
+          <span className="flex max-w-full min-w-0 items-center gap-1 text-ui text-muted group-hover/civinfo:text-parchment">
+            <span className="truncate decoration-brass/60 underline-offset-2 group-hover/civinfo:underline group-focus-visible/civinfo:underline">
               {civName(civ)}
             </span>
             <Info
               aria-hidden="true"
-              className="h-3.5 w-3.5 shrink-0 text-parchment/45 group-hover/civinfo:text-gold"
+              className="h-3.5 w-3.5 shrink-0 text-faint group-hover/civinfo:text-brass"
             />
           </span>
           <CivAbilityLine civ={civ} className="max-w-full" />
@@ -219,7 +256,12 @@ function SeatCivButton({ index, seat, civ }: { index: number; seat: SeatStateJso
   )
 }
 
-function SeatCard({
+/**
+ * One seat at the lobby table: a brass-edged plate with the seat's colour down its inner edge,
+ * the player's name in Fraunces, their civ (a button that opens its card) and where they stand
+ * (ready, guest, reconnecting). An open seat is a dashed outline with the host's bot controls.
+ */
+function LobbySeat({
   index,
   seat,
   me,
@@ -240,8 +282,8 @@ function SeatCard({
   send: ReturnType<typeof matchApi>['send']
 }) {
   const [level, setLevel] = useState('1200')
-  const color = seatHex(index)
   const reduce = useReducedMotion()
+  const seatKey = SEAT_ORDER[index] ?? 'south'
   // Rematch lobby: an empty seat kept for a player who accepted, until they arrive.
   const heldFor = !seat.occupied && seat.heldFor ? seat.heldFor : ''
   const bodyKey = seat.occupied
@@ -254,125 +296,120 @@ function SeatCard({
 
   return (
     <article
-      className={`relative flex h-full min-h-[148px] flex-col gap-3 overflow-visible rounded-2xl border p-3.5 sm:min-h-[176px] sm:p-4 ${
+      className={cx(
+        'relative flex w-full max-w-[17rem] flex-col rounded-plate border py-3 pr-3 pl-4 transition-colors duration-200',
         seat.occupied
-          ? seat.isBot
-            ? 'bg-ink/50 bg-[repeating-linear-gradient(135deg,rgba(244,239,230,0.025)_0_6px,transparent_6px_12px)]'
-            : 'bg-panel/85'
-          : 'border-dashed bg-panel/40'
-      }`}
-      style={{ borderColor: `${color}66` }}
+          ? 'border-rule-brass bg-surface-rail shadow-plate'
+          : 'border-dashed border-rule-strong bg-black/10',
+        me && 'border-brass/70',
+      )}
       data-testid={`seat-${seatName(index)}`}
+      data-seat={seatKey}
     >
-      {seat.occupied ? (
-        <span
-          aria-hidden="true"
-          className="absolute inset-x-0 top-0 h-1 rounded-t-2xl"
-          style={{ background: color }}
-        />
-      ) : null}
-      <header className="flex min-h-8 items-center justify-between gap-2 text-[11px] tracking-[0.18em] uppercase">
-        <span className="truncate font-semibold" style={{ color: seatTextHex(index) }}>
-          {SEAT_LABEL[seatName(index)]}
-          <span className="hidden sm:inline"> · {seatColorName(index)}</span>
+      <span
+        aria-hidden="true"
+        className={cx(
+          'absolute inset-y-0 left-0 w-1 rounded-l-plate',
+          SEAT_CLASSES[seatKey].bg,
+          !seat.occupied && 'opacity-35',
+        )}
+      />
+      <header className="flex min-h-8 items-center justify-between gap-2">
+        <span className="min-w-0 truncate text-caption font-medium">
+          <span className={SEAT_CLASSES[seatKey].text}>{SEAT_LABEL[seatName(index)]}</span>
+          {mode === 'teams' ? <span className="text-faint">, {teamLabel(index % 2)}</span> : null}
         </span>
-        <span className="flex shrink-0 items-center gap-1">
-          {mode === 'teams' ? (
-            <span className="hidden tracking-normal normal-case text-parchment/45 sm:inline">
-              {teamLabel(index % 2)}
-            </span>
-          ) : null}
-          {viewerIsHost && seat.occupied ? (
-            <SeatMenu index={index} seat={seat} me={me} send={send} />
-          ) : null}
-        </span>
+        {viewerIsHost && seat.occupied ? (
+          <SeatMenu index={index} seat={seat} me={me} send={send} />
+        ) : null}
       </header>
 
       <AnimatePresence mode="wait" initial={false}>
         <motion.div
           key={bodyKey}
-          className="flex flex-1 flex-col"
-          initial={reduce ? false : { opacity: 0, scale: 0.98 }}
-          animate={{ opacity: 1, scale: 1 }}
-          exit={reduce ? { opacity: 0 } : { opacity: 0, scale: 0.98 }}
-          transition={{ duration: 0.18, ease: 'easeOut' }}
+          className="flex flex-col"
+          initial={reduce ? false : { opacity: 0, y: 3 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={reduce ? { opacity: 0 } : { opacity: 0, y: -3 }}
+          transition={{ duration: 0.16, ease: 'easeOut' }}
         >
           {seat.occupied ? (
-            // Phones: the emblem above the name, so a narrow card still shows the whole name.
-            <div className="flex min-w-0 flex-col items-start gap-2 sm:flex-row sm:gap-3">
-              <span
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border sm:h-12 sm:w-12"
-                style={{ borderColor: `${color}80`, backgroundColor: `${color}26`, color }}
-              >
-                <CivEmblem civ={seat.civ} className="h-6 w-6 sm:h-8 sm:w-8" />
-              </span>
-              <div className="w-full min-w-0 flex-1">
-                <p className="flex min-w-0 items-center gap-1.5 font-semibold">
-                  <span className="truncate" data-testid="seat-name">
-                    {seat.isBot ? `Bot · ${levelText(seat.botLevel)}` : seat.displayName}
-                  </span>
-                  {hostSeat === index ? (
-                    <span className="shrink-0 text-gold" title="Host">
-                      <CrownIcon className="h-4 w-4" />
-                      <span className="sr-only">(host)</span>
+            <>
+              {/* Phones: the emblem above the name, so a narrow plate still shows the whole name. */}
+              <div className="flex min-w-0 flex-col items-start gap-2 sm:flex-row sm:gap-3">
+                <SeatEmblem index={index} civ={seat.civ} size="lg" named />
+                <div className="w-full min-w-0 flex-1">
+                  <p className="flex min-w-0 items-center gap-1.5">
+                    <span
+                      className="truncate font-display text-lead leading-snug font-semibold text-parchment"
+                      data-testid="seat-name"
+                    >
+                      {seat.isBot ? botName(seat.botLevel) : seat.displayName}
                     </span>
-                  ) : null}
-                </p>
-                {seat.civ ? (
-                  <SeatCivButton index={index} seat={seat} civ={seat.civ} />
-                ) : (
-                  <p className="mt-0.5 truncate text-xs text-parchment/55">
-                    Choosing a civilization…
+                    {hostSeat === index ? (
+                      <span className="shrink-0 text-brass" title="Host">
+                        <Crown aria-hidden="true" className="h-4 w-4" />
+                        <span className="sr-only">(host)</span>
+                      </span>
+                    ) : null}
                   </p>
-                )}
-                <div className="mt-2 flex flex-wrap gap-1">
-                  {me ? <Badge tone="gold">You</Badge> : null}
-                  {seat.isBot ? <Badge>Bot</Badge> : null}
-                  {seat.isGuest ? <Badge>Guest</Badge> : null}
-                  {seat.isBot ? null : seat.ready ? (
-                    <Badge tone="ok">Ready</Badge>
+                  {seat.civ ? (
+                    <SeatCivButton index={index} seat={seat} civ={seat.civ} />
                   ) : (
-                    <Badge>Not ready</Badge>
+                    <p className="mt-0.5 truncate text-ui text-faint">Choosing a civilization</p>
                   )}
-                  {!seat.isBot && !seat.connected ? <Badge>Reconnecting</Badge> : null}
                 </div>
-                {seat.isBot ? (
-                  <div className="mt-2">
-                    <StrengthMeter level={seat.botLevel} />
-                  </div>
-                ) : null}
               </div>
-            </div>
+              <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+                {me ? <Pill tone="brass">You</Pill> : null}
+                {seat.isGuest ? <Pill>Guest</Pill> : null}
+                {seat.isBot ? (
+                  <StrengthMeter level={seat.botLevel} />
+                ) : seat.ready ? (
+                  <Pill tone="success">
+                    <Check aria-hidden="true" className="h-3 w-3" strokeWidth={3} />
+                    Ready
+                  </Pill>
+                ) : (
+                  <Pill>Not ready</Pill>
+                )}
+                {!seat.isBot && !seat.connected ? <Pill tone="danger">Reconnecting</Pill> : null}
+              </div>
+            </>
           ) : heldFor ? (
-            <HeldSeat name={heldFor} until={seat.heldUntil ?? 0} color={color} />
+            <HeldSeat name={heldFor} until={seat.heldUntil ?? 0} />
           ) : (
-            <div className="flex flex-1 flex-col justify-center gap-3">
-              <p className="flex items-center gap-2 text-sm text-parchment/55">
-                <motion.span
-                  aria-hidden="true"
-                  className="h-2 w-2 rounded-full"
-                  style={{ backgroundColor: color }}
-                  animate={reduce ? { opacity: 0.7 } : { opacity: [0.4, 1, 0.4] }}
-                  transition={
-                    reduce
-                      ? { duration: 0 }
-                      : { duration: 1.6, repeat: Number.POSITIVE_INFINITY, ease: 'easeInOut' }
-                  }
-                />
-                Waiting for a player
-              </p>
+            <div className="flex flex-col gap-2.5">
+              <div>
+                <p className="font-display text-lead leading-snug font-semibold text-muted">
+                  Open seat
+                </p>
+                <p className="flex items-center gap-2 text-ui text-faint">
+                  <motion.span
+                    aria-hidden="true"
+                    className={cx('h-1.5 w-1.5 rounded-full', SEAT_CLASSES[seatKey].bg)}
+                    animate={reduce ? { opacity: 0.8 } : { opacity: [0.35, 1, 0.35] }}
+                    transition={
+                      reduce
+                        ? { duration: 0 }
+                        : { duration: 1.8, repeat: Number.POSITIVE_INFINITY, ease: 'easeInOut' }
+                    }
+                  />
+                  Waiting for a player
+                </p>
+              </div>
               {ranked ? (
-                <p className="text-xs text-parchment/45" data-testid="ranked-seat-hint">
-                  Ranked: waiting for a player with an account. Bots can’t take ranked seats.
+                <p className="text-caption text-faint" data-testid="ranked-seat-hint">
+                  Ranked seats wait for a player with an account. Bots can’t sit here.
                 </p>
               ) : viewerIsHost ? (
-                <div className="flex min-w-0 flex-wrap items-center gap-2 [&>select]:min-w-28">
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
                   <label className="sr-only" htmlFor={`bot-level-${index}`}>
                     Bot strength
                   </label>
                   <select
                     id={`bot-level-${index}`}
-                    className={`${selectClass} flex-1`}
+                    className={cx(smallSelect, 'w-auto min-w-24 flex-1')}
                     value={level}
                     onChange={(e) => setLevel(e.target.value)}
                     data-testid="bot-level"
@@ -383,16 +420,18 @@ function SeatCard({
                       </option>
                     ))}
                   </select>
-                  <button
-                    type="button"
-                    className="inline-flex h-9 flex-1 items-center justify-center gap-1 rounded-lg border border-parchment/25 px-3 text-sm font-semibold whitespace-nowrap text-parchment hover:border-parchment/50 hover:bg-parchment/5 focus-visible:outline-2 focus-visible:outline-gold"
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="flex-1"
                     onClick={() =>
                       send('addBot', { seat: index as 0 | 1 | 2 | 3, level: level as never })
                     }
                     data-testid="add-bot"
                   >
-                    <PlusIcon className="h-3.5 w-3.5" /> Add bot
-                  </button>
+                    <Plus aria-hidden="true" />
+                    Add bot
+                  </Button>
                 </div>
               ) : null}
             </div>
@@ -418,21 +457,15 @@ function useSecondsLeft(until: number): number {
  * A rematch lobby's empty seat held for the player who accepted ("Saved for …"), until they
  * arrive or the hold runs out (the server then clears it and the seat opens up).
  */
-function HeldSeat({ name, until, color }: { name: string; until: number; color: string }) {
+function HeldSeat({ name, until }: { name: string; until: number }) {
   const left = useSecondsLeft(until)
   return (
-    <div className="flex flex-1 flex-col justify-center gap-1.5" data-testid="seat-held">
-      <p className="flex min-w-0 items-baseline gap-2 text-sm text-parchment/75">
-        <span
-          aria-hidden="true"
-          className="h-2 w-2 shrink-0 rounded-full border"
-          style={{ borderColor: color }}
-        />
-        <span className="min-w-0 [overflow-wrap:anywhere]">
-          Saved for <span className="font-semibold text-parchment">{name}</span>
-        </span>
+    <div className="flex flex-col gap-1" data-testid="seat-held">
+      <p className="min-w-0 text-ui text-muted [overflow-wrap:anywhere]">
+        Saved for{' '}
+        <span className="font-display text-lead font-semibold text-parchment">{name}</span>
       </p>
-      <p className="text-xs text-parchment/50">
+      <p className="text-caption text-faint">
         Rematch: their seat and civilization wait for them
         {left > 0 ? (
           <>
@@ -446,103 +479,252 @@ function HeldSeat({ name, until, color }: { name: string; until: number; color: 
   )
 }
 
-/** The line-up before the start: one card per seat with its emblem in the seat colour. */
-export function Lineup({ state, testId }: { state: MatchStateJson; testId?: string }) {
+/**
+ * A small board on a walnut frame, turned to the viewer: each edge carries its seat's colour,
+ * with the seat's civ emblem once chosen. `children` sits over the middle of the board (a
+ * countdown); `quiet` dims the squares so that text reads over them.
+ */
+export function TableBoard({
+  seats,
+  viewer,
+  className,
+  quiet = false,
+  emblems = true,
+  children,
+}: {
+  seats: readonly { readonly occupied: boolean; readonly civ: string }[]
+  viewer: number
+  className?: string
+  quiet?: boolean
+  /** Show each seat's civ emblem on its edge (off for a thumbnail-sized board). */
+  emblems?: boolean
+  children?: ReactNode
+}) {
+  const at = seatsAround(viewer)
+  const sides = [
+    {
+      i: at.bottom,
+      bar: 'inset-x-[18%] bottom-0 h-1',
+      spot: 'bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2',
+    },
+    {
+      i: at.left,
+      bar: 'inset-y-[18%] left-0 w-1',
+      spot: 'left-0 top-1/2 -translate-x-1/2 -translate-y-1/2',
+    },
+    {
+      i: at.top,
+      bar: 'inset-x-[18%] top-0 h-1',
+      spot: 'top-0 left-1/2 -translate-x-1/2 -translate-y-1/2',
+    },
+    {
+      i: at.right,
+      bar: 'inset-y-[18%] right-0 w-1',
+      spot: 'right-0 top-1/2 translate-x-1/2 -translate-y-1/2',
+    },
+  ]
   return (
-    <ul className="grid w-full grid-cols-2 gap-3 sm:grid-cols-4" data-testid={testId}>
-      {state.seats.map((seat, i) => (
-        <li
-          // biome-ignore lint/suspicious/noArrayIndexKey: seats are fixed positions
-          key={i}
-          className="relative flex flex-col items-center gap-2 overflow-hidden rounded-2xl border border-parchment/10 bg-panel/80 px-3 py-4"
-        >
-          <span
-            aria-hidden="true"
-            className="absolute inset-x-0 top-0 h-1"
-            style={{ background: seatHex(i) }}
-          />
-          <span
-            className="flex h-12 w-12 items-center justify-center rounded-full border"
-            style={{
-              borderColor: `${seatHex(i)}80`,
-              backgroundColor: `${seatHex(i)}26`,
-              color: seatHex(i),
-            }}
-          >
-            {seat.civ ? <CivEmblem civ={seat.civ} className="h-7 w-7" /> : null}
-          </span>
-          <span className="max-w-full truncate text-sm font-semibold">
-            {seat.isBot
-              ? `Bot · ${levelText(seat.botLevel)}`
-              : seat.occupied
-                ? seat.displayName
-                : '…'}
-          </span>
-          <span className="text-xs text-parchment/55">
-            {seat.civ ? civName(seat.civ) : ''} · {SEAT_LABEL[seatName(i)]}
-          </span>
-        </li>
+    <div
+      aria-hidden={children ? undefined : true}
+      className={cx(
+        'relative aspect-square rounded-panel bg-walnut p-[6%] shadow-lift ring-1 ring-brass/30',
+        className,
+      )}
+    >
+      <div
+        className={cx(
+          'relative h-full w-full overflow-hidden rounded-plate ring-1 ring-black/50',
+          quiet && 'opacity-30',
+        )}
+        style={{
+          background:
+            'repeating-conic-gradient(var(--color-board-light) 0 25%, var(--color-board-dark) 0 50%) 0 0 / calc(100% / 8) calc(100% / 8)',
+        }}
+      />
+      {sides.map(({ i, bar }) => (
+        <span
+          key={`bar-${i}`}
+          aria-hidden="true"
+          className={cx('absolute rounded-full', bar)}
+          style={{ background: seatHex(i) }}
+        />
       ))}
-    </ul>
+      {sides.map(({ i, spot }) => {
+        const s = seats[i]
+        return emblems && s?.occupied && s.civ ? (
+          <span key={`civ-${i}`} aria-hidden="true" className={cx('absolute', spot)}>
+            <span
+              className="grid h-8 w-8 place-items-center rounded-full bg-baize-deep"
+              style={{ boxShadow: `0 0 0 2px ${seatHex(i)}`, color: seatHex(i) }}
+            >
+              <CivEmblem civ={s.civ} className="h-5 w-5" title="" />
+            </span>
+          </span>
+        ) : null
+      })}
+      {children ? <div className="absolute inset-0 grid place-items-center">{children}</div> : null}
+    </div>
   )
 }
 
-export function Countdown({ endsAt, state }: { endsAt: number; state: MatchStateJson }) {
+/** The name on a seat's plate in a line-up: the player, a bot, "You" or an open seat. */
+function lineupName(seat: SeatStateJson, i: number, viewer: number, youLabel: boolean): string {
+  if (seat.isBot) return botName(seat.botLevel)
+  if (!seat.occupied) return 'Open seat'
+  return youLabel && i === viewer ? 'You' : seat.displayName
+}
+
+/**
+ * The four seats as nameplates around a centre (the countdown, a board), turned so the
+ * viewer's seat is at the bottom. `youLabel` names the viewer's plate "You".
+ */
+export function LineupTable({
+  state,
+  viewer,
+  children,
+  testId,
+  youLabel = false,
+  stackBelow = 'sm',
+  plateClass = 'w-52',
+}: {
+  state: MatchStateJson
+  viewer: number
+  children: ReactNode
+  testId?: string
+  youLabel?: boolean
+  stackBelow?: 'sm' | 'md' | 'lg' | 'never'
+  plateClass?: string
+}) {
+  const at = seatsAround(viewer)
+  const plate = (i: number) => {
+    const seat = state.seats[i]
+    if (!seat) return null
+    return (
+      <Nameplate
+        seat={i}
+        name={lineupName(seat, i, viewer, youLabel)}
+        detail={
+          seat.civ
+            ? civName(seat.civ)
+            : seat.occupied
+              ? 'Choosing a civilization'
+              : SEAT_LABEL[seatName(i)]
+        }
+        emblem={<SeatEmblem index={i} civ={seat.civ} size="md" />}
+        className={cx('max-w-full', plateClass, !seat.occupied && 'border-dashed')}
+        data-testid={testId ? `${testId}-${seatName(i)}` : undefined}
+      />
+    )
+  }
+  return (
+    <SeatTable
+      stackBelow={stackBelow}
+      north={plate(at.top)}
+      west={plate(at.left)}
+      east={plate(at.right)}
+      south={plate(at.bottom)}
+      data-testid={testId}
+      role="group"
+      aria-label="Seats"
+    >
+      {children}
+    </SeatTable>
+  )
+}
+
+/** The start countdown's number in a ring that fills once a second in turn-order colours. */
+export function CountdownRing({
+  secs,
+  reduce,
+  size = 'lg',
+}: {
+  secs: number
+  reduce: boolean
+  size?: 'md' | 'lg'
+}) {
+  return (
+    <div
+      className={cx(
+        'relative flex items-center justify-center rounded-full bg-baize-deep/90 shadow-well',
+        size === 'lg' ? 'h-32 w-32' : 'h-24 w-24',
+      )}
+    >
+      {reduce ? null : (
+        <svg viewBox="0 0 100 100" className="absolute inset-0 -rotate-90" aria-hidden="true">
+          <circle
+            cx="50"
+            cy="50"
+            r="46"
+            fill="none"
+            stroke="rgb(244 239 230 / 0.1)"
+            strokeWidth="3"
+          />
+          <motion.circle
+            key={secs}
+            cx="50"
+            cy="50"
+            r="46"
+            fill="none"
+            stroke={seatHex(Math.max(0, 3 - ((secs - 1) % 4)))}
+            strokeWidth="3"
+            strokeLinecap="round"
+            initial={{ pathLength: 0 }}
+            animate={{ pathLength: 1 }}
+            transition={{ duration: 1, ease: 'linear' }}
+          />
+        </svg>
+      )}
+      {/* A live region that stays mounted (a newly inserted one is often not announced);
+          only the animated number inside it is re-keyed each second. */}
+      <div className="relative" aria-live="assertive" aria-atomic="true">
+        <motion.p
+          key={secs}
+          className={cx(
+            'font-display leading-none font-semibold tabular-nums',
+            size === 'lg' ? 'text-7xl' : 'text-5xl',
+          )}
+          initial={reduce ? false : { scale: 1.3, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ duration: 0.25, ease: 'easeOut' }}
+        >
+          {secs}
+        </motion.p>
+      </div>
+    </div>
+  )
+}
+
+/** Seconds left on a countdown to `endsAt` (at least 1), ticking ten times a second. */
+export function useCountdownSecs(endsAt: number): number {
   const [now, setNow] = useState(Date.now())
-  const systemReduced = useReducedMotion()
-  const reduce = Boolean(systemReduced) || usePrefs.getState().reducedMotion
   useEffect(() => {
     const id = window.setInterval(() => setNow(Date.now()), 100)
     return () => window.clearInterval(id)
   }, [])
-  const secs = Math.max(1, Math.ceil((endsAt - now) / 1000))
+  return Math.max(1, Math.ceil((endsAt - now) / 1000))
+}
+
+export function Countdown({
+  endsAt,
+  state,
+  viewer = -1,
+}: {
+  endsAt: number
+  state: MatchStateJson
+  viewer?: number
+}) {
+  const systemReduced = useReducedMotion()
+  const reduce = Boolean(systemReduced) || usePrefs.getState().reducedMotion
+  const secs = useCountdownSecs(endsAt)
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center overflow-y-auto bg-ink/80 px-4 pt-[calc(2rem+var(--safe-top))] pb-[calc(2rem+var(--safe-bottom))] backdrop-blur-sm">
-      <div className="flex w-full max-w-2xl flex-col items-center">
-        <p className="text-sm font-semibold tracking-[0.35em] text-gold uppercase">Game starting</p>
-        <div className="relative mt-6 flex h-32 w-32 items-center justify-center">
-          {reduce ? null : (
-            <svg viewBox="0 0 100 100" className="absolute inset-0 -rotate-90" aria-hidden="true">
-              <circle
-                cx="50"
-                cy="50"
-                r="46"
-                fill="none"
-                stroke="rgba(244,239,230,0.1)"
-                strokeWidth="3"
-              />
-              <motion.circle
-                key={secs}
-                cx="50"
-                cy="50"
-                r="46"
-                fill="none"
-                stroke={seatHex(Math.max(0, 3 - ((secs - 1) % 4)))}
-                strokeWidth="3"
-                strokeLinecap="round"
-                initial={{ pathLength: 0 }}
-                animate={{ pathLength: 1 }}
-                transition={{ duration: 1, ease: 'linear' }}
-              />
-            </svg>
-          )}
-          {/* A live region that stays mounted (a newly inserted one is often not announced);
-              only the animated number inside it is re-keyed each second. */}
-          <div className="relative" aria-live="assertive" aria-atomic="true">
-            <motion.p
-              key={secs}
-              className="font-display text-8xl font-semibold tabular-nums"
-              initial={reduce ? false : { scale: 1.35, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              transition={{ duration: 0.25, ease: 'easeOut' }}
-            >
-              {secs}
-            </motion.p>
+    <div className="fixed inset-0 z-40 flex items-center justify-center overflow-y-auto bg-baize-deep/90 px-4 pt-[calc(2rem+var(--safe-top))] pb-[calc(2rem+var(--safe-bottom))] backdrop-blur-sm">
+      <div className="flex w-full max-w-3xl flex-col items-center">
+        <h2 className="mb-6 font-display text-heading font-semibold">The game is starting</h2>
+        <LineupTable state={state} viewer={viewer} plateClass="w-full sm:w-56">
+          <div className="flex justify-center sm:px-4">
+            <CountdownRing secs={secs} reduce={reduce} />
           </div>
-        </div>
-        <div className="mt-8 w-full">
-          <Lineup state={state} />
-        </div>
+        </LineupTable>
       </div>
     </div>
   )
@@ -550,19 +732,18 @@ export function Countdown({ endsAt, state }: { endsAt: number; state: MatchState
 
 function ChecklistRow({ done, label, value }: { done: boolean; label: string; value: string }) {
   return (
-    <li className="flex items-center gap-2.5 text-sm">
+    <li className="flex min-h-10 items-center gap-3 py-2 text-ui">
       <span
-        className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${
-          done
-            ? 'border-seat-east/60 bg-seat-east/20 text-[#7fd8b7]'
-            : 'border-parchment/25 text-transparent'
-        }`}
+        className={cx(
+          'flex h-5 w-5 shrink-0 items-center justify-center rounded-full border',
+          done ? 'border-ok/60 bg-ok/15 text-ok' : 'border-rule-strong text-transparent',
+        )}
         aria-hidden="true"
       >
-        <CheckIcon className="h-3 w-3" />
+        <Check className="h-3 w-3" strokeWidth={3} />
       </span>
-      <span className={done ? 'text-parchment/85' : 'text-parchment/60'}>{label}</span>
-      <span className="ml-auto font-semibold tabular-nums text-parchment/70">{value}</span>
+      <span className={done ? 'text-parchment' : 'text-muted'}>{label}</span>
+      <span className="ml-auto font-semibold tabular-nums text-muted">{value}</span>
       <span className="sr-only">{done ? '(done)' : '(not yet)'}</span>
     </li>
   )
@@ -591,27 +772,37 @@ function CopiedLabel({ copied, idle }: { copied: boolean; idle: string }) {
       {copied ? (
         <motion.span
           key="copied"
-          className="inline-flex items-center gap-1.5 text-[#7fd8b7]"
-          initial={{ scale: 0.9, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.15 }}
-        >
-          <CheckIcon className="h-4 w-4" /> Link copied
-        </motion.span>
-      ) : (
-        <motion.span
-          key="idle"
-          className="inline-flex items-center gap-1.5"
+          className="inline-flex items-center gap-2 text-ok"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.15 }}
         >
-          <CopyIcon className="h-4 w-4" /> {idle}
+          <Check aria-hidden="true" className="h-4 w-4" /> Link copied
+        </motion.span>
+      ) : (
+        <motion.span
+          key="idle"
+          className="inline-flex items-center gap-2"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.15 }}
+        >
+          <Copy aria-hidden="true" className="h-4 w-4" /> {idle}
         </motion.span>
       )}
     </AnimatePresence>
+  )
+}
+
+/** One fact about the lobby in the header (mode, clock, pick), with a small icon. */
+function Fact({ icon, children }: { icon: ReactNode; children: ReactNode }) {
+  return (
+    <li className="flex items-center gap-1.5 [&>svg]:h-3.5 [&>svg]:w-3.5 [&>svg]:shrink-0 [&>svg]:text-faint">
+      {icon}
+      <span>{children}</span>
+    </li>
   )
 }
 
@@ -625,7 +816,6 @@ export function LobbyRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) 
   const systemReduced = useReducedMotion()
   const prefReduced = usePrefs((s) => s.reducedMotion)
   const reduce = Boolean(systemReduced) || prefReduced
-  const wide = useMediaQuery('(min-width: 640px)')
   const me = mySeat >= 0 ? state.seats[mySeat] : undefined
   const viewerIsHost = mySeat >= 0 && state.hostSeat === mySeat
   const everyoneReady = state.seats.every(
@@ -638,7 +828,7 @@ export function LobbyRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) 
   const humansReady = humans.filter((s) => s.ready && s.connected).length
   const inviteUrl = typeof window === 'undefined' ? '' : window.location.href
 
-  // Start becomes available: one gold glow so the host notices.
+  // Start becomes available: one brief ring so the host notices (the screen's one flourish).
   const couldStart = useRef(canStart)
   useEffect(() => {
     const now = canStart && !couldStart.current
@@ -648,9 +838,9 @@ export function LobbyRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) 
       startScope.current,
       {
         boxShadow: [
-          '0 0 0 0px rgba(212,160,23,0.55)',
-          '0 0 0 8px rgba(212,160,23,0.2)',
-          '0 0 0 14px rgba(212,160,23,0)',
+          '0 0 0 0px rgba(212,160,23,0.5)',
+          '0 0 0 7px rgba(212,160,23,0.18)',
+          '0 0 0 12px rgba(212,160,23,0)',
         ],
       },
       { duration: 1.1, ease: 'easeOut' },
@@ -662,230 +852,207 @@ export function LobbyRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) 
     await leaveMatch()
   }
 
-  // Seats in the cross from 640px; on phones a 2x2 grid that starts with the viewer's seat.
-  // The DOM follows the visual reading order in both layouts, so Tab moves through the seats
-  // as they appear (cross: North, West, East, South).
-  const seatOrder = wide
-    ? [2, 1, 3, 0]
-    : [0, 1, 2, 3].map((rank) => (mySeat >= 0 ? (mySeat + rank) % 4 : rank))
-  const place = [
-    'sm:col-start-2 sm:row-start-3',
-    'sm:col-start-1 sm:row-start-2',
-    'sm:col-start-2 sm:row-start-1',
-    'sm:col-start-3 sm:row-start-2',
-  ]
-  const seatCard = (i: number) => {
+  // Seats around the table, turned so the viewer sits at the bottom (as the board will be).
+  const at = seatsAround(mySeat)
+  const seatPlate = (i: number) => {
     const seat = state.seats[i]
     if (!seat) return null
     return (
-      <div key={i} className={`${place[i]} min-w-0`}>
-        <SeatCard
-          index={i}
-          seat={seat}
-          me={i === mySeat}
-          viewerIsHost={viewerIsHost}
-          hostSeat={state.hostSeat}
-          mode={state.mode}
-          ranked={state.ranked}
-          send={send}
-        />
-      </div>
+      <LobbySeat
+        index={i}
+        seat={seat}
+        me={i === mySeat}
+        viewerIsHost={viewerIsHost}
+        hostSeat={state.hostSeat}
+        mode={state.mode}
+        ranked={state.ranked}
+        send={send}
+      />
     )
   }
 
+  const kind = state.inviteOnly
+    ? { icon: <Mail aria-hidden="true" />, text: 'Friends challenge' }
+    : state.hasPassword
+      ? { icon: <Lock aria-hidden="true" />, text: 'Private lobby' }
+      : { icon: <Globe aria-hidden="true" />, text: 'Public lobby' }
+
   return (
-    <div className="mx-auto w-full max-w-6xl px-4 pt-6 pb-24 sm:py-10">
-      <header className="mb-6 flex flex-wrap items-end justify-between gap-4 sm:mb-8">
+    <div className="mx-auto w-full max-w-6xl px-4 pt-6 pb-28 sm:pt-10 sm:pb-12">
+      <header className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0">
-          <p className="flex items-center gap-3 text-xs font-semibold tracking-[0.3em] text-gold uppercase">
-            {state.inviteOnly
-              ? 'Friends challenge'
-              : state.hasPassword
-                ? 'Private lobby'
-                : 'Public lobby'}
-            {state.ranked ? <RankedBadge /> : null}
-          </p>
-          <h1 className="mt-1 truncate font-display text-3xl font-semibold tracking-tight">
+          <h1 className="line-clamp-2 font-display text-title font-semibold text-balance [overflow-wrap:anywhere]">
             {state.name}
           </h1>
-          <p className="mt-1 text-sm text-parchment/60">
-            {MODE_LABEL[state.mode]} · {state.timeControl} · Blind pick ·{' '}
-            {state.ranked ? 'Elo-rated · ' : 'Casual · '}
-            {seated}/4 seated
-          </p>
+          <ul className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-ui text-muted">
+            <Fact icon={kind.icon}>{kind.text}</Fact>
+            <Fact icon={<Users aria-hidden="true" />}>{MODE_LABEL[state.mode]}</Fact>
+            <Fact icon={<Clock aria-hidden="true" />}>
+              <span className="tabular-nums">{state.timeControl}</span>
+            </Fact>
+            <Fact icon={<EyeOff aria-hidden="true" />}>Blind pick</Fact>
+            <Fact icon={<Armchair aria-hidden="true" />}>
+              <span className="tabular-nums">{seated}</span> of 4 seated
+            </Fact>
+            <li>{state.ranked ? <RankedBadge /> : <Pill>Casual</Pill>}</li>
+          </ul>
           {state.inviteOnly ? (
-            <p className="mt-1 text-xs text-parchment/60" data-testid="invite-only-note">
+            <p className="mt-2 max-w-[65ch] text-ui text-faint" data-testid="invite-only-note">
               Invite-only: just the friends who were challenged can join. Fill empty seats with
               bots.
             </p>
           ) : null}
           {state.inviteOnly && viewerIsHost ? <LobbyInvite roomId={room.roomId} /> : null}
         </div>
-        <div className="flex gap-2">
+        <div className="flex shrink-0 gap-2">
           {state.inviteOnly ? null : (
-            <Button variant="secondary" className="h-10 min-w-44" onClick={() => copy(inviteUrl)}>
+            <Button variant="secondary" className="min-w-48" onClick={() => copy(inviteUrl)}>
               <CopiedLabel copied={copied} idle="Copy invite link" />
             </Button>
           )}
-          <Button variant="ghost" className="h-10" onClick={leave} data-testid="leave-lobby">
+          <Button variant="quiet" onClick={leave} data-testid="leave-lobby">
             Leave
           </Button>
         </div>
       </header>
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:grid-rows-[auto_1fr] lg:gap-8">
-        <section
-          aria-label="Seats"
-          className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:grid-rows-3 sm:gap-4 lg:row-span-2"
-        >
-          {seatOrder.map(seatCard)}
-          <div className="hidden items-center justify-center sm:col-start-2 sm:row-start-2 sm:flex">
-            <MiniBoard seats={state.seats} />
-          </div>
+      <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_21rem] lg:grid-rows-[auto_1fr] lg:gap-x-10 lg:gap-y-5">
+        <section aria-label="Seats" className="min-w-0 lg:row-span-2">
+          <SeatTable
+            stackBelow="md"
+            className="gap-4 md:gap-5"
+            north={seatPlate(at.top)}
+            west={seatPlate(at.left)}
+            east={seatPlate(at.right)}
+            south={seatPlate(at.bottom)}
+          >
+            <div className="flex justify-center py-2 md:px-1 md:py-0">
+              <TableBoard
+                seats={state.seats}
+                viewer={mySeat}
+                className="w-[clamp(9rem,18vw,15rem)]"
+              />
+            </div>
+          </SeatTable>
         </section>
 
-        {me ? (
-          <section className="rounded-2xl border border-parchment/10 bg-panel/85 p-5 max-sm:order-first">
-            <h2 id={civLabelId} className="mb-1 font-display text-lg font-semibold">
-              Your civilization
-            </h2>
-            <CivSelect
-              value={me.civ}
-              onChange={(civ) => send('setCiv', { civ: civ as never })}
-              labelId={civLabelId}
-              attached={civInfo(me.civ) !== null}
-            />
-            {me.civ ? (
-              <CivCard civ={me.civ} variant="attached" fold="all" seatColor={seatTextHex(mySeat)} />
-            ) : null}
-            {/* Phones: a bar fixed to the bottom of the screen; larger screens: in the card. */}
-            <div className="fixed inset-x-0 bottom-0 z-30 flex gap-2 border-t border-parchment/10 bg-ink/90 px-4 pt-2 pb-[max(0.5rem,var(--safe-bottom))] backdrop-blur sm:static sm:z-auto sm:mt-5 sm:border-0 sm:bg-transparent sm:p-0 sm:backdrop-blur-none">
-              <Button
-                className="h-11 flex-1"
-                variant={me.ready ? 'secondary' : 'primary'}
-                disabled={!me.civ}
-                onClick={() => send('setReady', { ready: !me.ready })}
-                data-testid="ready"
+        <div className="min-w-0 max-md:order-first lg:col-start-2 lg:row-start-1">
+          {me ? (
+            <Panel title="Your civilization" titleId={civLabelId}>
+              <CivSelect
+                value={me.civ}
+                onChange={(civ) => send('setCiv', { civ: civ as never })}
+                labelId={civLabelId}
+                attached={civInfo(me.civ) !== null}
+              />
+              {me.civ ? (
+                <CivCard
+                  civ={me.civ}
+                  variant="attached"
+                  fold="all"
+                  seatColor={seatTextHex(mySeat)}
+                />
+              ) : null}
+              {/* Phones: a bar fixed to the bottom of the screen; larger screens: in the panel. */}
+              <div className="fixed inset-x-0 bottom-0 z-30 flex gap-2 border-t border-rule-brass bg-surface-rail/95 px-4 pt-2.5 pb-[max(0.625rem,var(--safe-bottom))] backdrop-blur sm:static sm:z-auto sm:mt-5 sm:border-0 sm:bg-transparent sm:p-0 sm:backdrop-blur-none">
+                <Button
+                  className="flex-1"
+                  variant={me.ready ? 'secondary' : 'primary'}
+                  disabled={!me.civ}
+                  onClick={() => send('setReady', { ready: !me.ready })}
+                  data-testid="ready"
+                >
+                  {me.ready ? 'Not ready' : 'Ready'}
+                </Button>
+                {viewerIsHost ? (
+                  <div ref={startScope} className="flex flex-1 rounded-control">
+                    <Button
+                      className="w-full"
+                      disabled={!canStart}
+                      onClick={() => send('startGame', {})}
+                      data-testid="start-game"
+                    >
+                      Start game
+                    </Button>
+                  </div>
+                ) : null}
+              </div>
+              <p className="mt-3 hidden text-caption text-faint sm:block" aria-live="polite">
+                {!me.civ
+                  ? 'Choose a civilization, then get ready.'
+                  : me.ready && !viewerIsHost
+                    ? 'You’re ready. The host starts the game once every seat is ready.'
+                    : null}
+              </p>
+            </Panel>
+          ) : (
+            <Panel tone="plain">
+              <p className="text-ui text-muted">You are watching this lobby.</p>
+            </Panel>
+          )}
+        </div>
+
+        {viewerIsHost ? (
+          <div className="min-w-0 self-start lg:col-start-2 lg:row-start-2">
+            <Panel
+              title={
+                <span className="flex items-center gap-2">
+                  <Crown aria-hidden="true" className="h-4 w-4 text-brass" />
+                  You’re the host
+                </span>
+              }
+            >
+              <p className="text-ui text-muted">
+                {state.inviteOnly
+                  ? 'Your challenged friends can join while the invitation is open. Fill empty seats with bots, swap seats to set teams, and start when every box is ticked.'
+                  : state.ranked
+                    ? 'Share the invite link with players who have accounts. Swap seats to set teams, and start when every box is ticked.'
+                    : 'Invite friends or fill empty seats with bots. Swap seats to set teams, and start when every box is ticked.'}
+              </p>
+              <ul
+                className="mt-3 divide-y divide-rule border-y border-rule"
+                data-testid="start-checklist"
               >
-                {me.ready ? 'Not ready' : me.civ ? 'Ready' : 'Choose a civilization'}
-              </Button>
-              {viewerIsHost ? (
-                <div ref={startScope} className="flex flex-1 rounded-lg">
+                <ChecklistRow done={seated === 4} label="Seats filled" value={`${seated}/4`} />
+                <ChecklistRow
+                  done={seated === 4 && withCiv === 4}
+                  label="Civilizations chosen"
+                  value={`${withCiv}/${seated}`}
+                />
+                <ChecklistRow
+                  done={humans.length > 0 && humansReady === humans.length}
+                  label="Players ready"
+                  value={`${humansReady}/${humans.length}`}
+                />
+              </ul>
+              {seated < 4 && !state.inviteOnly ? (
+                <div className="mt-4 flex min-w-0 items-center gap-2 rounded-control border border-rule-strong bg-black/20 p-1 pl-3 shadow-well has-[input:focus-visible]:border-gold has-[input:focus-visible]:outline-2 has-[input:focus-visible]:outline-offset-2 has-[input:focus-visible]:outline-gold">
+                  <input
+                    readOnly
+                    value={inviteUrl}
+                    aria-label="Invite link"
+                    className="min-w-0 flex-1 truncate bg-transparent text-caption text-muted outline-none"
+                    onFocus={(e) => e.currentTarget.select()}
+                  />
                   <Button
-                    className="h-11 w-full whitespace-nowrap"
-                    disabled={!canStart}
-                    onClick={() => send('startGame', {})}
-                    data-testid="start-game"
+                    variant="quiet"
+                    size="sm"
+                    className="shrink-0"
+                    onClick={() => copy(inviteUrl)}
                   >
-                    Start game
+                    {copied ? <Check aria-hidden="true" className="text-ok" /> : null}
+                    {copied ? 'Copied' : 'Copy'}
                   </Button>
                 </div>
               ) : null}
-            </div>
-          </section>
-        ) : (
-          <p className="text-sm text-parchment/60">You are watching this lobby.</p>
-        )}
-
-        {viewerIsHost ? (
-          <section className="self-start rounded-2xl border border-gold/30 bg-gold/5 p-5">
-            <h2 className="mb-1 flex items-center gap-2 font-display text-lg font-semibold">
-              <CrownIcon className="h-4 w-4 text-gold" /> You’re the host
-            </h2>
-            <p className="mb-4 text-xs text-parchment/60">
-              {state.inviteOnly
-                ? 'Your challenged friends can join while the invitation is open. Fill empty seats with bots, swap seats to set teams, and start when the list is complete.'
-                : state.ranked
-                  ? 'Share the invite link with players who have accounts. Swap seats to set teams. Start when the list is complete.'
-                  : 'Invite friends or fill empty seats with bots. Swap seats to set teams. Start when the list is complete.'}
-            </p>
-            <ul className="flex flex-col gap-2" data-testid="start-checklist">
-              <ChecklistRow done={seated === 4} label="Seats filled" value={`${seated}/4`} />
-              <ChecklistRow
-                done={seated === 4 && withCiv === 4}
-                label="Civilizations chosen"
-                value={`${withCiv}/${seated}`}
-              />
-              <ChecklistRow
-                done={humans.length > 0 && humansReady === humans.length}
-                label="Players ready"
-                value={`${humansReady}/${humans.length}`}
-              />
-            </ul>
-            {seated < 4 && !state.inviteOnly ? (
-              <div className="mt-4 flex min-w-0 items-center gap-2 rounded-lg border border-parchment/15 bg-ink/50 p-1 pl-3">
-                <input
-                  readOnly
-                  value={inviteUrl}
-                  aria-label="Invite link"
-                  className="min-w-0 flex-1 truncate bg-transparent text-xs text-parchment/70 outline-none"
-                  onFocus={(e) => e.currentTarget.select()}
-                />
-                <button
-                  type="button"
-                  className="inline-flex h-8 shrink-0 items-center rounded-md bg-parchment/10 px-2.5 text-xs font-semibold text-parchment hover:bg-parchment/15"
-                  onClick={() => copy(inviteUrl)}
-                >
-                  {copied ? <CheckIcon className="h-4 w-4 text-[#7fd8b7]" /> : 'Copy'}
-                </button>
-              </div>
-            ) : null}
-          </section>
+            </Panel>
+          </div>
         ) : null}
       </div>
 
       {state.phase === 'countdown' ? (
-        <Countdown endsAt={state.countdownEndsAt} state={state} />
+        <Countdown endsAt={state.countdownEndsAt} state={state} viewer={mySeat} />
       ) : null}
-    </div>
-  )
-}
-
-/** A small decorative board with the four seat colours on their home edges and their emblems. */
-function MiniBoard({ seats }: { seats: readonly SeatStateJson[] }) {
-  const cells = Array.from({ length: 256 }, (_, i) => i)
-  // Emblem spots: South bottom, West left, North top, East right.
-  const spots = [
-    'bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2',
-    'left-0 top-1/2 -translate-x-1/2 -translate-y-1/2',
-    'top-0 left-1/2 -translate-x-1/2 -translate-y-1/2',
-    'right-0 top-1/2 translate-x-1/2 -translate-y-1/2',
-  ]
-  return (
-    <div className="relative aspect-square w-full max-w-52 rounded-lg border border-parchment/15 p-2 shadow-2xl shadow-black/50">
-      <div className="grid h-full w-full grid-cols-16 overflow-hidden rounded">
-        {cells.map((i) => {
-          const f = i % 16
-          const r = Math.floor(i / 16)
-          return (
-            <span
-              key={i}
-              className={(f + r) % 2 === 0 ? 'bg-[#e4cfa3]' : 'bg-[#8b623d]'}
-              aria-hidden="true"
-            />
-          )
-        })}
-      </div>
-      <span
-        className="absolute inset-x-6 bottom-0 h-1 rounded"
-        style={{ background: seatHex(0) }}
-      />
-      <span className="absolute inset-y-6 left-0 w-1 rounded" style={{ background: seatHex(1) }} />
-      <span className="absolute inset-x-6 top-0 h-1 rounded" style={{ background: seatHex(2) }} />
-      <span className="absolute inset-y-6 right-0 w-1 rounded" style={{ background: seatHex(3) }} />
-      {seats.map((s, i) =>
-        s.occupied && s.civ ? (
-          <span
-            // biome-ignore lint/suspicious/noArrayIndexKey: seats are fixed positions
-            key={i}
-            aria-hidden="true"
-            className={`absolute flex h-8 w-8 items-center justify-center rounded-full border-2 bg-ink ${spots[i]}`}
-            style={{ borderColor: seatHex(i), color: seatHex(i) }}
-          >
-            <CivEmblem civ={s.civ} className="h-5 w-5" />
-          </span>
-        ) : null,
-      )}
     </div>
   )
 }

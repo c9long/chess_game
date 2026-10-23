@@ -3,15 +3,23 @@
  * the board, clocks, players and move log, no game actions. Ranked games are shown a couple
  * of rounds late while they run (the server sends a delayed copy).
  */
+import { Clock, Users } from 'lucide-react'
+import type { ReactNode } from 'react'
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
-import { CivEmblem, civName } from '../components/CivEmblem.tsx'
-import { botLevelText } from '../components/game/PlayerCard.tsx'
 import { GameRoom } from '../components/match/GameRoom.tsx'
+import { LineupTable, TableBoard } from '../components/match/LobbyRoom.tsx'
 import { RankedBadge } from '../components/match/RankedBadge.tsx'
 import { SpectatorCount } from '../components/match/Spectators.tsx'
-import { MODE_LABEL, SEAT_LABEL, seatHex, seatName } from '../components/match/seats.ts'
-import { Card, CenteredPage, Spinner } from '../components/ui.tsx'
+import { MODE_LABEL } from '../components/match/seats.ts'
+import {
+  Button,
+  CenteredPage,
+  linkButtonClass,
+  NoticePage,
+  Pill,
+  Spinner,
+} from '../components/ui.tsx'
 import { type MatchRoom, matchErrorCode, matchErrorMessage, watchMatch } from '../lib/match.ts'
 import {
   type MatchFeed,
@@ -94,24 +102,47 @@ export function Watch() {
   }
   if (conn.kind === 'error') {
     return (
-      <CenteredPage>
-        <Card>
-          <h1 className="mb-3 font-display text-2xl font-semibold">Can’t watch this game</h1>
-          <p className="mb-6 text-parchment/70" data-testid="watch-error">
-            {conn.message}
-          </p>
-          <Link className="font-semibold text-gold hover:underline" to="/play">
-            Back to lobbies
-          </Link>
-        </Card>
-      </CenteredPage>
+      <WatchNotice title="Can’t watch this game" testId="watch-error">
+        {conn.message}
+      </WatchNotice>
     )
   }
+  return <WatchWaiting>Connecting to the game</WatchWaiting>
+}
+
+/** A short message in place of the game (it can't be watched, or watching ended). */
+function WatchNotice({
+  title,
+  testId,
+  children,
+}: {
+  title: string
+  testId: string
+  children: ReactNode
+}) {
+  return (
+    <NoticePage
+      title={title}
+      action={
+        <Link className={linkButtonClass('primary')} to="/play">
+          Back to lobbies
+        </Link>
+      }
+    >
+      <p data-testid={testId}>{children}</p>
+    </NoticePage>
+  )
+}
+
+function WatchWaiting({ children }: { children: ReactNode }) {
   return (
     <CenteredPage>
-      <div className="flex items-center justify-center gap-3 py-20 text-parchment/70">
-        <Spinner /> Connecting…
-      </div>
+      <p
+        className="flex items-center justify-center gap-3 py-20 text-body text-muted"
+        role="status"
+      >
+        <Spinner className="text-brass" /> {children}
+      </p>
     </CenteredPage>
   )
 }
@@ -138,34 +169,18 @@ function WatchView({ room }: { room: MatchRoom }) {
   // A finished game stays on screen (with its result) after the room closes.
   if (closed && feed?.state.phase !== 'finished') {
     return (
-      <CenteredPage>
-        <Card>
-          <h1 className="mb-3 font-display text-2xl font-semibold">No longer watching</h1>
-          <p className="mb-6 text-parchment/70" data-testid="watch-closed">
-            {closed === 'closed' || closed === 'left'
-              ? 'This lobby or game has closed.'
-              : closed === 'replaced'
-                ? 'You are watching this game in another tab or window.'
-                : closed === 'kicked'
-                  ? 'You can no longer watch this game.'
-                  : 'The connection to this game was lost.'}
-          </p>
-          <Link className="font-semibold text-gold hover:underline" to="/play">
-            Back to lobbies
-          </Link>
-        </Card>
-      </CenteredPage>
+      <WatchNotice title="No longer watching" testId="watch-closed">
+        {closed === 'closed' || closed === 'left'
+          ? 'This lobby or game has closed.'
+          : closed === 'replaced'
+            ? 'You are watching this game in another tab or window.'
+            : closed === 'kicked'
+              ? 'You can no longer watch this game.'
+              : 'The connection to this game was lost. Check your connection, then open the game again from the lobbies.'}
+      </WatchNotice>
     )
   }
-  if (!feed) {
-    return (
-      <CenteredPage>
-        <div className="flex items-center justify-center gap-3 py-20 text-parchment/70">
-          <Spinner /> Joining…
-        </div>
-      </CenteredPage>
-    )
-  }
+  if (!feed) return <WatchWaiting>Taking a seat in the gallery</WatchWaiting>
   const inGame = feed.state.phase === 'in_game' || feed.state.phase === 'finished'
   return (
     <>
@@ -180,62 +195,46 @@ function WatchView({ room }: { room: MatchRoom }) {
   )
 }
 
-/** A lobby being watched: who is seated, until the game starts. */
+/** A lobby being watched: who sits where around the table, until the game starts. */
 function WatchLobby({ feed, onStop }: { feed: MatchFeed; onStop: () => void }) {
   const { state } = feed
   return (
-    <div className="mx-auto w-full max-w-xl px-4 py-8 sm:py-12" data-testid="watch-lobby">
-      <p className="text-xs font-semibold tracking-[0.3em] text-gold uppercase">Watching</p>
-      <h1 className="mt-1 font-display text-3xl font-semibold tracking-tight">{state.name}</h1>
-      <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-parchment/65">
-        {state.ranked ? <RankedBadge /> : null}
-        <span>
-          {MODE_LABEL[state.mode]} · {state.timeControl}
-        </span>
-        <SpectatorCount count={state.spectators} />
-      </p>
-      <p className="mt-6 text-sm text-parchment/75" role="status">
+    <div className="mx-auto w-full max-w-4xl px-4 py-8 sm:py-12" data-testid="watch-lobby">
+      <header className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div className="min-w-0">
+          <p className="text-ui text-muted">You’re watching</p>
+          <h1 className="line-clamp-2 font-display text-title font-semibold text-balance [overflow-wrap:anywhere]">
+            {state.name}
+          </h1>
+          <ul className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-ui text-muted [&_svg]:text-faint">
+            <li className="flex items-center gap-1.5">
+              <Users aria-hidden="true" className="h-3.5 w-3.5" />
+              {MODE_LABEL[state.mode]}
+            </li>
+            <li className="flex items-center gap-1.5 tabular-nums">
+              <Clock aria-hidden="true" className="h-3.5 w-3.5" />
+              {state.timeControl}
+            </li>
+            <li>{state.ranked ? <RankedBadge /> : <Pill>Casual</Pill>}</li>
+            <li>
+              <SpectatorCount count={state.spectators} />
+            </li>
+          </ul>
+        </div>
+        <Button variant="secondary" onClick={onStop} data-testid="stop-watching">
+          Stop watching
+        </Button>
+      </header>
+      <p className="mb-6 text-center text-body text-muted" role="status">
         {state.phase === 'countdown'
-          ? 'The game is about to start…'
+          ? 'The game is about to start.'
           : 'Waiting for the players. The game shows here as soon as it starts.'}
       </p>
-      <ol className="mt-4 flex flex-col gap-2" aria-label="Seats">
-        {state.seats.map((seat, i) => (
-          <li
-            // biome-ignore lint/suspicious/noArrayIndexKey: four fixed seats
-            key={i}
-            className="flex items-center gap-3 rounded-xl border border-parchment/10 bg-panel/80 px-3 py-2.5"
-          >
-            <span
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
-              style={{ backgroundColor: `${seatHex(i)}26`, color: seatHex(i) }}
-            >
-              {seat.civ ? <CivEmblem civ={seat.civ} className="h-6 w-6" /> : null}
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block truncate font-semibold">
-                {!seat.occupied
-                  ? 'Open seat'
-                  : seat.isBot
-                    ? `Bot · ${botLevelText(seat.botLevel)}`
-                    : seat.displayName}
-              </span>
-              <span className="block truncate text-xs text-parchment/60">
-                {SEAT_LABEL[seatName(i)]}
-                {seat.civ ? ` · ${civName(seat.civ)}` : ''}
-              </span>
-            </span>
-          </li>
-        ))}
-      </ol>
-      <button
-        type="button"
-        className="mt-8 inline-block font-semibold text-gold hover:underline"
-        onClick={onStop}
-        data-testid="stop-watching"
-      >
-        Stop watching
-      </button>
+      <LineupTable state={state} viewer={-1} stackBelow="md" plateClass="w-full md:w-56">
+        <div className="flex justify-center py-2 md:px-2 md:py-0">
+          <TableBoard seats={state.seats} viewer={-1} className="w-[clamp(9rem,22vw,14rem)]" />
+        </div>
+      </LineupTable>
     </div>
   )
 }

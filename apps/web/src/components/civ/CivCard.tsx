@@ -19,7 +19,7 @@ function PieceTile({ piece, color }: { piece: string | undefined; color: string 
   return (
     <span
       aria-hidden="true"
-      className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-gold/30 bg-ink/40"
+      className="grid h-8 w-8 shrink-0 place-items-center rounded-plate border border-rule-brass bg-black/20 shadow-well"
       style={{ color: color ?? 'var(--color-parchment)' }}
     >
       <span
@@ -33,12 +33,7 @@ function PieceTile({ piece, color }: { piece: string | undefined; color: string 
 
 function SectionLabel({ children, muted = false }: { children: string; muted?: boolean }) {
   return (
-    <p
-      className={cx(
-        'mb-1.5 text-[10px] font-semibold tracking-[0.18em] uppercase',
-        muted ? 'text-parchment/65' : 'text-gold',
-      )}
-    >
+    <p className={cx('mb-1.5 text-caption font-medium', muted ? 'text-faint' : 'text-brass')}>
       {children}
     </p>
   )
@@ -46,7 +41,7 @@ function SectionLabel({ children, muted = false }: { children: string; muted?: b
 
 export type CivCardHeadingLevel = 3 | 4
 
-const abilityTitleClass = 'font-display leading-tight font-semibold tracking-tight text-gold-bright'
+const abilityTitleClass = 'font-display leading-tight font-semibold text-parchment'
 
 function AbilityTitle({
   name,
@@ -58,7 +53,7 @@ function AbilityTitle({
   level: CivCardHeadingLevel
 }) {
   const Tag = level === 4 ? 'h4' : 'h3'
-  return <Tag className={cx(abilityTitleClass, small ? 'text-lg' : 'text-xl')}>{name}</Tag>
+  return <Tag className={cx(abilityTitleClass, small ? 'text-lead' : 'text-heading')}>{name}</Tag>
 }
 
 function Ability({
@@ -74,7 +69,9 @@ function Ability({
   seatColor: string | undefined
   level: CivCardHeadingLevel
 }) {
-  const details = <p className="text-sm leading-relaxed text-parchment/75">{ability.details}</p>
+  const details = (
+    <p className="max-w-[65ch] text-ui leading-relaxed text-muted">{ability.details}</p>
+  )
   if (!folded) {
     return (
       <>
@@ -95,17 +92,15 @@ function Ability({
     <>
       <Tag className="sr-only">{ability.name}</Tag>
       <details className="group/ability">
-        <summary className="-mx-1.5 flex min-h-11 cursor-pointer list-none items-center gap-2.5 rounded-lg px-1.5 py-1 transition-colors hover:bg-parchment/[0.04] focus-visible:outline-2 focus-visible:outline-gold [&::-webkit-details-marker]:hidden">
+        <summary className="-mx-1.5 flex min-h-11 cursor-pointer list-none items-center gap-2.5 rounded-control px-1.5 py-1 transition-colors hover:bg-parchment/[0.04] [&::-webkit-details-marker]:hidden">
           <PieceTile piece={ability.piece} color={seatColor} />
           <span className="flex min-w-0 flex-1 flex-col">
-            <span className={cx(abilityTitleClass, 'text-lg')}>{ability.name}</span>
-            <span className="line-clamp-2 text-[13px] leading-snug text-parchment/70">
-              {ability.summary}
-            </span>
+            <span className={cx(abilityTitleClass, 'text-lead')}>{ability.name}</span>
+            <span className="line-clamp-2 text-ui leading-snug text-muted">{ability.summary}</span>
           </span>
           <ChevronDown
             aria-hidden="true"
-            className="h-4 w-4 shrink-0 text-gold/70 transition-transform duration-200 group-open/ability:rotate-180"
+            className="h-4 w-4 shrink-0 text-brass transition-transform duration-200 group-open/ability:rotate-180"
           />
         </summary>
         <div className="mt-1.5">{details}</div>
@@ -168,8 +163,8 @@ export function CivCard({
       // A `nameAs` wrapper (a bottom sheet's title) gives the heading its own id.
       {...(nameAs ? {} : { id: nameId })}
       className={cx(
-        'min-w-0 font-display leading-tight font-semibold tracking-tight text-parchment',
-        variant === 'full' ? 'text-2xl' : 'text-xl',
+        'min-w-0 font-display leading-tight font-semibold text-parchment',
+        variant === 'full' ? 'text-[1.5rem]' : 'text-heading',
       )}
     >
       {name}
@@ -179,8 +174,8 @@ export function CivCard({
   const identity = info ? (
     <p
       className={cx(
-        'line-clamp-3 font-display leading-snug text-parchment/60 italic',
-        variant === 'full' ? 'text-sm' : 'text-[13px]',
+        'line-clamp-3 font-display leading-snug text-muted italic',
+        variant === 'full' ? 'text-body' : 'text-ui',
       )}
     >
       {info.identity}
@@ -190,10 +185,10 @@ export function CivCard({
   const abilitySection = !info ? null : abilities.length === 0 ? (
     <div>
       <SectionLabel muted>Army</SectionLabel>
-      <StandardTitle className="font-display text-base leading-tight font-semibold text-parchment/85">
+      <StandardTitle className="font-display text-body leading-tight font-semibold text-parchment">
         {STANDARD_ARMY.title}
       </StandardTitle>
-      <p className="mt-1 text-sm leading-relaxed text-parchment/60">{STANDARD_ARMY.text}</p>
+      <p className="mt-1 max-w-[65ch] text-ui leading-relaxed text-muted">{STANDARD_ARMY.text}</p>
     </div>
   ) : (
     <div>
@@ -203,7 +198,7 @@ export function CivCard({
       {abilities.map((a, i) => (
         <div
           key={a.id}
-          className={cx(i > 0 && 'mt-3 border-t border-dashed border-parchment/10 pt-3')}
+          className={cx(i > 0 && 'mt-3 border-t border-rule pt-3')}
           data-testid={`civ-ability-${a.id}`}
         >
           <Ability
@@ -227,7 +222,7 @@ export function CivCard({
       className={cx(
         'min-w-0 text-parchment',
         variant === 'attached' &&
-          'rounded-b-xl border border-t-0 border-parchment/15 bg-panel px-4 py-3',
+          'rounded-b-control border border-t-0 border-rule-strong bg-black/10 px-4 py-3',
         className,
       )}
       data-testid="civ-card"
@@ -237,7 +232,7 @@ export function CivCard({
         <>
           {kicker ? (
             <p
-              className="mb-2 flex min-w-0 items-center gap-1.5 pr-10 text-[11px] font-semibold"
+              className="mb-2 flex min-w-0 items-center gap-1.5 pr-10 text-caption font-medium"
               style={{ color: kickerColor }}
               data-testid="civ-card-kicker"
             >
