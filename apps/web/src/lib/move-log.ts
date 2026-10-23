@@ -267,9 +267,16 @@ export function clockText(ms: number): string {
   return formatClock(ms)
 }
 
-/** Short result text for the end of the log. */
-export function resultText(result: GameResult, endReason?: string): string {
-  if (endReason === 'player_eliminated') return 'The player is out; the bots share 1st place'
+/**
+ * Short result text for the end of the log. `viewerPlayed`: the viewer is one of the game's
+ * players (a solo game's only player), so its end speaks to them.
+ */
+export function resultText(result: GameResult, endReason?: string, viewerPlayed = false): string {
+  if (endReason === 'player_eliminated') {
+    return viewerPlayed
+      ? 'You’re out; the bots share 1st place'
+      : 'The player is out; the bots share 1st place'
+  }
   switch (result.type) {
     case 'ffa_winner':
       return `${seatText(seatNum(result.seat))} wins`

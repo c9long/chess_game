@@ -29,7 +29,7 @@ export function MaterialLost({
   )
   return (
     <span
-      className="inline-flex min-w-0 items-center gap-1.5"
+      className="inline-flex min-w-0 shrink items-center gap-1"
       title={label}
       role="img"
       aria-label={label}
@@ -41,7 +41,7 @@ export function MaterialLost({
             <span
               key={key}
               aria-hidden="true"
-              className="-mr-1 inline-block h-4 w-4 shrink-0 opacity-80 last:mr-0 [&>svg]:h-full [&>svg]:w-full"
+              className="-mr-1 inline-block h-3.5 w-3.5 shrink-0 opacity-85 last:mr-0 [&>svg]:h-full [&>svg]:w-full"
               // biome-ignore lint/security/noDangerouslySetInnerHtml: trusted, bundled SVG assets
               dangerouslySetInnerHTML={{ __html: PIECE_SPRITES[k] }}
             />
@@ -50,7 +50,7 @@ export function MaterialLost({
       )}
       <span
         aria-hidden="true"
-        className="shrink-0 text-[11px] font-semibold tabular-nums text-parchment/70"
+        className="shrink-0 text-caption font-semibold tabular-nums text-faint"
       >
         −{material.points}
       </span>

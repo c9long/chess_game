@@ -130,7 +130,7 @@ export function RematchPanel({ room, feed }: { room: MatchRoom; feed: MatchFeed 
   if (state.rematchRoomId) {
     return wrap(
       <div
-        className="relative mt-5 rounded-xl border border-gold/40 bg-gold/10 px-4 py-3 text-sm outline-none"
+        className="relative mt-4 rounded-panel border border-rule-brass bg-black/15 px-4 py-3 text-ui text-muted shadow-well outline-none"
         tabIndex={-1}
         data-rematch-focus
         data-testid="rematch-panel"
@@ -146,10 +146,10 @@ export function RematchPanel({ room, feed }: { room: MatchRoom; feed: MatchFeed 
     const rankedNote = state.ranked ? ' Ranked again only if all four accept.' : ''
     return wrap(
       <div
-        className="relative mt-5 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-parchment/10 bg-ink/40 px-4 py-3"
+        className="relative mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-panel border border-rule bg-black/15 px-4 py-3 shadow-well"
         data-testid="rematch-panel"
       >
-        <p className="min-w-0 flex-1 text-sm text-parchment/70">
+        <p className="min-w-0 flex-1 basis-56 text-ui text-muted">
           {others.length > 0
             ? `Same players, seats and civs${hasBots ? ', bots included' : ''}. The others get ${REMATCH_TIMEOUT_MS / 1000} s to answer.${rankedNote}`
             : 'Play again with the same civs and bots.'}
@@ -171,14 +171,18 @@ export function RematchPanel({ room, feed }: { room: MatchRoom; feed: MatchFeed 
   const proposerName = nameOf(state.seats, proposer, mySeat)
   return wrap(
     <div
-      className="relative mt-5 rounded-xl border border-gold/40 bg-gold/[0.07] px-4 py-3"
+      className="relative mt-4 rounded-panel border border-rule-brass bg-black/15 px-4 py-3 shadow-well"
       data-testid="rematch-panel"
     >
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-        <h3 className="text-sm font-semibold outline-none" tabIndex={-1} data-rematch-focus>
+        <h3
+          className="font-display text-ui font-semibold outline-none"
+          tabIndex={-1}
+          data-rematch-focus
+        >
           {proposer === mySeat ? 'You proposed a rematch' : `${proposerName} wants a rematch`}
         </h3>
-        <p className="text-xs text-parchment/60 tabular-nums" data-testid="rematch-countdown">
+        <p className="text-caption text-faint tabular-nums" data-testid="rematch-countdown">
           {seconds > 0 ? `${seconds} s left` : 'Time is up'}
         </p>
       </div>
@@ -191,16 +195,18 @@ export function RematchPanel({ room, feed }: { room: MatchRoom; feed: MatchFeed 
             <li
               // biome-ignore lint/suspicious/noArrayIndexKey: four fixed seats
               key={i}
-              className={`flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs ${
+              className={`flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-caption ${
                 vote === REMATCH_VOTE.declined
-                  ? 'border-parchment/10 text-parchment/45 line-through'
-                  : 'border-parchment/20'
+                  ? 'border-rule text-faint line-through'
+                  : vote === REMATCH_VOTE.accepted
+                    ? 'border-ok/40 text-parchment'
+                    : 'border-rule-strong text-muted'
               }`}
               data-testid={`rematch-vote-${i}`}
             >
               <span
                 aria-hidden="true"
-                className="h-2 w-2 rounded-full"
+                className="h-2 w-2 rounded-full ring-1 ring-black/40"
                 style={{ backgroundColor: seatHex(i) }}
               />
               <span>{i === mySeat ? 'You' : seat.displayName}</span>
@@ -214,7 +220,7 @@ export function RematchPanel({ room, feed }: { room: MatchRoom; feed: MatchFeed 
         <div className="mt-3 flex flex-wrap justify-end gap-2">
           <Button
             size="sm"
-            variant="ghost"
+            variant="quiet"
             busy={busy}
             onClick={() => act('respondRematch', false)}
             data-testid="rematch-decline"
@@ -231,7 +237,7 @@ export function RematchPanel({ room, feed }: { room: MatchRoom; feed: MatchFeed 
           </Button>
         </div>
       ) : (
-        <p className="mt-2 text-xs text-parchment/60">
+        <p className="mt-2 text-caption text-faint">
           {myVote === REMATCH_VOTE.declined
             ? 'You declined.'
             : 'Waiting for the others. The new lobby opens once everyone has answered.'}

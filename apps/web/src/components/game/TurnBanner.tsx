@@ -1,8 +1,9 @@
 import type { SeatStateJson } from '@game/protocol/state'
 import { useAnimate } from 'motion/react'
-import { type CSSProperties, useEffect, useRef } from 'react'
-import { CivEmblem } from '../CivEmblem.tsx'
-import { seatTitle } from './PlayerCard.tsx'
+import { useEffect, useRef } from 'react'
+import { CivEmblem, civName } from '../CivEmblem.tsx'
+import { buttonBase, buttonVariants, cx } from '../ui.tsx'
+import { plateName } from './PlayerCard.tsx'
 
 /** The banner text on the viewer's turn when their leader is under attack. */
 export const CHECK_TEXT = 'Check! Your leader is under attack'
@@ -10,7 +11,8 @@ export const CHECK_TEXT = 'Check! Your leader is under attack'
 export const SELF_CHECK_TEXT = 'Your leader is in check'
 
 /**
- * Whose turn it is. "Your move" gets a short pop and a gold glow when the turn arrives; when
+ * Whose turn it is. "Your move" (a gold turn token and gold text, never a filled gold bar,
+ * which would read as a button) gets a short pop and a gold ring when the turn arrives; when
  * the viewer's leader is under attack at that moment it reads "Check! Your leader is under
  * attack" in the danger colour instead (the check indicator; only ever for the viewer's own
  * seat). An opponent's turn names them in their seat colour; after the viewer's own move left
@@ -54,7 +56,7 @@ export function TurnBanner({
     wasInCheck.current = inCheck
     if (!arrived || reduceMotion || !scope.current) return
     const rgb = inCheck ? '255,90,31' : '212,160,23'
-    animate(scope.current, { scale: [1, 1.04, 1] }, { duration: 0.32, ease: 'easeOut' })
+    animate(scope.current, { scale: [1, 1.02, 1] }, { duration: 0.32, ease: 'easeOut' })
     animate(
       scope.current,
       {
@@ -69,25 +71,20 @@ export function TurnBanner({
   }, [myTurn, inCheck, reduceMotion, animate, scope])
 
   const base =
-    'relative flex h-10 min-w-0 flex-1 items-center gap-2 overflow-hidden rounded-lg px-3 text-sm font-semibold transition-colors duration-200'
+    'relative flex h-10 min-w-0 flex-1 items-center gap-2.5 overflow-hidden rounded-control border px-3 text-ui font-semibold transition-colors duration-200'
 
-  let tone = 'bg-ink/50 text-parchment/70'
-  let style: CSSProperties | undefined
-  if (finished) tone = 'bg-ink/50 text-parchment/70 justify-center'
-  else if (myTurn && inCheck)
-    tone = 'bg-danger text-ink justify-center ring-2 ring-inset ring-danger-light/80'
-  else if (myTurn) tone = 'bg-gold text-ink justify-center'
-  else if (mover) {
-    tone = 'text-parchment pl-4'
-    style = { backgroundColor: `${moverColor}1f` }
-  }
+  let tone = 'border-rule bg-black/15 text-muted'
+  // Once it's over the banner is a plain status line, not a box beside "Show results".
+  if (finished) tone = 'border-transparent px-0 font-display text-lead text-parchment'
+  else if (myTurn && inCheck) tone = 'border-danger bg-danger text-ink'
+  else if (!finished && myTurn) tone = 'border-transparent bg-gold/[0.1] pl-4 text-gold'
+  else if (!finished && mover) tone = 'border-rule bg-black/15 pl-4 text-parchment'
 
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-2">
       <p
         ref={scope}
-        className={`${base} ${tone}`}
-        style={style}
+        className={cx(base, tone)}
         data-testid="turn-banner"
         data-check={!finished && myTurn && inCheck ? 'true' : undefined}
       >
@@ -99,19 +96,29 @@ export function TurnBanner({
             <span className="min-w-0 truncate">{CHECK_TEXT}</span>
           </>
         ) : myTurn ? (
-          'Your move'
+          <>
+            {/* A gold edge, as the opponents' turns have their seat colour, and the turn token. */}
+            <span aria-hidden="true" className="absolute inset-y-0 left-0 w-[3px] bg-gold" />
+            <span
+              aria-hidden="true"
+              className="h-2.5 w-2.5 shrink-0 rounded-full bg-gold shadow-[0_0_0_3px_rgb(212_160_23/0.22)]"
+            />
+            <span className="font-display text-lead leading-none">Your move</span>
+          </>
         ) : mover ? (
           <>
             <span
               aria-hidden="true"
-              className="absolute inset-y-0 left-0 w-1"
+              className="absolute inset-y-0 left-0 w-[3px]"
               style={{ backgroundColor: moverColor }}
             />
             <span className="shrink-0" style={{ color: moverColor }}>
               <CivEmblem civ={mover.civ} className="h-5 w-5" />
             </span>
-            <span className="min-w-0 truncate">
-              {seatTitle(mover)} {mover.isBot ? 'is thinking' : 'to move'}
+            <span className="min-w-0 truncate font-normal text-muted">
+              {/* The plate's name; a bot's civ follows, as three bots can share a strength. */}
+              <span className="font-display font-semibold text-parchment">{plateName(mover)}</span>
+              {mover.isBot ? ` (${civName(mover.civ)}) is thinking` : ' to move'}
               <span aria-hidden="true" className="inline-flex w-4">
                 <ThinkingDots reduceMotion={reduceMotion} />
               </span>
@@ -124,7 +131,7 @@ export function TurnBanner({
           aria-hidden="true"
           // Phones and tablets: beside the banner (no layout shift under the board). Desktop:
           // its own row in the side panel, so the mover's name keeps its room.
-          className="flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-lg bg-danger px-2.5 text-xs font-semibold text-ink ring-2 ring-inset ring-danger-light/80 sm:px-3 sm:text-sm lg:w-full"
+          className="flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-control bg-danger px-2.5 text-caption font-semibold text-ink sm:px-3 sm:text-ui wide:w-full"
           data-testid="self-check-notice"
         >
           <CheckIcon />
@@ -135,7 +142,7 @@ export function TurnBanner({
         <button
           type="button"
           onClick={onShowResults}
-          className="h-10 shrink-0 rounded-lg border border-gold/50 bg-gold/10 px-3 text-sm font-semibold text-gold transition-colors hover:bg-gold/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold"
+          className={cx(buttonBase, 'h-10 shrink-0 px-3 text-ui', buttonVariants.secondary)}
           data-testid="show-results"
         >
           Show results

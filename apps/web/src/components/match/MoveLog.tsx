@@ -89,9 +89,10 @@ function Cell({
   const muted = item.kind !== 'move'
   const clock = item.clockMs
   const notation = (
-    <span aria-hidden="true" className="flex min-w-0 items-baseline gap-px">
+    // Never cut a move short: in a narrow column it breaks onto a second line instead.
+    <span aria-hidden="true" className="flex min-w-0 flex-wrap items-baseline gap-px">
       <span
-        className={`truncate ${muted ? 'font-sans text-[11px] italic text-parchment/60' : future ? 'text-parchment/60' : ''}`}
+        className={`min-w-0 [overflow-wrap:anywhere] ${muted ? 'text-[11px] italic text-parchment/60' : future ? 'text-parchment/60' : ''}`}
         style={
           muted || future ? undefined : { color: current ? undefined : seatTextHex(item.seat) }
         }
@@ -119,7 +120,7 @@ function Cell({
           {notation}
           <span
             aria-hidden="true"
-            className={`text-[10px] ${future ? 'text-parchment/35' : 'text-parchment/50'}`}
+            className={`text-[10px] font-normal ${future ? 'text-faint' : 'text-parchment/65'}`}
             data-testid="move-log-clock"
           >
             {clockText(clock)}
@@ -128,8 +129,8 @@ function Cell({
       )}
     </>
   )
-  const cls = `flex ${clock === null ? 'h-6' : 'min-h-6'} w-full min-w-0 items-center rounded-md px-1 text-left font-mono text-[12px] tracking-tight tabular-nums ${
-    current ? 'bg-parchment/[0.12] text-parchment ring-1 ring-gold/60' : ''
+  const cls = `flex ${clock === null ? 'h-6' : 'min-h-6'} w-full min-w-0 items-center rounded-plate px-1 text-left text-[12px] font-medium tracking-tight tabular-nums ${
+    current ? 'bg-gold/[0.12] text-parchment ring-1 ring-gold/60' : ''
   }`
   if (onSelect) {
     return (
@@ -176,9 +177,9 @@ function Note({
   future: boolean
   tabStop: boolean
 }) {
-  const cls = `flex min-h-6 w-full items-center gap-1.5 rounded-md px-1.5 text-left text-[11.5px] ${
+  const cls = `flex min-h-6 w-full items-center gap-1.5 rounded-plate px-1.5 text-left text-caption ${
     current
-      ? 'bg-parchment/[0.12] text-parchment ring-1 ring-gold/60'
+      ? 'bg-gold/[0.12] text-parchment ring-1 ring-gold/60'
       : future
         ? 'text-parchment/60'
         : 'text-parchment/70'
@@ -329,7 +330,7 @@ export function MoveLog({
           .map((d) => (
             <li
               key={`${i.key}:d${d.seat}`}
-              className={`col-span-4 flex min-h-5 items-center gap-1.5 px-1.5 text-[11px] text-parchment/55`}
+              className="col-span-4 flex min-h-5 items-center gap-1.5 px-1.5 text-[11px] text-faint"
               aria-hidden="true"
             >
               <SeatDot seat={d.seat} />
@@ -342,19 +343,22 @@ export function MoveLog({
     <div className={`relative flex min-h-0 flex-col ${className}`} data-testid="move-log">
       <div
         aria-hidden="true"
-        className="grid shrink-0 grid-cols-[1.5rem_repeat(4,minmax(0,1fr))] gap-x-1 border-b border-parchment/10 px-1.5 pb-1.5 text-[11px] text-parchment/60"
+        className="grid shrink-0 grid-cols-[1.5rem_repeat(4,minmax(0,1fr))] gap-x-1 border-b border-rule px-1.5 pb-1.5 text-caption text-faint"
       >
         <span className="text-right pr-1">#</span>
         {[0, 1, 2, 3].map((s) => {
           const seatLabel = SEAT_LABEL[seatName(s)]
           const name = names[s] || seatLabel
           return (
-            // The seat's initial tells columns apart without colour (names truncate, and
-            // several guests can share one).
-            <span key={s} className="flex min-w-0 items-center gap-1 px-1.5" title={name}>
+            // The seat names the column (it always fits, and tells columns apart without
+            // colour); the player's full name is in the tooltip and on their plate.
+            <span
+              key={s}
+              className="flex min-w-0 items-center gap-1 px-1 font-semibold text-muted"
+              title={name}
+            >
               <SeatDot seat={s} />
-              <span className="shrink-0 font-semibold text-parchment/80">{seatLabel[0]}</span>
-              {name === seatLabel ? null : <span className="truncate">{name}</span>}
+              <span className="truncate">{name === 'You' ? 'You' : seatLabel}</span>
             </span>
           )
         })}
@@ -377,7 +381,7 @@ export function MoveLog({
               >
                 <span
                   aria-hidden="true"
-                  className="pt-1 pr-1 text-right text-[11px] tabular-nums text-parchment/55"
+                  className="pt-1 pr-1 text-right text-[11px] tabular-nums text-faint"
                 >
                   {round.number}
                 </span>
@@ -418,11 +422,11 @@ export function MoveLog({
             ))}
             {showResult && ended?.result ? (
               <li
-                className="mt-1 rounded-md border border-gold/25 bg-gold/[0.07] px-2 py-1.5 text-xs text-parchment/85"
+                className="mt-1.5 border-t border-rule-brass px-1.5 pt-2 pb-1 text-caption text-muted"
                 data-testid="move-log-result"
               >
-                <span className="font-semibold text-gold">Game over</span> ·{' '}
-                {resultText(ended.result, endReason)}
+                <span className="font-display font-semibold text-parchment">Game over.</span>{' '}
+                {resultText(ended.result, endReason, names.includes('You'))}
               </li>
             ) : null}
           </ol>
@@ -431,7 +435,7 @@ export function MoveLog({
       {!replay && !atBottom ? (
         <button
           type="button"
-          className="absolute right-2 bottom-2 inline-flex h-8 items-center gap-1 rounded-full border border-parchment/15 bg-ink/95 px-3 text-xs font-semibold text-parchment/85 shadow-lg shadow-black/40 hover:text-parchment"
+          className="absolute right-2 bottom-2 inline-flex h-8 items-center gap-1 rounded-full border border-rule-brass bg-baize-deep/95 px-3 text-caption font-semibold text-parchment shadow-lift hover:border-brass/70"
           onClick={() => {
             const el = scroller.current
             stick.current = true
@@ -489,7 +493,7 @@ export function MoveLogPanel({
   return (
     <section
       aria-labelledby={headingId}
-      className={`flex flex-col rounded-xl border border-parchment/10 bg-ink/25 ${className}`}
+      className={`flex flex-col rounded-panel border border-rule bg-black/15 shadow-well ${className}`}
       data-testid="move-log-panel"
     >
       <h2 id={headingId} className="sr-only">
@@ -497,7 +501,7 @@ export function MoveLogPanel({
       </h2>
       <button
         type="button"
-        className="flex h-10 w-full items-center gap-2 rounded-xl px-3 text-left text-sm wide:hidden"
+        className="flex h-10 w-full items-center gap-2 rounded-panel px-3 text-left text-ui wide:hidden"
         aria-expanded={open}
         aria-controls={bodyId}
         onClick={() => {
@@ -510,21 +514,21 @@ export function MoveLogPanel({
         }}
         data-testid="move-log-toggle"
       >
-        <span className="font-semibold">Moves</span>
+        <span className="font-display font-semibold">Moves</span>
         <span
           aria-hidden="true"
-          className="min-w-0 flex-1 truncate font-mono text-xs text-parchment/60"
+          className="min-w-0 flex-1 truncate text-caption text-faint tabular-nums"
         >
           {latestText(items)}
         </span>
         <ChevronDown
           aria-hidden="true"
-          className={`h-4 w-4 shrink-0 text-parchment/60 transition-transform ${open ? 'rotate-180' : ''}`}
+          className={`h-4 w-4 shrink-0 text-faint transition-transform ${open ? 'rotate-180' : ''}`}
         />
       </button>
       <p
         aria-hidden="true"
-        className="hidden px-3 pt-2.5 pb-1.5 text-[11px] font-semibold tracking-[0.18em] text-parchment/60 uppercase wide:block"
+        className="hidden px-3 pt-2.5 pb-1.5 font-display text-ui font-semibold text-parchment wide:block"
       >
         Moves
       </p>

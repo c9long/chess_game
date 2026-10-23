@@ -1,11 +1,20 @@
 import { CLOSE_CODES, type ClockSync, isUntimed, type ServerMessages } from '@game/protocol'
 import type { MatchStateJson } from '@game/protocol/state'
 import { type FormEvent, useEffect, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router'
+import { Link, useParams } from 'react-router'
 import { GameRoom } from '../components/match/GameRoom.tsx'
 import { LobbyRoom } from '../components/match/LobbyRoom.tsx'
 import { SoloStarting } from '../components/match/SoloStarting.tsx'
-import { Alert, Button, Card, CenteredPage, Field, Spinner } from '../components/ui.tsx'
+import {
+  Alert,
+  Button,
+  Card,
+  CenteredPage,
+  Field,
+  linkButtonClass,
+  NoticePage,
+  Spinner,
+} from '../components/ui.tsx'
 import { joinedFeed } from '../lib/live-move-log.ts'
 import {
   type CloseReason,
@@ -274,7 +283,6 @@ function useRejoin(room: MatchRoom, lost: boolean, onGiveUp: () => void): boolea
 }
 
 function MatchView({ room }: { room: MatchRoom }) {
-  const navigate = useNavigate()
   const markClosed = useMatchStore((s) => s.markClosed)
   const [closed, setClosed] = useState<string>()
   const [onClosed] = useState(() => (reason: string) => {
@@ -290,36 +298,37 @@ function MatchView({ room }: { room: MatchRoom }) {
   const keepFinished = feed?.state.phase === 'finished' && closed !== 'kicked'
   if (closed && closed !== 'lost' && !keepFinished) {
     return (
-      <CenteredPage>
-        <Card>
-          <h1 className="mb-3 font-display text-2xl font-semibold">
-            {closed === 'kicked'
-              ? 'Removed from the lobby'
-              : closed === 'replaced'
-                ? 'Opened somewhere else'
-                : 'Disconnected'}
-          </h1>
-          <p className="mb-6 text-parchment/70">
-            {closed === 'kicked'
-              ? 'The host removed you from this lobby.'
-              : closed === 'replaced'
-                ? 'This game was opened in another tab or in the app, and continues there.'
-                : closed === 'closed'
-                  ? 'This lobby was closed.'
-                  : import.meta.env.DEV
-                    ? 'You are no longer connected to this game. Locally this usually means the server restarted after a code change, which closes every open lobby.'
-                    : 'You are no longer connected to this game.'}
-          </p>
-          <Button onClick={() => navigate('/play')}>Back to lobbies</Button>
-        </Card>
-      </CenteredPage>
+      <NoticePage
+        title={
+          closed === 'kicked'
+            ? 'Removed from the lobby'
+            : closed === 'replaced'
+              ? 'Opened somewhere else'
+              : 'Disconnected'
+        }
+        action={
+          <Link className={linkButtonClass('primary')} to="/play">
+            Back to lobbies
+          </Link>
+        }
+      >
+        {closed === 'kicked'
+          ? 'The host removed you from this lobby.'
+          : closed === 'replaced'
+            ? 'This game was opened in another tab or in the app, and continues there.'
+            : closed === 'closed'
+              ? 'This lobby was closed.'
+              : import.meta.env.DEV
+                ? 'You are no longer connected to this game. Locally this usually means the server restarted after a code change, which closes every open lobby.'
+                : 'You are no longer connected to this game.'}
+      </NoticePage>
     )
   }
   if (!feed) {
     return (
       <CenteredPage>
-        <div className="flex items-center justify-center gap-3 py-20 text-parchment/70">
-          <Spinner /> Joining…
+        <div className="flex items-center justify-center gap-3 py-20 text-ui text-muted">
+          <Spinner /> Joining the game…
         </div>
       </CenteredPage>
     )
@@ -348,10 +357,11 @@ export function ReconnectingBanner() {
     <div
       // Covers the header (same height, text clear of the notch) instead of taking space in
       // the layout, so the game screen doesn't move while reconnecting.
-      className="fixed inset-x-0 top-0 z-50 flex min-h-[calc(4rem+var(--safe-top))] items-center justify-center bg-seat-north px-4 pt-[var(--safe-top)] text-center text-sm font-semibold text-ink shadow-lg shadow-black/30"
+      className="fixed inset-x-0 top-0 z-50 flex min-h-[calc(4rem+var(--safe-top))] items-center justify-center gap-3 border-b border-warn/60 bg-baize-deep px-4 pt-[var(--safe-top)] text-center text-ui font-semibold text-warn shadow-lift"
       role="status"
       data-testid="reconnecting"
     >
+      <Spinner className="text-warn" />
       Connection lost. Reconnecting…
     </div>
   )
@@ -375,7 +385,7 @@ export function MatchToasts({ notices, inGame }: { notices: Notice[]; inGame: bo
       {notices.map((n) => (
         <div
           key={n.id}
-          className={`rounded-lg bg-panel shadow-lg shadow-black/40 ${inGame ? '' : 'pointer-events-auto'}`}
+          className={`rounded-control bg-panel shadow-lift ${inGame ? '' : 'pointer-events-auto'}`}
           data-testid="toast"
         >
           <Alert tone={n.tone}>{n.text}</Alert>
@@ -406,10 +416,10 @@ export function PasswordPrompt({
   return (
     <CenteredPage>
       <Card>
-        <h1 className="mb-1 font-display text-2xl font-semibold">
+        <h1 className="mb-1 font-display text-heading font-semibold">
           {watching ? 'Private game' : 'Private lobby'}
         </h1>
-        <p className="mb-5 text-sm text-parchment/65">
+        <p className="mb-5 text-ui text-muted">
           {watching
             ? 'Enter the password the host shared to watch.'
             : 'Enter the password the host shared.'}
@@ -426,7 +436,7 @@ export function PasswordPrompt({
           />
           {error ? <Alert>{error}</Alert> : null}
           <Button type="submit" busy={busy} disabled={!password} data-testid="join-submit">
-            {watching ? 'Watch' : 'Join'}
+            {watching ? 'Watch game' : 'Join lobby'}
           </Button>
         </form>
       </Card>
@@ -447,72 +457,71 @@ export function Match() {
   if (conn.kind === 'password') return <PasswordPrompt error={conn.error} onSubmit={withPassword} />
   if (conn.kind === 'other-room') {
     return (
-      <CenteredPage>
-        <Card>
-          <h1 className="mb-3 font-display text-2xl font-semibold">You’re in another lobby</h1>
-          <p className="mb-6 text-parchment/70">
-            Leave your current lobby before joining a different one.
-          </p>
-          <Link className="font-semibold text-gold hover:underline" to={`/match/${conn.otherId}`}>
+      <NoticePage
+        title="You’re in another lobby"
+        action={
+          <Link className={linkButtonClass('primary')} to={`/match/${conn.otherId}`}>
             Return to your lobby
           </Link>
-        </Card>
-      </CenteredPage>
+        }
+      >
+        Leave your current lobby before joining a different one.
+      </NoticePage>
     )
   }
   if (conn.kind === 'closed') {
     return (
-      <CenteredPage>
-        <Card>
-          <h1 className="mb-3 font-display text-2xl font-semibold">This lobby has closed</h1>
-          <p className="mb-6 text-parchment/70">
-            {conn.reason === 'kicked'
-              ? 'The host removed you from this lobby.'
-              : conn.reason === 'left'
-                ? 'You left this game. Create or join another one.'
-                : conn.reason === 'replaced'
-                  ? 'This game was opened in another tab or in the app, and continues there.'
-                  : 'It is no longer available (the server may have restarted). Create or join another one.'}
-          </p>
-          <Link className="font-semibold text-gold hover:underline" to="/play">
+      <NoticePage
+        title="This lobby has closed"
+        action={
+          <Link className={linkButtonClass('primary')} to="/play">
             Back to lobbies
           </Link>
-        </Card>
-      </CenteredPage>
+        }
+      >
+        {conn.reason === 'kicked'
+          ? 'The host removed you from this lobby.'
+          : conn.reason === 'left'
+            ? 'You left this game. Create or join another one.'
+            : conn.reason === 'replaced'
+              ? 'This game was opened in another tab or in the app, and continues there.'
+              : 'It is no longer available (the server may have restarted). Create or join another one.'}
+      </NoticePage>
     )
   }
   if (conn.kind === 'error') {
     return (
-      <CenteredPage>
-        <Card>
-          <h1 className="mb-3 font-display text-2xl font-semibold">Can’t join this game</h1>
-          <p className="mb-6 text-parchment/70">{conn.message}</p>
-          {conn.code === 'account_required' ? (
-            <div className="flex flex-wrap items-center gap-4">
+      <NoticePage
+        title="Can’t join this game"
+        action={
+          conn.code === 'account_required' ? (
+            <div className="flex flex-wrap items-center gap-3">
               <Link
                 to="/sign-up"
-                className="inline-flex h-10 items-center rounded-lg bg-gold px-4 text-sm font-semibold text-ink hover:bg-gold-bright"
+                className={linkButtonClass('primary')}
                 data-testid="create-account"
               >
                 Create account
               </Link>
-              <Link className="font-semibold text-gold hover:underline" to="/play">
+              <Link className={linkButtonClass('quiet')} to="/play">
                 Back to lobbies
               </Link>
             </div>
           ) : (
-            <Link className="font-semibold text-gold hover:underline" to="/play">
+            <Link className={linkButtonClass('primary')} to="/play">
               Back to lobbies
             </Link>
-          )}
-        </Card>
-      </CenteredPage>
+          )
+        }
+      >
+        {conn.message}
+      </NoticePage>
     )
   }
   return (
     <CenteredPage>
-      <div className="flex items-center justify-center gap-3 py-20 text-parchment/70">
-        <Spinner /> Connecting…
+      <div className="flex items-center justify-center gap-3 py-20 text-ui text-muted">
+        <Spinner /> Connecting to the game…
       </div>
     </CenteredPage>
   )

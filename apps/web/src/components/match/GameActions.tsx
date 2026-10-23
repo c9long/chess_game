@@ -15,15 +15,14 @@ import { GameButton } from '../game/GameButton.tsx'
 import { FlagIcon } from '../game/icons.tsx'
 import { seatTitle } from '../game/PlayerCard.tsx'
 import { Dialog, DialogClose, Tooltip, TooltipProvider } from '../overlay.tsx'
-import { Button } from '../ui.tsx'
+import { Button, cx } from '../ui.tsx'
 import { RankedBadge } from './RankedBadge.tsx'
 import { SEAT_LABEL, seatHex, seatName } from './seats.ts'
 
-/** What the panel shows for a seat: the player's name or the bot's level. */
+/** What the panel calls a seat: the player's name, or the bot by its civ ("China bot"). */
 export function seatPlayerName(seat: SeatStateJson | undefined): string {
   if (!seat) return ''
-  if (seat.isBot) return `Bot · ${seat.botLevel === 'max' ? 'Max' : seat.botLevel}`
-  return seat.displayName
+  return seatTitle(seat)
 }
 
 /** The Teams partner of a seat (the seat opposite). */
@@ -33,8 +32,8 @@ function teammateOf(seat: number): number {
 
 /**
  * How resignation messages name a teammate: a player's name, or a bot by its civilization
- * as the player panel shows it ("the China bot"; "The China bot" to start a sentence), since
- * a bot's level alone ("Bot · 1200") doesn't say which bot.
+ * ("the China bot"; "The China bot" to start a sentence), since a bot's level alone (its plate
+ * name) doesn't say which bot.
  */
 function teammateName(seat: SeatStateJson | undefined, start = false): string {
   if (!seat) return start ? 'Your teammate' : 'your teammate'
@@ -71,7 +70,7 @@ function focusResignControl() {
   else button.parentElement?.focus()
 }
 
-/** "You" for the viewer's own seat, else the name and the seat ("Bot · 1500 (West)"). */
+/** "You" for the viewer's own seat, else the name and the seat ("China bot (West)"). */
 function who(state: MatchStateJson, seat: number, mySeat: number): string {
   if (seat === mySeat) return 'You'
   return `${seatPlayerName(state.seats[seat])} (${SEAT_LABEL[seatName(seat)]})`
@@ -98,7 +97,7 @@ function HintWrap({
   return (
     <Tooltip content={hint}>
       <span
-        className="flex min-w-0 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold"
+        className="flex min-w-0 rounded-control"
         {...(disabled ? { tabIndex: 0 } : {})}
         data-hint={hint}
       >
@@ -200,18 +199,19 @@ export function GameActions({
     <TooltipProvider>
       {imOut ? (
         <p
-          className="mb-3 rounded-lg border border-parchment/10 bg-ink/45 px-3 py-2 text-xs leading-relaxed text-parchment/70"
+          className="mb-3 border-l-2 border-rule-brass pl-3 text-caption leading-relaxed text-muted"
           data-testid="out-note"
         >
           {myDefeatReason === 'resign' ? 'You resigned.' : 'You are out of this game.'} You can keep
           watching or leave.
         </p>
       ) : null}
-      <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto] gap-2 lg:grid-cols-2">
+      <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto] gap-2 wide:grid-cols-2">
         <HintWrap hint={resignWhy || resignHint} disabled={Boolean(resignWhy)}>
           <GameButton
             ref={resignButton}
-            className="w-full hover:!border-seat-south-light/70 hover:!text-seat-south-light disabled:pointer-events-none"
+            variant="danger"
+            className="w-full disabled:pointer-events-none"
             disabled={Boolean(resignWhy)}
             onClick={() => setConfirming(true)}
             data-testid="resign"
@@ -240,12 +240,12 @@ export function GameActions({
         {children}
       </div>
       {playing && cooldown > 0 && !pending ? (
-        <p id="draw-why" className="mt-2 text-xs text-parchment/50" data-testid="draw-hint">
+        <p id="draw-why" className="mt-2 text-caption text-faint" data-testid="draw-hint">
           {drawWhy}.
         </p>
       ) : null}
       {playing && resignCooldown > 0 && teamProposal < 0 ? (
-        <p className="mt-2 text-xs text-parchment/50" data-testid="resign-hint">
+        <p className="mt-2 text-caption text-faint" data-testid="resign-hint">
           {resignWhy}.
         </p>
       ) : null}
@@ -301,11 +301,10 @@ function ResignDialog({
       returnFocusTo={returnFocusTo}
       title={vote ? 'Ask your teammate to resign?' : 'Resign this game?'}
       testId="resign-dialog"
-      className="border-seat-south/40"
       actions={
         <>
           <DialogClose>
-            <Button variant="ghost">Keep playing</Button>
+            <Button variant="quiet">Keep playing</Button>
           </DialogClose>
           <Button variant="danger" onClick={onConfirm} data-testid="resign-confirm">
             {vote ? 'Ask to resign' : 'Resign'}
@@ -313,11 +312,12 @@ function ResignDialog({
         </>
       }
     >
-      <p className="flex items-center gap-3 text-xs font-semibold uppercase tracking-[0.3em] text-seat-south-light/90">
-        {teams ? 'Teams 2v2' : 'Free-for-all'}
-        {ranked ? <RankedBadge /> : null}
-      </p>
-      <ul className="mt-3 flex flex-col gap-2 text-sm text-parchment/75">
+      {ranked ? (
+        <p className="mb-3">
+          <RankedBadge />
+        </p>
+      ) : null}
+      <ul className="flex max-w-[60ch] flex-col divide-y divide-rule text-ui text-muted [&>li]:py-2 [&>li:first-child]:pt-0 [&>li:last-child]:pb-0">
         {vote ? (
           <>
             <li data-testid="resign-vote-note">
@@ -339,7 +339,7 @@ function ResignDialog({
               Your army is <strong className="text-parchment">removed from the board</strong> and
               you are out of the game.
             </li>
-            <li>You finish in the place of a player knocked out now.</li>
+            <li>You take the lowest place still open (4th if nobody is out yet).</li>
           </>
         )}
         {ranked ? (
@@ -498,27 +498,28 @@ export function TeamResignCard({ room, feed }: { room: MatchRoom; feed: MatchFee
       <section
         {...focusProps}
         tabIndex={-1}
-        className="mb-3 rounded-xl border border-parchment/15 bg-ink/45 p-3 outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold"
+        className="mb-3 rounded-panel border border-rule-brass bg-black/15 p-3 shadow-rim outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold"
         aria-live="polite"
         aria-labelledby="team-resign-waiting-title"
         data-testid="team-resign-waiting"
         data-state={mode}
       >
         <div className="flex items-center gap-3">
+          {/* A neutral card: asking, or hearing back, isn't an error. */}
           <span
             aria-hidden="true"
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-seat-south/15 text-seat-south-light"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-brass/45 bg-black/20 text-brass"
           >
             <FlagIcon />
           </span>
           <div className="min-w-0">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-seat-south-light/90">
+            <p className="text-caption font-semibold text-faint">
               {mode === 'waiting' ? 'You asked to resign' : 'Your request to resign'}
             </p>
             {mode === 'waiting' ? (
               <p
                 id="team-resign-waiting-title"
-                className="flex items-center gap-2 text-sm leading-snug font-semibold break-words"
+                className="flex items-center gap-2 text-ui leading-snug font-semibold break-words"
               >
                 Waiting for {partnerName}…
                 <span
@@ -529,7 +530,7 @@ export function TeamResignCard({ room, feed }: { room: MatchRoom; feed: MatchFee
             ) : (
               <p
                 id="team-resign-waiting-title"
-                className="text-sm leading-snug font-semibold break-words"
+                className="text-ui leading-snug font-semibold break-words"
                 data-testid="team-resign-outcome"
               >
                 {outcome}
@@ -538,7 +539,7 @@ export function TeamResignCard({ room, feed }: { room: MatchRoom; feed: MatchFee
           </div>
         </div>
         {mode === 'waiting' ? (
-          <p className="mt-2 text-xs leading-relaxed text-parchment/55">
+          <p className="mt-2 text-caption leading-relaxed text-faint">
             If they agree, your team loses. If they decline, you both play on.
           </p>
         ) : null}
@@ -549,7 +550,7 @@ export function TeamResignCard({ room, feed }: { room: MatchRoom; feed: MatchFee
   return (
     <section
       {...focusProps}
-      className="mb-3 rounded-xl border border-seat-south/55 bg-seat-south/[0.09] p-3 shadow-[0_0_0_1px_rgba(214,92,92,0.12)]"
+      className="mb-3 rounded-panel border border-destructive-light/45 bg-destructive/[0.12] p-3 shadow-rim"
       aria-labelledby="team-resign-title"
       aria-describedby="team-resign-desc"
       data-testid="team-resign-request"
@@ -557,24 +558,25 @@ export function TeamResignCard({ room, feed }: { room: MatchRoom; feed: MatchFee
       <div className="flex items-center gap-2.5">
         <span
           aria-hidden="true"
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-seat-south/20 text-seat-south-light"
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-destructive-light/40 bg-destructive/25 text-destructive-light"
         >
           <FlagIcon />
         </span>
         <p
           id="team-resign-title"
-          className="min-w-0 text-sm leading-snug font-semibold break-words"
+          className="min-w-0 text-ui leading-snug font-semibold break-words"
         >
           {teammateName(partnerSeat, true)} wants to resign for your team
         </p>
       </div>
-      <p id="team-resign-desc" className="mt-1.5 text-xs leading-relaxed text-parchment/65">
+      <p id="team-resign-desc" className="mt-1.5 text-caption leading-relaxed text-muted">
         If you agree, your team loses the game now. If you decline, you both play on.
       </p>
       <div className="mt-2 grid grid-cols-2 gap-2">
         <Button
           variant="danger"
-          className="h-9 !px-2 whitespace-nowrap"
+          size="sm"
+          className="!px-2"
           onClick={() => send('respondResign', { accept: true })}
           data-testid="team-resign-accept"
         >
@@ -582,7 +584,8 @@ export function TeamResignCard({ room, feed }: { room: MatchRoom; feed: MatchFee
         </Button>
         <Button
           variant="secondary"
-          className="h-9 !px-2 whitespace-nowrap"
+          size="sm"
+          className="!px-2"
           onClick={() => send('respondResign', { accept: false })}
           data-testid="team-resign-decline"
         >
@@ -685,10 +688,10 @@ export function DrawOfferCard({ room, feed }: { room: MatchRoom; feed: MatchFeed
 
   return (
     <section
-      className={`mb-3 rounded-xl border p-3 transition ${
+      className={`mb-3 rounded-panel border p-3 shadow-rim transition-colors ${
         isDeclined
-          ? 'border-seat-south/40 bg-seat-south/[0.06]'
-          : 'border-gold/45 bg-gold/[0.07] shadow-[0_0_0_1px_rgba(212,160,23,0.08)]'
+          ? 'border-destructive-light/40 bg-destructive/[0.08]'
+          : 'border-gold/55 bg-gold/[0.06]'
       }`}
       aria-live="polite"
       aria-labelledby="draw-offer-title"
@@ -697,26 +700,34 @@ export function DrawOfferCard({ room, feed }: { room: MatchRoom; feed: MatchFeed
       <div className="flex items-center gap-3">
         <span
           aria-hidden="true"
-          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full font-display text-base ${
-            isDeclined ? 'bg-seat-south/20 text-seat-south-light' : 'bg-gold/15 text-gold'
+          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border font-display text-base ${
+            isDeclined
+              ? 'border-destructive-light/40 text-destructive-light'
+              : 'border-gold/50 text-gold'
           }`}
         >
           ½
         </span>
         <div className="min-w-0">
           <p
-            className={`text-[11px] font-semibold uppercase tracking-[0.22em] ${
-              isDeclined ? 'text-seat-south-light/90' : 'text-gold/85'
-            }`}
+            className={`text-caption font-semibold ${isDeclined ? 'text-destructive-light' : 'text-gold'}`}
           >
             {isDeclined ? 'Draw declined' : 'Draw offer'}
           </p>
-          <p id="draw-offer-title" className="text-sm leading-snug font-semibold break-words">
+          <p id="draw-offer-title" className="text-ui leading-snug font-semibold break-words">
             {offerer} offered a draw
           </p>
         </div>
       </div>
-      <ul className="mt-2.5 flex flex-col gap-1" data-testid="draw-votes">
+      {/* Phones: a declined offer folds to its heading and one line (a toast says who
+          declined), so it doesn't push the board's home rows off the screen. */}
+      <ul
+        className={cx(
+          'mt-2.5 flex-col divide-y divide-rule border-y border-rule',
+          isDeclined ? 'hidden wide:flex' : 'flex',
+        )}
+        data-testid="draw-votes"
+      >
         {shown.votes.map((vote, i) => {
           if (vote === DRAW_VOTE.notVoter) return null
           const status =
@@ -729,24 +740,24 @@ export function DrawOfferCard({ room, feed }: { room: MatchRoom; feed: MatchFeed
             <li
               // biome-ignore lint/suspicious/noArrayIndexKey: seats are fixed positions
               key={i}
-              className="flex items-center justify-between gap-2 rounded-lg bg-ink/45 px-2.5 py-1 text-sm"
+              className="flex min-h-8 items-center justify-between gap-2 px-0.5 py-1 text-ui"
               data-testid={`draw-vote-${seatName(i)}`}
               data-status={status}
             >
               <span className="flex min-w-0 items-center gap-2">
                 <span
                   aria-hidden="true"
-                  className="h-2.5 w-2.5 shrink-0 rounded-full"
+                  className="h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-black/40"
                   style={{ backgroundColor: seatHex(i) }}
                 />
-                <span className="truncate">
+                <span className="truncate font-display font-semibold">
                   {seatPlayerName(state.seats[i])}
-                  {i === mySeat ? (
-                    <span className="text-xs text-gold"> (you)</span>
-                  ) : (
-                    <span className="text-xs text-parchment/45"> · {SEAT_LABEL[seatName(i)]}</span>
-                  )}
                 </span>
+                {i === mySeat ? (
+                  <span className="shrink-0 text-caption text-faint">(you)</span>
+                ) : (
+                  <span className="sr-only">({SEAT_LABEL[seatName(i)]})</span>
+                )}
               </span>
               <VoteChip status={isDeclined && status === 'pending' ? 'none' : status} />
             </li>
@@ -756,15 +767,15 @@ export function DrawOfferCard({ room, feed }: { room: MatchRoom; feed: MatchFeed
       {canAnswer ? (
         <div className="mt-2.5 grid grid-cols-2 gap-2">
           <Button
-            className="h-10"
+            size="sm"
             onClick={() => send('respondDraw', { accept: true })}
             data-testid="draw-accept"
           >
             Accept draw
           </Button>
           <Button
+            size="sm"
             variant="secondary"
-            className="h-10"
             onClick={() => send('respondDraw', { accept: false })}
             data-testid="draw-decline"
           >
@@ -773,7 +784,7 @@ export function DrawOfferCard({ room, feed }: { room: MatchRoom; feed: MatchFeed
         </div>
       ) : (
         <p
-          className="mt-2 text-xs leading-relaxed text-parchment/55"
+          className="mt-2 text-caption leading-relaxed text-faint"
           title={
             isDeclined
               ? undefined
@@ -788,16 +799,16 @@ export function DrawOfferCard({ room, feed }: { room: MatchRoom; feed: MatchFeed
 }
 
 function VoteChip({ status }: { status: 'accepted' | 'pending' | 'declined' | 'none' }) {
-  if (status === 'none') return <span className="text-xs text-parchment/35">—</span>
+  if (status === 'none') return <span className="text-caption text-faint">—</span>
   const styles = {
-    accepted: 'bg-seat-east/20 text-[#7fd8b7]',
-    pending: 'bg-parchment/10 text-parchment/65',
-    declined: 'bg-seat-south/25 text-seat-south-light',
+    accepted: 'text-ok',
+    pending: 'text-faint',
+    declined: 'text-destructive-light',
   }
   const label = { accepted: 'Accepted', pending: 'Waiting', declined: 'Declined' }
   return (
     <span
-      className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold ${styles[status]}`}
+      className={`inline-flex shrink-0 items-center gap-1.5 text-caption font-semibold ${styles[status]}`}
     >
       {status === 'pending' ? (
         <span aria-hidden="true" className="h-1.5 w-1.5 animate-pulse rounded-full bg-current" />

@@ -3,7 +3,7 @@ import { CrownIcon } from './icons.tsx'
 
 /**
  * A placement disc: gold with a crown for 1st, silver and bronze for 2nd and 3rd, muted
- * after that, and a dashed "—" when there is no placement (a cancelled game).
+ * (text-muted, so it doesn't read as disabled) after that, and a dashed "—" when there is no placement (a cancelled game).
  */
 export function Medal({
   place,
@@ -20,7 +20,7 @@ export function Medal({
   if (!place) {
     return (
       <span
-        className={`${dims} inline-flex shrink-0 items-center justify-center rounded-full border border-dashed border-parchment/25 font-semibold text-parchment/40`}
+        className={`${dims} inline-flex shrink-0 items-center justify-center rounded-full border border-dashed border-rule-strong font-semibold text-faint`}
       >
         —
       </span>
@@ -30,7 +30,7 @@ export function Medal({
   if (!color) {
     return (
       <span
-        className={`${dims} inline-flex shrink-0 items-center justify-center rounded-full border border-parchment/15 bg-parchment/[0.04] font-semibold tabular-nums text-parchment/55`}
+        className={`${dims} inline-flex shrink-0 items-center justify-center rounded-full border border-rule-strong font-semibold tabular-nums text-muted`}
       >
         {label ?? place}
       </span>

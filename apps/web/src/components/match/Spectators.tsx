@@ -15,7 +15,7 @@ export function SpectatorCount({
   if (count <= 0) return null
   return (
     <span
-      className={`items-center gap-1 text-xs text-parchment/65 tabular-nums ${className}`}
+      className={`items-center gap-1 text-caption text-faint tabular-nums ${className}`}
       data-testid="spectator-count"
     >
       <Eye aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
@@ -33,11 +33,14 @@ export function WatchLinkButton({
   state,
   notify,
   className = '',
+  label = true,
 }: {
   roomId: string
   state: { inviteOnly: boolean; hasPassword: boolean; ranked: boolean }
   notify: (text: string, tone?: 'error' | 'info' | 'success') => void
   className?: string
+  /** Show "Watch link" beside the icon from 640px (false: the icon alone). */
+  label?: boolean
 }) {
   async function share() {
     const url = watchUrl(window.location.origin, roomId)
@@ -62,13 +65,13 @@ export function WatchLinkButton({
     <button
       type="button"
       onClick={() => void share()}
-      className={`-my-1 inline-flex h-7 shrink-0 items-center gap-1 rounded-md px-1.5 text-xs font-semibold text-parchment/70 hover:bg-parchment/[0.07] hover:text-parchment focus-visible:outline-2 focus-visible:outline-gold ${className}`}
+      className={`-my-1 inline-flex h-7 shrink-0 items-center gap-1 rounded-control px-1.5 text-caption font-semibold text-muted transition-colors hover:bg-parchment/[0.07] hover:text-parchment ${className}`}
       aria-label="Copy watch link"
       title="Copy a link to watch this game"
       data-testid="watch-link"
     >
       <Link2 aria-hidden="true" className="h-4 w-4 shrink-0" />
-      <span className="hidden sm:inline">Watch link</span>
+      {label ? <span className="hidden sm:inline">Watch link</span> : null}
     </button>
   )
 }

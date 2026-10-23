@@ -1,5 +1,5 @@
 import { BoardView } from '@game/board'
-import { isUntimed, REMATCH_VOTE } from '@game/protocol'
+import { isUntimed, REMATCH_VOTE, SOLO_DEFAULT_NAME } from '@game/protocol'
 import {
   Game,
   type GameConfig,
@@ -8,8 +8,17 @@ import {
   type Snapshot,
   squareIndex,
 } from '@game/rules'
+import { Eye } from 'lucide-react'
 import { useReducedMotion } from 'motion/react'
-import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import {
+  type CSSProperties,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react'
 import { useNavigate, useParams } from 'react-router'
 import {
   actionFromEvents,
@@ -32,11 +41,11 @@ import type { MatchFeed } from '../../pages/Match.tsx'
 import { BoardSettings, KeyboardHints } from '../game/BoardSettings.tsx'
 import { GameButton } from '../game/GameButton.tsx'
 import { ExitIcon, GearIcon } from '../game/icons.tsx'
-import { PlayerCard, seatTitle } from '../game/PlayerCard.tsx'
+import { type PlateEdge, PlayerPlate, seatTitle } from '../game/PlayerCard.tsx'
 import { SELF_CHECK_TEXT, TurnBanner } from '../game/TurnBanner.tsx'
 import { ConfirmDialog } from '../overlay.tsx'
 import { useSeatFriendActions } from '../social/SeatFriendButton.tsx'
-import { Alert, Spinner } from '../ui.tsx'
+import { Alert, cx, Pill, Spinner } from '../ui.tsx'
 import { DrawOfferCard, GameActions, TeamResignCard } from './GameActions.tsx'
 import { GameOver } from './GameOver.tsx'
 import { defeatReasonLabel } from './labels.ts'
@@ -368,15 +377,14 @@ function Board({
 
   return (
     <div
-      // Sized to fit the viewport height with the panel beside it (desktop) or the player strip
-      // and actions under it (tablets and phones). See GameRoom for the reserved heights.
-      className="relative aspect-square w-[var(--board)]"
+      // Fills its cell of the table, which GameRoom sizes to the viewport (`--board`).
+      className="relative aspect-square w-full"
       data-testid="board"
       ref={frame}
     >
       <div ref={host} className="absolute inset-0" />
       {viewGen > 0 ? null : (
-        <div className="absolute inset-0 flex items-center justify-center gap-3 text-parchment/60">
+        <div className="absolute inset-0 flex items-center justify-center gap-3 text-ui text-muted">
           <Spinner /> Setting up the board…
         </div>
       )}
@@ -386,7 +394,7 @@ function Board({
           className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center px-3"
           aria-hidden="true"
         >
-          <span className="rounded-full border border-parchment/15 bg-ink/90 px-3 py-1.5 text-xs text-parchment/80 shadow-lg shadow-black/40 backdrop-blur">
+          <span className="rounded-full border border-rule-brass bg-baize-deep/95 px-3 py-1.5 text-caption text-muted shadow-lift">
             <KeyboardHints compact />
           </span>
         </div>
@@ -454,13 +462,24 @@ function leaveHintDismissed(): boolean {
  * Phones and tablets, while playing: switching apps for longer than the server's reconnect
  * grace forfeits the seat. Dismissible; remembered on this device.
  */
-function LeaveHint({ show, graceMs }: { show: boolean; graceMs: number }) {
+function LeaveHint({
+  show,
+  graceMs,
+  className,
+}: {
+  show: boolean
+  graceMs: number
+  className?: string | undefined
+}) {
   const touch = useMediaQuery('(pointer: coarse)')
   const [dismissed, setDismissed] = useState(leaveHintDismissed)
   if (!show || !touch || dismissed) return null
   return (
     <div
-      className="order-7 flex items-center gap-2 rounded-lg border border-parchment/10 bg-ink/40 py-1.5 pr-1.5 pl-3 text-xs text-parchment/70 wide:order-3"
+      className={cx(
+        'flex items-center gap-2 rounded-control border border-rule bg-black/15 py-1.5 pr-1.5 pl-3 text-caption text-muted',
+        className,
+      )}
       data-testid="leave-hint"
       data-after-actions
     >
@@ -469,7 +488,7 @@ function LeaveHint({ show, graceMs }: { show: boolean; graceMs: number }) {
       </span>
       <button
         type="button"
-        className="flex h-8 shrink-0 items-center rounded-md px-2.5 font-semibold text-parchment/80 hover:bg-parchment/5 hover:text-parchment"
+        className="flex h-8 shrink-0 items-center rounded-control px-2.5 font-semibold text-parchment/85 hover:bg-parchment/5 hover:text-parchment"
         onClick={() => {
           setDismissed(true)
           try {
@@ -505,6 +524,132 @@ function useTurnTitle(myTurn: boolean) {
   }, [myTurn])
 }
 
+/**
+ * How the game screen is laid out, by viewport:
+ * - `phone` and `tablet` (portrait): the board full width, a plate above each top corner and
+ *   below each bottom corner, the actions under it. Tablets put the title beside the banner.
+ * - `desk`: the same corners around the board, with the side panel beside it.
+ * - `table`: wide screens with width to spare (the board is height-bound anyway): North and
+ *   South plates above and below the board, upright West and East plates beside it.
+ * - `side`: phones held sideways. The board takes the full height and the plates sit in the
+ *   side panel, in the same corners as on a phone.
+ * Corners, from the viewer's seat: West top left, North top right, East bottom right and the
+ * viewer bottom left: each plate at the clockwise end of its own edge, so turn order runs
+ * clockwise around the board.
+ */
+type Layout = 'phone' | 'tablet' | 'desk' | 'table' | 'side'
+
+function subscribeResize(onChange: () => void) {
+  window.addEventListener('resize', onChange)
+  return () => window.removeEventListener('resize', onChange)
+}
+
+/** Upright side plates cost width only: worth it once the board is bound by height anyway. */
+function tableFits(): boolean {
+  return window.innerWidth >= 1200 && window.innerWidth - window.innerHeight >= 480
+}
+
+function useGameLayout(): Layout {
+  // `side` is the landscape half of the `wide:` variant (index.css); `desk` the other half.
+  const side = useMediaQuery(
+    '(orientation: landscape) and (max-height: 31.99rem) and (min-width: 40rem)',
+  )
+  const desk = useMediaQuery('(min-width: 64rem)')
+  const tablet = useMediaQuery('(min-width: 35rem)')
+  const table = useSyncExternalStore(subscribeResize, tableFits, () => false)
+  if (side) return 'side'
+  if (desk) return table ? 'table' : 'desk'
+  return tablet ? 'tablet' : 'phone'
+}
+
+/**
+ * The board's size per layout (`--board`), from what else must fit on screen. Phones (324px):
+ * header 64, title row 24, banner 40, two plate rows 2x(44+6), actions 40, gaps and padding.
+ * Tablets (292px): the title shares the banner's row. Desk and table (196px): header 64,
+ * padding 24, two plate rows 2x(48+6); across, the side panel (336 + gap 24 + gutters 32) and
+ * at the table the upright plates (2x(134+8)). Sideways phones: header and padding (80px);
+ * across, the panel (280 + gap 16 + gutters 32). Phones and tablets use 100% (the page may
+ * show a scrollbar); wide layouts use the viewport, as nothing on them scrolls.
+ */
+const SAFE_Y = 'var(--safe-top) - var(--safe-bottom)'
+const SAFE_X = 'var(--safe-left) - var(--safe-right)'
+const BOARD_SIZE: Record<Layout, string> = {
+  phone: `max(min(100%, 300px), min(100%, calc(100dvh - 324px - ${SAFE_Y})))`,
+  tablet: `max(min(100%, 300px), min(100%, calc(100dvh - 292px - ${SAFE_Y})))`,
+  desk: `min(calc(100vw - 392px - ${SAFE_X}), calc(100dvh - 196px - ${SAFE_Y}))`,
+  table: `min(calc(100vw - 676px - ${SAFE_X}), calc(100dvh - 196px - ${SAFE_Y}))`,
+  side: `max(240px, min(calc(100vw - 328px - ${SAFE_X}), calc(100dvh - 80px - ${SAFE_Y})))`,
+}
+
+type PlatePosition = 'bottom' | 'left' | 'top' | 'right'
+/** Seat positions relative to the viewer's seat (index 0 is the viewer, then clockwise). */
+const POSITIONS: readonly PlatePosition[] = ['bottom', 'left', 'top', 'right']
+
+const CORNER_AREA: Record<PlatePosition, string> = {
+  left: '[grid-area:tl]',
+  top: '[grid-area:tr]',
+  bottom: '[grid-area:bl]',
+  right: '[grid-area:br]',
+}
+
+/** Where a seat's plate goes, which edge its seat colour runs along, and its popover side. */
+function placement(
+  layout: Layout,
+  pos: PlatePosition,
+): {
+  className: string
+  edge: PlateEdge
+  side: 'top' | 'bottom' | 'left'
+  shape: 'row' | 'column'
+} {
+  if (layout === 'table') {
+    if (pos === 'top') {
+      return {
+        // Plates hug the walnut frame (the board's canvas has a margin round it).
+        className: '[grid-area:t] max-w-[22rem] translate-y-2 justify-self-center',
+        edge: 'bottom',
+        side: 'bottom',
+        shape: 'row',
+      }
+    }
+    if (pos === 'bottom') {
+      return {
+        className: '[grid-area:b] max-w-[22rem] -translate-y-2 justify-self-center',
+        edge: 'top',
+        side: 'top',
+        shape: 'row',
+      }
+    }
+    return {
+      className:
+        pos === 'left'
+          ? '[grid-area:l] translate-x-2 self-center'
+          : '[grid-area:r] -translate-x-2 self-center',
+      edge: pos === 'left' ? 'right' : 'left',
+      side: pos === 'left' ? 'bottom' : 'left',
+      shape: 'column',
+    }
+  }
+  const upper = pos === 'left' || pos === 'top'
+  // Plates hug the walnut frame (the board's canvas has a margin round it).
+  const hug =
+    layout === 'side'
+      ? ''
+      : layout === 'desk'
+        ? upper
+          ? 'translate-y-2'
+          : '-translate-y-2'
+        : upper
+          ? 'translate-y-1'
+          : '-translate-y-1'
+  return {
+    className: cx(CORNER_AREA[pos], hug),
+    edge: upper ? 'bottom' : 'top',
+    side: layout === 'side' ? 'left' : upper ? 'bottom' : 'top',
+    shape: 'row',
+  }
+}
+
 export function GameRoom({
   room,
   feed,
@@ -532,6 +677,7 @@ export function GameRoom({
   const [confirmLeave, setConfirmLeave] = useState(false)
   const leaveButton = useRef<HTMLButtonElement>(null)
   const settingsId = useId()
+  const layout = useGameLayout()
   const { state, mySeat } = feed
   const finished = state.phase === 'finished'
   const inGame = state.phase === 'in_game'
@@ -634,8 +780,10 @@ export function GameRoom({
         ? 'Back to Play'
         : 'Back to lobbies'
       : 'Leave game'
+  const wide = layout !== 'phone' && layout !== 'tablet'
+  const panel = layout === 'desk' || layout === 'table'
   const moreButtons = (
-    // Phones and tablets: two more cells of the action row. Desktop: a row of its own.
+    // Phones and tablets: two more cells of the action row. Wide: a row of its own.
     <div className="contents wide:col-span-2 wide:flex wide:gap-2">
       <GameButton
         variant="ghost"
@@ -650,15 +798,15 @@ export function GameRoom({
             leaveLabel
           ) : (
             <>
-              <span className="lg:hidden">Leave</span>
-              <span className="hidden lg:inline">Leave game</span>
+              <span className="wide:hidden">Leave</span>
+              <span className="hidden wide:inline">Leave game</span>
             </>
           )}
         </span>
       </GameButton>
       <GameButton
         variant="ghost"
-        className={`w-10 !px-0 ${settingsOpen ? 'bg-parchment/[0.08] text-parchment' : ''}`}
+        className={cx('w-10 !px-0', settingsOpen && 'bg-parchment/[0.08] text-parchment')}
         aria-label="Board settings"
         aria-expanded={settingsOpen}
         aria-controls={settingsId}
@@ -670,140 +818,230 @@ export function GameRoom({
     </div>
   )
 
+  // The winner's plate lights up once the game is over (not for a shared first place).
+  const finalPlaces = feed.gameOver?.placements ?? state.result.placements
+  const firsts = finalPlaces.flatMap((p, i) => (p === 1 ? [i] : []))
+  const soleWinner = state.result.type !== 'aborted' && firsts.length === 1 ? firsts[0] : -1
+  // The viewer's seat sits at the bottom (spectators see the board from South).
+  const viewer = mySeat >= 0 ? mySeat : 0
+  const plates = [0, 1, 2, 3].map((i) => {
+    const seat = state.seats[i]
+    if (!seat) return null
+    const place = placement(layout, POSITIONS[(i - viewer + 4) % 4] ?? 'bottom')
+    return (
+      <PlayerPlate
+        key={i}
+        index={i}
+        seat={seat}
+        me={i === mySeat}
+        toMove={inGame && seatToMove === i}
+        inGame={inGame}
+        timed={!untimed}
+        clock={feed.clock}
+        defeatReason={seatInfo?.defeatReasons[i] ?? null}
+        material={seatInfo?.material?.[i] ?? null}
+        reduceMotion={reduceMotion}
+        friendAction={friendAction(i, true)}
+        inCheck={i === mySeat && inGame && check !== 'none'}
+        won={finished && soleWinner === i}
+        place={finished && state.result.type !== 'aborted' ? (finalPlaces[i] ?? null) : null}
+        partner={state.mode === 'teams' && mySeat >= 0 && i === (mySeat + 2) % 4}
+        edge={place.edge}
+        shape={place.shape}
+        size={panel ? 'full' : 'compact'}
+        popoverSide={place.side}
+        className={place.className}
+      />
+    )
+  })
+  const players = (
+    <ol
+      aria-label="Players"
+      className={
+        layout === 'side'
+          ? 'grid grid-cols-2 gap-1.5 [grid-template-areas:"tl_tr"_"bl_br"]'
+          : 'contents'
+      }
+    >
+      {plates}
+    </ol>
+  )
+
+  const board = ready ? (
+    <Board room={room} feed={feed} check={check} onFinalMoves={setFinalMoves} />
+  ) : (
+    <div className="flex aspect-square w-full items-center justify-center gap-3 text-ui text-muted">
+      <Spinner /> Loading the game engine…
+    </div>
+  )
+
+  const modeLine = `${MODE_LABEL[state.mode]}, ${untimed ? 'untimed' : state.timeControl}`
+  // A solo game's default name speaks to its player; someone watching sees whose game it is.
+  const host = state.seats.find((s) => s.occupied && !s.isBot)
+  const title =
+    spectator && state.name === SOLO_DEFAULT_NAME && host
+      ? `${host.displayName} vs bots`
+      : state.name
+
   return (
     <div
-      className={[
+      className={cx(
+        'mx-auto w-full max-w-[1500px] px-4',
         // Bottom padding clears a phone's home indicator (there is no footer on this page).
-        'safe-bottom-6 mx-auto flex w-full max-w-[1500px] flex-col gap-2 px-4 pt-2',
-        'wide:grid wide:grid-cols-[auto_minmax(320px,360px)] wide:items-start wide:justify-center wide:gap-6 wide:py-4',
-        // Board size. Phones (2x2 strip): header 64 + title 24 + banner 40 + strip 118 +
-        // actions 40 + gaps and padding 48. Tablets (strip in one row): strip 56. Desktop and
-        // phones held sideways (`wide:`, index.css): the panel sits beside the board, so only
-        // the header and padding count.
-        // Safe-area insets (notch, home indicator) come off the height too.
-        '[--board:max(min(100%,300px),min(100%,calc(100dvh_-_334px_-_var(--safe-top)_-_var(--safe-bottom))))]',
-        'min-[560px]:[--board:max(min(100%,300px),min(100%,calc(100dvh_-_276px_-_var(--safe-top)_-_var(--safe-bottom))))]',
-        'wide:[--board:min(calc(100vw_-_440px_-_var(--safe-left)_-_var(--safe-right)),calc(100dvh_-_96px_-_var(--safe-top)_-_var(--safe-bottom)))]',
-      ].join(' ')}
+        !wide && 'safe-bottom-6 flex flex-col gap-2 pt-2',
+        panel && 'grid grid-cols-[auto_336px] items-start justify-center gap-6 py-3',
+        layout === 'side' &&
+          'grid grid-cols-[auto_minmax(280px,26rem)] items-start justify-center gap-4 py-2',
+      )}
+      style={{ '--board': BOARD_SIZE[layout] } as CSSProperties}
+      data-layout={layout}
     >
-      <div className="order-2 flex min-w-0 justify-center wide:order-none">
-        {ready ? (
-          <Board room={room} feed={feed} check={check} onFinalMoves={setFinalMoves} />
-        ) : (
-          <div className="flex aspect-square w-[var(--board)] items-center justify-center gap-3 text-parchment/60">
-            <Spinner /> Loading the game engine…
+      {/* The table: the board, with each player's plate at its edge. */}
+      {layout === 'side' ? (
+        <div className="w-[var(--board)]">{board}</div>
+      ) : (
+        <div className={cx('flex min-w-0 justify-center', !wide && 'order-3')}>
+          <div
+            className={cx(
+              'grid gap-y-1.5',
+              layout === 'table'
+                ? 'grid-cols-[134px_var(--board)_134px] gap-x-2 [grid-template-areas:"._t_."_"l_c_r"_"._b_."]'
+                : 'w-[var(--board)] grid-cols-2 gap-x-2 [grid-template-areas:"tl_tr"_"c_c"_"bl_br"]',
+            )}
+          >
+            <div className="min-w-0 [grid-area:c]">{board}</div>
+            {players}
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       <aside
         aria-label="Game"
-        className="contents wide:sticky wide:top-4 wide:flex wide:h-[max(var(--board),min(34rem,calc(100dvh-96px)))] wide:flex-col wide:gap-3 wide:overflow-y-auto wide:rounded-2xl wide:border wide:border-parchment/10 wide:bg-panel/85 wide:p-4"
-      >
-        <header className="order-1 flex min-w-0 items-center gap-x-3 gap-y-1 wide:order-none wide:flex-wrap wide:items-baseline wide:justify-between">
-          <h1 className="min-w-0 truncate font-display text-base font-semibold wide:text-lg">
-            {state.name}
-          </h1>
-          <span className="ml-auto flex shrink-0 items-center gap-2 text-xs text-parchment/65 wide:ml-0">
-            {state.ranked ? <RankedBadge /> : null}
-            <span>
-              {MODE_LABEL[state.mode]} · {untimed ? 'Untimed' : state.timeControl}
-            </span>
-            <SpectatorCount
-              count={state.spectators ?? 0}
-              // Spectators on phones see it in their banner below instead.
-              className={spectator ? 'hidden wide:inline-flex' : 'inline-flex'}
-            />
-            {inGame ? (
-              <WatchLinkButton roomId={matchRoomId} state={state} notify={feed.notify} />
-            ) : null}
-          </span>
-        </header>
-
-        {spectator ? (
-          <p
-            className="order-1 -mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-parchment/70 wide:order-none wide:mt-0"
-            data-testid="spectator-banner"
-          >
-            <span className="rounded border border-gold/40 bg-gold/10 px-1.5 py-px text-[10px] font-bold tracking-wider text-gold uppercase">
-              Watching
-            </span>
-            {state.delayRounds > 0 && inGame ? (
-              <span data-testid="spectator-delay">
-                Ranked game: shown {state.delayRounds} rounds behind
-              </span>
-            ) : null}
-            <SpectatorCount count={state.spectators ?? 0} className="inline-flex wide:hidden" />
-          </p>
-        ) : null}
-
-        <div className="order-3 wide:order-none">
-          <TurnBanner
-            finished={finished}
-            myTurn={myTurn}
-            inCheck={myTurn && check === 'check'}
-            selfCheck={!myTurn && check === 'self_check'}
-            mover={state.seats[seatToMove]}
-            moverColor={seatHex(seatToMove)}
-            reduceMotion={reduceMotion}
-            onShowResults={finished && !showResult ? () => setShowResult(true) : undefined}
-          />
-          {/* Always mounted, so screen readers announce the self-check when its text appears
-              (the visual pill beside the banner is aria-hidden), and, for a seat with several
-              leaders, which of them are attacked. A check on the viewer's turn is read by the
-              board after the moves that made it ("Your move. Check: ..."). */}
-          <p className="sr-only" role="status" aria-live="polite" data-testid="check-announcer">
-            {!myTurn && check === 'self_check'
-              ? [SELF_CHECK_TEXT, checkLeaders].filter(Boolean).join('. ')
-              : ''}
-          </p>
-        </div>
-
-        {finished ? null : (
-          <div className="order-4 empty:hidden wide:order-none">
-            <TeamResignCard room={room} feed={feed} />
-            <DrawOfferCard room={room} feed={feed} />
-          </div>
+        className={cx(
+          !wide && 'contents',
+          wide &&
+            'sticky flex min-w-0 flex-col overflow-y-auto rounded-panel border border-rule-brass bg-surface-rail shadow-rim',
+          panel && 'top-3 h-[max(calc(var(--board)+108px),min(34rem,calc(100dvh-88px)))] gap-3 p-4',
+          layout === 'side' &&
+            'top-2 h-[calc(100dvh-80px-var(--safe-top)-var(--safe-bottom))] gap-2 p-3',
         )}
+      >
+        <div
+          className={cx(
+            'flex min-w-0 flex-col gap-2',
+            !wide && 'order-1',
+            layout === 'tablet' && 'flex-row flex-wrap items-center gap-x-4',
+            panel && 'gap-3',
+          )}
+        >
+          <header
+            className={cx(
+              'flex min-w-0 gap-x-3',
+              wide ? 'flex-col gap-y-1' : 'flex-wrap items-center justify-between gap-y-0.5',
+              layout === 'tablet' && 'flex-1 basis-0',
+            )}
+          >
+            <h1
+              className={cx(
+                // Phones: the title wraps rather than losing its end to the meta line.
+                'min-w-0 font-display leading-tight font-semibold',
+                wide ? 'truncate' : 'break-words',
+                panel ? 'text-heading' : 'text-lead',
+              )}
+            >
+              {title}
+            </h1>
+            <p className="flex min-w-0 shrink-0 flex-wrap items-center gap-x-3 gap-y-1 text-caption text-faint">
+              {state.ranked ? <RankedBadge /> : null}
+              <span>{modeLine}</span>
+              <SpectatorCount
+                count={state.spectators ?? 0}
+                // Spectators on phones see it in their banner below instead.
+                className={spectator ? 'hidden wide:inline-flex' : 'inline-flex'}
+              />
+              {inGame ? (
+                <WatchLinkButton
+                  roomId={matchRoomId}
+                  state={state}
+                  notify={feed.notify}
+                  label={layout !== 'tablet'}
+                />
+              ) : null}
+            </p>
+            {panel && state.mode === 'teams' ? (
+              <p className="text-caption text-faint">
+                {teamLabel(0)} against {teamLabel(1)}
+              </p>
+            ) : null}
+          </header>
 
-        <section aria-label="Players" className="order-5 wide:order-none">
-          {state.mode === 'teams' ? (
-            <p className="mb-1.5 hidden text-xs text-parchment/50 wide:block">
-              {teamLabel(0)} vs {teamLabel(1)}
+          {spectator ? (
+            <p
+              className={cx(
+                'flex flex-wrap items-center gap-x-2 gap-y-0.5 text-caption text-muted',
+                layout === 'tablet' && 'basis-full',
+              )}
+              data-testid="spectator-banner"
+            >
+              <Pill tone="brass">
+                <Eye aria-hidden="true" className="h-3.5 w-3.5" />
+                Watching
+              </Pill>
+              {state.delayRounds > 0 && inGame ? (
+                <span data-testid="spectator-delay">
+                  Ranked game: shown {state.delayRounds} rounds behind
+                </span>
+              ) : null}
+              <SpectatorCount count={state.spectators ?? 0} className="inline-flex wide:hidden" />
             </p>
           ) : null}
-          <ol className="grid grid-cols-2 gap-1.5 min-[560px]:grid-cols-4 wide:grid-cols-1 wide:gap-1">
-            {[0, 1, 2, 3].map((i) => {
-              const seat = state.seats[i]
-              if (!seat) return null
-              return (
-                <PlayerCard
-                  key={i}
-                  index={i}
-                  seat={seat}
-                  me={i === mySeat}
-                  color={seatHex(i)}
-                  toMove={inGame && seatToMove === i}
-                  inGame={inGame}
-                  timed={!untimed}
-                  clock={feed.clock}
-                  defeatReason={seatInfo?.defeatReasons[i] ?? null}
-                  material={seatInfo?.material?.[i] ?? null}
-                  reduceMotion={reduceMotion}
-                  friendAction={friendAction(i, true)}
-                />
-              )
-            })}
-          </ol>
-        </section>
 
-        {/* On wide screens the actions stay pinned at the bottom of the side panel, so a
-            vote or draw card above can't push Resign / Leave out of view. */}
+          <div className={cx('min-w-0', layout === 'tablet' && 'flex-1 basis-0')}>
+            <TurnBanner
+              finished={finished}
+              myTurn={myTurn}
+              inCheck={myTurn && check === 'check'}
+              selfCheck={!myTurn && check === 'self_check'}
+              mover={state.seats[seatToMove]}
+              moverColor={seatHex(seatToMove)}
+              reduceMotion={reduceMotion}
+              onShowResults={finished && !showResult ? () => setShowResult(true) : undefined}
+            />
+            {/* Always mounted, so screen readers announce the self-check when its text appears
+                (the visual pill beside the banner is aria-hidden), and, for a seat with several
+                leaders, which of them are attacked. A check on the viewer's turn is read by the
+                board after the moves that made it ("Your move. Check: ..."). */}
+            <p className="sr-only" role="status" aria-live="polite" data-testid="check-announcer">
+              {!myTurn && check === 'self_check'
+                ? [SELF_CHECK_TEXT, checkLeaders].filter(Boolean).join('. ')
+                : ''}
+            </p>
+          </div>
+
+          {finished ? null : (
+            <div
+              className={cx(
+                'empty:hidden [&>*:last-child]:mb-0',
+                layout === 'tablet' && 'basis-full',
+              )}
+            >
+              <TeamResignCard room={room} feed={feed} />
+              <DrawOfferCard room={room} feed={feed} />
+            </div>
+          )}
+        </div>
+
+        {layout === 'side' ? players : null}
+
+        {/* In the side panel the actions stay pinned at the bottom, so a vote or draw card
+            above can't push Resign and Leave out of view. */}
         <section
           aria-label="Actions"
-          // Last on screen (nothing after it but the log, which sits above it): reaches the
-          // panel's bottom edge.
-          className="order-6 wide:sticky wide:-bottom-4 wide:z-10 wide:order-2 wide:-mx-4 wide:mt-auto wide:rounded-b-2xl wide:border-t wide:border-parchment/10 wide:bg-panel wide:px-4 wide:pt-3 wide:pb-4 wide:[&:not(:has(~[data-after-actions]))]:-mb-4"
+          className={cx(
+            !wide && 'order-4',
+            panel &&
+              'sticky -bottom-4 z-10 order-2 -mx-4 mt-auto rounded-b-panel border-t border-rule bg-surface-rail px-4 pt-3 pb-4 [&:not(:has(~[data-after-actions]))]:-mb-4',
+          )}
         >
           {finished || spectator ? (
             <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">{moreButtons}</div>
@@ -821,23 +1059,41 @@ export function GameRoom({
           )}
         </section>
 
-        <LeaveHint show={inGame && stillPlaying} graceMs={reconnectGraceMs(state)} />
+        <LeaveHint
+          show={inGame && stillPlaying}
+          graceMs={reconnectGraceMs(state)}
+          className={cx(!wide && 'order-5', panel && 'order-3')}
+        />
 
+        {/* Desk and table: the settings take the move list's place (and scroll there) while
+            open, so the actions stay pinned at the bottom of the panel. */}
         {settingsOpen ? (
-          <div className="order-8 wide:order-3" data-after-actions>
+          <div
+            className={cx(
+              !wide && 'order-6',
+              panel && 'order-1 -mx-1 min-h-0 flex-1 overflow-y-auto px-1',
+            )}
+            {...(panel ? {} : { 'data-after-actions': true })}
+          >
             <BoardSettings id={settingsId} />
           </div>
         ) : null}
 
-        {/* Last in reading order on every screen. Wide screens: shown between the players and
-            the pinned actions (wide:order-1), filling the room left and shrinking before the
-            panel would scroll. Phones and tablets: a bar after the actions (and the settings)
-            that opens the log below, so nothing above it moves. */}
+        {/* Last in reading order on every screen. Desk and table: shown between the header and
+            the pinned actions (order-1), filling the room left and shrinking before the panel
+            would scroll. Phones and tablets: a bar after the actions (and the settings) that
+            opens the log below, so nothing above it moves. Sideways phones: under the actions,
+            where the panel scrolls to it. */}
         <MoveLogPanel
           items={logItems}
           names={logNames}
           endReason={state.result.endReason}
-          className="order-9 wide:order-1 wide:min-h-0 wide:flex-1"
+          className={cx(
+            !wide && 'order-7',
+            panel && 'order-1 min-h-0 flex-1',
+            panel && settingsOpen && '!hidden',
+            layout === 'side' && 'h-56 shrink-0',
+          )}
         />
       </aside>
 

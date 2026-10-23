@@ -14,11 +14,11 @@ function Toggle({
   onChange: (v: boolean) => void
 }) {
   return (
-    <label className="flex cursor-pointer items-center justify-between gap-3 py-1 text-sm text-parchment/75 hover:text-parchment">
+    <label className="flex min-h-9 cursor-pointer items-center justify-between gap-3 border-b border-rule py-1.5 text-ui text-muted last:border-b-0 hover:text-parchment">
       {label}
       <input
         type="checkbox"
-        className="h-4 w-4 accent-[var(--color-gold)]"
+        className="checkbox"
         checked={checked}
         onChange={(e) => onChange(e.target.checked)}
       />
@@ -32,8 +32,8 @@ function AnnounceSetting() {
   const id = useId()
   const hintId = useId()
   return (
-    <div className="flex flex-col gap-0.5 py-1">
-      <div className="flex items-center justify-between gap-3 text-sm text-parchment/75">
+    <div className="flex flex-col gap-1 py-1.5">
+      <div className="flex items-center justify-between gap-3 text-ui text-muted">
         <label htmlFor={id} className="cursor-pointer hover:text-parchment">
           Read out moves
         </label>
@@ -42,14 +42,14 @@ function AnnounceSetting() {
           value={prefs.announceMoves}
           onChange={(e) => prefs.set({ announceMoves: e.target.value === 'own' ? 'own' : 'all' })}
           aria-describedby={hintId}
-          className="h-8 rounded-md border border-parchment/20 bg-ink/60 px-2 text-sm text-parchment"
+          className="select h-9 rounded-control border border-rule-strong bg-black/20 pl-2.5 text-ui text-parchment shadow-well outline-none hover:border-parchment/35 focus:border-gold focus:ring-2 focus:ring-gold/30"
           data-testid="announce-moves"
         >
           <option value="all">Every move</option>
           <option value="own">Only mine</option>
         </select>
       </div>
-      <p id={hintId} className="text-[11px] text-parchment/50">
+      <p id={hintId} className="max-w-[46ch] text-caption text-faint">
         For screen readers. “Only mine” still reads checks, captures of your pieces and results.
       </p>
     </div>
@@ -58,7 +58,7 @@ function AnnounceSetting() {
 
 export function Kbd({ children }: { children: string }) {
   return (
-    <kbd className="inline-flex h-5 min-w-5 items-center justify-center rounded border border-parchment/25 border-b-2 bg-ink/60 px-1 font-mono text-[11px] leading-none text-parchment/85">
+    <kbd className="inline-flex h-5 min-w-5 items-center justify-center rounded-plate border border-rule-strong border-b-2 bg-black/30 px-1 font-sans text-caption leading-none font-semibold text-parchment/90">
       {children}
     </kbd>
   )
@@ -93,7 +93,7 @@ export function KeyboardHints({ compact = false }: { compact?: boolean }) {
     )
   }
   return (
-    <dl className="flex flex-col gap-1.5 text-xs text-parchment/65">
+    <dl className="flex flex-col gap-1.5 text-caption text-faint">
       {rows.map(([keys, what]) => (
         <div key={what} className="flex items-center justify-between gap-3">
           <dt className="flex gap-1">
@@ -116,10 +116,10 @@ export function TouchHints() {
     ['Magnifier button (board corner)', 'Zoom in / out with one hand'],
   ]
   return (
-    <dl className="flex flex-col gap-1.5 text-xs text-parchment/65">
+    <dl className="flex flex-col gap-1.5 text-caption text-faint">
       {rows.map(([how, what]) => (
         <div key={what} className="flex items-baseline justify-between gap-3">
-          <dt className="text-parchment/80">{how}</dt>
+          <dt className="text-muted">{how}</dt>
           <dd className="shrink-0 text-right">{what}</dd>
         </div>
       ))}
@@ -135,13 +135,11 @@ export function BoardSettings({ id }: { id: string }) {
     <section
       id={id}
       aria-label="Board settings"
-      className="rounded-xl border border-parchment/10 bg-ink/40 p-3.5"
+      className="rounded-panel border border-rule-brass bg-black/15 px-3.5 pt-3 pb-3.5 shadow-rim"
       data-testid="board-settings"
     >
-      <h2 className="mb-1.5 text-[11px] font-semibold tracking-[0.2em] text-parchment/50 uppercase">
-        Board settings
-      </h2>
-      <div className="flex flex-col">
+      <h2 className="font-display text-ui font-semibold text-parchment">Board settings</h2>
+      <div className="mt-1 flex flex-col">
         <Toggle label="Sound" checked={prefs.sound} onChange={(v) => prefs.set({ sound: v })} />
         {/* Only on touch devices that can vibrate (Android; iPhone Safari has no vibration). */}
         {canVibrate() && (touch || isNative()) ? (
@@ -163,13 +161,13 @@ export function BoardSettings({ id }: { id: string }) {
         />
         <AnnounceSetting />
       </div>
-      <h2 className="mt-3 mb-2 border-t border-parchment/10 pt-3 text-[11px] font-semibold tracking-[0.2em] text-parchment/50 uppercase">
+      <h2 className="mt-3 mb-2 border-t border-rule pt-3 font-display text-ui font-semibold text-parchment">
         Keyboard
       </h2>
       <KeyboardHints />
       {touch ? (
         <>
-          <h2 className="mt-3 mb-2 border-t border-parchment/10 pt-3 text-[11px] font-semibold tracking-[0.2em] text-parchment/50 uppercase">
+          <h2 className="mt-3 mb-2 border-t border-rule pt-3 font-display text-ui font-semibold text-parchment">
             Touch
           </h2>
           <TouchHints />

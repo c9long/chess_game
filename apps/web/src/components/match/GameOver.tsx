@@ -1,4 +1,4 @@
-import { isUntimed } from '@game/protocol'
+import { isUntimed, REMATCH_VOTE } from '@game/protocol'
 import { animate, motion } from 'motion/react'
 import { type ReactNode, type RefObject, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
@@ -7,18 +7,20 @@ import type { MatchRoom } from '../../lib/match.ts'
 import type { MatchFeed } from '../../pages/Match.tsx'
 import { CivEmblem, civName } from '../CivEmblem.tsx'
 import { Confetti } from '../game/Confetti.tsx'
-import { Medal } from '../game/Medal.tsx'
-import { botLevelText } from '../game/PlayerCard.tsx'
-import { Button } from '../ui.tsx'
+import { CrownIcon } from '../game/icons.tsx'
+import { plateName } from '../game/PlayerCard.tsx'
+import { Button, textLinkClass } from '../ui.tsx'
 import { EloDelta } from './RankedBadge.tsx'
 import { RematchPanel } from './Rematch.tsx'
 import {
   DEFEAT_REASON_LABEL,
   END_REASON_LABEL,
   ordinal,
+  PODIUM,
   SEAT_LABEL,
   seatHex,
   seatName,
+  seatTextHex,
   teamLabel,
 } from './seats.ts'
 
@@ -212,6 +214,21 @@ export function GameOver({
   // The heading already says the result: only the moves (and defeats) are repeated.
   const lastMoves = finalMoves.replace(/\s*Game over\..*$/s, '').trim()
 
+  // The one gold action: the rematch while there is one to propose or answer, else leaving.
+  const rematchShown = Boolean(room) && !spectator && mySeat >= 0 && !state.seats[mySeat]?.isBot
+  const rematchVotes = state.rematchVotes ?? []
+  const rematchPrimary =
+    rematchShown &&
+    !state.rematchRoomId &&
+    ((state.rematchSeat ?? -1) < 0 || rematchVotes[mySeat] === REMATCH_VOTE.pending)
+  const gameKind = isUntimed(state.timeControl)
+    ? 'Untimed game against bots'
+    : state.ranked
+      ? rated
+        ? 'Ranked game'
+        : 'Ranked game, not rated'
+      : 'Casual game'
+
   return (
     <motion.div
       className="safe-y-overlay fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/65 px-4 backdrop-blur-sm"
@@ -226,101 +243,84 @@ export function GameOver({
     >
       <motion.section
         ref={panel}
-        className={`relative my-auto w-full max-w-lg overflow-hidden rounded-2xl border bg-panel p-5 shadow-2xl shadow-black/60 sm:p-8 ${
-          won ? 'border-gold/50' : 'border-parchment/15'
+        className={`relative my-auto w-full max-w-lg overflow-hidden rounded-sheet border bg-panel px-5 pt-7 pb-5 shadow-lift sm:px-8 sm:pt-9 sm:pb-7 ${
+          won ? 'border-gold/60' : 'border-rule-brass'
         }`}
-        initial={reduceMotion ? false : { opacity: 0, scale: 0.96 }}
+        initial={reduceMotion ? false : { opacity: 0, scale: 0.97 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ duration: 0.2, ease: 'easeOut' }}
       >
-        {won ? (
-          <div
-            aria-hidden="true"
-            className="pointer-events-none absolute inset-x-0 top-0 h-48 bg-[radial-gradient(ellipse_at_top,rgba(212,160,23,0.22),transparent_70%)]"
-          />
-        ) : null}
+        {/* The plaque's engraved inner line. */}
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-1.5 rounded-[0.75rem] border border-brass/15"
+        />
         {won && !reduceMotion ? (
           <Confetti
             colors={[seatHex(0), seatHex(1), seatHex(2), seatHex(3), '#f4efe6', '#d4a017']}
           />
         ) : null}
 
-        <div className="relative flex items-start gap-4">
+        <header className="relative flex flex-col items-center text-center">
           {won && mine ? (
             <span
-              className="mt-1 flex h-12 w-12 shrink-0 items-center justify-center rounded-full border"
-              style={{
-                borderColor: `${myColor}99`,
-                backgroundColor: `${myColor}26`,
-                color: myColor,
-              }}
+              className="mb-3 flex h-14 w-14 items-center justify-center rounded-full border-2 border-gold/70 bg-black/20 shadow-plate"
+              style={{ color: myColor }}
             >
               <CivEmblem civ={mine.civ} className="h-8 w-8" />
             </span>
           ) : null}
-          <div className="min-w-0">
-            <p className="flex items-center gap-3 text-xs font-semibold tracking-[0.3em] text-gold uppercase">
-              {isUntimed(state.timeControl)
-                ? 'Untimed game vs bots'
-                : state.ranked
-                  ? rated
-                    ? 'Ranked game'
-                    : 'Ranked game · not rated'
-                  : 'Casual game'}
-            </p>
-            <h2
-              id="game-over-title"
-              tabIndex={-1}
-              className={`mt-1 font-display text-4xl font-semibold outline-none ${won ? 'text-gold' : ''}`}
+          <h2
+            id="game-over-title"
+            tabIndex={-1}
+            className={`font-display text-title font-semibold outline-none ${won ? 'text-gold' : 'text-parchment'}`}
+          >
+            {headline}
+          </h2>
+          {subline ? (
+            <p
+              className="mt-2 max-w-[48ch] text-ui text-pretty text-muted"
+              data-testid="game-over-subline"
             >
-              {headline}
-            </h2>
-            {subline ? (
-              <p className="mt-2 text-sm text-parchment/65" data-testid="game-over-subline">
-                {subline}
-              </p>
-            ) : null}
-            {lastMoves ? (
-              <p id="game-over-moves" className="sr-only" data-testid="game-over-moves">
-                Last moves: {lastMoves}
-              </p>
-            ) : null}
-          </div>
-        </div>
+              {subline}
+            </p>
+          ) : null}
+          <p className="mt-1 text-caption text-faint">{gameKind}</p>
+          {lastMoves ? (
+            <p id="game-over-moves" className="sr-only" data-testid="game-over-moves">
+              Last moves: {lastMoves}
+            </p>
+          ) : null}
+          <Ornament />
+        </header>
 
         {myRating ? (
           <div
-            className="relative mt-5 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-parchment/10 bg-ink/40 px-4 py-3"
+            className="relative mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-rule pb-4"
             data-testid="my-elo-change"
           >
             <div className="min-w-0">
-              <p className="text-xs text-parchment/55">
+              <p className="text-ui text-muted">
                 {state.timeControl} {state.mode === 'ffa' ? 'Free-for-all' : 'Teams'} Elo
               </p>
-              <p className="text-xs text-parchment/45 tabular-nums">
+              <p className="text-caption text-faint tabular-nums">
                 {myRating.before} → {myRating.after}
               </p>
             </div>
-            <p className="ml-auto flex items-center gap-3">
+            <p className="ml-auto flex items-baseline gap-3">
               <span
-                className="font-display text-[28px] leading-none font-semibold tabular-nums"
+                className="font-display text-[1.75rem] leading-none font-semibold tabular-nums"
                 aria-hidden="true"
               >
                 <CountUp from={myRating.before} to={myRating.after} reduceMotion={reduceMotion} />
               </span>
-              <span
-                className={`rounded-full px-2.5 py-1 text-sm font-semibold tabular-nums ${
-                  delta > 0 ? 'bg-[#7fd8b7]/15' : delta < 0 ? 'bg-seat-south/20' : 'bg-parchment/10'
-                }`}
-              >
-                <EloDelta delta={delta} />
-              </span>
+              <EloDelta delta={delta} className="text-body font-semibold" />
             </p>
           </div>
         ) : null}
 
         {aborted ? null : (
-          <ol className="relative mt-5 flex flex-col gap-2">
+          <ol className="relative mt-2 flex flex-col divide-y divide-rule" aria-label="Placings">
             {order.map((i, idx) => {
               const seat = state.seats[i]
               if (!seat) return null
@@ -329,17 +329,12 @@ export function GameOver({
               const d = rating ? rating.after - rating.before : null
               const place = placements[i] ?? null
               const first = place === 1 && !isDraw
+              const podium = place ? PODIUM[place - 1] : undefined
               return (
                 <motion.li
                   key={i}
                   data-testid={`placement-${seatName(i)}`}
-                  className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 ${
-                    first
-                      ? 'border-gold/60 bg-gradient-to-r from-gold/10 to-transparent'
-                      : i === mySeat
-                        ? 'border-parchment/25 bg-parchment/[0.04]'
-                        : 'border-parchment/10'
-                  }`}
+                  className="flex min-h-14 items-center gap-3 py-2.5"
                   initial={reduceMotion ? false : { opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{
@@ -348,32 +343,36 @@ export function GameOver({
                     delay: 0.15 + (order.length - 1 - idx) * 0.12,
                   }}
                 >
-                  <Medal place={place} label={place ? ordinal(place) : undefined} />
                   <span
-                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
-                    style={{ backgroundColor: `${seatHex(i)}26`, color: seatHex(i) }}
+                    className="flex w-11 shrink-0 items-center gap-1 font-display text-lead font-semibold tabular-nums"
+                    style={{ color: podium ?? 'var(--color-faint)' }}
                   >
-                    <CivEmblem civ={seat.civ} className="h-6 w-6" />
+                    {place ? ordinal(place) : '—'}
+                    {first ? <CrownIcon className="h-3.5 w-3.5" /> : null}
+                  </span>
+                  <span
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-brass/40 bg-black/20"
+                    style={{ color: seatTextHex(i) }}
+                  >
+                    <CivEmblem civ={seat.civ} className="h-[22px] w-[22px]" />
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="flex items-center gap-1.5 font-semibold">
-                      <span className="truncate">
-                        {seat.isBot ? `Bot · ${botLevelText(seat.botLevel)}` : seat.displayName}
+                    <span className="flex min-w-0 items-baseline gap-1.5">
+                      <span className="truncate font-display text-body font-semibold">
+                        {plateName(seat)}
                       </span>
                       {i === mySeat ? (
-                        <span className="shrink-0 rounded border border-gold/50 bg-gold/15 px-1 text-[10px] leading-4 font-bold tracking-wider text-gold uppercase">
-                          You
-                        </span>
+                        <span className="shrink-0 text-caption text-faint">(you)</span>
                       ) : null}
                     </span>
-                    <span className="block truncate text-xs text-parchment/65">
-                      {civName(seat.civ)} · {SEAT_LABEL[seatName(i)]}
+                    <span className="block truncate text-caption text-faint">
+                      {`${civName(seat.civ)}, ${SEAT_LABEL[seatName(i)]}`}
                       {reason ? (
                         <span
-                          className={reason === 'resign' ? 'text-seat-south-light/90' : ''}
+                          className={`ml-2.5 ${reason === 'resign' ? 'text-destructive-light' : 'text-muted'}`}
                           data-testid={`defeat-${seatName(i)}`}
                         >
-                          {' · '}
+                          <span className="sr-only">, </span>
                           {defeatLabels?.[i] ?? DEFEAT_REASON_LABEL[reason] ?? reason}
                         </span>
                       ) : null}
@@ -382,15 +381,15 @@ export function GameOver({
                   {friendAction?.(i) ?? null}
                   {rating && d !== null ? (
                     <span
-                      className="shrink-0 text-right text-sm tabular-nums"
+                      className="shrink-0 text-right text-ui tabular-nums"
                       data-testid={`elo-${seatName(i)}`}
                       title={`Elo ${rating.before} → ${rating.after}`}
                     >
                       <span className="block font-semibold">
                         {rating.after}
-                        <span className="ml-1 text-[11px] font-medium text-parchment/45">Elo</span>
+                        <span className="ml-1 text-caption font-medium text-faint">Elo</span>
                       </span>
-                      <EloDelta delta={d} className="block text-xs font-semibold" />
+                      <EloDelta delta={d} className="block text-caption font-semibold" />
                     </span>
                   ) : null}
                 </motion.li>
@@ -401,33 +400,36 @@ export function GameOver({
 
         {guestHint ? (
           <p
-            className="relative mt-4 text-center text-xs text-parchment/60"
+            className="relative mt-3 text-center text-caption text-faint"
             data-testid="friends-guest-hint"
           >
-            <Link to="/sign-up" className="font-semibold text-gold hover:underline">
+            <Link to="/sign-up" className={textLinkClass}>
               Create an account
             </Link>{' '}
             to add the people you played with as friends.
           </p>
         ) : null}
-        {room && !spectator && mySeat >= 0 && !state.seats[mySeat]?.isBot ? (
-          <RematchPanel room={room} feed={feed} />
-        ) : null}
-        <div className="relative mt-6 flex flex-wrap justify-end gap-2">
-          <Button variant="ghost" onClick={onClose}>
+        {rematchShown && room ? <RematchPanel room={room} feed={feed} /> : null}
+        <div className="relative mt-5 flex flex-wrap items-center justify-end gap-2 border-t border-rule pt-4">
+          <Button variant="quiet" onClick={onClose}>
             View board
           </Button>
           {/* The replay exists once the result is saved (`gameOver`); players only. */}
           {onReplay && gameOver?.matchId && !aborted && mySeat >= 0 ? (
             <Button
-              variant="ghost"
+              variant="quiet"
               onClick={() => onReplay(gameOver.matchId)}
               data-testid="watch-replay"
             >
               Watch replay
             </Button>
           ) : null}
-          <Button onClick={onLeave} data-testid="back-to-lobbies">
+          <Button
+            variant={rematchPrimary ? 'secondary' : 'primary'}
+            onClick={onLeave}
+            className="max-sm:basis-full"
+            data-testid="back-to-lobbies"
+          >
             {spectator
               ? 'Stop watching'
               : isUntimed(state.timeControl)
@@ -437,5 +439,18 @@ export function GameOver({
         </div>
       </motion.section>
     </motion.div>
+  )
+}
+
+/** A brass hairline with a small lozenge in the middle, under the plaque's heading. */
+function Ornament() {
+  return (
+    <span aria-hidden="true" className="mt-4 flex w-40 items-center gap-2 text-brass/70">
+      <span className="h-px flex-1 bg-current" />
+      <svg aria-hidden="true" viewBox="0 0 10 10" className="h-2 w-2" fill="currentColor">
+        <path d="M5 0 10 5 5 10 0 5Z" />
+      </svg>
+      <span className="h-px flex-1 bg-current" />
+    </span>
   )
 }
