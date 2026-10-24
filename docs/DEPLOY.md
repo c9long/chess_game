@@ -10,9 +10,6 @@ behind each choice are in [PLAN.md §9](PLAN.md).
 > the DMCA agent, upgrading Resend, and so on. You can follow this guide earlier for a
 > private test with friends.
 
-> **No monthly bill?** [DEPLOY-CSCLUB.md](DEPLOY-CSCLUB.md) runs the same game on a
-> UWaterloo CSC machine without sudo or Docker; only the domain costs money.
-
 ## How the pieces fit
 
 ```
@@ -136,8 +133,7 @@ Open `https://play.yourdomain.com`. You should see the date-of-birth screen.
 > when `WEB_DIST_DIR` points at a web build (made with `pnpm --filter @game/web build` and no
 > `VITE_API_URL`); then `API_PUBLIC_URL` and `WEB_ORIGIN` are the same address and one tunnel
 > route serves both (see `apps/server/.env.example`). The Docker image doesn't include the web
-> build, so here Pages stays the simple way. The [CSC guide](DEPLOY-CSCLUB.md#step-7-the-web-app)
-> has it built in: its releases carry the web app, and `SERVE_WEB_APP=true` turns it on.
+> build, so here Pages stays the simple way.
 
 ## Step 6: Nightly backups (about 15 minutes)
 

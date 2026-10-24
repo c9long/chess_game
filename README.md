@@ -25,7 +25,6 @@ A four-player chess variant on a 16×16 board. Each player picks a civilization 
 |---|---|
 | [docs/PLAN.md](docs/PLAN.md) | Master plan: stack, rules, data model, infrastructure & costs (with plain-language explanations) |
 | [docs/DEPLOY.md](docs/DEPLOY.md) | Step-by-step guide to putting the game online |
-| [docs/DEPLOY-CSCLUB.md](docs/DEPLOY-CSCLUB.md) | Free alternative: hosting on a UWaterloo CSC machine without sudo |
 | [TODO.md](TODO.md) | Single source of truth for all work, planned and completed |
 | [CLAUDE.md](CLAUDE.md) | Standing instructions for AI assistants working in this repo |
 

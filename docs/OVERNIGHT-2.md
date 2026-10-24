@@ -268,7 +268,11 @@ production). There's also an optional Docker Postgres on port 5433 for machines 
 (see README). Commit `527cc56`.
 
 ### 5. Hosting on a UWaterloo CSC machine: new guide
-**[docs/DEPLOY-CSCLUB.md](DEPLOY-CSCLUB.md)**. Verdict: **yes, it works without sudo, and
+> **Scrapped 2026-10-24.** CSC machines can't host anything commercial, so the guide and
+> `infra/csclub/` were removed; the notes below are kept as a record. The VPS plan in
+> [DEPLOY.md](DEPLOY.md) is the deployment path.
+
+`docs/DEPLOY-CSCLUB.md` (removed). Verdict: **yes, it works without sudo, and
 only the domain costs money** (plus the $2/term CSC membership). The game runs as your normal
 user (Node, PostgreSQL, the bot engine and a Cloudflare Tunnel in `~/game`), kept alive by a
 cron watchdog, with encrypted nightly backups (optionally off-site to Cloudflare R2's free
