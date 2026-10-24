@@ -72,6 +72,8 @@ run('wasm-bindgen', [
   input,
 ])
 
+// Release builds set REQUIRE_WASM_OPT=1: a missing or failing wasm-opt is then an error, not a warning.
+const requireOpt = process.env.REQUIRE_WASM_OPT === '1'
 if (output('wasm-opt', ['--version'])) {
   const tmp = `${wasmFile}.opt`
   try {
@@ -82,8 +84,11 @@ if (output('wasm-opt', ['--version'])) {
     renameSync(tmp, wasmFile)
   } catch {
     rmSync(tmp, { force: true })
+    if (requireOpt) throw new Error('@game/rules: wasm-opt failed (REQUIRE_WASM_OPT=1)')
     console.warn('@game/rules: wasm-opt failed; keeping the unoptimized module')
   }
+} else if (requireOpt) {
+  throw new Error('@game/rules: wasm-opt (binaryen) not found (REQUIRE_WASM_OPT=1)')
 } else {
   console.warn(
     '\n@game/rules: WARNING wasm-opt (binaryen) not found; the module is NOT size-optimized.\n' +

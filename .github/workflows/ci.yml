@@ -52,5 +52,59 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: pnpm
+      # The same wasm-opt as the web deploy: a binaryen that can't optimize the module fails here.
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends binaryen
       - run: pnpm install --frozen-lockfile
       - run: pnpm check
+        env:
+          REQUIRE_WASM_OPT: '1'
+
+  # The production images, built and started as docker-compose.yml runs them, on x86 and on
+  # ARM (the Oracle Cloud free tier is ARM): the server answers its health check with the
+  # database up, and the bot service plays a move.
+  stack:
+    # Two cold image builds: on pushes to main only, not on every pull request.
+    if: github.event_name == 'push'
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    env:
+      GAME_ENV_FILE: ${{ github.workspace }}/stack.env
+      COMPOSE: docker compose -p gametest -f infra/docker-compose.yml -f infra/docker-compose.local.yml --env-file ${{ github.workspace }}/stack.env
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test settings
+        run: |
+          grep -v '^COMPOSE_PROFILES=' infra/.env.example > stack.env
+          for key in DB_PASSWORD BETTER_AUTH_SECRET IP_HASH_SECRET; do
+            sed -i "s/^$key=.*/$key=$(openssl rand -hex 32)/" stack.env
+          done
+          for key in TURNSTILE_SITE_KEY TURNSTILE_SECRET_KEY RESEND_API_KEY; do
+            sed -i "s/^$key=.*/$key=placeholder/" stack.env
+          done
+      - name: Build and start
+        run: $COMPOSE up -d --build --wait --wait-timeout 300
+      - name: Server health
+        run: curl -fsS http://127.0.0.1:3900/api/health | tee /dev/stderr | grep -q '"db":"ok"'
+      - name: Bot move
+        run: |
+          $COMPOSE exec -T server node --input-type=module -e "
+            const { Game, initRules } = await import('/app/packages/rules/src/index.ts')
+            await initRules()
+            const position = Game.create({ mode: 'ffa' }).positionString()
+            const r = await fetch('http://bot-service:7700/v1/move', {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ position, level: '1500', clockMs: 60000 }),
+            })
+            console.log(r.status, await r.text())
+            process.exit(r.ok ? 0 : 1)
+          "
+      - name: Logs
+        if: failure()
+        run: $COMPOSE logs --no-color
+      - name: Stop
+        if: always()
+        run: $COMPOSE down -v

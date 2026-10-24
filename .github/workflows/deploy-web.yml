@@ -56,8 +56,13 @@ jobs:
           cache: pnpm
       - if: steps.settings.outputs.ready == 'true'
         run: pnpm install --frozen-lockfile
+      # wasm-opt shrinks the rules engine the browser downloads (packages/rules/scripts/build-wasm.mjs).
+      - if: steps.settings.outputs.ready == 'true'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends binaryen
       - if: steps.settings.outputs.ready == 'true'
         run: pnpm build:wasm
+        env:
+          REQUIRE_WASM_OPT: '1'
       - if: steps.settings.outputs.ready == 'true'
         run: pnpm --filter @game/web build
         env:
