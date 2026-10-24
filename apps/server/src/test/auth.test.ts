@@ -1,4 +1,4 @@
-import { accounts, legalAcceptances, users } from '@game/db'
+import { accounts, legalAcceptances, sessions, users } from '@game/db'
 import { eq } from 'drizzle-orm'
 import request from 'supertest'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -272,6 +272,27 @@ describe('bearer tokens, cookies and CORS', () => {
     expect(res.body.user.id).toBe(a.userId)
     // Device codes are short-lived.
     expect(code.body.expires_in).toBeLessThanOrEqual(600)
+  })
+
+  it('approves a device only from a fresh session, so an old one cannot mint a fresh one', async () => {
+    const a = await signUpVerified(h)
+    await h.db
+      .update(sessions)
+      .set({ createdAt: new Date(Date.now() - 25 * 3600_000) })
+      .where(eq(sessions.userId, a.userId))
+    const native = h.client()
+    const code = await native.post('/api/auth/device/code', { client_id: 'game-unity-client' })
+    const approve = await a.client.post('/api/auth/device/approve', {
+      userCode: code.body.user_code,
+    })
+    expect(approve.status).toBe(403)
+    expect(approve.body.code).toBe('SESSION_NOT_FRESH')
+    const token = await native.post('/api/auth/device/token', {
+      grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+      device_code: code.body.device_code,
+      client_id: 'game-unity-client',
+    })
+    expect(token.body.access_token).toBeUndefined()
   })
 
   it('sets HttpOnly SameSite=Lax session cookies', async () => {

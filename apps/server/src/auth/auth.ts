@@ -93,6 +93,11 @@ const PASSWORD_PATHS = new Set(['/sign-in/email', '/sign-in/username'])
  */
 export const FRESH_SESSION_MS = 24 * 60 * 60 * 1000
 
+/** Whether `session` was created within FRESH_SESSION_MS. */
+export function isFreshSession(session: { createdAt: Date | string }): boolean {
+  return Date.now() - new Date(session.createdAt).getTime() <= FRESH_SESSION_MS
+}
+
 /**
  * Two-step management endpoints. With `allowPasswordless`, Better Auth guards them with a
  * session only; an account without a password must use a fresh session instead, or a stale
@@ -455,11 +460,23 @@ export function createAuth({ config, db, email, logger, namePolicy, onSessionDel
           return
         }
 
+        // A device session counts as freshly signed in (native apps use the device flow as the
+        // step-up for deleting the account), so only a fresh session may approve one: a stale
+        // session must not mint a fresh one.
+        if (ctx.path === '/device/approve') {
+          const current = await getSessionFromCtx(ctx, { disableRefresh: true })
+          if (current && !isFreshSession(current.session)) {
+            throw APIError.from('FORBIDDEN', {
+              code: 'SESSION_NOT_FRESH',
+              message: 'For your security, sign in again before approving a device.',
+            })
+          }
+        }
+
         if (TWO_FACTOR_MANAGE_PATHS.has(ctx.path)) {
           const current = await getSessionFromCtx(ctx, { disableRefresh: true })
           if (!current) return // the endpoint answers 401
-          const age = Date.now() - new Date(current.session.createdAt).getTime()
-          if (age > FRESH_SESSION_MS) {
+          if (!isFreshSession(current.session)) {
             const [credential] = await db
               .select({ id: accounts.id })
               .from(accounts)

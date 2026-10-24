@@ -1,7 +1,7 @@
 import type { Database } from '@game/db'
 import { Router } from 'express'
 import { z } from 'zod'
-import { type Auth, BACKUP_CODE_COUNT, FRESH_SESSION_MS } from '../auth/auth.ts'
+import { type Auth, BACKUP_CODE_COUNT, FRESH_SESSION_MS, isFreshSession } from '../auth/auth.ts'
 import { GUEST_INTENT_COOKIE, GUEST_INTENT_MAX_AGE_S, signStamped } from '../auth/guest-link.ts'
 import type { AppConfig } from '../config.ts'
 import { requireSession, sessionOf } from '../http/session.ts'
@@ -117,8 +117,7 @@ export function accountRouter(deps: {
       return
     }
     const { user, session } = sessionOf(res)
-    const fresh = Date.now() - new Date(session.createdAt).getTime() <= FRESH_SESSION_MS
-    if (!user.isAnonymous && !fresh) {
+    if (!user.isAnonymous && !isFreshSession(session)) {
       const { password, passkey, totpCode, backupCode } = parsed.data
       const proof = { password, passkey, totpCode, backupCode }
       const result = await verifyStepUp({ auth, db, config, req, user, proof })
