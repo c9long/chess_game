@@ -82,6 +82,8 @@ const envSchema = z.object({
   BOT_MIN_MOVE_MS: z.coerce.number().int().nonnegative().max(10_000).default(700),
   /** Reconnect grace for disconnected players, in game and in lobbies (PLAN §2: 60 s). */
   RECONNECT_GRACE_SECONDS: z.coerce.number().positive().default(60),
+  /** AFK bot takeover in casual games (PLAN §2 "Abandon"); false = always abandon. */
+  AFK_BOT_TAKEOVER: bool.default(true),
   /** Pre-game countdown after the host starts. */
   COUNTDOWN_MS: z.coerce.number().int().nonnegative().default(3_000),
   /** Graceful shutdown: how long running games may continue before they are aborted. */
@@ -157,6 +159,8 @@ export interface GameConfig {
   /** Bot pacing (see BOT_MIN_MOVE_MS). */
   botMinMoveMs: number
   reconnectGraceMs: number
+  /** AFK bot takeover in casual games (see AFK_BOT_TAKEOVER). */
+  afkBotTakeover: boolean
   countdownMs: number
   shutdownDrainMaxMs: number
   eventFlushIntervalMs: number
@@ -369,6 +373,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       botRequestTimeoutMs: e.BOT_REQUEST_TIMEOUT_MS,
       botMinMoveMs: e.BOT_MIN_MOVE_MS,
       reconnectGraceMs: Math.round(e.RECONNECT_GRACE_SECONDS * 1000),
+      afkBotTakeover: e.AFK_BOT_TAKEOVER,
       countdownMs: e.COUNTDOWN_MS,
       shutdownDrainMaxMs: Math.round(e.SHUTDOWN_DRAIN_MAX_SECONDS * 1000),
       eventFlushIntervalMs: e.EVENT_FLUSH_INTERVAL_MS,

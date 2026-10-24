@@ -269,6 +269,20 @@ describe('client messages', () => {
     expect(TEAM_RESIGN_COOLDOWN_MOVES).toBe(2)
   })
 
+  it('defines the bot takeover message', () => {
+    const ev = serverMessageSchemas.takeoverEvent
+    for (const type of ['started', 'ended']) {
+      expect(ev.safeParse({ type, seat: 1, name: 'Alice', botLevel: '1200' }).success).toBe(true)
+    }
+    expect(ev.safeParse({ type: 'paused', seat: 1, name: 'A', botLevel: '1200' }).success).toBe(
+      false,
+    )
+    expect(ev.safeParse({ type: 'started', seat: 4, name: 'A', botLevel: '1200' }).success).toBe(
+      false,
+    )
+    expect(ev.safeParse({ type: 'started', seat: 1, name: 'A' }).success).toBe(false)
+  })
+
   it('maps seats to teams (S+N vs W+E)', () => {
     expect([0, 1, 2, 3].map((s) => teamOfSeat(s as 0 | 1 | 2 | 3))).toEqual([0, 1, 0, 1])
   })

@@ -204,6 +204,9 @@ export function GameActions({
         >
           {myDefeatReason === 'resign' ? 'You resigned.' : 'You are out of this game.'} You can keep
           watching or leave.
+          {state.delayRounds > 0
+            ? ` Until it ends you see it ${state.delayRounds} rounds behind, like spectators.`
+            : null}
         </p>
       ) : null}
       <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto] gap-2 wide:grid-cols-2">

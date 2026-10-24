@@ -26,7 +26,12 @@ const bots = new FakeBotClient()
 
 beforeAll(async () => {
   h = await startGameHarness(
-    { DEV_CLOCK_BASE_MS: String(BASE_MS), RECONNECT_GRACE_SECONDS: '0.3' },
+    // Abandon after the grace: with AFK bot takeover off (game-takeover.test.ts has it on).
+    {
+      DEV_CLOCK_BASE_MS: String(BASE_MS),
+      RECONNECT_GRACE_SECONDS: '0.3',
+      AFK_BOT_TAKEOVER: 'false',
+    },
     { botClient: bots },
   )
 })

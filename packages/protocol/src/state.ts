@@ -170,8 +170,9 @@ export const MatchState = schema(
     /** Spectators watching (in the match's watch room) right now, at most SPECTATORS_MAX. */
     spectators: t.uint8().default(0),
     /**
-     * Watch rooms only: how many full rounds late this state shows the game (ranked games:
-     * SPECTATOR_DELAY_ROUNDS while the game runs), 0 = live. Always 0 in the match room.
+     * How many full rounds late this state shows the game, 0 = live: ranked games, while they
+     * run, show SPECTATOR_DELAY_ROUNDS to spectators (watch rooms) and to a seated player who
+     * is out (their own copy of the match room's state). Otherwise 0.
      */
     delayRounds: t.uint8().default(0),
     /** After the game: the seat that proposed a rematch, or -1. */

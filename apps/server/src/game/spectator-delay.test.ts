@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { visibleFrameIndex, wrappedRound } from './match-room.ts'
+import { visibleFrameIndex, wrappedRound } from './game-view.ts'
 
 describe('wrappedRound', () => {
   it('counts a new round when the mover hands the turn to the same or an earlier seat', () => {

@@ -1,5 +1,22 @@
 import { describe, expect, it } from 'vitest'
-import { defeatReasonLabel, matchLine, resultLabel, UNRATED_REPEAT_NOTE } from './labels.ts'
+import {
+  defeatReasonLabel,
+  matchLine,
+  resultLabel,
+  takeoverNotice,
+  UNRATED_REPEAT_NOTE,
+} from './labels.ts'
+
+describe('takeoverNotice', () => {
+  it('names the player and the bot standing in, and the player coming back', () => {
+    const started = { type: 'started', seat: 1, name: 'Alice', botLevel: '1500' } as const
+    expect(takeoverNotice(started)).toBe(
+      'Alice didn’t reconnect in time, so Bot 1500 plays on for them.',
+    )
+    expect(takeoverNotice({ ...started, botLevel: 'max' })).toContain('Bot Max plays on')
+    expect(takeoverNotice({ ...started, type: 'ended' })).toBe('Alice is back and plays on.')
+  })
+})
 
 describe('defeatReasonLabel', () => {
   it('names the leader kind for a seat that started with several leaders', () => {

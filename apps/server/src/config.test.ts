@@ -88,6 +88,7 @@ describe('loadConfig', () => {
     expect(c.game).toMatchObject({
       botServiceUrl: undefined,
       reconnectGraceMs: 60_000,
+      afkBotTakeover: true,
       countdownMs: 3_000,
       devClockBaseMs: undefined,
     })
@@ -99,6 +100,7 @@ describe('loadConfig', () => {
     }).game
     expect(g.botServiceUrl).toBe('http://127.0.0.1:7700')
     expect(g.reconnectGraceMs).toBe(500)
+    expect(loadConfig({ ...base, AFK_BOT_TAKEOVER: 'false' }).game.afkBotTakeover).toBe(false)
     expect(g.devClockBaseMs).toBe(2000)
     expect(loadConfig({ ...base, BOT_SERVICE_URL: '' }).game.botServiceUrl).toBeUndefined()
     expect(() => loadConfig({ ...prod, DEV_CLOCK_BASE_MS: '2000' })).toThrow(/DEV_CLOCK_BASE_MS/)

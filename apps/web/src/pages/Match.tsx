@@ -4,6 +4,7 @@ import { type FormEvent, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router'
 import { GameRoom } from '../components/match/GameRoom.tsx'
 import { LobbyRoom } from '../components/match/LobbyRoom.tsx'
+import { takeoverNotice } from '../components/match/labels.ts'
 import { SoloStarting } from '../components/match/SoloStarting.tsx'
 import {
   Alert,
@@ -24,6 +25,7 @@ import {
   forgetReplacedRoom,
   forgetRoom,
   hasSavedToken,
+  isNetworkError,
   joinMatch,
   leaveMatch,
   type MatchRoom,
@@ -167,6 +169,11 @@ export function useMatchFeed(
       room.onMessage('resignEvent', (e: ServerMessages['resignEvent']) => {
         setLastResign({ ...e, id: ++noticeSeq })
       }),
+      // The returning player's own new connection subscribes after this is sent: only the
+      // others see it.
+      room.onMessage('takeoverEvent', (e: ServerMessages['takeoverEvent']) =>
+        notify(takeoverNotice(e), 'info'),
+      ),
       room.onMessage('kicked', () => onClosed('kicked')),
       room.onMessage('welcome', () => {}),
     ]
@@ -249,7 +256,9 @@ function toSync(c: MatchStateJson['clock']): ClockSync {
  * After the SDK's own reconnection gave up ('lost'): rejoin with the saved token right away,
  * then again whenever the app comes back or the network returns, and every few seconds, until
  * it works (a new room object is adopted and the view starts afresh), the server refuses the
- * token, or the grace is surely over (`onGiveUp`). True while trying.
+ * token, or the grace is surely over (`onGiveUp`). In a game, a refused token is followed by a
+ * fresh join, and in a casual game the tries go on past the grace until the server refuses
+ * that too. True while trying.
  */
 function useRejoin(room: MatchRoom, lost: boolean, onGiveUp: () => void): boolean {
   const [giveUp] = useState(() => onGiveUp)
@@ -258,14 +267,29 @@ function useRejoin(room: MatchRoom, lost: boolean, onGiveUp: () => void): boolea
     let cancelled = false
     let busy = false
     const started = Date.now()
-    const windowMs = rejoinWindowMs(reconnectGraceMs(stateJson(room)))
+    const state = stateJson(room)
+    const windowMs = rejoinWindowMs(reconnectGraceMs(state))
+    const inGame = state?.phase === 'in_game'
+    // A bot keeps a casual game's seat for its player however long they are gone.
+    const seatOutlivesGrace = inGame && !state.ranked && !isUntimed(state.timeControl)
     const attempt = async () => {
       if (busy || cancelled) return
       busy = true
-      const again = await reconnectMatch(room.roomId)
+      let again = await reconnectMatch(room.roomId)
+      let refused = !again && !hasSavedToken(room.roomId)
+      // Refused once the grace is over, but the seat may still be there to take back: a bot
+      // took it over in a casual game (or, as after a reload, a knocked-out seat to watch from).
+      // A lobby seat is gone by then; joining again would take whichever seat is free.
+      if (refused && inGame && !cancelled) {
+        try {
+          again = await joinMatch(room.roomId)
+        } catch (err) {
+          refused = !isNetworkError(err)
+        }
+      }
       busy = false
       if (again || cancelled) return
-      if (!hasSavedToken(room.roomId) || Date.now() - started > windowMs) {
+      if (refused || (!seatOutlivesGrace && Date.now() - started > windowMs)) {
         forgetRoom(room.roomId, room.reconnectionToken)
         giveUp()
       }

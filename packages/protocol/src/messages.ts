@@ -255,8 +255,8 @@ export const serverMessageSchemas = {
     /** A spectator in a watch room (read-only: every game message is refused). */
     spectator: z.boolean().optional(),
     /**
-     * Spectators of a ranked game: how many full rounds late the room shows the game
-     * (SPECTATOR_DELAY_ROUNDS); 0 or absent = live.
+     * Spectators of a ranked game, or a player who is out of one: how many full rounds late
+     * the game is shown (SPECTATOR_DELAY_ROUNDS); 0 or absent = live.
      */
     delayRounds: z.number().int().optional(),
   }),
@@ -380,6 +380,20 @@ export const serverMessageSchemas = {
     roomId: z.string().optional(),
     ranked: z.boolean().optional(),
     reason: z.enum(['proposer_left', 'nobody_accepted', 'failed']).optional(),
+  }),
+  /**
+   * AFK bot takeover (casual games), sent to everyone; the seat's state shows it too.
+   * - `started`: `seat`'s player didn't come back within the reconnect grace, so a bot at
+   *   `botLevel` plays the seat on its own clock instead of the abandon
+   * - `ended`: the player rejoined (`joinById` with the same account) and plays it again
+   */
+  takeoverEvent: z.object({
+    type: z.enum(['started', 'ended']),
+    seat: seatSchema,
+    /** The player the bot plays for. */
+    name: z.string(),
+    /** The bot's level (a BOT_LEVELS label). */
+    botLevel: z.string(),
   }),
   /** A request was refused, or a server-side problem. */
   error: z.object({

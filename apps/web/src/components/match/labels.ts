@@ -1,10 +1,12 @@
 import {
+  botName,
   GAME_MODES,
   isUntimed,
   RANKED_REPEAT_MAX,
   RANKED_REPEAT_WINDOW_MS,
   SEAT_NAMES,
   type SeatName,
+  type ServerMessages,
   TIME_CONTROL_IDS,
 } from '@game/protocol'
 import { pieceName } from '../../lib/civ-info.ts'
@@ -33,6 +35,14 @@ export function ordinal(n: number): string {
 }
 
 export const MODE_LABEL: Record<string, string> = { ffa: 'Free-for-all', teams: 'Teams 2v2' }
+
+/** The toast for an AFK bot takeover (`takeoverEvent`). */
+export function takeoverNotice(e: ServerMessages['takeoverEvent']): string {
+  if (e.type === 'started') {
+    return `${e.name} didn’t reconnect in time, so ${botName(e.botLevel)} plays on for them.`
+  }
+  return `${e.name} is back and plays on.`
+}
 
 /** End reasons where 1st place is shared: a draw, not a win. */
 const DRAW_REASONS = new Set(['agreed_draw', 'move_limit'])

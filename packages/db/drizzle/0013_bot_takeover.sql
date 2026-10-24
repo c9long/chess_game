@@ -1,0 +1,1 @@
+ALTER TYPE "public"."match_event_type" ADD VALUE 'takeover';

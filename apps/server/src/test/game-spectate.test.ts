@@ -10,6 +10,7 @@ import { friendships } from '@game/db'
 import {
   type FriendGamesResponse,
   PROTOCOL_VERSION,
+  REMATCH_VOTE,
   type ServerMessages,
   SPECTATORS_MAX,
 } from '@game/protocol'
@@ -69,10 +70,10 @@ async function befriend(a: Browser, b: Browser) {
 
 const CIVS = ['canada', 'usa', 'china', 'japan']
 
-/** Four registered players in a ranked lobby, ready, game started. */
-async function startRanked(): Promise<Player[]> {
+/** Four registered players in a ranked (or casual) lobby, ready, game started. */
+async function startRanked(ranked = true): Promise<Player[]> {
   const browsers = await Promise.all([registered(h), registered(h), registered(h), registered(h)])
-  const host = await createLobby(browsers[0] as Browser, { name: 'Ranked watch', ranked: true })
+  const host = await createLobby(browsers[0] as Browser, { name: 'Ranked watch', ranked })
   const players = [host]
   for (const b of browsers.slice(1)) players.push(await joinLobby(b, host.room.roomId))
   await host.waitState((s) => s.seats.every((x) => x.occupied), 5_000, 'all seats filled')
@@ -87,13 +88,24 @@ async function startRanked(): Promise<Player[]> {
   return players
 }
 
-/** The player to move plays a greedy move; resolves once every player saw it. */
-async function playOne(players: Player[]) {
-  const anyone = players[0] as Player
+/**
+ * The player to move plays a greedy move; resolves once every player saw it (`watchers`: the
+ * players to wait for, when some are shown the game delayed).
+ */
+async function playOne(players: Player[], watchers = players) {
+  const anyone = watchers[0] as Player
   const before = anyone.state.actionSeq
   const mover = players.find((p) => p.seat === anyone.state.seatToMove) as Player
   mover.send('move', { move: greedyMove(anyone.state.positionString) })
-  for (const p of players) await p.waitState((s) => s.actionSeq > before, 5_000, 'move applied')
+  for (const p of watchers) await p.waitState((s) => s.actionSeq > before, 5_000, 'move applied')
+}
+
+/** Messages of a type `p` got after its `from`-th message. */
+function since<K extends keyof ServerMessages>(p: Player, from: number, type: K) {
+  return p.messages
+    .slice(from)
+    .filter((m) => m.type === type)
+    .map((m) => m.payload as ServerMessages[K])
 }
 
 describe('watching a game', () => {
@@ -353,6 +365,120 @@ describe('ranked games', () => {
     const full = viewer.of('moveLog').at(-1)
     expect(full?.entries.length).toBe(host.state.actionSeq)
     for (const p of [viewer, late, ...players]) await p.leave()
+  })
+})
+
+describe('players who are out', () => {
+  it('see the rest of a ranked game delayed, then the result and the rematch vote', async () => {
+    const players = await startRanked()
+    const host = players[0] as Player
+    // A round, then West resigns off-turn (South to move).
+    for (let i = 0; i < 4; i++) await playOne(players)
+    const quitter = players.find((p) => p.seat === 1) as Player
+    const others = players.filter((p) => p !== quitter)
+    quitter.send('resign')
+    await host.waitState((s) => s.seats[1]?.status === 'removed', 5_000, 'resigned')
+    const outSeq = host.state.actionSeq
+    const outPosition = host.state.positionString
+    // Their own resignation reaches them live; from then on they get their own delayed copy.
+    await quitter.waitMessage('events', (e) => e.seq === outSeq)
+    await quitter.waitState((s) => s.delayRounds === 2, 5_000, 'delayed copy')
+    const mark = quitter.messages.length
+    expect(quitter.seat).toBe(1)
+    expect(quitter.state).toMatchObject({ actionSeq: outSeq, positionString: outPosition })
+    expect(quitter.state.clock.runningSeat).toBe(-1)
+    expect(host.state.delayRounds).toBe(0)
+
+    // The others play on: nothing live reaches the quitter, and their view holds where they
+    // went out until the spectators' delayed frame passes it.
+    for (let i = 0; i < 3; i++) await playOne(players, others)
+    // A draw answer is refused alike with and without an offer pending.
+    const refusals = () =>
+      since(quitter, mark, 'error').filter((e) => e.requestType === 'respondDraw')
+    quitter.send('respondDraw', { accept: true })
+    await waitFor(() => refusals().length === 1, 5_000, 'refused')
+    const offerer = others.find((p) => p.seat === host.state.seatToMove) as Player
+    offerer.send('offerDraw')
+    await host.waitState((s) => s.drawOfferSeat !== -1, 5_000, 'offer')
+    quitter.send('respondDraw', { accept: true })
+    await waitFor(() => refusals().length === 2, 5_000, 'refused again')
+    expect(refusals().map((e) => e.code)).toEqual(['not_playing', 'not_playing'])
+    quitter.send('syncClock')
+    await sleep(150)
+    expect(quitter.state).toMatchObject({ actionSeq: outSeq, drawOfferSeat: -1 })
+    expect(since(quitter, mark, 'events')).toHaveLength(0)
+    expect(since(quitter, mark, 'drawEvent')).toHaveLength(0)
+    const synced = since(quitter, mark, 'clock')
+    expect(synced.length).toBeGreaterThan(0)
+    expect(synced.every((c) => c.runningSeat === -1)).toBe(true)
+    for (const p of others) {
+      if (p.state.drawVotes[p.seat] === 0) p.send('respondDraw', { accept: false })
+    }
+    await host.waitState((s) => s.drawOfferSeat === -1, 5_000, 'offer declined')
+
+    // Rounds of three now: once the round they went out in is two full rounds old, the
+    // actions after it arrive, in order, each with its moment's clock (not running).
+    for (let i = 0; i < 9 && quitter.state.actionSeq === outSeq; i++) {
+      await playOne(players, others)
+      await sleep(80)
+    }
+    await quitter.waitState((s) => s.actionSeq > outSeq, 5_000, 'delayed actions')
+    const shown = since(quitter, mark, 'events')
+    expect(shown.map((e) => e.seq)).toEqual(shown.map((_, i) => outSeq + 1 + i))
+    expect(shown.every((e) => e.clock.runningSeat === -1)).toBe(true)
+    expect(quitter.state.actionSeq).toBe(shown.at(-1)?.seq)
+    expect(quitter.state.actionSeq).toBeLessThan(host.state.actionSeq)
+    const delayedSeq = quitter.state.actionSeq
+
+    // Rejoining keeps the delay: the move log stops where their view is.
+    quitter.drop()
+    await host.waitState((s) => s.seats[1]?.connected === false, 5_000, 'dropped')
+    const before = quitter.messages.length
+    await quitter.reconnect()
+    await waitFor(() => since(quitter, before, 'welcome').length > 0, 5_000, 'welcome')
+    expect(since(quitter, before, 'welcome')[0]?.delayRounds).toBe(2)
+    const log = since(quitter, before, 'moveLog')[0]
+    expect(log?.entries.at(-1)?.seq).toBe(delayedSeq)
+    await quitter.waitState((s) => s.delayRounds === 2 && s.actionSeq === delayedSeq)
+    expect(quitter.seat).toBe(1)
+
+    // The other two resign: the game is over and the quitter sees all of it, then the result
+    // with their rating change, and can vote on a rematch.
+    const end = quitter.messages.length
+    for (const p of others.filter((x) => x !== host)) {
+      p.send('resign')
+      await host.waitState((s) => s.seats[p.seat]?.status !== 'active', 5_000, 'resigned')
+    }
+    const over = await quitter.waitMessage('gameOver', () => true, 10_000)
+    expect(over.rated).toBe(true)
+    expect(over.ratings[1]).not.toBeNull()
+    const full = since(quitter, end, 'moveLog')
+    expect(full.at(-1)?.entries.length).toBe(host.state.actionSeq)
+    const types = quitter.messages.slice(end).map((m) => m.type)
+    expect(types.indexOf('moveLog')).toBeLessThan(types.indexOf('gameOver'))
+    await quitter.waitState((s) => s.phase === 'finished' && s.delayRounds === 0)
+    expect(quitter.state.positionString).toBe(host.state.positionString)
+    expect(quitter.seat).toBe(1)
+    quitter.send('proposeRematch')
+    await host.waitMessage('rematchEvent', (e) => e.type === 'proposed' && e.seat === 1)
+    await quitter.waitState((s) => s.rematchVotes[1] === REMATCH_VOTE.accepted)
+    for (const p of players) await p.leave()
+  })
+
+  it('see a casual game live', async () => {
+    const players = await startRanked(false)
+    const quitter = players.find((p) => p.seat === 1) as Player
+    quitter.send('resign')
+    await quitter.waitState((s) => s.seats[1]?.status === 'removed', 5_000, 'resigned')
+    for (let i = 0; i < 2; i++) await playOne(players)
+    const host = players[0] as Player
+    expect(quitter.state).toMatchObject({
+      actionSeq: host.state.actionSeq,
+      positionString: host.state.positionString,
+      delayRounds: 0,
+    })
+    expect(quitter.of('events').at(-1)?.seq).toBe(host.state.actionSeq)
+    for (const p of players) await p.leave()
   })
 })
 

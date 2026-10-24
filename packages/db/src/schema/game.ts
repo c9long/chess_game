@@ -132,6 +132,8 @@ export const matchEventType = pgEnum('match_event_type', [
   // Teams resignation votes (the final team resignation is a `resign` action).
   'resign_proposal',
   'resign_response',
+  // AFK bot takeover in casual games: a bot started or stopped playing a seat (not an action).
+  'takeover',
 ])
 
 export const matchEvents = pgTable(

@@ -92,6 +92,13 @@
       "when": 1792826240568,
       "tag": "0012_public_history",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1792830344296,
+      "tag": "0013_bot_takeover",
+      "breakpoints": true
     }
   ]
 }

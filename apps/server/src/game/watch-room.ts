@@ -12,7 +12,6 @@
  * is over the room shows everything.
  */
 import { type AuthContext, type Client, matchMaker, Room } from '@colyseus/core'
-import type { ArraySchema } from '@colyseus/schema'
 import {
   CLOSE_CODES,
   type ClockSync,
@@ -20,13 +19,12 @@ import {
   type MoveLogEntry,
   PROTOCOL_VERSION,
   type ServerMessages,
-  SPECTATOR_DELAY_ROUNDS,
   SPECTATORS_MAX,
 } from '@game/protocol'
-import { createMatchState, EventState, type MatchState, type SeatState } from '@game/protocol/state'
-import type { GameEvent } from '@game/rules'
+import { createMatchState, type MatchState } from '@game/protocol/state'
 import { joinError } from './errors.ts'
-import { flattenEvent, type MatchmakeInfo, MatchRoom, type ViewFrame } from './match-room.ts'
+import { DelayedFeed, frozenClock, LIVE_ONLY, mirrorState } from './game-view.ts'
+import { type MatchmakeInfo, MatchRoom } from './match-room.ts'
 import { type PlayerAuth, resolvePlayer } from './player-auth.ts'
 
 type WatchClient = Client<{ auth: PlayerAuth }>
@@ -36,176 +34,6 @@ const SPECTATOR_CONNECTIONS_PER_ACCOUNT = 3
 
 /** How long a dropped spectator may come back with its reconnection token. */
 const SPECTATOR_RECONNECT_SECONDS = 20
-
-const SEAT_FIELDS = [
-  'occupied',
-  'displayName',
-  'isGuest',
-  'isBot',
-  'botLevel',
-  'civ',
-  'ready',
-  'connected',
-  'graceDeadline',
-  'team',
-  'status',
-  'heldFor',
-  'heldUntil',
-] as const
-
-const EVENT_FIELDS = [
-  'type',
-  'seat',
-  'notation',
-  'from',
-  'to',
-  'square',
-  'piece',
-  'pieceOwner',
-  'promotion',
-  'flag',
-  'reason',
-] as const
-
-/**
- * Seat fields a delayed view takes from its frame, not from the live seat: the status of that
- * moment, and no live connection news (a drop and its abandon deadline would show the game
- * early; an abandon itself arrives with the frame's statuses).
- */
-const DELAYED_SEAT: Partial<
-  Record<
-    (typeof SEAT_FIELDS)[number],
-    (frame: ViewFrame, seat: number) => string | number | boolean
-  >
-> = {
-  status: (frame, seat) => frame.statuses[seat] ?? '',
-  connected: () => true,
-  graceDeadline: () => 0,
-}
-
-type Plain = Record<string, string | number | boolean>
-
-/** Sets `dst[key]` only when it differs (unchanged values cost nothing on the wire). */
-function put(dst: object, key: string, value: unknown) {
-  const d = dst as Record<string, unknown>
-  if (d[key] !== value) d[key] = value
-}
-
-function copyNumbers(dst: ArraySchema<number>, src: readonly number[]) {
-  while (dst.length > src.length) dst.pop()
-  src.forEach((v, i) => {
-    if (i < dst.length) {
-      if (dst[i] !== v) dst[i] = v
-    } else dst.push(v)
-  })
-}
-
-function copyEvents(dst: ArraySchema<EventState>, src: readonly Plain[]) {
-  while (dst.length > src.length) dst.pop()
-  src.forEach((e, i) => {
-    let target = dst[i]
-    if (!target) {
-      target = new EventState()
-      for (const f of EVENT_FIELDS) if (e[f] !== undefined) put(target, f, e[f])
-      dst.push(target)
-      return
-    }
-    for (const f of EVENT_FIELDS)
-      put(target, f, e[f] ?? (f === 'seat' || f === 'pieceOwner' ? -1 : ''))
-  })
-}
-
-function plainEvent(e: EventState): Plain {
-  const out: Plain = {}
-  for (const f of EVENT_FIELDS) out[f] = (e as unknown as Plain)[f] as string | number
-  return out
-}
-
-function plainGameEvent(e: GameEvent): Plain {
-  return plainEvent(flattenEvent(e))
-}
-
-/**
- * Copies the match room's state into a watch room's state. With `frame` (a ranked game
- * shown delayed) the position, turn, statuses, clocks and last events come from that frame,
- * and draw offers and resignation votes are hidden. Every field is assigned once, with its
- * final value, so nothing changes on the wire that didn't change for spectators.
- */
-export function mirrorState(dst: MatchState, src: MatchState, frame: ViewFrame | null): void {
-  for (const key of [
-    'protocolVersion',
-    'name',
-    'mode',
-    'timeControl',
-    'pickMode',
-    'hasPassword',
-    'hostSeat',
-    'phase',
-    'countdownEndsAt',
-    'matchId',
-    'rated',
-    'reconnectGraceMs',
-    'ranked',
-    'inviteOnly',
-    'spectators',
-  ] as const) {
-    put(dst, key, src[key])
-  }
-  put(dst, 'positionString', frame ? frame.positionString : src.positionString)
-  put(dst, 'seatToMove', frame ? frame.seatToMove : src.seatToMove)
-  put(dst, 'actionSeq', frame ? frame.seq : src.actionSeq)
-  put(dst, 'delayRounds', frame ? SPECTATOR_DELAY_ROUNDS : 0)
-  src.seats.forEach((seat, i) => {
-    const target = dst.seats[i] as SeatState
-    for (const f of SEAT_FIELDS) {
-      const delayed = frame ? DELAYED_SEAT[f] : undefined
-      put(target, f, delayed && frame ? delayed(frame, i) : seat[f])
-    }
-    // Players' session ids are of no use to spectators.
-    put(target, 'sessionId', '')
-  })
-  const clock = frame ? frame.clock : null
-  copyNumbers(dst.clock.remainingMs, clock ? clock.remainingMs : [...src.clock.remainingMs])
-  // A delayed clock doesn't run: it shows the time left at that point.
-  put(dst.clock, 'runningSeat', clock ? -1 : src.clock.runningSeat)
-  put(dst.clock, 'serverTimestamp', clock ? clock.serverTimestamp : src.clock.serverTimestamp)
-  put(dst.clock, 'turnStartedAt', clock ? 0 : src.clock.turnStartedAt)
-  put(dst.clock, 'incrementMs', src.clock.incrementMs)
-  copyEvents(
-    dst.lastEvents,
-    frame ? frame.events.map(plainGameEvent) : [...src.lastEvents].map(plainEvent),
-  )
-  for (const key of ['type', 'winnerSeat', 'winnerTeam', 'endReason'] as const) {
-    put(dst.result, key, src.result[key])
-  }
-  copyNumbers(dst.result.placements, [...src.result.placements])
-  put(dst, 'drawOfferSeat', frame ? -1 : src.drawOfferSeat)
-  put(dst, 'drawOfferActionSeq', frame ? 0 : src.drawOfferActionSeq)
-  copyNumbers(dst.drawVotes, frame ? [-1, -1, -1, -1] : [...src.drawVotes])
-  // Cooldowns start when an offer or proposal fails and count down with that seat's moves:
-  // live values would tell spectators of a delayed game what is happening now.
-  copyNumbers(dst.drawCooldowns, frame ? [0, 0, 0, 0] : [...src.drawCooldowns])
-  copyNumbers(dst.teamResignSeat, frame ? [-1, -1] : [...src.teamResignSeat])
-  copyNumbers(dst.teamResignCooldowns, frame ? [0, 0, 0, 0] : [...src.teamResignCooldowns])
-  // Rematch votes are the players' business (the fields keep their defaults here).
-}
-
-/** A frozen clock for a delayed frame (nobody's clock runs). */
-function frozenClock(c: ClockSync): ClockSync {
-  return { ...c, runningSeat: -1, turnStartedAt: 0 }
-}
-
-/** The `events` message for an action spectators may now see. */
-function eventsMessage(frame: ViewFrame, entry: MoveLogEntry): ServerMessages['events'] {
-  return {
-    ...entry,
-    seatToMove: frame.seatToMove as ServerMessages['events']['seatToMove'],
-    clock: frozenClock(frame.clock),
-  }
-}
-
-/** Live messages a delayed watch room holds back (they would show the game early). */
-const LIVE_ONLY: readonly string[] = ['events', 'clock', 'drawEvent', 'resignEvent']
 
 export class WatchRoom extends Room<{ state: MatchState; client: WatchClient }> {
   /**
@@ -220,10 +48,8 @@ export class WatchRoom extends Room<{ state: MatchState; client: WatchClient }> 
 
   /** The watched match room (null once it is gone). */
   match: MatchRoom | null = null
-  /** Move log entries spectators have been sent (`moveLog` / `events`). */
-  private shown = 0
-  /** Whether the last sync showed a delayed frame. */
-  private delayed = false
+  /** Where spectators are in the move log (set when the room is created). */
+  private feed = new DelayedFeed(0)
   /** Accounts removed from this room (see `removeSpectator`): no reconnecting. */
   removed = new Set<string>()
   /** Connections the room closed itself. */
@@ -320,7 +146,7 @@ export class WatchRoom extends Room<{ state: MatchState; client: WatchClient }> 
     // What spectators may see now: on a delayed (ranked) game, the actions after the delayed
     // frame still have to be sent as `events` when their turn comes.
     const view = match.spectatorView()
-    this.shown = view ? view.entries : match.moveLogEntries().length
+    this.feed.resetTo(view ? view.entries : match.moveLogEntries().length)
     this.sync()
     this.onMessage('syncClock', (client: WatchClient) => {
       const clock = this.spectatorClock()
@@ -423,27 +249,9 @@ export class WatchRoom extends Room<{ state: MatchState; client: WatchClient }> 
     if (!match) return
     const view = match.spectatorView()
     mirrorState(this.state, match.state, view?.frame ?? null)
-    const entries = match.moveLogEntries()
-    if (view) {
-      const frames = match.spectatorFrames()
-      while (this.shown < view.entries) {
-        const frame = frames[this.shown + 1]
-        const entry = entries[this.shown]
-        if (!frame || !entry) break
-        this.broadcast('events', eventsMessage(frame, entry))
-        this.shown++
-      }
-      this.delayed = true
-    } else if (this.delayed) {
-      // The delay is over (the game ended): the whole game at once.
-      this.delayed = false
-      this.shown = entries.length
-      this.broadcast('moveLog', { entries: [...entries] })
-      const clock = match.liveClock()
-      if (clock) this.broadcast('clock', clock)
-    } else {
-      this.shown = Math.max(this.shown, entries.length)
-    }
+    this.feed.advance(view, match, (type, payload) => {
+      ;(this.broadcast as (t: string, m: unknown) => void)(type, payload)
+    })
   }
 
   /** A broadcast of the match room, passed on unless spectators mustn't see it (yet). */
@@ -457,7 +265,7 @@ export class WatchRoom extends Room<{ state: MatchState; client: WatchClient }> 
     if (type === 'gameOver') this.sync()
     if (match.spectatorView() && LIVE_ONLY.includes(type)) return
     if (type === 'events') {
-      this.shown = Math.max(this.shown, (payload as ServerMessages['events']).seq)
+      this.feed.seen((payload as ServerMessages['events']).seq)
     }
     ;(this.broadcast as (t: string, m: unknown) => void)(type, payload)
   }

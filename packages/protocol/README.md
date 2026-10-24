@@ -122,12 +122,12 @@ the right to watch (suspended, the challenge's friendship ended, kicked) is clos
 
 The watch room's state is the match room's `MatchState` (seats' `sessionId` blanked), and it
 passes on the match room's messages: `welcome` (`seat: -1, spectator: true, delayRounds`),
-`moveLog`, `events`, `clock`, `drawEvent`, `resignEvent`, `gameOver`. Every other message a
-spectator sends is answered with `error { code: 'spectating' }` (`syncClock` gets a `clock`):
+`moveLog`, `events`, `clock`, `drawEvent`, `resignEvent`, `takeoverEvent`, `gameOver`. Every
+other message a spectator sends is answered with `error { code: 'spectating' }` (`syncClock` gets a `clock`):
 nothing reaches the game. `state.spectators` (in both rooms) and `metadata.spectators` count
 them. A seated player who resigned or was knocked out stays in the match room and watches the
-rest from their seat, as before (live, also in ranked games: they keep the seat for the result
-and the rematch vote; delaying their view is a TODO).
+rest from their seat: they keep it for the result, the rating change and the rematch vote.
+Casual and solo games show them the game live; ranked games delay it (below).
 
 Ranked games are shown late while they run (anti-cheat): the watch room's state is the game
 as it was at least `SPECTATOR_DELAY_ROUNDS` (2) full rounds ago (`state.delayRounds` = 2;
@@ -138,6 +138,17 @@ cooldowns are hidden,
 and `events` / `moveLog` / `clock` messages cover only that delayed part of the game (each
 `events` arrives once it is old enough, with that moment's clock, not running). When the game
 ends the delay is over: a full `moveLog`, the final state (`delayRounds` 0) and `gameOver`.
+
+A player who is out of a running ranked game (a seat that no longer takes turns: FFA
+`removed`, Teams `frozen`) gets the same delayed view in the match room, from the next state
+patch after the action that knocked them out (which they get live, with any lapse it caused)
+until the game ends: their own copy of the state (seats keep their `sessionId`, so the client
+still finds its seat), `welcome` with `delayRounds`, a `moveLog`, `events` and frozen `clock`
+cut to the delayed part, and no live `events`, `clock`, `drawEvent` or `resignEvent`. Their
+view never goes back before the frame they went out in (they saw the game live up to there),
+so for a while it holds there, until the spectators' delayed frame passes it. At the end they
+get the full `moveLog`, the live state and then `gameOver`, as spectators do; the result,
+rating change and rematch vote work as for anyone seated.
 
 ## Client -> server messages (`room.send(type, payload)`)
 
@@ -205,6 +216,7 @@ from the start; bots come along. The proposer leaving cancels it. Once nobody is
 | `moveLog` | `{ entries: { seq, action, seat, notation, events: GameEvent[], positionString, clockMs? }[] }`: the game so far (every action, oldest first, each an `events` message without `seatToMove` and `clock`), sent right after `welcome` on join and on every reconnect once the game has started; replace the client's log with it, then append each `events` message with a higher `seq`. Register the handler as soon as the room is joined: it can arrive before a page mounts |
 | `drawEvent` | `{ type: 'offered'\|'accepted'\|'declined'\|'lapsed', seat, offerSeat, reason?: 'round'\|'voters_changed' }` on every change to the draw offer (`seat`: who acted; for `lapsed`, the offerer) |
 | `resignEvent` | Teams: `{ type: 'proposed'\|'accepted'\|'declined'\|'lapsed'\|'immediate', seat, team: 0\|1, reason?: 'round'\|'voters_changed', outSeat? }` on every change to a resignation proposal (`seat`: who acted; for `lapsed` and `immediate`, the proposer; `outSeat`: for a `voters_changed` lapse, the teammate who stopped taking turns). `accepted` and `immediate` are followed by the `events` message with action `resign` |
+| `takeoverEvent` | `{ type: 'started'\|'ended', seat, name, botLevel }`: AFK bot takeover in a casual multiplayer game (`started`: `seat`'s player, `name`, didn't come back within the reconnect grace while another human was still connected, so a bot at `botLevel` plays the seat on its own clock instead of the abandon; `ended`: the player rejoined with the same account and plays the seat again). The seat's state shows it too: `isBot`, `botLevel`, and `displayName` "Bot 1200 (for <name>)" (a seat with `isBot` set may carry the stand-in name there) |
 | `clock` | `{ remainingMs: [S,W,N,E], runningSeat, serverTimestamp, turnStartedAt }` on game start, every 5 s, on `syncClock` |
 | `gameOver` | `{ matchId, result, placements, endReason, rated, ratings: ({ before, after } \| null)[] }` once saved (`ratings` are Elo before/after per seat; `rated` is true only for a ranked game whose Elo was applied, false if it couldn't be, e.g. a participant deleted their account; `state.rated` follows) |
 | `rematchEvent` | `{ type: 'proposed'\|'accepted'\|'declined'\|'ready'\|'cancelled', seat?, roomId?, ranked?, reason?: 'proposer_left'\|'nobody_accepted'\|'failed' }` on every change to the rematch proposal (players only; see "Rematch") |
@@ -227,8 +239,8 @@ four draw fields, `ranked`, the two resignation-vote fields, `inviteOnly`, the s
 rematch fields and `unratedRepeat` were appended in protocol v1; older decoders ignore them).
 `inviteOnly`: a challenge lobby (see below). `unratedRepeat`: lobby only, the four seated
 players of this ranked lobby reached the repeat limit, so the game will be unrated (see "Ranked
-repeat limit"). `spectators`: how many watch; `delayRounds`: watch rooms of ranked games only
-(see "Spectators"). `rematchSeat` (-1 = none), `rematchVotes[i]` (`REMATCH_VOTE`: -1 not
+repeat limit"). `spectators`: how many watch; `delayRounds`: watch rooms of ranked games, and
+the copy a player who is out of one is shown (see "Spectators"). `rematchSeat` (-1 = none), `rematchVotes[i]` (`REMATCH_VOTE`: -1 not
 asked, 0 pending, 1 accepted, 2 declined), `rematchDeadline` (server ms, 0 = none) and
 `rematchRoomId` ('' until the new lobby exists): see "Rematch".
 

@@ -7,9 +7,19 @@
  * only send intents (lobby actions, moves) and never report moves, clocks or results.
  */
 
-import { type AuthContext, type Client, matchMaker, Room } from '@colyseus/core'
+import {
+  type AuthContext,
+  type Client,
+  CloseCode,
+  matchMaker,
+  Room,
+  SchemaSerializer,
+  type Serializer,
+} from '@colyseus/core'
 import { TIME_CONTROLS, type TimeControlId } from '@game/config'
 import {
+  BOT_LEVEL_LABELS,
+  botName,
   CLOSE_CODES,
   type ClientMessages,
   type ClientMessageType,
@@ -37,7 +47,7 @@ import {
   SPECTATOR_DELAY_ROUNDS,
   TEAM_RESIGN_COOLDOWN_MOVES,
 } from '@game/protocol'
-import { createMatchState, EventState, type MatchState, type SeatState } from '@game/protocol/state'
+import { createMatchState, type MatchState, type SeatState } from '@game/protocol/state'
 import {
   type CivId,
   Game,
@@ -61,6 +71,17 @@ import {
 } from './draw-logic.ts'
 import { GameError, joinError } from './errors.ts'
 import {
+  DelayedFeed,
+  type DelayedView,
+  flattenEvent,
+  frozenClock,
+  LIVE_ONLY,
+  mirrorState,
+  type ViewFrame,
+  visibleFrameIndex,
+  wrappedRound,
+} from './game-view.ts'
+import {
   clearSeat,
   filledCount,
   isLobbyPhase,
@@ -81,6 +102,7 @@ import { type PlayerAuth, resolvePlayer } from './player-auth.ts'
 import { repeatLimitReached } from './ratings.ts'
 import { botAcceptsTeamResign, resignLapseReason, teammateOf, teamOf } from './resign-logic.ts'
 import type { AttemptLimiter, GameService, ManagedRoom, RematchSpec } from './service.ts'
+import { StateCopy, ViewSerializer } from './view-serializer.ts'
 import type { WatchRoom } from './watch-room.ts'
 
 /** What the matchmaking route passes as `AuthContext.req`. */
@@ -95,53 +117,6 @@ export interface MatchmakeInfo {
    * Set by the server only, never from the request.
    */
   admittedSpectator?: string
-}
-
-/**
- * What spectators see of the game at one point: the start position (`seq` 0) or the position
- * after an action. Ranked games show spectators an older frame (see `spectatorView`).
- */
-export interface ViewFrame {
-  seq: number
-  positionString: string
-  seatToMove: number
-  statuses: string[]
-  clock: ClockSync
-  events: GameEvent[]
-  /** The round the action was made in (full turns of the turn order before it). */
-  round: number
-  /** The move log entry of the action (null for the start). */
-  entry: MoveLogEntry | null
-}
-
-/**
- * Whether the turn order went round (a new round began) between the seat to move before an
- * action and the seat to move after it. Turn order is seat order (S, W, N, E); a mover's own
- * action that hands the turn to the same or an earlier seat wrapped around, while an
- * off-turn action (an abandon or resign by another seat) only wrapped if the pointer moved
- * back.
- */
-export function wrappedRound(prevToMove: number, nextToMove: number, actingSeat: number): boolean {
-  if (prevToMove < 0 || nextToMove < 0) return false
-  return actingSeat === prevToMove ? nextToMove <= prevToMove : nextToMove < prevToMove
-}
-
-/**
- * The newest frame spectators may see when the game is in round `currentRound`, at least
- * `delayRounds` full rounds behind: the last frame made before round
- * `currentRound - delayRounds` (frame 0, the start, at worst). Frames are in order.
- */
-export function visibleFrameIndex(
-  rounds: readonly number[],
-  currentRound: number,
-  delayRounds: number,
-): number {
-  let idx = 0
-  for (let i = 1; i < rounds.length; i++) {
-    if ((rounds[i] as number) < currentRound - delayRounds) idx = i
-    else break
-  }
-  return idx
 }
 
 /** Lobby passwords: argon2id like account passwords (PLAN §5), kept in memory only. */
@@ -190,6 +165,9 @@ const BOT_PACE_MIN_CLOCK_MS = 10_000
 const BOT_PACE_MAX_CLOCK_SHARE = 0.25
 /** Bot pacing after an action that defeated, froze or removed an army (longer animations). */
 const BOT_PACE_DEFEAT_FACTOR = 2.2
+
+/** AFK bot takeover: the stand-in's level when the game has no bots to match. */
+const TAKEOVER_DEFAULT_LEVEL = '1200'
 
 /** Picks `count` distinct civs from `pool` (not in `exclude`), at random; repeats only if short. */
 export function pickBotCivs(pool: readonly string[], exclude: string, count: number): string[] {
@@ -240,10 +218,23 @@ export class MatchRoom
   private recorder: MatchRecorder | null = null
   /** Every action of the game so far, for the move log (`moveLog` message on join). */
   private moveLog: MoveLogEntry[] = []
-  /** Spectator frames: the start, then one per action (ranked spectators see older ones). */
+  /** Delayed-view frames: the start, then one per action (see `spectatorView`, `playerView`). */
   private frames: ViewFrame[] = []
   /** Full rounds of the turn order completed so far. */
   private round = 0
+  /** Per seat: the first frame in which it no longer takes turns (-1 while it still does). */
+  private outFrames = [-1, -1, -1, -1]
+  /** Ranked: what each seated player who is out is shown (see `syncOutView`). */
+  private outViews = new Map<SeatNum, { copy: StateCopy<MatchState>; feed: DelayedFeed }>()
+  /** `spectatorView` for the current frames and round (asked many times per patch). */
+  private spectatorCache: {
+    frames: readonly ViewFrame[]
+    length: number
+    round: number
+    view: DelayedView
+  } | null = null
+  /** The serializer that keeps the live state from players who are out (`setSerializer`). */
+  private viewSerializer: ViewSerializer<MatchState> | null = null
   /** The spectators' room, once someone watches (see `watchRoomId`). */
   private watch: WatchRoom | null = null
   private watchCreating: Promise<string> | null = null
@@ -292,6 +283,29 @@ export class MatchRoom
   /** Per team: id of the pending proposal (tells proposals apart for bot answers). */
   private resignProposalIds = [0, 0]
   private resignProposalSeq = 0
+  /** AFK bot takeover: seats a bot plays for their absent player, whose binding stays. */
+  private takeovers = new Set<SeatNum>()
+  /**
+   * A bot stood in for a player at some point (it stays set after the player came back): the
+   * game then feeds no shadow ratings, which calibrate bot labels against humans only.
+   */
+  private botStoodIn = false
+
+  /**
+   * Colyseus picks the state's serializer when the room starts: this one sends a ranked
+   * player who is out their delayed copy of the state instead of the live one
+   * (`syncOutView`). onCreate refuses to run without it (see view-serializer.ts).
+   */
+  override setSerializer(serializer: Serializer<MatchState>) {
+    this.viewSerializer =
+      serializer instanceof SchemaSerializer
+        ? new ViewSerializer<MatchState>((client) => {
+            const seat = seatOfSession(this.bindings, client.sessionId)
+            return seat === -1 ? undefined : this.outViews.get(seat as SeatNum)?.copy
+          })
+        : null
+    super.setSerializer(this.viewSerializer ?? serializer)
+  }
 
   // -------------------------------------------------------------------------
   // Authentication (matchmaking request: cookie or bearer token)
@@ -381,6 +395,15 @@ export class MatchRoom
   private isRejoin(player: PlayerAuth): boolean {
     const own = seatOfUser(this.bindings, player.userId)
     if (own === -1) return false
+    if (this.takeovers.has(own as SeatNum)) {
+      // Their seat was free to leave behind, so they may have sat down in another game since:
+      // taking this one back too would seat them twice. A finished game seats nobody.
+      const elsewhere = this.svc.seats.get(player.userId)
+      if (this.state.phase === 'in_game' && elsewhere && elsewhere !== this.roomId) {
+        throw joinError('already_in_room')
+      }
+      return true
+    }
     if (this.state.seats[own]?.connected) throw joinError('already_seated')
     return true
   }
@@ -464,6 +487,8 @@ export class MatchRoom
   // -------------------------------------------------------------------------
 
   override async onCreate(options: Record<string, unknown>) {
+    // Fail closed: without it a player who is out of a ranked game would get the live state.
+    if (!this.viewSerializer) throw new Error('match room: state serializer not installed')
     this.svc = MatchRoom.service
     const rematch = this.svc.takeRematchTicket(options.rematchTicket)
     if (rematch) {
@@ -665,6 +690,7 @@ export class MatchRoom
     binding.sessionId = client.sessionId
     binding.displayName = player.displayName
     const s = this.state.seats[seat] as SeatState
+    const tookBack = this.endTakeover(seat, player.displayName)
     s.sessionId = client.sessionId
     s.connected = true
     s.graceDeadline = 0
@@ -673,7 +699,12 @@ export class MatchRoom
       this.svc.seats.set(player.userId, this.roomId)
     }
     if (old && old !== client) old.leave(CLOSE_CODES.seatLost)
-    if (this.state.phase === 'in_game') this.record(seat, 'reconnect', { via: 'rejoin' }, null)
+    if (this.state.phase === 'in_game') {
+      this.record(seat, 'reconnect', { via: 'rejoin' }, null)
+      // Back on their own turn: the bot's pending move is dropped and the player moves on
+      // the clock that kept running, as after any reconnect.
+      if (tookBack) this.maybeBotTurn()
+    }
     this.afterSeatsChanged()
     this.welcome(client)
   }
@@ -712,22 +743,30 @@ export class MatchRoom
     this.welcome(client)
   }
 
-  override onLeave(client: MatchClient) {
+  override onLeave(client: MatchClient, code?: number) {
     const seat = seatOfSession(this.bindings, client.sessionId)
     if (seat === -1) return // kicked, replaced by a rejoin, or never seated
     const binding = this.bindings[seat] as SeatBinding
     const s = this.state.seats[seat] as SeatState
     const phase = this.state.phase
     if (phase === 'in_game') {
-      // Consented leave or reconnect grace expired: abandon (PLAN §2, treated like a timeout).
+      // Consented leave or reconnect grace expired: abandon (PLAN §2, treated like a timeout),
+      // or a bot takes the seat over.
       s.connected = false
       s.graceDeadline = 0
       this.svc.seats.delete(binding.userId)
-      if (this.takesTurns(seat as SeatNum) && this.abandonPolicy(seat as SeatNum) === 'abandon') {
+      if (this.takesTurns(seat as SeatNum)) {
         const now = monoNow()
         this.settleFallenFlag(now)
         if (this.state.phase === 'in_game' && this.takesTurns(seat as SeatNum)) {
-          this.runAction('abandon', seat as SeatNum, null, now)
+          // "Leave game" is a deliberate choice to knock the seat out (the web app asks
+          // first); only a player who went quiet gets a stand-in.
+          const afk = code !== CloseCode.CONSENTED
+          if (afk && this.abandonPolicy(seat as SeatNum) === 'bot_takeover') {
+            this.startTakeover(seat as SeatNum, binding)
+          } else {
+            this.runAction('abandon', seat as SeatNum, null, now)
+          }
         }
       }
       return
@@ -1000,7 +1039,7 @@ export class MatchRoom
     this.handle('resign', (client) => {
       const seat = this.requireSeat(client)
       this.requireGame()
-      if (!this.takesTurns(seat)) throw new GameError('not_playing')
+      this.requirePlaying(seat)
       const now = monoNow()
       // A flag that fell before the resign arrived is a timeout first (the resigner's own
       // or the seat to move's); the resign then applies only if the game and seat go on.
@@ -1043,13 +1082,17 @@ export class MatchRoom
     this.handle('respondDraw', (client, { accept }) => {
       const seat = this.requireSeat(client)
       this.requireGame()
+      this.requirePlaying(seat)
       // A flag that fell first is a timeout; it changes the voters, so the offer lapses.
       this.settleFallenFlag(monoNow())
       this.requireGame()
       this.respondDraw(seat, accept)
     })
     this.handle('syncClock', (client) => {
-      if (this.gameClock) client.send('clock', this.clockSync())
+      const seat = seatOfSession(this.bindings, client.sessionId)
+      const view = seat === -1 ? null : this.playerView(seat as SeatNum)
+      if (view) client.send('clock', frozenClock(view.frame.clock))
+      else if (this.gameClock) client.send('clock', this.clockSync())
     })
     this.handle('proposeRematch', (client) => {
       const seat = this.requireSeat(client)
@@ -1097,9 +1140,17 @@ export class MatchRoom
     })
   }
 
-  /** Broadcasts to the players and passes the message on to the spectators' room. */
+  /**
+   * Broadcasts to the players and passes the message on to the spectators' room. Live game
+   * messages skip players shown the game delayed: they get them when their view gets there.
+   */
   private announce<K extends keyof ServerMessages>(type: K, payload: ServerMessages[K]) {
-    ;(this.broadcast as (t: string, m: unknown) => void)(type, payload)
+    const except = LIVE_ONLY.includes(type) ? this.delayedClients() : []
+    ;(this.broadcast as (t: string, m: unknown, o?: { except: MatchClient[] }) => void)(
+      type,
+      payload,
+      except.length > 0 ? { except } : undefined,
+    )
     this.watch?.relay(type, payload)
   }
 
@@ -1192,8 +1243,9 @@ export class MatchRoom
 
   /** The seated humans' user ids and names, in seat order (Friends page). */
   seatedPlayers(): { userId: string; displayName: string }[] {
+    // A player a bot stands in for isn't playing now.
     return this.bindings
-      .filter((b): b is SeatBinding => b !== null)
+      .filter((b, i): b is SeatBinding => b !== null && !this.takeovers.has(i as SeatNum))
       .map((b) => ({ userId: b.userId, displayName: b.displayName }))
   }
 
@@ -1208,14 +1260,24 @@ export class MatchRoom
    * least SPECTATOR_DELAY_ROUNDS full rounds behind (anti-cheat), with the number of move
    * log entries it includes.
    */
-  spectatorView(): { frame: ViewFrame; entries: number } | null {
+  spectatorView(): DelayedView | null {
     if (!this.ranked || this.state.phase !== 'in_game' || this.frames.length === 0) return null
+    const c = this.spectatorCache
+    if (c && c.frames === this.frames && c.length === this.frames.length && c.round === this.round)
+      return c.view
     const idx = visibleFrameIndex(
       this.frames.map((f) => f.round),
       this.round,
       SPECTATOR_DELAY_ROUNDS,
     )
-    return { frame: this.frames[idx] as ViewFrame, entries: idx }
+    const view = { frame: this.frames[idx] as ViewFrame, entries: idx }
+    this.spectatorCache = {
+      frames: this.frames,
+      length: this.frames.length,
+      round: this.round,
+      view,
+    }
+    return view
   }
 
   /** Spectator frames so far (frame k is the position after action k; frame 0 the start). */
@@ -1233,9 +1295,87 @@ export class MatchRoom
     return this.gameClock ? this.clockSync() : null
   }
 
-  /** Keeps the watch room's copy of the state current before each patch. */
+  /** Keeps the watch room's and the delayed players' copies of the state current. */
   override onBeforePatch() {
     this.watch?.sync()
+    for (const seat of SEAT_NUMS) this.syncOutView(seat)
+  }
+
+  // -------------------------------------------------------------------------
+  // Players who are out of a ranked game (shown it delayed, like spectators)
+  // -------------------------------------------------------------------------
+
+  /**
+   * What `seat`'s player may see of the game now: null while it is shown live, else a delayed
+   * view. A player who resigned or was knocked out of a ranked game keeps the seat for the
+   * result, the rating change and the rematch vote, but must not watch the rest live (they
+   * could help someone still playing). They see what spectators see, or the frame they went
+   * out in while that is newer: they saw the game live up to there.
+   */
+  private playerView(seat: SeatNum): DelayedView | null {
+    const out = this.outFrames[seat] ?? -1
+    if (out === -1 || !this.bindings[seat]) return null
+    const spectators = this.spectatorView()
+    if (!spectators) return null
+    const idx = Math.max(out, spectators.entries)
+    return { frame: this.frames[idx] as ViewFrame, entries: idx }
+  }
+
+  /** `seat`'s delayed copy of the state and its feed, made (and filled) when first needed. */
+  private outEntry(seat: SeatNum, view: DelayedView) {
+    let out = this.outViews.get(seat)
+    if (!out) {
+      out = {
+        copy: new StateCopy(createMatchState()),
+        feed: new DelayedFeed(this.outFrames[seat] as number, true),
+      }
+      mirrorState(out.copy.state, this.state, view.frame, true)
+      this.outViews.set(seat, out)
+    }
+    return out
+  }
+
+  /**
+   * Before each patch: brings `seat`'s delayed copy of the state up to date and sends the
+   * actions its view now reaches. When the delay ends (the game is over), the player gets the
+   * whole game at once and the live state again.
+   */
+  private syncOutView(seat: SeatNum) {
+    const view = this.playerView(seat)
+    const out = this.outViews.get(seat)
+    if (!view) {
+      if (out) {
+        this.outViews.delete(seat)
+        out.feed.advance(null, this, this.sendTo(seat))
+      }
+      return
+    }
+    const entry = out ?? this.outEntry(seat, view)
+    mirrorState(entry.copy.state, this.state, view.frame, true)
+    entry.feed.advance(view, this, this.sendTo(seat))
+  }
+
+  /**
+   * The connected clients of players shown the game delayed. From the action that knocks a
+   * seat out its live messages stop here, while its copy of the state is only made at the next
+   * patch (`syncOutView`): that runs before anything is encoded, so no live state reaches it.
+   */
+  private delayedClients(): MatchClient[] {
+    return SEAT_NUMS.filter((seat) => this.playerView(seat) !== null)
+      .map((seat) => this.seatClient(seat))
+      .filter((c): c is MatchClient => c !== undefined)
+  }
+
+  private seatClient(seat: SeatNum): MatchClient | undefined {
+    const sessionId = this.bindings[seat]?.sessionId
+    return sessionId ? this.clients.find((c) => c.sessionId === sessionId) : undefined
+  }
+
+  /** Sends to `seat`'s player, if connected. */
+  private sendTo(seat: SeatNum) {
+    return <K extends keyof ServerMessages>(type: K, payload: ServerMessages[K]) => {
+      this.seatClient(seat)?.send(type, payload)
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -1368,7 +1508,10 @@ export class MatchRoom
     const seats = SEAT_NUMS.map((i) => {
       const seat = s.seats[i] as SeatState
       const binding = this.bindings[i]
-      if (seat.isBot) return { kind: 'bot' as const, level: seat.botLevel, civ: seat.civ }
+      // A stand-in bot's seat opens up: its player never came back.
+      if (this.isRosterBot(i)) {
+        return { kind: 'bot' as const, level: seat.botLevel, civ: seat.civ }
+      }
       if (binding && votes[i] === REMATCH_VOTE.accepted) {
         return {
           kind: 'human' as const,
@@ -1446,6 +1589,15 @@ export class MatchRoom
     return this.game
   }
 
+  /**
+   * A seat that no longer takes turns gets the same refusal whatever the live game holds: a
+   * later check (say, no draw offer pending) would tell a player shown the game delayed what
+   * is happening now.
+   */
+  private requirePlaying(seat: SeatNum) {
+    if (!this.takesTurns(seat)) throw new GameError('not_playing')
+  }
+
   private requireLobby() {
     if (!isLobbyPhase(this.state.phase) || this.starting) throw new GameError('wrong_phase')
     // A solo room's seats, civs and bots are fixed at create; it starts by itself.
@@ -1458,13 +1610,23 @@ export class MatchRoom
 
   private welcome(client: MatchClient) {
     const seat = seatOfSession(this.bindings, client.sessionId)
+    const view = seat === -1 ? null : this.playerView(seat as SeatNum)
     client.send('welcome', {
       protocolVersion: PROTOCOL_VERSION,
       roomId: this.roomId,
       sessionId: client.sessionId,
       seat: seat === -1 ? -1 : (seat as SeatNum),
       isHost: seat !== -1 && this.bindings[seat]?.userId === this.hostUserId,
+      ...(view ? { delayRounds: SPECTATOR_DELAY_ROUNDS } : {}),
     })
+    if (view) {
+      // A player shown the game delayed rejoins it where their view is. The copy exists
+      // before the client's first full state, which Colyseus sends after onJoin.
+      client.send('moveLog', { entries: this.moveLog.slice(0, view.entries) })
+      client.send('clock', frozenClock(view.frame.clock))
+      this.outEntry(seat as SeatNum, view).feed.resetTo(view.entries)
+      return
+    }
     this.sendMoveLog(client)
     if (this.gameClock) client.send('clock', this.clockSync())
   }
@@ -1593,12 +1755,95 @@ export class MatchRoom
   // -------------------------------------------------------------------------
 
   /**
-   * What happens when a seated human is gone for good mid-game. v1: abandon (PLAN §2,
-   * treated like a timeout). Hook for AFK bot takeover in casual lobbies (designed, built
-   * later): return 'bot_takeover' and seat a bot instead.
+   * What happens when a seated human's reconnect grace runs out mid-game (PLAN §2 "Abandon").
+   * Ranked games abandon because a stand-in would play for the player's Elo; games with no
+   * other human connected abandon because nobody is left to finish the game for.
    */
-  protected abandonPolicy(_seat: SeatNum): 'abandon' | 'bot_takeover' {
-    return 'abandon'
+  protected abandonPolicy(seat: SeatNum): 'abandon' | 'bot_takeover' {
+    if (!this.svc.config.game.afkBotTakeover || this.ranked || this.solo) return 'abandon'
+    const otherHuman = SEAT_NUMS.some((i) => {
+      const other = this.state.seats[i] as SeatState
+      return i !== seat && Boolean(this.bindings[i]) && !other.isBot && other.connected
+    })
+    return otherHuman ? 'bot_takeover' : 'abandon'
+  }
+
+  /** A bot seated as one, not one standing in for an absent player (AFK takeover). */
+  private isRosterBot(seat: SeatNum): boolean {
+    return (this.state.seats[seat] as SeatState).isBot && !this.takeovers.has(seat)
+  }
+
+  /**
+   * AFK bot takeover: a bot plays `seat` on the seat's own clock until its player rejoins. Not
+   * a game action, so replays only ever see the bot's moves.
+   */
+  private startTakeover(seat: SeatNum, binding: SeatBinding) {
+    const s = this.state
+    const level = this.takeoverLevel()
+    this.takeovers.add(seat)
+    this.botStoodIn = true
+    const seatState = s.seats[seat] as SeatState
+    seatState.isBot = true
+    seatState.botLevel = level
+    seatState.displayName = `${botName(level)} (for ${binding.displayName})`
+    seatState.sessionId = ''
+    seatState.connected = true
+    this.record(
+      seat,
+      'takeover',
+      { type: 'started', botLevel: level, actionSeq: s.actionSeq },
+      null,
+    )
+    this.announce('takeoverEvent', {
+      type: 'started',
+      seat,
+      name: binding.displayName,
+      botLevel: level,
+    })
+    // Votes the player left unanswered: the bot answers them like any bot voter.
+    const delay = Math.max(0, this.svc.config.game.botMinMoveMs)
+    if (s.drawOfferSeat !== -1 && s.drawVotes[seat] === DRAW_VOTE.pending) {
+      this.scheduleBotDrawAnswer(seat, s.drawOfferSeat, s.drawOfferActionSeq, delay)
+    }
+    const team = teamOf(seat)
+    const proposer = s.mode === 'teams' ? (s.teamResignSeat[team] ?? -1) : -1
+    if (proposer !== -1 && proposer !== seat) {
+      this.scheduleBotResignAnswer(seat, team, this.resignProposalIds[team] as number, delay)
+    }
+    this.updateListing()
+    this.maybeBotTurn()
+  }
+
+  /**
+   * The player of a seat a bot took over is back (`rebind`): the seat is theirs again. Returns
+   * whether a takeover ended. In a finished game this only restores how the seat is shown.
+   */
+  private endTakeover(seat: SeatNum, displayName: string): boolean {
+    if (!this.takeovers.delete(seat)) return false
+    const seatState = this.state.seats[seat] as SeatState
+    const level = seatState.botLevel
+    seatState.isBot = false
+    seatState.botLevel = ''
+    seatState.displayName = displayName
+    if (this.state.phase === 'in_game') {
+      this.record(
+        seat,
+        'takeover',
+        { type: 'ended', botLevel: level, actionSeq: this.state.actionSeq },
+        null,
+      )
+      this.announce('takeoverEvent', { type: 'ended', seat, name: displayName, botLevel: level })
+    }
+    return true
+  }
+
+  /** The strongest bot level in the game, else TAKEOVER_DEFAULT_LEVEL. */
+  private takeoverLevel(): string {
+    let best = -1
+    for (const seat of this.state.seats) {
+      if (seat.isBot) best = Math.max(best, BOT_LEVEL_LABELS.indexOf(seat.botLevel))
+    }
+    return BOT_LEVEL_LABELS[best] ?? TAKEOVER_DEFAULT_LEVEL
   }
 
   /**
@@ -1686,6 +1931,7 @@ export class MatchRoom
       this.moveLog = []
       this.frames = []
       this.round = 0
+      this.outFrames = [-1, -1, -1, -1]
       this.gameClock = new GameClock(base, tc?.incrementMs ?? 0)
       game = null
       recorder = null
@@ -1897,6 +2143,12 @@ export class MatchRoom
     })
     this.drawAfterAction(kind, seat, events)
     this.resignAfterAction(kind, seat, events)
+    // A seat this action knocked out has seen it live, lapses included; what follows reaches
+    // its player delayed in a ranked game (see `playerView`).
+    for (const i of SEAT_NUMS) {
+      if (this.outFrames[i] === -1 && !this.takesTurns(i))
+        this.outFrames[i] = this.frames.length - 1
+    }
 
     if (snap.isOver && snap.outcome) {
       void this.finishGame(snap.outcome, endReason || endReasonOf(snap.outcome), now)
@@ -2194,13 +2446,17 @@ export class MatchRoom
     for (const i of SEAT_NUMS) {
       if (votes[i] !== DRAW_VOTE.pending || !(s.seats[i] as SeatState).isBot) continue
       const delay = Math.round(base * (1 + 0.5 * k++))
-      const token = s.drawOfferActionSeq
-      const timer = setTimeout(() => {
-        this.drawBotTimers = this.drawBotTimers.filter((t) => t !== timer)
-        this.botRespondDraw(i, seat, token)
-      }, delay)
-      this.drawBotTimers.push(timer)
+      this.scheduleBotDrawAnswer(i, seat, s.drawOfferActionSeq, delay)
     }
+  }
+
+  /** Bot voter `seat` answers the offer `offerSeat` made at `token`, after `delay` ms. */
+  private scheduleBotDrawAnswer(seat: SeatNum, offerSeat: number, token: number, delay: number) {
+    const timer = setTimeout(() => {
+      this.drawBotTimers = this.drawBotTimers.filter((t) => t !== timer)
+      this.botRespondDraw(seat, offerSeat, token)
+    }, delay)
+    this.drawBotTimers.push(timer)
   }
 
   /** A bot voter answers the offer `offerSeat` made at `token` (if it still stands). */
@@ -2212,6 +2468,8 @@ export class MatchRoom
     if (s.phase !== 'in_game' || !game) return
     if (s.drawOfferSeat !== offerSeat || s.drawOfferActionSeq !== token) return
     if (s.drawVotes[seat] !== DRAW_VOTE.pending) return
+    // The player took the seat back from a takeover bot: the answer is theirs now.
+    if (!(s.seats[seat] as SeatState).isBot) return
     try {
       this.respondDraw(seat, botAcceptsDraw(game.snapshot(), seat), true)
     } catch (err) {
@@ -2347,14 +2605,18 @@ export class MatchRoom
     this.record(seat, 'resign_proposal', { actionSeq: s.actionSeq, teammate: partner }, null)
     this.announce('resignEvent', { type: 'proposed', seat, team })
     if ((s.seats[partner] as SeatState).isBot) {
-      const id = this.resignProposalIds[team]
       const delay = Math.max(0, this.svc.config.game.botMinMoveMs)
-      clearTimeout(this.resignBotTimers[team])
-      this.resignBotTimers[team] = setTimeout(() => {
-        this.resignBotTimers[team] = undefined
-        this.botRespondTeamResign(partner, team, id)
-      }, delay)
+      this.scheduleBotResignAnswer(partner, team, this.resignProposalIds[team], delay)
     }
+  }
+
+  /** Bot teammate `seat` answers proposal `id` of `team`, after `delay` ms. */
+  private scheduleBotResignAnswer(seat: SeatNum, team: 0 | 1, id: number, delay: number) {
+    clearTimeout(this.resignBotTimers[team])
+    this.resignBotTimers[team] = setTimeout(() => {
+      this.resignBotTimers[team] = undefined
+      this.botRespondTeamResign(seat, team, id)
+    }, delay)
   }
 
   /** A bot teammate answers proposal `id` of `team` (if it still stands). */
@@ -2365,6 +2627,7 @@ export class MatchRoom
     const game = this.game
     if (s.phase !== 'in_game' || !game) return
     if ((s.teamResignSeat[team] ?? -1) === -1 || this.resignProposalIds[team] !== id) return
+    if (!(s.seats[seat] as SeatState).isBot) return
     try {
       this.respondTeamResign(seat, botAcceptsTeamResign(game.snapshot(), seat), true)
     } catch (err) {
@@ -2514,15 +2777,18 @@ export class MatchRoom
             endedAt: new Date(),
             finalStatuses: [...snap.statuses],
             defeatReasons,
+            noShadowRatings: this.botStoodIn,
             ratingSeats: SEAT_NUMS.map((i) => {
               const seat = s.seats[i] as SeatState
+              // A seat a bot finished is still its player's (as in match_players).
+              const bot = this.isRosterBot(i)
               return {
                 seat: i,
                 team: i % 2,
                 placement: outcome.placements[i] ?? 4,
-                userId: seat.isBot ? null : (this.bindings[i]?.userId ?? null),
+                userId: bot ? null : (this.bindings[i]?.userId ?? null),
                 isGuest: seat.isGuest,
-                botLevel: seat.isBot ? seat.botLevel : null,
+                botLevel: bot ? seat.botLevel : null,
               }
             }),
           }),
@@ -2536,6 +2802,8 @@ export class MatchRoom
     }
     if (result.status === 'aborted') s.result.endReason = result.endReason
     s.rated = result.rated
+    // Players shown the game delayed get all of it, and the live state, before the result.
+    if (this.outViews.size > 0) this.broadcastPatch()
     this.announce('gameOver', {
       matchId: s.matchId,
       result: outcome.result,
@@ -2600,46 +2868,4 @@ export function endReasonOf(outcome: Outcome): string {
     default:
       return 'move_limit'
   }
-}
-
-/** One rules event as the flattened `lastEvents` entry of the room state. */
-export function flattenEvent(e: GameEvent): EventState {
-  const out = new EventState()
-  out.type = e.type
-  if ('seat' in e) out.seat = seatIndex(e.seat)
-  switch (e.type) {
-    case 'move_made':
-      out.notation = e.notation
-      out.from = e.from
-      out.to = e.to
-      out.piece = e.piece
-      out.promotion = e.promotion ?? ''
-      out.flag = e.flag
-      break
-    case 'capture':
-      out.square = e.square
-      out.piece = e.captured.kind
-      out.pieceOwner = seatIndex(e.captured.owner)
-      break
-    case 'en_passant':
-      out.square = e.capturedSquare
-      break
-    case 'promotion':
-      out.square = e.square
-      out.piece = e.kind
-      break
-    case 'castle':
-      out.from = e.rookFrom
-      out.to = e.rookTo
-      break
-    case 'pass':
-      out.notation = e.notation
-      break
-    case 'defeat':
-      out.reason = e.reason
-      break
-    default:
-      break
-  }
-  return out
 }

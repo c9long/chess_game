@@ -47,6 +47,7 @@ export type MatchEventType =
   | 'draw_response'
   | 'resign_proposal'
   | 'resign_response'
+  | 'takeover'
 
 /**
  * Event types that are game actions; replaying them in seq order rebuilds the game. An
@@ -101,6 +102,8 @@ export interface FinishInput {
   defeatReasons: (string | null)[]
   /** Who is rated how (Elo for ranked games, the hidden shadow pool for casual bot games). */
   ratingSeats: RatedSeat[]
+  /** A bot stood in for a player (AFK takeover): the game says nothing about humans vs bots. */
+  noShadowRatings: boolean
 }
 
 export interface FinishResult {
@@ -337,7 +340,7 @@ export class MatchRecorder {
       let changes: EloChange[] = []
       if (!isUntimed(this.input.timeControl)) {
         if (this.input.rated) changes = await applyElo(tx, game, input.ratingSeats)
-        else if (input.ratingSeats.some((s) => s.botLevel)) {
+        else if (!input.noShadowRatings && input.ratingSeats.some((s) => s.botLevel)) {
           await applyRatings(tx, game, input.ratingSeats)
         }
       }

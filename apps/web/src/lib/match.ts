@@ -202,10 +202,14 @@ export async function reconnectMatch(roomId: string): Promise<MatchRoom | null> 
     const room = await gameClient().reconnect(token)
     return adopt(room as MatchRoom)
   } catch (err) {
-    const network = err instanceof TypeError || navigator.onLine === false
-    if (!network) forgetRoom(roomId, token)
+    if (!isNetworkError(err)) forgetRoom(roomId, token)
     return null
   }
+}
+
+/** The server couldn't be reached at all (offline, connection refused), as opposed to a refusal. */
+export function isNetworkError(err: unknown): boolean {
+  return err instanceof TypeError || navigator.onLine === false
 }
 
 /**
