@@ -113,6 +113,11 @@ A bot standing in for an absent player now reads "Bot 1200 (for Alice)" on its p
 player who is out of a ranked game sees "You're out: the game is shown 2 rounds behind" under
 the title.
 
+### 14. Premove recaptures
+Commit `73c5d83`. Premove targets now follow each piece's movement pattern whatever is in the
+way, so you can premove a recapture onto your own piece's square, a pawn capture onto a
+square that's empty now, or a slide past a piece that may move.
+
 ### Usage limit
 A session limit hit at about 4:30 AM; the workflows' retry helper waited for the 4:50 reset and
 carried on, so no step was lost.
@@ -120,8 +125,6 @@ carried on, so no step was lost.
 ## Not done / left for you
 
 ### Small follow-ups (in TODO.md or noted here)
-- Premoves can only target squares the piece could move to right now, so a recapture onto
-  your own piece's square can't be premoved yet (TODO.md).
 - The privacy policy's error-report and processor rows still need Sentry added, for when you
   do the legal pass.
 
