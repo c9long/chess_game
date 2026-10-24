@@ -3,6 +3,7 @@
 !package.json
 !pnpm-lock.yaml
 !pnpm-workspace.yaml
+!tsconfig.base.json
 !Cargo.toml
 !Cargo.lock
 !crates/
@@ -11,8 +12,14 @@
 !packages/db/
 !packages/protocol/
 !packages/rules/
+# The web app, for the `with-web` target only.
+!apps/web/
+!packages/assets/
+!packages/board/
 **/node_modules
 **/target
+**/dist
+**/dist-native
 **/.env
 **/.dev-mailbox.json
 **/*.test.ts

@@ -107,3 +107,37 @@ jobs:
       - name: Stop
         if: always()
         run: $COMPOSE down -v
+
+  beta-stack:
+    # The $0 beta (docs/DEPLOY-BETA.md): Caddy in front, the web app served by the server, no
+    # email accounts. ARM only, like the Oracle machine it runs on; pushes to main only.
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04-arm
+    env:
+      GAME_ENV_FILE: ${{ github.workspace }}/beta.env
+      COMPOSE: docker compose -p gametest -f infra/docker-compose.yml -f infra/docker-compose.beta.yml -f infra/docker-compose.beta-local.yml --env-file ${{ github.workspace }}/beta.env
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test settings
+        run: |
+          sed 's/^SITE_ADDRESS=.*/SITE_ADDRESS=:80/; s/yourname\.duckdns\.org/beta.example.test/g' \
+            infra/beta.env.example > beta.env
+          for key in DB_PASSWORD BETTER_AUTH_SECRET IP_HASH_SECRET; do
+            sed -i "s/^$key=.*/$key=$(openssl rand -hex 32)/" beta.env
+          done
+          for key in TURNSTILE_SITE_KEY TURNSTILE_SECRET_KEY; do
+            sed -i "s/^$key=.*/$key=placeholder/" beta.env
+          done
+      - name: Build and start
+        run: $COMPOSE up -d --build --wait --wait-timeout 300
+      - name: Through Caddy
+        run: |
+          curl -fsS http://127.0.0.1:3901/api/health | grep -q '"db":"ok"'
+          curl -fsS http://127.0.0.1:3901/api/config | grep -q '"emailAccounts":false'
+          curl -fsS http://127.0.0.1:3901/ | grep -q '<div id="root">'
+      - name: Logs
+        if: failure()
+        run: $COMPOSE logs --no-color
+      - name: Stop
+        if: always()
+        run: $COMPOSE down -v

@@ -1,0 +1,11 @@
+# Overlay for trying the $0 beta stack on your own machine (docs/DEPLOY-BETA.md): Caddy answers
+# plain HTTP on localhost instead of ports 80/443, so it needs no certificate.
+#
+#   docker compose -p gametest -f infra/docker-compose.yml -f infra/docker-compose.beta.yml \
+#     -f infra/docker-compose.beta-local.yml --env-file /path/to/test.env up -d --build --wait
+#
+# Set SITE_ADDRESS=:80 in that file. CADDY_PUBLISH picks the address (default 127.0.0.1:3901).
+services:
+  caddy:
+    ports: !override
+      - "${CADDY_PUBLISH:-127.0.0.1:3901}:80"

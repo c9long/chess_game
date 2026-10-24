@@ -1,0 +1,12 @@
+# Front door for the $0 beta (infra/docker-compose.beta.yml, docs/DEPLOY-BETA.md): HTTPS with a
+# free Let's Encrypt certificate for SITE_ADDRESS, then everything (web pages, API, WebSockets)
+# to the game server.
+{$SITE_ADDRESS} {
+	encode zstd gzip
+	reverse_proxy server:3000 {
+		# The server takes the client IP from CF-Connecting-IP (TRUST_CLOUDFLARE=true). With no
+		# Cloudflare in front, Caddy sets it to the real peer address, overwriting anything the
+		# client sent, so the per-IP rate limits can't be dodged. Only Caddy can reach the server.
+		header_up CF-Connecting-IP {remote_host}
+	}
+}

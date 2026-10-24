@@ -1,0 +1,37 @@
+# The $0 beta (docs/DEPLOY-BETA.md): no domain, no Cloudflare Tunnel, no mail service. Caddy
+# answers on ports 80/443 of the server's own address (a free DuckDNS name) and the game server
+# serves the web app itself. Layered over the production stack:
+#
+#   docker compose -f infra/docker-compose.yml -f infra/docker-compose.beta.yml \
+#     --env-file infra/.env up -d --build
+services:
+  migrate:
+    build:
+      target: with-web
+      args:
+        VITE_SENTRY_DSN: ${VITE_SENTRY_DSN:-}
+
+  server:
+    environment:
+      WEB_DIST_DIR: /app/apps/web/dist
+
+  caddy:
+    image: caddy:2.10.2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:?set SITE_ADDRESS}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      server:
+        condition: service_healthy
+
+volumes:
+  caddy-data:
+  caddy-config:

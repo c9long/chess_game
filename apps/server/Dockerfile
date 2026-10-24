@@ -4,6 +4,9 @@
 #
 #   docker build -f apps/server/Dockerfile -t game-server .
 #
+# Target `with-web` also carries the built web app at /app/apps/web/dist, for a single-origin
+# deploy where the server serves the pages too (WEB_DIST_DIR; docs/DEPLOY-BETA.md).
+#
 # The server runs its TypeScript sources directly on Node 24 (type stripping). Workspace
 # packages stay as real directories next to node_modules (pnpm symlinks), because Node does
 # not strip types inside node_modules.
@@ -32,12 +35,15 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
  && wasm-bindgen --target web --remove-name-section --remove-producers-section \
       --out-dir /out/wasm target/wasm32-unknown-unknown/release/rules_wasm.wasm
 
-# 2. Production dependencies for the server and the workspace packages it uses.
-FROM node:${NODE_VERSION}-bookworm-slim AS deps
+# Node with pnpm, for the install stages.
+FROM node:${NODE_VERSION}-bookworm-slim AS pnpm
 ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0 \
     NPM_CONFIG_UPDATE_NOTIFIER=false
 RUN corepack enable
 WORKDIR /app
+
+# 2. Production dependencies for the server and the workspace packages it uses.
+FROM pnpm AS deps
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/server/package.json apps/server/
 COPY packages/config/package.json packages/config/
@@ -59,8 +65,32 @@ RUN cd node_modules/.pnpm && rm -rf \
  && find /app/node_modules -type f \( -name '*.map' -o -name '*.d.ts' -o -name '*.d.[cm]ts' \) -delete \
  && find /app/node_modules -xtype l -delete
 
-# 3. Runtime: sources + dependencies + the compiled rules engine.
-FROM node:${NODE_VERSION}-bookworm-slim
+# 3. The web app (only for the `with-web` target).
+FROM pnpm AS web
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY apps/web/package.json apps/web/
+COPY packages/assets/package.json packages/assets/
+COPY packages/board/package.json packages/board/
+COPY packages/config/package.json packages/config/
+COPY packages/protocol/package.json packages/protocol/
+COPY packages/rules/package.json packages/rules/
+RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
+    pnpm install --frozen-lockfile --filter "@game/web..."
+COPY tsconfig.base.json ./
+COPY apps/web apps/web
+COPY packages/assets packages/assets
+COPY packages/board packages/board
+COPY packages/config packages/config
+COPY packages/protocol packages/protocol
+COPY packages/rules packages/rules
+COPY --from=wasm /out/wasm packages/rules/wasm
+# Optional browser error reports (docs/DEPLOY.md step 7); empty = off. CI type-checks the web
+# app, so the image only bundles it.
+ARG VITE_SENTRY_DSN=
+RUN pnpm --filter @game/web exec vite build
+
+# 4. Runtime: sources + dependencies + the compiled rules engine.
+FROM node:${NODE_VERSION}-bookworm-slim AS runtime
 ENV NODE_ENV=production
 # The server runs with plain `node`; npm, npx and corepack are not needed at runtime.
 RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
@@ -80,3 +110,10 @@ EXPOSE 3000
 STOPSIGNAL SIGTERM
 # The preload starts error tracking first when SENTRY_DSN is set (src/instrument.ts).
 CMD ["node", "--import", "./apps/server/src/instrument.ts", "apps/server/src/main.ts"]
+
+# Single-origin variant: the runtime plus the built web app (WEB_DIST_DIR=/app/apps/web/dist).
+FROM runtime AS with-web
+COPY --from=web /app/apps/web/dist apps/web/dist
+
+# The default target stays the plain server image.
+FROM runtime
