@@ -9,6 +9,9 @@ behind each choice are in [PLAN.md §9](PLAN.md).
 Cloudflare, Resend, R2), plus the domain name, about $10–15 a year. The paid alternative for
 the server is an OVHcloud VPS (about $9–15 a month), with the same steps after step 3.
 
+> **No domain or email service yet?** [DEPLOY-BETA.md](DEPLOY-BETA.md) is a true $0 beta: a free
+> DuckDNS address, sign-in with Google, Discord or GitHub only, and no Cloudflare in front.
+
 > **Before charging money or a public launch**, work through the "Before public release" list
 > in [TODO.md](../TODO.md): attorney review of the legal documents, the business entity, the
 > DMCA agent and so on. A free beta with no ads or payments can run before that (decided
@@ -177,8 +180,9 @@ Open `https://play.yourdomain.com`. You should see the date-of-birth screen.
 > **Alternative: one hostname, no Pages.** The server can also serve the built web app itself
 > when `WEB_DIST_DIR` points at a web build (made with `pnpm --filter @game/web build` and no
 > `VITE_API_URL`); then `API_PUBLIC_URL` and `WEB_ORIGIN` are the same address and one tunnel
-> route serves both (see `apps/server/.env.example`). The Docker image doesn't include the web
-> build, so here Pages stays the simple way.
+> route serves both (see `apps/server/.env.example`). The server image's `with-web` target
+> includes that build; [DEPLOY-BETA.md](DEPLOY-BETA.md) uses it. With a domain, Pages stays the
+> simple way.
 
 ## Step 6: Nightly backups (about 15 minutes)
 
