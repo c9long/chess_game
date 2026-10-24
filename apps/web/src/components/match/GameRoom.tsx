@@ -232,6 +232,7 @@ function Board({
   feed,
   check,
   onFinalMoves,
+  onFrameInset,
 }: {
   room: MatchRoom
   feed: MatchFeed
@@ -239,6 +240,8 @@ function Board({
   check: CheckNotice
   /** The board's last announcement once the game is over (repeated in the result dialog). */
   onFinalMoves: (text: string) => void
+  /** Where the walnut frame sits inside the canvas, px from its edge (`BoardView.frameInset`). */
+  onFrameInset: (inset: number) => void
 }) {
   const host = useRef<HTMLDivElement>(null)
   const viewRef = useRef<BoardView | null>(null)
@@ -254,6 +257,8 @@ function Board({
   const frame = useRef<HTMLDivElement>(null)
   const finalMoves = useRef(onFinalMoves)
   finalMoves.current = onFinalMoves
+  const frameInset = useRef(onFrameInset)
+  frameInset.current = onFrameInset
 
   useEffect(() => {
     const el = frame.current
@@ -289,6 +294,7 @@ function Board({
       onAnnounce: (text) => {
         if (view.isOver) finalMoves.current(text)
       },
+      onFrameInset: (inset) => frameInset.current(inset),
     })
     viewRef.current = view
     if (import.meta.env.DEV) {
@@ -724,6 +730,9 @@ export function GameRoom({
   const reduceMotion = Boolean(systemReduced) || prefs.reducedMotion
   const [showResult, setShowResult] = useState(true)
   const [finalMoves, setFinalMoves] = useState('')
+  // Where the board draws its frame inside the canvas, px (null until it has laid out; the
+  // fraction is a first guess, since its squares are whole device pixels).
+  const [frameInset, setFrameInset] = useState<number | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [confirmLeave, setConfirmLeave] = useState(false)
   const leaveButton = useRef<HTMLButtonElement>(null)
@@ -919,7 +928,13 @@ export function GameRoom({
   )
 
   const board = ready ? (
-    <Board room={room} feed={feed} check={check} onFinalMoves={setFinalMoves} />
+    <Board
+      room={room}
+      feed={feed}
+      check={check}
+      onFinalMoves={setFinalMoves}
+      onFrameInset={setFrameInset}
+    />
   ) : (
     <div className="flex aspect-square w-full items-center justify-center gap-3 text-ui text-muted">
       <Spinner /> Loading the game engine…
@@ -947,7 +962,8 @@ export function GameRoom({
       style={
         {
           '--board': BOARD_SIZE[layout],
-          '--board-inset': `calc(var(--board) * ${BOARD_CANVAS_MARGIN})`,
+          '--board-inset':
+            frameInset === null ? `calc(var(--board) * ${BOARD_CANVAS_MARGIN})` : `${frameInset}px`,
           '--plate-w': `${PLATE_W}px`,
           '--plate-gap': `${PLATE_GAP}px`,
         } as CSSProperties

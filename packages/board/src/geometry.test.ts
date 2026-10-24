@@ -2,11 +2,17 @@ import type { Seat } from '@game/rules'
 import { BOARD_SIZE as RULES_BOARD_SIZE, NUM_SQUARES as RULES_NUM_SQUARES } from '@game/rules'
 import { describe, expect, it } from 'vitest'
 import {
+  BOARD_CANVAS_MARGIN,
+  BOARD_MARGIN,
   BOARD_SIZE,
   type BoardLayout,
+  boardExtent,
+  fitLayout,
+  frameInset,
   hopOffset,
   indexOf,
   isDarkSquare,
+  layoutForSquare,
   nameOf,
   nearestAngle,
   nearestTarget,
@@ -219,5 +225,44 @@ describe('nearestTarget (touch slop)', () => {
     expect(nearestTarget(e4.x + 28, e4.y, [indexOf('e4'), indexOf('g4')], layout, 22)).toBe(
       indexOf('g4'),
     )
+  })
+})
+
+describe('fitting the board to its canvas', () => {
+  it('rounds the square down to whole device pixels and the frame to the nearest', () => {
+    // 648 / 18.16 = 35.7 squares: 35 px at 1x, 35.5 px at 2x.
+    expect(fitLayout(648, 1)).toEqual({ square: 35, frame: 23 })
+    expect(fitLayout(648, 2)).toEqual({ square: 35.5, frame: 23.5 })
+    expect(layoutForSquare(44, 1)).toEqual({ square: 44, frame: 29 })
+    expect(fitLayout(40, 1).square).toBe(8)
+  })
+
+  it('puts the frame further in than the unrounded margin', () => {
+    for (const [side, res] of [
+      [648, 1],
+      [648, 2],
+      [808, 1],
+      [992, 1],
+      [468, 1],
+      [374, 3],
+    ] as const) {
+      const layout = fitLayout(side, res)
+      const inset = frameInset(layout, side, res)
+      expect(inset).toBeGreaterThanOrEqual(side * BOARD_CANVAS_MARGIN - 1 / res)
+      // The board and its margin still fit the canvas, centred to the device pixel.
+      expect(inset).toBeGreaterThanOrEqual(BOARD_MARGIN * layout.square - 1 / res)
+      expect(2 * inset + boardExtent(layout)).toBeCloseTo(side, 0)
+    }
+    // 1280×800: a 648 px canvas of 35 px squares, 606 px of board centred in it, 6 px further
+    // in than the fraction says.
+    expect(frameInset(fitLayout(648, 1), 648, 1)).toBe(21)
+    expect(frameInset(fitLayout(648, 2), 648, 2)).toBe(16.5)
+    expect(648 * BOARD_CANVAS_MARGIN).toBeCloseTo(14.99, 2)
+  })
+
+  it('scales the board down when the frame’s rounding pushes its margin past the canvas', () => {
+    // 180 px of board plus 2 × 4.2 px of margin in a 180 px canvas: only the margin, scaled, is left.
+    const layout: BoardLayout = { square: 10, frame: 10 }
+    expect(frameInset(layout, 180, 1)).toBeCloseTo(BOARD_MARGIN * 10 * (180 / 188.4), 6)
   })
 })

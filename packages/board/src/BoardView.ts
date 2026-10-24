@@ -61,8 +61,11 @@ import {
   type BoardLayout,
   boardExtent,
   fileLetter,
+  fitLayout,
+  frameInset,
   hopOffset,
   indexOf,
+  layoutForSquare,
   NUM_SQUARES,
   nameOf,
   nearestAngle,
@@ -169,6 +172,8 @@ export interface BoardViewInit extends Partial<BoardOptions> {
   onSquareHover?: (square: Square | null) => void
   /** The zoom level changed (1 = the whole board). */
   onZoomChange?: (zoom: number) => void
+  /** The frame's outer edge moved in the canvas (`frameInset`), e.g. after a resize. */
+  onFrameInset?: (inset: number) => void
   /**
    * Screen-reader announcements in polite live regions next to the canvas: every move,
    * capture, promotion, check, defeat and the result (bots' replies read together), and
@@ -447,6 +452,8 @@ export class BoardView {
   onSquareHover: ((square: Square | null) => void) | null
   /** The zoom level changed (1 = the whole board). */
   onZoomChange: ((zoom: number) => void) | null
+  /** The frame's outer edge moved in the canvas (`frameInset`). */
+  onFrameInset: ((inset: number) => void) | null
 
   #options: BoardOptions
   #app: Application | null = null
@@ -468,6 +475,7 @@ export class BoardView {
   /** Device resolution the current textures were rasterised at. */
   #builtRes = 0
   #fitScale = 1
+  #frameInset = 0
   #relayoutTimer: ReturnType<typeof setTimeout> | 0 = 0
   #rebuilding = false
   #hidden = false
@@ -648,6 +656,7 @@ export class BoardView {
     this.onMoveIntent = init.onMoveIntent ?? null
     this.onSquareHover = init.onSquareHover ?? null
     this.onZoomChange = init.onZoomChange ?? null
+    this.onFrameInset = init.onFrameInset ?? null
     this.#announce = init.announce ?? true
     this.#seatLabel = init.seatLabel ?? defaultSeatLabel
     this.#localSeat = init.localSeat ?? null
@@ -1027,6 +1036,16 @@ export class BoardView {
     return this.#perspective
   }
 
+  /**
+   * How far in from the canvas edge the frame's outer edge sits at rest, CSS px (along the
+   * canvas's shorter side), for pages that line things up with the frame. Squares are whole
+   * device pixels, so this is a little more than `BOARD_CANVAS_MARGIN` of the canvas. 0 until
+   * mounted.
+   */
+  get frameInset(): number {
+    return this.#frameInset
+  }
+
   /** The canvas (after `mount`). */
   get canvas(): HTMLCanvasElement | null {
     return this.#app?.renderer ? this.#app.canvas : null
@@ -1275,10 +1294,19 @@ export class BoardView {
       this.#res = res
       app.renderer.resize(w, h, res)
     }
-    const units = BOARD_SIZE + 2 * BOARD_FRAME + 2 * BOARD_MARGIN
-    const sq = Math.max(8, Math.floor((Math.min(w, h) / units) * res) / res)
+    const side = Math.min(w, h)
+    const sq = fitLayout(side, res).square
     const changed = force || res !== this.#builtRes || Math.abs(sq - this.#layout.square) > 0.01
     this.#targetSq = changed ? sq : this.#layout.square
+    // Where the frame lands once settled, scaled from canvas pixels to the element's CSS size
+    // (the canvas is a whole number of pixels, stretched over its parent).
+    const inset =
+      frameInset(layoutForSquare(this.#targetSq, res), side, res) *
+      (Math.min(rect.width, rect.height) / side)
+    if (Math.abs(inset - this.#frameInset) > 0.01) {
+      this.#frameInset = inset
+      this.onFrameInset?.(inset)
+    }
     this.#base.x = Math.round((w / 2) * res) / res
     this.#base.y = Math.round((h / 2) * res) / res
     this.#setAngle(this.#angle)
@@ -1310,7 +1338,7 @@ export class BoardView {
     this.#anim.finishAll()
     this.#particles?.clear()
     this.#chips?.clear()
-    this.#layout = { square: sq, frame: Math.round(sq * BOARD_FRAME * res) / res }
+    this.#layout = layoutForSquare(sq, res)
     this.#builtRes = res
     this.#setAngle(this.#angle)
     const gen = ++this.#generation

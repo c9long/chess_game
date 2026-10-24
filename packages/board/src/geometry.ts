@@ -128,7 +128,10 @@ export function isDarkSquare(index: number): boolean {
  */
 export const BOARD_FRAME = 0.66
 export const BOARD_MARGIN = 0.42
-/** The canvas's transparent margin as a fraction of its width (for page layouts that line up with the frame). */
+/**
+ * The canvas's transparent margin as a fraction of its width, before rounding: a first guess for
+ * page layouts that line up with the frame, until the board reports where it is (`frameInset`).
+ */
 export const BOARD_CANVAS_MARGIN = BOARD_MARGIN / (BOARD_SIZE + 2 * (BOARD_FRAME + BOARD_MARGIN))
 
 /** Pixel layout of the board in the south frame, origin at the board centre. */
@@ -137,6 +140,32 @@ export interface BoardLayout {
   readonly square: number
   /** Width of the frame around the field, CSS px. */
   readonly frame: number
+}
+
+/** The layout for a given square size: the frame rounded to whole device pixels (`res` per px). */
+export function layoutForSquare(square: number, res: number): BoardLayout {
+  return { square, frame: Math.round(square * BOARD_FRAME * res) / res }
+}
+
+/**
+ * The layout that fits a canvas `side` px across (its shorter side) at `res` device pixels per
+ * px: the largest square of whole device pixels whose board and margin fit.
+ */
+export function fitLayout(side: number, res: number): BoardLayout {
+  const units = BOARD_SIZE + 2 * BOARD_FRAME + 2 * BOARD_MARGIN
+  return layoutForSquare(Math.max(8, Math.floor((side / units) * res) / res), res)
+}
+
+/**
+ * How far in from the edge of a canvas `side` px across (its shorter side) the frame's outer edge
+ * sits, px, with `layout` centred at rest (no zoom). The board is never scaled up, so rounding
+ * the squares down leaves the frame further in than `BOARD_CANVAS_MARGIN` says (scaled down
+ * only when the frame's rounding would push the margin past the canvas).
+ */
+export function frameInset(layout: BoardLayout, side: number, res: number): number {
+  const extent = boardExtent(layout)
+  const scale = Math.min(1, side / (extent + 2 * BOARD_MARGIN * layout.square))
+  return Math.round((side / 2) * res) / res - (extent * scale) / 2
 }
 
 /** Field size (`BOARD_SIZE` squares) plus the frame on both sides. */
