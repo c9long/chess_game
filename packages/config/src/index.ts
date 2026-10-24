@@ -6,9 +6,9 @@ export const APP_NAME = "LinkedList's Chess Game"
 
 /**
  * Label under the home-screen icon (web manifest `short_name`, app stores later). Launchers
- * show about 12 characters; set a shorter form here once the title is final.
+ * show about 12 characters, so this is a short form of `APP_NAME`.
  */
-export const APP_SHORT_NAME: string = APP_NAME
+export const APP_SHORT_NAME: string = 'LL Chess'
 
 /** Civilizations selectable in v1, in display order. Slugs are stable identifiers. */
 export const CIVILIZATIONS = [

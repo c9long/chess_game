@@ -1,9 +1,21 @@
 import { describe, expect, it } from 'vitest'
-import { APP_NAME, CIVILIZATIONS, LEGAL_DOCUMENTS, LEGAL_VERSIONS, TIME_CONTROLS } from './index.ts'
+import {
+  APP_NAME,
+  APP_SHORT_NAME,
+  CIVILIZATIONS,
+  LEGAL_DOCUMENTS,
+  LEGAL_VERSIONS,
+  TIME_CONTROLS,
+} from './index.ts'
 
 describe('config', () => {
   it('exposes the working title', () => {
     expect(APP_NAME).toBe("LinkedList's Chess Game")
+  })
+
+  it('has a home-screen name launchers show in full', () => {
+    expect(APP_SHORT_NAME.length).toBeGreaterThan(0)
+    expect(APP_SHORT_NAME.length).toBeLessThanOrEqual(12)
   })
 
   it('lists exactly the nine v1 civilizations with unique slugs', () => {
