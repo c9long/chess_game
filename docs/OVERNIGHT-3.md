@@ -95,11 +95,34 @@ Commit `368ad2a`.
 Commit `4100f93`. The board now reports where it actually draws its frame, so the wide
 layout's plates sit flush with it (they overhung it by 4 to 6 px).
 
+### 11. Bot takeover for absent players; ranked delay for players who are out
+Commit `2f8ef38`.
+- **Casual games:** when a player's 60 s reconnect grace runs out and another human is still
+  playing, a bot plays their seat on their clock; they get it back by rejoining.
+  `AFK_BOT_TAKEOVER=false` turns this off.
+- **Ranked games:** a player who is out now sees the game 2 rounds late, like spectators, so
+  they can't help a friend who is still playing.
+
+### 12. Premoves
+Commit `f275b69`. Queue one move while it isn't your turn: it plays the moment your turn comes
+if it's still legal, and is dropped with an announcement if not. There's a board setting, on
+by default. The game screen now also says when a ranked game isn't rated.
+
 ### Usage limit
 A session limit hit at about 4:30 AM; the workflows' retry helper waited for the 4:50 reset and
 carried on, so no step was lost.
 
 ## Not done / left for you
+
+### Small follow-ups (in TODO.md or noted here)
+- A bot standing in for an absent player shows as "Bot 1200" on its plate; the "(for name)"
+  part is only in the seat data so far (`components/game/PlayerCard.tsx`).
+- Players who are out of a ranked game get a note in the side panel about the delay; the
+  "shown N rounds behind" pill on the board is still spectator-only (one line in GameRoom.tsx).
+- Premoves can only target squares the piece could move to right now, so a recapture onto
+  your own piece's square can't be premoved yet (TODO.md).
+- The privacy policy's error-report and processor rows still need Sentry added, for when you
+  do the legal pass.
 
 ### Needs you, money or accounts
 - **Buy the domain** and create the free accounts in docs/DEPLOY.md step 1 (Cloudflare, Oracle
