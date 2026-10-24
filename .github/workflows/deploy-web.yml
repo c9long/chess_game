@@ -7,6 +7,7 @@ name: Deploy web
 #   secrets.CLOUDFLARE_ACCOUNT_ID
 #   vars.VITE_API_URL              (https://api.<domain>)
 #   vars.PAGES_PROJECT             (the Cloudflare Pages project name)
+# Optional: vars.VITE_SENTRY_DSN (the web app's Sentry project; unset = no error tracking).
 
 on:
   push:
@@ -69,6 +70,8 @@ jobs:
         run: pnpm --filter @game/web build
         env:
           VITE_API_URL: ${{ vars.VITE_API_URL }}
+          VITE_SENTRY_DSN: ${{ vars.VITE_SENTRY_DSN }}
+          VITE_SENTRY_RELEASE: ${{ github.sha }}
       # Single-page app: unknown paths serve index.html (client-side routes like /match/:id).
       - if: steps.settings.outputs.ready == 'true'
         run: printf '/*  /index.html  200\n' > apps/web/dist/_redirects

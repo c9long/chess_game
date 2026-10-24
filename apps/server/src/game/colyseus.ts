@@ -211,7 +211,8 @@ export async function attachGameServer(
       debug: (...args: unknown[]) => log.debug({}, args.map(String).join(' ')),
       info: (...args: unknown[]) => log.debug({}, args.map(String).join(' ')),
       warn: (...args: unknown[]) => log.warn({}, args.map(String).join(' ')),
-      error: (...args: unknown[]) => log.error({}, args.map(String).join(' ')),
+      error: (...args: unknown[]) =>
+        log.error({ err: args.find((a) => a instanceof Error) }, args.map(String).join(' ')),
       trace: () => {},
     },
   })

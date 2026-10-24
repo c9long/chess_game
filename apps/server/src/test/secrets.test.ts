@@ -6,9 +6,10 @@
 import { Writable } from 'node:stream'
 import { sql } from 'drizzle-orm'
 import * as OTPAuth from 'otpauth'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { createApp } from '../app.ts'
 import { createLogger } from '../logger.ts'
+import { setErrorReporter } from '../monitoring.ts'
 import {
   acceptLegal,
   confirmAge,
@@ -127,5 +128,28 @@ describe('no plaintext secrets', () => {
     expect(logs.includes(sessionToken)).toBe(false)
     // One request line per call made above, at least.
     expect(lines.length).toBeGreaterThanOrEqual(8)
+  })
+})
+
+describe('Better Auth failures', () => {
+  afterEach(() => setErrorReporter(undefined))
+
+  it('are logged and reported with the real error, minus its query parameters', () => {
+    const captureException = vi.fn()
+    setErrorReporter({ captureException, flush: async () => true })
+    // A DrizzleQueryError: the message ends with the parameter values, and so do its fields.
+    const failure = Object.assign(
+      new Error('Failed query: select * from "session" where "id" = $1\nparams: tok-9f2k'),
+      { name: 'DrizzleQueryError', params: ['tok-9f2k'] },
+    )
+    const before = lines.length
+    app.auth.options.logger?.log?.('error', 'INTERNAL_SERVER_ERROR', failure)
+    expect(captureException).toHaveBeenCalledTimes(1)
+    expect(captureException.mock.calls[0]?.[0]).toBe(failure)
+    const line = JSON.parse(lines.slice(before).join('') || '{}')
+    expect(line.msg).toBe('INTERNAL_SERVER_ERROR')
+    expect(line.err).toMatchObject({ type: 'DrizzleQueryError' })
+    expect(line.err.message).toMatch(/^Failed query: select/)
+    expect(lines.slice(before).join('')).not.toContain('tok-9f2k')
   })
 })

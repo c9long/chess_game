@@ -292,9 +292,11 @@ export function createAuth({ config, db, email, logger, namePolicy, onSessionDel
     telemetry: { enabled: false },
     logger: {
       level: config.logLevel === 'debug' || config.logLevel === 'trace' ? 'debug' : 'warn',
-      log(level, message) {
-        // Library messages can carry request details; only the scrubbed text is logged.
-        log[level === 'debug' ? 'debug' : level]({}, scrubMessage(message))
+      log(level, message, ...args) {
+        // Library messages can carry request details; only the scrubbed text is logged. The
+        // failure itself goes as `err` (type, message and stack only, scrubbed by the logger).
+        const err = args.find((a) => a instanceof Error)
+        log[level === 'debug' ? 'debug' : level](err ? { err } : {}, scrubMessage(message))
       },
     },
     user: {

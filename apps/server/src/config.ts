@@ -1,6 +1,13 @@
 import { fileURLToPath } from 'node:url'
 import { z } from 'zod'
 import { resolveWebDistDir } from './http/static-web.ts'
+import {
+  optionalString,
+  type SentrySettings,
+  sentryEnvSchema,
+  sentryIngestOrigin,
+  sentrySettings,
+} from './monitoring.ts'
 
 /** Cloudflare's documented always-pass Turnstile test keys (dev/test only). */
 export const TURNSTILE_TEST_SITE_KEY = '1x00000000000000000000AA'
@@ -13,18 +20,11 @@ const DEV_SECRET = 'dev-only-secret-do-not-use-in-production-0123456789'
 
 const bool = z.enum(['true', 'false', '1', '0', '']).transform((v) => v === 'true' || v === '1')
 
-const optionalString = z
-  .string()
-  .optional()
-  .transform((v) => (v ? v : undefined))
-
 const url = z.url({ protocol: /^https?$/ })
 
 const envSchema = z.object({
-  /** Required: a missing NODE_ENV must never fall back to development secrets. */
-  NODE_ENV: z.enum(['development', 'test', 'production'], {
-    error: 'NODE_ENV must be set explicitly to development, test or production',
-  }),
+  // NODE_ENV and SENTRY_*: instrument.ts parses them alone, before the app is loaded.
+  ...sentryEnvSchema.shape,
   HOST: z.string().default('0.0.0.0'),
   PORT: z.coerce.number().int().min(0).max(65535).default(3000),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
@@ -145,6 +145,10 @@ export interface AppConfig {
   adminUserIds: string[]
   /** Absolute path of the web build the server also serves (WEB_DIST_DIR); unset = off. */
   webDistDir?: string
+  /** Error tracking (SENTRY_DSN); undefined = off. The SDK itself starts in instrument.ts. */
+  sentry: SentrySettings | undefined
+  /** Sentry ingest origin of the served web build (VITE_SENTRY_DSN), allowed in its CSP. */
+  webSentryOrigin: string | undefined
 }
 
 export interface GameConfig {
@@ -374,5 +378,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     },
     adminUserIds,
     ...(webDist && 'dir' in webDist ? { webDistDir: webDist.dir } : {}),
+    sentry: sentrySettings(e),
+    webSentryOrigin: e.VITE_SENTRY_DSN && sentryIngestOrigin(e.VITE_SENTRY_DSN),
   }
 }

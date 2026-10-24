@@ -182,6 +182,14 @@ describe('webAppCsp', () => {
     expect(csp).toContain("object-src 'none'")
     expect(webAppCsp('http://localhost:3950')).toContain('ws://localhost:3950')
   })
+
+  it('allows the Sentry ingest origin only when error tracking is on', () => {
+    expect(webAppCsp('https://play.example.test')).not.toContain('sentry')
+    const csp = webAppCsp('https://play.example.test', 'https://o42.ingest.us.sentry.io')
+    expect(csp).toContain(
+      "connect-src 'self' https://play.example.test wss://play.example.test https://o42.ingest.us.sentry.io",
+    )
+  })
 })
 
 describe('resolveWebDistDir / WEB_DIST_DIR', () => {

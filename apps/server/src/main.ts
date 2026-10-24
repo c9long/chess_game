@@ -1,6 +1,7 @@
 import { ConfigError, loadConfig } from './config.ts'
 import { purgeInactiveGuests } from './jobs/guest-purge.ts'
 import { purgeExpiredNameHolds, purgeOldReports } from './jobs/moderation-purge.ts'
+import { flushErrorReports } from './monitoring.ts'
 import { startServer } from './server.ts'
 
 let config: ReturnType<typeof loadConfig>
@@ -66,6 +67,7 @@ logger.info(
     email: ctx.email.name,
     oauth: Object.keys(config.oauth),
     botService: config.game.botServiceUrl ?? 'local fallback only',
+    errorTracking: config.sentry?.environment ?? 'off',
   },
   'server listening',
 )
@@ -88,6 +90,7 @@ async function shutdown(signal: string) {
   } catch (err) {
     logger.error({ err: (err as Error).message }, 'shutdown error')
   }
+  await flushErrorReports()
   process.exit(0)
 }
 process.on('SIGTERM', () => void shutdown('SIGTERM'))

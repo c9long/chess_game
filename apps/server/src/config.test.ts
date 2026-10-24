@@ -135,3 +135,51 @@ describe('loadConfig', () => {
     }
   })
 })
+
+describe('error tracking settings (SENTRY_*)', () => {
+  const DSN = 'https://abc123@o42.ingest.us.sentry.io/4507'
+
+  it('is off without a DSN', () => {
+    expect(loadConfig(base).sentry).toBeUndefined()
+    expect(loadConfig({ ...base, SENTRY_DSN: '' }).sentry).toBeUndefined()
+    expect(loadConfig(prod).sentry).toBeUndefined()
+  })
+
+  it("allows the web build's ingest origin (VITE_SENTRY_DSN) apart from the server's DSN", () => {
+    expect(loadConfig(base).webSentryOrigin).toBeUndefined()
+    const c = loadConfig({ ...base, VITE_SENTRY_DSN: 'https://pub@o7.ingest.de.sentry.io/12' })
+    expect(c.sentry).toBeUndefined()
+    expect(c.webSentryOrigin).toBe('https://o7.ingest.de.sentry.io')
+    expect(() => loadConfig({ ...base, VITE_SENTRY_DSN: 'nope' })).toThrow(/VITE_SENTRY_DSN/)
+  })
+
+  it('defaults the environment to NODE_ENV and tracing to off', () => {
+    expect(loadConfig({ ...prod, SENTRY_DSN: DSN }).sentry).toEqual({
+      dsn: DSN,
+      environment: 'production',
+      tracesSampleRate: 0,
+    })
+    const c = loadConfig({
+      ...base,
+      SENTRY_DSN: DSN,
+      SENTRY_ENVIRONMENT: 'staging',
+      SENTRY_TRACES_SAMPLE_RATE: '0.25',
+    })
+    expect(c.sentry?.environment).toBe('staging')
+    expect(c.sentry?.tracesSampleRate).toBe(0.25)
+  })
+
+  it('refuses a malformed DSN or sample rate', () => {
+    for (const bad of [
+      'abc123',
+      'https://o42.ingest.sentry.io/4507',
+      'https://abc123@o42.ingest.sentry.io/',
+      'ftp://abc123@o42.ingest.sentry.io/4507',
+    ]) {
+      expect(() => loadConfig({ ...base, SENTRY_DSN: bad }), bad).toThrow(/SENTRY_DSN/)
+    }
+    expect(() => loadConfig({ ...base, SENTRY_DSN: DSN, SENTRY_TRACES_SAMPLE_RATE: '2' })).toThrow(
+      /SENTRY_TRACES_SAMPLE_RATE/,
+    )
+  })
+})

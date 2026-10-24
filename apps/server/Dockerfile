@@ -49,11 +49,14 @@ RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
 # The lockfile resolves better-auth's and @colyseus/schema's *optional* peer dependencies
 # (vitest, vite, drizzle-kit, react, typescript, ...) because the workspace has them as dev
 # tools, so a --prod install still brings them in. The server never loads them at runtime;
-# dropping them halves node_modules (~255 MB -> ~120 MB).
+# dropping them halves node_modules (~255 MB -> ~120 MB). @sentry/node also depends on its
+# bundler plugins (oxc-parser, the `sentry` CLI, ~22 MB), which only its build-tool entry
+# points (@sentry/node/vite, ...) import.
 RUN cd node_modules/.pnpm && rm -rf \
       typescript@* vite@* vitest@* @vitest+* esbuild@* @esbuild+* @esbuild-kit+* \
       drizzle-kit@* rolldown@* @rolldown+* lightningcss* tsx@* react@* react-dom@* \
-      @types+* \
+      @types+* @sentry+bundler-plugins@* oxc-parser@* @oxc-parser+* @oxc-project+* sentry@* \
+ && find /app/node_modules -type f \( -name '*.map' -o -name '*.d.ts' -o -name '*.d.[cm]ts' \) -delete \
  && find /app/node_modules -xtype l -delete
 
 # 3. Runtime: sources + dependencies + the compiled rules engine.
@@ -75,4 +78,5 @@ USER node
 EXPOSE 3000
 # SIGTERM: stop accepting rooms, let running games finish (SHUTDOWN_DRAIN_MAX_SECONDS), exit.
 STOPSIGNAL SIGTERM
-CMD ["node", "apps/server/src/main.ts"]
+# The preload starts error tracking first when SENTRY_DSN is set (src/instrument.ts).
+CMD ["node", "--import", "./apps/server/src/instrument.ts", "apps/server/src/main.ts"]

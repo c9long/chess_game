@@ -45,6 +45,7 @@ the server is an OVHcloud VPS (about $9–15 a month), with the same steps after
 | or [OVHcloud US](https://us.ovhcloud.com/vps/) | A paid VPS instead: 4 vCPU / 8 GB RAM, US-East (Virginia), Ubuntu 24.04 | ≈ $9–15/month |
 | [Resend](https://resend.com) | Sends verification and password-reset emails | Free: 100 emails a day, 3,000 a month (Pro, $20/mo, only if you outgrow it) |
 | [Cloudflare R2](https://developers.cloudflare.com/r2/) or [Backblaze B2](https://www.backblaze.com/cloud-storage) | Off-site database backups                                                     | Free tier / ≈ $1/month              |
+| [Sentry](https://sentry.io) (optional, step 7) | Error reports from the server and players' browsers, plus an uptime check | Free (Developer plan) |
 
 If you bought the domain elsewhere, add it to Cloudflare ("Add a site") and change the
 nameservers at your registrar to the two Cloudflare shows you. This hands the domain's
@@ -202,6 +203,65 @@ age-keygen -o ~/backup-key.txt     # prints "Public key: age1..."
   `15 3 * * * /opt/game/infra/backup.sh >> /home/ubuntu/backup.log 2>&1`
 - The nightly run deletes backups older than `BACKUP_RETENTION_DAYS` (30) from the remote. It
   only touches its own `game-*.sql.gz.age` files.
+
+## Step 7: Error reports and uptime checks (optional, about 20 minutes)
+
+Two free safety nets. **Error reports** tell you when the game breaks for someone: Sentry
+collects crashes from the server and from players' browsers, with the line of code that
+failed. An **uptime check** visits the server every few minutes and emails you when it stops
+answering, so you hear about an outage before the players tell you. Both stay off until you
+add the settings below, and the game works the same without them.
+
+Privacy: before a report leaves the server or the browser, the game removes who it was about
+(no account, username, email or IP address) and anything that could hold a password or a
+sign-in code (cookies, request contents, links with codes in them). The details are in
+`packages/config/src/error-scrub.ts`.
+
+**Sentry (error reports):**
+
+1. Sign up at [sentry.io](https://sentry.io) and pick the **US** data region (it can't be
+   changed later). The free **Developer** plan is enough: it has a monthly allowance of error
+   reports and one uptime monitor (current limits on [sentry.io/pricing](https://sentry.io/pricing/)).
+   It has no card on file, so it can never charge you; past the allowance, reports are simply
+   dropped until the next month.
+2. Create two projects in the same organization: one with the platform **Node.js** (for
+   example `game-server`) and one with **Browser JavaScript** (`game-web`). Skip the setup
+   instructions Sentry shows: the code is already in place.
+3. In **each** project: Settings → Security & Privacy → turn on **Prevent Storing of IP
+   Addresses**, and leave **Data Scrubber** and **Use Default Scrubbers** on. This is a second
+   lock behind the game's own scrubbing.
+4. Each project has a **DSN**, an address that looks like
+   `https://abc123@o123456.ingest.us.sentry.io/789` (project Settings → Client Keys (DSN)). A
+   DSN only lets someone send reports, so it isn't a secret.
+   - The **server** project's DSN goes in `infra/.env` as `SENTRY_DSN`. Then restart:
+     `docker compose -f infra/docker-compose.yml --env-file infra/.env up -d`. The server's
+     start-up line in the log now says `"errorTracking":"production"` instead of `"off"`.
+   - The **web** project's DSN goes on GitHub: repository → Settings → Secrets and variables
+     → Actions → Variables → New variable `VITE_SENTRY_DSN`. Then Actions → "Deploy web" →
+     Run workflow. The web app loads Sentry only after the page has finished loading, so it
+     doesn't slow the first visit.
+   - Only if the server serves the web app itself (the "one hostname" alternative in step 5):
+     build the web app with `VITE_SENTRY_DSN` set, and put the same value in `infra/.env` as
+     `VITE_SENTRY_DSN` too. The server then lets the page send reports to Sentry (its
+     Content-Security-Policy blocks every other site).
+
+The server reports every line it logs at the error level (at most 30 reports an hour, 5 of the
+same kind), so a client sending junk can't use up the monthly allowance.
+
+**Uptime check** on `https://api.yourdomain.com/api/health`. That address answers
+`"status":"ok"` when the server and its database are fine, and an error (503) when the database
+is unreachable; both services below count an error or no answer as "down". Pick one:
+
+- **Sentry** (if you set it up above): Alerts → Create Alert → **Uptime Monitor** (in some
+  versions under Insights → Uptime). Enter the address, keep the method GET, and choose who
+  gets the email.
+- **[Better Stack](https://betterstack.com/uptime)** free plan: Monitors → Create monitor →
+  "URL becomes unavailable", paste the address, and set your email for alerts.
+
+(UptimeRobot's free plan is for non-commercial use only, so it doesn't fit a game that may
+earn money later.) If the check reports "403 Forbidden" while the game works in your browser,
+Cloudflare's bot protection is stopping the checker: in Cloudflare → Security, turn off **Bot
+Fight Mode**, or add a rule that skips it for the path `/api/health`.
 
 ## Later: the Android and iOS apps
 

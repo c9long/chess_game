@@ -65,17 +65,19 @@ export function resolveWebDistDir(
  * builds shaders without `new Function`. Styles allow inline attributes, which React and
  * the animation library set. API calls and the game's WebSocket go to the API origin (this origin in a
  * single-origin deploy; listed explicitly because older browsers don't match ws(s) to 'self').
+ * Error reports may also go to the web build's Sentry ingest origin (VITE_SENTRY_DSN).
  */
-export function webAppCsp(apiPublicUrl: string): string {
+export function webAppCsp(apiPublicUrl: string, sentryOrigin?: string): string {
   const api = new URL(apiPublicUrl)
   const ws = `${api.protocol === 'https:' ? 'wss:' : 'ws:'}//${api.host}`
+  const connect = ["'self'", api.origin, ws, ...(sentryOrigin ? [sentryOrigin] : [])]
   return [
     "default-src 'self'",
     `script-src 'self' 'wasm-unsafe-eval' ${TURNSTILE}`,
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob:",
     "font-src 'self' data:",
-    `connect-src 'self' ${api.origin} ${ws}`,
+    `connect-src ${connect.join(' ')}`,
     `frame-src ${TURNSTILE}`,
     "worker-src 'self' blob:",
     "manifest-src 'self'",
@@ -104,8 +106,11 @@ function wantsPage(req: Request): boolean {
  * cache, everything else revalidated, and index.html for client-side routes. Requests under
  * /api never reach it (they are answered, or 404 as JSON, before it).
  */
-export function webAppHandler(dir: string, options: { apiPublicUrl: string }) {
-  const csp = webAppCsp(options.apiPublicUrl)
+export function webAppHandler(
+  dir: string,
+  options: { apiPublicUrl: string; sentryOrigin?: string | undefined },
+) {
+  const csp = webAppCsp(options.apiPublicUrl, options.sentryOrigin)
   const index = path.join(dir, 'index.html')
   const files = express.static(dir, {
     index: false,

@@ -4,11 +4,7 @@ import { COLYSEUS_PATH } from '@game/protocol'
 import { toNodeHandler } from 'better-auth/node'
 import cors from 'cors'
 import { sql } from 'drizzle-orm'
-import express, {
-  type Request as ExpressRequest,
-  type Response as ExpressResponse,
-  type NextFunction,
-} from 'express'
+import express from 'express'
 import { accountRouter } from './account/routes.ts'
 import { createAuth } from './auth/auth.ts'
 import { defaultNamePolicy, type NamePolicy } from './auth/name-policy.ts'
@@ -20,6 +16,7 @@ import { gameRouter } from './game/routes.ts'
 import { GameService } from './game/service.ts'
 import { normalizeForwardedFor } from './http/client-ip.ts'
 import { devMailRouter } from './http/dev-routes.ts'
+import { errorHandler } from './http/error-handler.ts'
 
 import { requestLogger } from './http/request-log.ts'
 import { requireTrustedOrigin, securityHeaders } from './http/security.ts'
@@ -162,20 +159,14 @@ export function createApp(config: AppConfig, overrides: AppOverrides = {}) {
   })
   // Optional single-origin deploy (WEB_DIST_DIR): the web app, after every API route.
   if (config.webDistDir) {
-    app.use(webAppHandler(config.webDistDir, { apiPublicUrl: config.apiPublicUrl }))
+    app.use(
+      webAppHandler(config.webDistDir, {
+        apiPublicUrl: config.apiPublicUrl,
+        sentryOrigin: config.webSentryOrigin,
+      }),
+    )
   }
-  app.use(
-    (
-      err: Error & { status?: number; type?: string },
-      req: ExpressRequest,
-      res: ExpressResponse,
-      _next: NextFunction,
-    ) => {
-      const status = err.status && err.status >= 400 && err.status < 500 ? err.status : 500
-      if (status >= 500) logger.error({ path: req.path, err: err.message }, 'unhandled error')
-      res.status(status).json({ error: status === 500 ? 'INTERNAL' : 'BAD_REQUEST' })
-    },
-  )
+  app.use(errorHandler(logger))
 
   return {
     app,
