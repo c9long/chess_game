@@ -319,7 +319,7 @@ export function createAuth({ config, db, email, logger, namePolicy, onSessionDel
       encryptOAuthTokens: true,
     },
     emailAndPassword: {
-      enabled: true,
+      enabled: config.emailAccounts,
       requireEmailVerification: true,
       minPasswordLength: 10,
       maxPasswordLength: 128,

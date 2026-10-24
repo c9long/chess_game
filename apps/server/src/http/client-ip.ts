@@ -11,8 +11,9 @@ function stripMapped(ip: string): string {
 }
 
 /**
- * Resolves the real client IP. Behind Cloudflare (TRUST_CLOUDFLARE=true; the firewall
- * only admits Cloudflare) it is CF-Connecting-IP; otherwise the TCP peer address.
+ * Resolves the real client IP. With TRUST_CLOUDFLARE=true it is CF-Connecting-IP, set by the
+ * only proxy that can reach the server (Cloudflare, or Caddy on the $0 beta, which overwrites
+ * whatever the client sent); otherwise the TCP peer address.
  */
 export function clientIp(req: Request, config: AppConfig): string | undefined {
   if (config.trustCloudflare) {

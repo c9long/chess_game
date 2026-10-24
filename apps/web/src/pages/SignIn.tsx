@@ -36,7 +36,8 @@ function SuspendedHelp() {
   )
 }
 
-export function SignIn() {
+/** `sign-up`: the Create account page when the server has no email accounts (OAuth only). */
+export function SignIn({ mode = 'sign-in' }: { mode?: 'sign-in' | 'sign-up' }) {
   const { config, session, refreshSession, ageGate } = useAppState()
   const navigate = useNavigate()
   const location = useLocation()
@@ -153,20 +154,36 @@ export function SignIn() {
   }
 
   const providers = config?.oauthProviders ?? []
+  const signUp = mode === 'sign-up'
+  const emailAccounts = config?.emailAccounts ?? true
+  const [belowPrompt, belowTo, belowLabel] = signUp
+    ? ['Already have an account?', '/sign-in', 'Sign in']
+    : ['New here?', '/sign-up', 'Create account']
+  // One anti-bot check and error line: under the password form, or with the OAuth buttons when
+  // there is no form.
+  const captchaAndError = (
+    <>
+      <Turnstile key={widgetKey} siteKey={config?.turnstileSiteKey} onToken={setToken} />
+      {error ? <Alert>{error}</Alert> : null}
+      {error && suspended ? <SuspendedHelp /> : null}
+    </>
+  )
 
   return (
     <AuthCard
-      title="Sign in"
+      title={signUp ? 'Create account' : 'Sign in'}
       subtitle={
-        guest
-          ? 'Sign in to an account you already have.'
-          : 'Welcome back. Your rating, history and civs are waiting.'
+        signUp
+          ? 'Create your account with one of these services. It keeps your rating, history and civs across devices.'
+          : guest
+            ? 'Sign in to an account you already have.'
+            : 'Welcome back. Your rating, history and civs are waiting.'
       }
       below={
         <>
-          New here?{' '}
-          <Link to="/sign-up" className={authLinkClass}>
-            Create account
+          {belowPrompt}{' '}
+          <Link to={belowTo} className={authLinkClass}>
+            {belowLabel}
           </Link>
         </>
       }
@@ -194,59 +211,63 @@ export function SignIn() {
       ) : null}
       {/* Passkey first: it needs no form (and no anti-bot check), and it keeps the button clear
           of the Turnstile frame below, whose hit area can lag a scroll by a frame. */}
-      <div className="flex flex-col gap-3">
-        <Button
-          variant="secondary"
-          onClick={passkey}
-          busy={busy === 'passkey'}
-          data-testid="passkey-sign-in"
-        >
-          <KeyRound aria-hidden="true" className="h-4 w-4" /> Sign in with a passkey
-        </Button>
-        {passkeyError ? <Alert>{passkeyError}</Alert> : null}
-        {passkeyError && suspended ? <SuspendedHelp /> : null}
-      </div>
-      <Divider label="or" />
-      <form onSubmit={submit} className="flex flex-col gap-4">
-        <Field
-          label="Email or username"
-          autoComplete="username webauthn"
-          required
-          value={identifier}
-          onChange={(e) => setIdentifier(e.target.value)}
-        />
-        <Field
-          label="Password"
-          type="password"
-          autoComplete="current-password"
-          required
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-        />
-        <div className="-mt-1.5 text-right text-ui">
-          <Link
-            to="/forgot-password"
-            className="rounded-[2px] text-muted underline decoration-transparent underline-offset-[3px] transition-colors duration-150 hover:text-parchment hover:decoration-brass/60"
+      {signUp ? null : (
+        <div className="flex flex-col gap-3">
+          <Button
+            variant="secondary"
+            onClick={passkey}
+            busy={busy === 'passkey'}
+            data-testid="passkey-sign-in"
           >
-            Forgot password?
-          </Link>
+            <KeyRound aria-hidden="true" className="h-4 w-4" /> Sign in with a passkey
+          </Button>
+          {passkeyError ? <Alert>{passkeyError}</Alert> : null}
+          {passkeyError && suspended ? <SuspendedHelp /> : null}
         </div>
-        <Turnstile key={widgetKey} siteKey={config?.turnstileSiteKey} onToken={setToken} />
-        {error ? <Alert>{error}</Alert> : null}
-        {error && suspended ? <SuspendedHelp /> : null}
-        <Button
-          type="submit"
-          size="lg"
-          disabled={!token || !identifier || !password}
-          busy={busy === 'password'}
-        >
-          Sign in
-        </Button>
-      </form>
+      )}
+      {emailAccounts ? (
+        <>
+          <Divider label="or" />
+          <form onSubmit={submit} className="flex flex-col gap-4">
+            <Field
+              label="Email or username"
+              autoComplete="username webauthn"
+              required
+              value={identifier}
+              onChange={(e) => setIdentifier(e.target.value)}
+            />
+            <Field
+              label="Password"
+              type="password"
+              autoComplete="current-password"
+              required
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+            <div className="-mt-1.5 text-right text-ui">
+              <Link
+                to="/forgot-password"
+                className="rounded-[2px] text-muted underline decoration-transparent underline-offset-[3px] transition-colors duration-150 hover:text-parchment hover:decoration-brass/60"
+              >
+                Forgot password?
+              </Link>
+            </div>
+            {captchaAndError}
+            <Button
+              type="submit"
+              size="lg"
+              disabled={!token || !identifier || !password}
+              busy={busy === 'password'}
+            >
+              Sign in
+            </Button>
+          </form>
+        </>
+      ) : null}
 
       {providers.length > 0 ? (
         <>
-          <Divider label="or" />
+          {signUp ? null : <Divider label="or" />}
           <div className="flex flex-col gap-3">
             <p className="text-caption text-faint">
               {ageGate(true) === 'ok'
@@ -254,6 +275,7 @@ export function SignIn() {
                 : 'Signing in with another service works for an account you already have. New here? Choose Create account.'}
             </p>
             <Clickwrap checked={agreed} onChange={setAgreed} />
+            {emailAccounts ? null : captchaAndError}
             {providers.map((p) => (
               <Button
                 key={p}
@@ -268,6 +290,15 @@ export function SignIn() {
             ))}
           </div>
         </>
+      ) : null}
+      {providers.length === 0 && !emailAccounts ? (
+        <p className="mt-6 text-ui text-muted">
+          Accounts can’t be created here yet. You can still{' '}
+          <Link to="/guest" className={textLinkClass}>
+            play as a guest
+          </Link>
+          .
+        </p>
       ) : null}
     </AuthCard>
   )

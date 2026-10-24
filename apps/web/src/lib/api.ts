@@ -58,6 +58,8 @@ export interface PublicConfig {
   appName: string
   turnstileSiteKey: string
   oauthProviders: OAuthProvider[]
+  /** Email-and-password accounts; false on a deploy without a mail service (OAuth only). */
+  emailAccounts: boolean
   legalVersions: Record<'terms' | 'privacy', string>
   username: { minLength: number; maxLength: number; description: string }
   passwordMinLength: number

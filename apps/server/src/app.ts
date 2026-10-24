@@ -131,6 +131,7 @@ export function createApp(config: AppConfig, overrides: AppOverrides = {}) {
       appName: APP_NAME,
       turnstileSiteKey: config.turnstile.siteKey,
       oauthProviders: Object.keys(config.oauth),
+      emailAccounts: config.emailAccounts,
       legalVersions: LEGAL_VERSIONS,
       username: {
         minLength: namePolicy.minLength,

@@ -45,6 +45,11 @@ const envSchema = z.object({
   TURNSTILE_SITE_KEY: optionalString,
   TURNSTILE_SECRET_KEY: optionalString,
   TURNSTILE_SITEVERIFY_URL: optionalString,
+  /**
+   * Email-and-password accounts (default on). Off for a deploy without a mail service: people
+   * sign up through OAuth or play as guests, and RESEND_API_KEY isn't needed.
+   */
+  EMAIL_ACCOUNTS: bool.default(true),
   RESEND_API_KEY: optionalString,
   EMAIL_FROM: optionalString,
   IP_HASH_SECRET: optionalString,
@@ -131,6 +136,7 @@ export interface AppConfig {
   trustCloudflare: boolean
   rateLimitEnabled: boolean
   turnstile: { siteKey: string; secretKey: string; siteVerifyUrl: string | undefined }
+  emailAccounts: boolean
   email: { resendApiKey: string | undefined; from: string }
   ipHashSecret: string
   devMailEndpoint: boolean
@@ -254,8 +260,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   if (isProduction && turnstileSecret === TURNSTILE_TEST_SECRET_KEY) {
     problems.push('TURNSTILE_SECRET_KEY must not be the always-pass test key in production')
   }
-  if (isProduction && !e.RESEND_API_KEY) {
-    problems.push('RESEND_API_KEY is required in production')
+  if (isProduction && e.EMAIL_ACCOUNTS && !e.RESEND_API_KEY) {
+    problems.push('RESEND_API_KEY is required in production (or set EMAIL_ACCOUNTS=false)')
   }
   if (isProduction && !e.ABORT_ORPHANED_MATCHES) {
     problems.push('ABORT_ORPHANED_MATCHES cannot be disabled in production')
@@ -286,7 +292,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     if (!e.TRUST_CLOUDFLARE) {
       // Behind Caddy without Cloudflare trust every client shares the proxy's IP, so the
       // per-IP limits would become one site-wide bucket.
-      problems.push('TRUST_CLOUDFLARE must be true in production (the API runs behind Cloudflare)')
+      problems.push(
+        'TRUST_CLOUDFLARE must be true in production (Cloudflare, or Caddy on the beta, sets CF-Connecting-IP)',
+      )
     }
     if (!e.IP_HASH_SECRET || e.IP_HASH_SECRET.length < 32) {
       problems.push('IP_HASH_SECRET must be set to at least 32 characters in production')
@@ -349,6 +357,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       secretKey: turnstileSecret,
       siteVerifyUrl: e.TURNSTILE_SITEVERIFY_URL,
     },
+    emailAccounts: e.EMAIL_ACCOUNTS,
     email: {
       resendApiKey: e.RESEND_API_KEY,
       from: e.EMAIL_FROM ?? 'noreply@localhost',

@@ -7,6 +7,7 @@ import { Alert, Button, Field } from '../components/ui.tsx'
 import { acceptCurrentLegal, authErrorMessage } from '../lib/api.ts'
 import { isGuest, useAppState } from '../lib/app-state.tsx'
 import { authClient, captchaHeaders } from '../lib/auth-client.ts'
+import { SignIn } from './SignIn.tsx'
 
 const USERNAME_CHARS = /^[A-Za-z0-9_]+$/
 /** Only for the inline hint; the browser and the server do the real validation. */
@@ -46,6 +47,8 @@ export function SignUp() {
     email && !EMAIL_SHAPE.test(email) ? 'Enter an address like name@example.com.' : undefined
   const ready =
     checked && token && email && username && password && !usernameError && !passwordError
+
+  if (config && !config.emailAccounts) return <SignIn mode="sign-up" />
 
   async function submit(e: FormEvent) {
     e.preventDefault()

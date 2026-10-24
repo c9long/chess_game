@@ -32,6 +32,9 @@ describe('loadConfig', () => {
       /test key/,
     )
     expect(() => loadConfig({ ...prod, RESEND_API_KEY: '' })).toThrow(/RESEND_API_KEY/)
+    expect(loadConfig({ ...prod, RESEND_API_KEY: '', EMAIL_ACCOUNTS: 'false' }).emailAccounts).toBe(
+      false,
+    )
     expect(() => loadConfig({ ...prod, DEV_MAIL_ENDPOINT: 'true' })).toThrow(/DEV_MAIL_ENDPOINT/)
     expect(() => loadConfig({ ...prod, ABORT_ORPHANED_MATCHES: 'false' })).toThrow(
       /ABORT_ORPHANED_MATCHES/,
