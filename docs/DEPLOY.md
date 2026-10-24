@@ -44,7 +44,7 @@ the server is an OVHcloud VPS (about $9–15 a month), with the same steps after
 | ----------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- | ----------------------------------- |
 | Domain name (Cloudflare Registrar, or any registrar)                                                              | Your address, e.g. `yourdomain.com`                                           | ≈ $10–15/year                       |
 | [Cloudflare](https://dash.cloudflare.com/sign-up)                                                                 | DNS, web hosting (Pages), the tunnel, Turnstile CAPTCHA                       | Free                                |
-| [Oracle Cloud Free Tier](https://www.oracle.com/cloud/free/) | The server: an "Always Free" ARM machine (4 cores, 24 GB). Pick **US East (Ashburn)** as the home region at sign-up; it can't be changed later | Free (a card is needed to verify you) |
+| [Oracle Cloud Free Tier](https://www.oracle.com/cloud/free/) | The server: an "Always Free" ARM machine (2 cores, 12 GB). Pick **US East (Ashburn)** as the home region at sign-up; it can't be changed later | Free (a card is needed to verify you) |
 | or [OVHcloud US](https://us.ovhcloud.com/vps/) | A paid VPS instead: 4 vCPU / 8 GB RAM, US-East (Virginia), Ubuntu 24.04 | ≈ $9–15/month |
 | [Resend](https://resend.com) | Sends verification and password-reset emails | Free: 100 emails a day, 3,000 a month (Pro, $20/mo, only if you outgrow it) |
 | [Cloudflare R2](https://developers.cloudflare.com/r2/) or [Backblaze B2](https://www.backblaze.com/cloud-storage) | Off-site database backups                                                     | Free tier / ≈ $1/month              |
@@ -82,8 +82,13 @@ You'll paste these into one settings file in step 4.
 
 1. In the Oracle Cloud console: **Compute → Instances → Create instance**.
    - **Image:** Canonical Ubuntu 24.04 (the plain one, not "Minimal").
-   - **Shape:** Ampere, `VM.Standard.A1.Flex`, **4 OCPUs and 24 GB memory** (the whole free
-     allowance; it says "Always Free-eligible").
+   - **Shape:** Change shape → Ampere → `VM.Standard.A1.Flex`. Drag the sliders to the most
+     the free allowance allows: **2 OCPUs and 12 GB memory** since mid-2026 (it was 4 and 24
+     before). It says "Always Free-eligible". If the sliders stop at 1 OCPU and 6 GB, take that:
+     it runs the game, just with fewer bot games at once. Set `BOT_CPUS` in `infra/.env` to `1`
+     for 2 OCPUs or `0.5` for 1 OCPU, so the bots leave room for the game server.
+   - **Security:** leave everything off (Shielded instance, Confidential computing). The game
+     doesn't need them, and they aren't available on every free shape.
    - **Networking:** keep the new virtual cloud network it offers, with a public IPv4 address.
    - **SSH keys:** upload your public key (`~/.ssh/id_ed25519.pub`; make one with
      `ssh-keygen -t ed25519` if you have none).

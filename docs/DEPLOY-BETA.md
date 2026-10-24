@@ -40,7 +40,7 @@ only the Google, Discord and GitHub buttons.
 
 | Account                                                                                                                                                                                | What it's for                                                                                                                            | Cost                              |
 | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
-| [Oracle Cloud Free Tier](https://www.oracle.com/cloud/free/)                                                                                                                           | The server (4 cores, 24 GB) and the backup storage. Pick **US East (Ashburn)** as the home region at sign-up. It can't be changed later. | Free (a card verifies who you are) |
+| [Oracle Cloud Free Tier](https://www.oracle.com/cloud/free/)                                                                                                                           | The server (2 cores, 12 GB) and the backup storage.   Pick **US East (Ashburn)** as the home region at sign-up. It can't be changed later. | Free (a card verifies who you are) |
 | [DuckDNS](https://www.duckdns.org)                                                                                                                                                     | The free address. Sign in with GitHub or Google.                                                                                         | Free                              |
 | Cloudflare (you have one)                                                                                                                                                              | Turnstile, the invisible "are you human?" check                                                                                          | Free                              |
 | [Google](https://console.cloud.google.com/apis/credentials), [Discord](https://discord.com/developers/applications), [GitHub](https://github.com/settings/developers) developer accounts | "Continue with …" sign-in, the only way to create an account. Set up at least one.                                                       | Free                              |
@@ -49,7 +49,9 @@ only the Google, Discord and GitHub buttons.
 ## Step 2: The server on Oracle Cloud (about 20 minutes)
 
 1. Create the machine as described in [DEPLOY.md step 3, "On Oracle Cloud (free)"](DEPLOY.md#on-oracle-cloud-free):
-   - Ubuntu 24.04 on `VM.Standard.A1.Flex`, with 4 OCPUs and 24 GB;
+   - Ubuntu 24.04 on `VM.Standard.A1.Flex`, with 2 OCPUs and 12 GB (1 OCPU and 6 GB also
+     works). Set `BOT_CPUS` to match in step 5;
+   - **Security:** leave everything off;
    - what to do if it says "Out of capacity";
    - **upgrade to Pay As You Go, with a $1 budget alert**, so Oracle doesn't take back an idle
      free machine. Free resources still cost $0.

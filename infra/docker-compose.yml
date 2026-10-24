@@ -84,7 +84,7 @@ services:
       context: ..
       dockerfile: crates/bot-service/Dockerfile
     restart: unless-stopped
-    cpus: 2
+    cpus: ${BOT_CPUS:-2}
     mem_limit: 512m
     stop_grace_period: 5s
     environment:
