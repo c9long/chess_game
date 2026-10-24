@@ -27,8 +27,14 @@ import { Medal } from './Medal.tsx'
  * share a plate name.
  */
 export function seatTitle(seat: SeatStateJson): string {
-  if (seat.isBot) return `${civName(seat.civ)} bot`
+  if (seat.isBot) return `${civName(seat.civ)} bot${standInFor(seat)}`
   return seat.displayName
+}
+
+/** " (for Alice)" when a bot is playing an absent player's seat (the server names it so). */
+function standInFor(seat: SeatStateJson): string {
+  const at = seat.isBot ? seat.displayName.indexOf(' (for ') : -1
+  return at === -1 ? '' : seat.displayName.slice(at)
 }
 
 /**
@@ -36,7 +42,7 @@ export function seatTitle(seat: SeatStateJson): string {
  * replay: a player's name, or the bot by its strength ("Bot 1500"). The civ is the detail.
  */
 export function plateName(seat: SeatStateJson): string {
-  return seat.isBot ? botName(seat.botLevel) : seat.displayName
+  return seat.isBot ? `${botName(seat.botLevel)}${standInFor(seat)}` : seat.displayName
 }
 
 /** Which edge of the board a plate sits on (its seat colour runs along the board-facing side). */

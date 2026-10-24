@@ -108,6 +108,11 @@ Commit `f275b69`. Queue one move while it isn't your turn: it plays the moment y
 if it's still legal, and is dropped with an announcement if not. There's a board setting, on
 by default. The game screen now also says when a ranked game isn't rated.
 
+### 13. Two game-screen follow-ups
+A bot standing in for an absent player now reads "Bot 1200 (for Alice)" on its plate, and a
+player who is out of a ranked game sees "You're out: the game is shown 2 rounds behind" under
+the title.
+
 ### Usage limit
 A session limit hit at about 4:30 AM; the workflows' retry helper waited for the 4:50 reset and
 carried on, so no step was lost.
@@ -115,10 +120,6 @@ carried on, so no step was lost.
 ## Not done / left for you
 
 ### Small follow-ups (in TODO.md or noted here)
-- A bot standing in for an absent player shows as "Bot 1200" on its plate; the "(for name)"
-  part is only in the seat data so far (`components/game/PlayerCard.tsx`).
-- Players who are out of a ranked game get a note in the side panel about the delay; the
-  "shown N rounds behind" pill on the board is still spectator-only (one line in GameRoom.tsx).
 - Premoves can only target squares the piece could move to right now, so a recapture onto
   your own piece's square can't be premoved yet (TODO.md).
 - The privacy policy's error-report and processor rows still need Sentry added, for when you

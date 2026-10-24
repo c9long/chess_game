@@ -1108,6 +1108,14 @@ export function GameRoom({
               ) : null}
               <SpectatorCount count={state.spectators ?? 0} className="inline-flex wide:hidden" />
             </p>
+          ) : state.delayRounds > 0 && inGame ? (
+            // A player who is out of a ranked game gets the spectators' delayed view.
+            <p
+              className={cx('text-caption text-muted', layout === 'tablet' && 'basis-full')}
+              data-testid="out-delay"
+            >
+              You're out: the game is shown {state.delayRounds} rounds behind until it ends.
+            </p>
           ) : null}
 
           <div className={cx('min-w-0', layout === 'tablet' && 'flex-1 basis-0')}>
