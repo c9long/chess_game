@@ -169,13 +169,11 @@ describe('lobby browser and lobbies', () => {
         a.sdk().joinById(id, { protocolVersion: PROTOCOL_VERSION, password: 'open sesame' }),
       ),
     ).toBe('too_many_attempts')
-    // ...and for this room from any IP.
+    // ...but someone else who hasn't guessed wrong still gets in with it: strangers guessing
+    // can't lock the host's friends out (the room's own allowance is 30 a minute).
     const b = await guest(h)
-    expect(
-      await matchmakeError(
-        b.sdk().joinById(id, { protocolVersion: PROTOCOL_VERSION, password: 'open sesame' }),
-      ),
-    ).toBe('too_many_attempts')
+    const joinedB = await joinLobby(b, id, 'open sesame')
+    expect(joinedB.seat).toBe(1)
     await host.leave()
 
     // A fresh private room admits the right password.

@@ -79,7 +79,7 @@ import {
 import { type FinishResult, type MatchEventType, MatchRecorder } from './persistence.ts'
 import { type PlayerAuth, resolvePlayer } from './player-auth.ts'
 import { botAcceptsTeamResign, resignLapseReason, teammateOf, teamOf } from './resign-logic.ts'
-import type { GameService, ManagedRoom, RematchSpec } from './service.ts'
+import type { AttemptLimiter, GameService, ManagedRoom, RematchSpec } from './service.ts'
 import type { WatchRoom } from './watch-room.ts'
 
 /** What the matchmaking route passes as `AuthContext.req`. */
@@ -365,15 +365,7 @@ export class MatchRoom
     this.newSeatChecks(player)
     // A rematch player's held seat needs no password.
     if (this.passwordHash && !this.heldSeat(player.userId)) {
-      const limiter = this.svc.passwordAttempts
-      const keys = [`ip:${ip ?? 'unknown'}`, `room:${this.roomId}`]
-      if (keys.some((k) => limiter.blocked(k))) throw joinError('too_many_attempts')
-      // Count the attempt before the slow verify, so a burst of parallel guesses can't run
-      // more checks than the limit; a correct password is refunded.
-      for (const k of keys) limiter.fail(k)
-      const ok = await verify(this.passwordHash, password).catch(() => false)
-      if (!ok) throw joinError('invalid_password')
-      for (const k of keys) limiter.refund(k)
+      await this.checkPassword(player.userId, password, ip)
       // The room may have changed during the verify.
       if (this.isRejoin(player)) return player
       this.newSeatChecks(player)
@@ -1162,14 +1154,24 @@ export class MatchRoom
       if (!host || !friends.includes(host)) throw joinError('not_invited')
       return
     }
+    await this.checkPassword(player.userId, password, ip)
+  }
+
+  /** The lobby password (if any), within the attempt limits (GameService.passwordAttempts). */
+  private async checkPassword(userId: string, password: string, ip: string | undefined) {
     if (!this.passwordHash) return
-    const limiter = this.svc.passwordAttempts
-    const keys = [`ip:${ip ?? 'unknown'}`, `room:${this.roomId}`]
-    if (keys.some((k) => limiter.blocked(k))) throw joinError('too_many_attempts')
-    for (const k of keys) limiter.fail(k)
+    const attempts: [AttemptLimiter, string][] = [
+      [this.svc.passwordAttempts, `ip:${ip ?? 'unknown'}`],
+      [this.svc.passwordAttempts, `user:${userId}`],
+      [this.svc.roomPasswordAttempts, this.roomId],
+    ]
+    if (attempts.some(([l, k]) => l.blocked(k))) throw joinError('too_many_attempts')
+    // Count the attempt before the slow verify, so a burst of parallel guesses can't run
+    // more checks than the limit; a correct password is refunded.
+    for (const [l, k] of attempts) l.fail(k)
     const ok = await verify(this.passwordHash, password).catch(() => false)
     if (!ok) throw joinError('invalid_password')
-    for (const k of keys) limiter.refund(k)
+    for (const [l, k] of attempts) l.refund(k)
   }
 
   /**

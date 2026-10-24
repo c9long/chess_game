@@ -51,7 +51,7 @@ Later the game will be ported to a **Unity PC client sold on Steam**. That clien
 - **Rate limits:**
   - auth endpoints: Better Auth's limiter plus Turnstile;
   - guest creation: Turnstile plus a per-IP limit;
-  - lobby-password attempts: 5 per minute per IP and per room.
+  - lobby-password attempts: 5 wrong guesses per minute per IP and per account, and 30 per room (decided 2026-10-24: the room's larger allowance means strangers guessing can't lock the host's friends out).
 
 ### Planned repository layout (neutral names, independent of the game title)
 ```

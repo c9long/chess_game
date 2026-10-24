@@ -35,7 +35,7 @@ async function settle<T>(p: Promise<T>): Promise<{ ok: true; v: T } | { ok: fals
   }
 }
 
-describe('attack-spec: lobby password attempt limit (PLAN §1: 5/min per IP and per room)', () => {
+describe('attack-spec: lobby password attempt limit (PLAN §1: 5/min per IP and per account)', () => {
   it('concurrent wrong-password joins cannot get more than 5 guesses in', async () => {
     const host = await createLobby(await guest(h), { name: 'Burst target', password: 'pw-1234' })
     const id = host.room.roomId

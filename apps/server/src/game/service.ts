@@ -10,7 +10,7 @@ import type { PlayerAuth } from './player-auth.ts'
 
 /**
  * Fixed-window failure counter: `limit` failures per `windowMs` per key. Used for lobby
- * password attempts (PLAN §1: 5 per minute per IP and per room).
+ * password attempts (see `passwordAttemptAllowed`).
  */
 export class AttemptLimiter {
   #hits = new Map<string, { count: number; resetAt: number }>()
@@ -142,7 +142,13 @@ export class GameService {
   readonly namePolicy: NamePolicy
   readonly botClient: BotClient
   readonly civs: CivCatalog
+  /**
+   * Wrong lobby passwords (PLAN §1): 5 a minute per IP and per account, and 30 a minute per
+   * room. The room's allowance is larger so strangers guessing can't lock the host's friends
+   * out, while guessing spread over many IPs and accounts stays bounded.
+   */
   readonly passwordAttempts = new AttemptLimiter(5, 60_000)
+  readonly roomPasswordAttempts = new AttemptLimiter(30, 60_000)
   /** Live match rooms. */
   readonly rooms = new Set<ManagedRoom>()
   /** userId -> roomId of the seat the user holds (a user holds at most one seat). */
