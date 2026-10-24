@@ -242,7 +242,7 @@ test('a premove by keyboard, every step read out', async ({ page }) => {
   await expect(cursorRegion(page)).toHaveText('b9, West pawn')
   await page.keyboard.press('Enter')
   await expect(cursorRegion(page)).toHaveText(
-    'Picked up pawn on b9 for a premove: 2 moves. Arrow to a square and press Enter.',
+    'Picked up pawn on b9 for a premove: 4 moves. Arrow to a square and press Enter.',
   )
   await page.keyboard.press('ArrowUp')
   await expect(cursorRegion(page)).toHaveText('c9, empty, premove here')
@@ -327,4 +327,10 @@ test('a promotion premove takes the queen', async ({ page }) => {
   await sb(page, 'playAll', ['a9a8', 'i16i15', 'p9p8'])
   await settle(page)
   await expect.poll(async () => (await engineBoard(page)).pieces.e9).toBe('south queen')
+})
+
+test('a premove onto a square your own piece holds queues a recapture', async ({ page }) => {
+  await premoveSeat(page, 'west')
+  await dragSquare(page, 'a5', 'a6')
+  expect(await queued(page)).toBe('rook a5 to a6')
 })

@@ -3,8 +3,8 @@
 
 use rules_core::{
     GameEvent, GameState, Move, apply_abandon, apply_agreed_draw, apply_move_into, apply_resign,
-    apply_timeout, draw_voters, generate_legal_moves, generate_moves_for_seat, leader_under_attack,
-    parse_move, parse_position, perft,
+    apply_timeout, draw_voters, generate_legal_moves, leader_under_attack, parse_move,
+    parse_position, perft, premove_candidates,
 };
 
 use crate::dto::{ConfigInput, EventView, MoveView, SnapshotView, parse_seat};
@@ -70,14 +70,16 @@ impl Session {
         self.moves.iter().map(Move::to_string).collect()
     }
 
-    /// The moves `seat` could make if it were on move now, whoever's turn it is (empty
-    /// when the seat no longer takes turns or the game is over). Clients use it for
-    /// premoves; the move is still checked against the legal moves when the turn comes.
+    /// Premove targets for `seat`, whoever's turn it is: each piece's movement pattern
+    /// whatever stands in the way ([`premove_candidates`]; empty when the seat no longer
+    /// takes turns or the game is over). A premove is still checked against the legal moves
+    /// when the turn comes.
     pub fn moves_for_seat(&mut self, seat: &str) -> Result<Vec<MoveView>, String> {
         let seat = parse_seat(seat)?;
-        generate_moves_for_seat(&self.state, seat, &mut self.moves);
-        Ok(self
-            .moves
+        if self.state.is_over() {
+            return Ok(Vec::new());
+        }
+        Ok(premove_candidates(&self.state, seat)
             .iter()
             .map(|m| MoveView::new(&self.state, m))
             .collect())
@@ -178,6 +180,7 @@ impl Session {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rules_core::{Seat, generate_moves_for_seat};
     use serde_json::{Value, json};
 
     fn parse(s: &str) -> Value {
@@ -668,9 +671,22 @@ mod tests {
     #[test]
     fn moves_for_a_seat_not_on_move() {
         let mut s = Session::from_config_json(r#"{"mode":"ffa"}"#).unwrap();
-        // South is on move; West's moves come out as if it were West's turn.
+        // South is on move; West's premove targets come out anyway: every move West could
+        // make if it were on move, plus its pieces' patterns through and onto its own army.
         let west = s.moves_for_seat("west").unwrap();
-        assert_eq!(west.len(), s.legal_moves().len());
+        let notation =
+            |v: &[MoveView]| -> Vec<String> { v.iter().map(|m| m.notation.clone()).collect() };
+        let targets = notation(&west);
+        let mut as_if_on_move = Vec::new();
+        generate_moves_for_seat(&s.state, Seat::West, &mut as_if_on_move);
+        assert!(
+            as_if_on_move
+                .iter()
+                .all(|m| targets.contains(&m.to_string()))
+        );
+        assert!(targets.len() > as_if_on_move.len());
+        // The rook on a5 can premove onto a6, where its own knight stands now.
+        assert!(targets.iter().any(|n| n == "a5a6"));
         // West's army stands on files a and b.
         assert!(west.iter().all(|m| m.from.file() < 2));
         let json = parse(&s.moves_for_seat_json("west").unwrap());

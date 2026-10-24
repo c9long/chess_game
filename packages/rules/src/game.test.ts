@@ -52,15 +52,18 @@ describe('Game', () => {
     game.free()
   })
 
-  it('lists the moves a seat could make out of turn (premoves) without changing the turn', () => {
+  it('lists premove targets by movement pattern for a seat out of turn, without changing the turn', () => {
     const game = Game.create({ mode: 'ffa' })
     const west = game.movesForSeat('west')
     for (const m of west) validateMove(m)
-    expect(west).toHaveLength(30)
-    expect(west.map((m) => m.notation)).toContain('b5c5')
+    const targets = west.map((m) => m.notation)
+    expect(targets).toContain('b5c5')
+    // Through and onto its own pieces too, so a recapture can be premoved.
+    expect(targets).toContain('a5a6')
     expect(west.every((m) => m.from.startsWith('a') || m.from.startsWith('b'))).toBe(true)
-    // The seat to move gets its own legal moves.
-    expect(game.movesForSeat('south')).toEqual(game.legalMoves())
+    // Every move the seat to move has is a target as well.
+    const south = game.movesForSeat('south').map((m) => m.notation)
+    expect(game.legalMoveNotations().every((n) => south.includes(n))).toBe(true)
     expect(snap(game).seatToMove).toBe('south')
     expect(() => game.movesForSeat('up' as never)).toThrow('invalid seat')
     game.free()

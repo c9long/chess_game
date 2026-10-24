@@ -354,8 +354,13 @@ impl MoveView {
             promotion: mv.promotion,
             flag: mv.flag,
             piece: state.piece_at(mv.from).map_or(PieceKind::Pawn, |p| p.kind),
+            // A premove target can hold the mover's own piece (it may be gone by then).
             capture: mv.flag == MoveFlag::EnPassant
-                || (mv.flag != MoveFlag::Castle && state.piece_at(mv.to).is_some()),
+                || (mv.flag != MoveFlag::Castle
+                    && state
+                        .piece_at(mv.to)
+                        .zip(state.piece_at(mv.from))
+                        .is_some_and(|(q, p)| q.owner != p.owner)),
         }
     }
 }

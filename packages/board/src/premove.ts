@@ -5,9 +5,10 @@ import type { MoveIndex } from './moves.ts'
 
 /**
  * Premoves (pure, unit-tested): one move queued while it isn't the player's turn, picked from
- * the moves the engine says their seat could make in the current position (`movesForSeat`),
- * and checked again against the engine's legal moves when the turn comes. Nothing here
- * decides legality; it only matches squares against the engine's move lists.
+ * the engine's premove targets for their seat (`movesForSeat`: each piece's movement pattern,
+ * own pieces included, so a recapture can be queued) and checked again against the engine's
+ * legal moves when the turn comes. Nothing here decides legality; it only matches squares
+ * against the engine's move lists.
  */
 
 /** A queued premove. Squares are indices (see `geometry.ts`). */

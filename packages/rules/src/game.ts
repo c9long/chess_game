@@ -55,9 +55,10 @@ export class Game {
   }
 
   /**
-   * The moves `seat` could make if it were on move now, whoever's turn it is (empty once the
-   * seat stops taking turns or the game is over). For premoves: a move picked from these is
-   * still checked against `legalMoves()` when the turn comes.
+   * Premove targets for `seat`, whoever's turn it is: each piece's movement pattern whatever
+   * stands in the way, own pieces included, so a recapture can be premoved (empty once the seat
+   * stops taking turns or the game is over). A move picked from these is still checked against
+   * `legalMoves()` when the turn comes.
    */
   movesForSeat(seat: Seat): MoveView[] {
     return JSON.parse(this.#inner.movesForSeat(seat)) as MoveView[]

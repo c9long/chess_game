@@ -172,6 +172,73 @@ pub fn generate_moves_for_seat(state: &GameState, seat: Seat, buf: &mut Vec<Move
     gen_seat(state, seat, buf);
 }
 
+/// Premove candidates for `seat`: every square each of its pieces could reach by its
+/// movement pattern alone, whatever stands in the way or on the square (full rays for
+/// sliders; a pawn's pushes and both forward diagonals), so a player can premove a recapture
+/// onto a square their own piece holds now. Castling and en passant are left out. Empty when
+/// the seat no longer takes turns. Never legal moves in themselves: a premove is played only
+/// if it is in [`legal_moves`] when the turn comes.
+pub fn premove_candidates(state: &GameState, seat: Seat) -> Vec<Move> {
+    let mut out = Vec::new();
+    if !state.takes_turns(seat) {
+        return out;
+    }
+    let mut push = |from: Square, to: Square, pawn: bool| {
+        if pawn && seat.progress(to) == PROMOTION_PROGRESS {
+            for k in state.roster(seat).promotion_choices().iter() {
+                out.push(Move {
+                    promotion: Some(k),
+                    ..Move::new(from, to)
+                });
+            }
+        } else {
+            out.push(Move::new(from, to));
+        }
+    };
+    for (i, p) in state.board().iter().enumerate() {
+        let Some(p) = *p else { continue };
+        if p.owner != seat {
+            continue;
+        }
+        let from = Square::from_index(i);
+        let rays = |dirs: &[usize], push: &mut dyn FnMut(Square, Square, bool)| {
+            for &d in dirs {
+                for to in ray(from, d) {
+                    push(from, to, false);
+                }
+            }
+        };
+        match p.kind {
+            PieceKind::Pawn => {
+                let (fx, fy) = seat.forward();
+                if let Some(one) = from.offset(fx, fy) {
+                    push(from, one, true);
+                    if seat.progress(from) == PAWN_START_PROGRESS
+                        && let Some(two) = one.offset(fx, fy)
+                    {
+                        push(from, two, true);
+                    }
+                }
+                for (dx, dy) in pawn_capture_offsets(fx, fy) {
+                    if let Some(to) = from.offset(dx, dy) {
+                        push(from, to, true);
+                    }
+                }
+            }
+            PieceKind::Knight => KNIGHT_STEPS[i].iter().for_each(|to| push(from, to, false)),
+            PieceKind::King => KING_STEPS[i].iter().for_each(|to| push(from, to, false)),
+            PieceKind::PrimeMinister => {
+                KNIGHT_STEPS[i].iter().for_each(|to| push(from, to, false));
+                KING_STEPS[i].iter().for_each(|to| push(from, to, false));
+            }
+            PieceKind::Bishop => rays(&DIAGONAL, &mut push),
+            PieceKind::Rook => rays(&ORTHOGONAL, &mut push),
+            PieceKind::Queen => rays(&ALL_DIRS, &mut push),
+        }
+    }
+    out
+}
+
 /// Whether `seat` has at least one legal move (ignores whose turn it is).
 pub fn has_legal_move(state: &GameState, seat: Seat) -> bool {
     if !state.takes_turns(seat) {

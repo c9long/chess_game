@@ -34,6 +34,13 @@ describe('choosePremove', () => {
     g.free()
   })
 
+  it('can target a square the seat’s own piece holds now (a recapture)', () => {
+    const g = Game.create({ mode: 'ffa' })
+    const p = choosePremove(new MoveIndex(g.movesForSeat('west')), sq('a5'), sq('a6'), 'rook')
+    expect(p).toMatchObject({ notation: 'a5a6', capture: false })
+    g.free()
+  })
+
   it('promotes to a queen by default', () => {
     const g = Game.create({ mode: 'ffa' })
     for (const m of TO_PROMOTION) g.applyMove(m)
