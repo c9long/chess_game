@@ -1,13 +1,22 @@
 // Renders the piece set into PNG review sheets. Each piece is tinted by string
-// replacement (the same way the game recolours it) and rasterised through an
-// <img>, in the four seat colours plus frozen grey, on light and dark squares,
-// at 19 (a phone's square), 40, 80 and 256 px. The optional second sheet is a
-// 16x16 starting position with 40 px squares, with England's Prime Ministers
-// (civ version 2) in the South army.
+// replacement (body to the seat colour, trim to that seat's brass, as the game
+// recolours them before lighting) and rasterised through an <img>, in the four
+// seat colours (Gold with its paler trim) plus frozen grey, on maple and walnut
+// squares, at 19 and 22 (a phone's square), 40, 80 and 256 px. The optional
+// second sheet is a 16x16 starting position with 40 px squares, with England's
+// Prime Ministers (civ version 2) in the South army. Colours come from the
+// board palette (Node runs the .ts module directly).
 // Usage: node scripts/render-pieces.mjs out.png [board.png] [piecesDir]
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { chromium } from '@playwright/test'
+import {
+  BOARD_MATERIALS,
+  FROZEN_BASE,
+  PIECE_TRIM,
+  SEAT_STYLES,
+  trimFor,
+} from '../../board/src/palette.ts'
 
 const [out, boardOut, dir = new URL('../pieces/', import.meta.url).pathname] = process.argv.slice(2)
 if (!out) {
@@ -15,19 +24,26 @@ if (!out) {
   process.exit(1)
 }
 const NAMES = ['king', 'queen', 'rook', 'bishop', 'knight', 'pawn', 'prime-minister']
-const COLORS = ['#c0392b', '#2e6fd8', '#d4a017', '#1f9e6e', '#8f8b86']
-const LIGHT = '#e8d9b5'
-const DARK = '#8a6a45'
+const SEATS = ['south', 'west', 'north', 'east']
+// body and trim per column: the four seats, then frozen
+const COLORS = [
+  ...SEATS.map((s) => ({ body: SEAT_STYLES[s].base, trim: trimFor(s).base })),
+  { body: FROZEN_BASE, trim: PIECE_TRIM.frozen.base },
+]
+const LIGHT = BOARD_MATERIALS.light
+const DARK = BOARD_MATERIALS.dark
 const src = Object.fromEntries(NAMES.map((n) => [n, readFileSync(join(dir, `${n}.svg`), 'utf8')]))
 const url = (n, c) =>
-  `data:image/svg+xml;base64,${Buffer.from(src[n].replaceAll('currentColor', c)).toString('base64')}`
+  `data:image/svg+xml;base64,${Buffer.from(
+    src[n].replaceAll('currentColor', c.body).replace('fill="#b8913f"', `fill="${c.trim}"`),
+  ).toString('base64')}`
 const img = (n, c, s, bg, flip) =>
   `<div class="sq" style="background:${bg};width:${s}px;height:${s}px"><img src="${url(n, c)}" width="${s}" height="${s}" style="${flip ? 'transform:scaleX(-1)' : ''}"></div>`
 
 let html = '<div class="row">'
 for (const n of NAMES) {
   html += '<div class="col">'
-  for (const s of [19, 40, 80]) {
+  for (const s of [19, 22, 40, 80]) {
     html += '<div class="line">'
     for (const c of COLORS) html += img(n, c, s, LIGHT) + img(n, c, s, DARK)
     html += '</div>'

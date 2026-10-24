@@ -16,8 +16,8 @@ const HALF = (BOARD_SIZE / 2).toFixed(1)
  * The coordinates sit between the field and the banner; BoardView places the turn glow and
  * the dims over the same strip.
  */
-export const BAND_INNER = 0.55
-export const BAND_OUTER = 0.79
+export const BAND_INNER = 0.6
+export const BAND_OUTER = 0.82
 const BAND_T0 = BAND_INNER.toFixed(3)
 const BAND_T1 = BAND_OUTER.toFixed(3)
 

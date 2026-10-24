@@ -41,7 +41,7 @@ export function MaterialLost({
             <span
               key={key}
               aria-hidden="true"
-              className="-mr-1 inline-block h-3.5 w-3.5 shrink-0 opacity-85 last:mr-0 [&>svg]:h-full [&>svg]:w-full"
+              className="-mr-0.5 inline-block h-3.5 w-3.5 shrink-0 opacity-85 last:mr-0 [&>svg]:h-full [&>svg]:w-full"
               // biome-ignore lint/security/noDangerouslySetInnerHtml: trusted, bundled SVG assets
               dangerouslySetInnerHTML={{ __html: PIECE_SPRITES[k] }}
             />

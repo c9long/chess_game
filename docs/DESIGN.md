@@ -133,10 +133,42 @@ which is also the turn order.
   Sentences name a bot by its civ ("the Japan bot"), since three bots can share a strength.
 - Plates beside a board stand upright (`Nameplate orient="column"`, `edge` facing the board) and
   reserve every row (status, clock), so the two side plates match and nothing jumps each turn.
+  The game screen's slim corner plates are the exception: each hangs from the board's top or
+  bottom edge, so it sizes to its content, with "To move" or the status right under the name.
   Once a game is over each plate shows its placing. On phones, names get the whole first line:
   "(you)" is for screen readers only and the clock or placing moves to the detail line.
 - For plates drawn along a board edge (rotated, like the landing demo), use `Nameplate` inside
   the page's own positioning; the plate itself doesn't rotate.
+- The game screen keeps the same four corners at every size: West top left, North top right,
+  East bottom right and you bottom left. On phones, tablets and the desk layout the plates are
+  rows above and below the board's corners. On wide screens, where that makes the board larger
+  and the board is tall enough for two plates beside it (420 px), they become slim upright
+  plates (112 px) beside the board's corners, lined up with the walnut frame, so the board takes
+  the full height. There, West and East carry their seat colour on the side facing the board
+  (they sit beside their own edges), and North and South along their top and bottom, in line
+  with the board's top and bottom edges and seat banners. On phones the board's canvas overhangs the page
+  gutter by its transparent margin, so the walnut frame lines up with the plates.
+
+## Pieces
+
+The pieces are the most important thing on the screen, so they are big and chunky: lacquered,
+turned wood in a Staunton cut, in the seat colour, with a **brass collar** (and a brass cross
+on the king and finial on the queen) and a near-black outline. The art and its colour contract
+(body, trim, detail) are in `packages/assets/pieces/README.md`.
+
+- A piece fills its square: the king is 92% of the square tall and every base 72% wide. Don't
+  shrink pieces to make room for decoration; give the board the room instead.
+- The brass is the app's brass (`#c9a55a` tones), a paler polished brass on Gold pieces (plain
+  brass vanishes into the ochre) and dulled on frozen pieces. A removed army leaves the board, so
+  it has no tone. Brass is ornament, never a seat colour, so pieces still read by their body
+  colour.
+- The Prime Minister (England) is the knight's head wearing a small brass crown: a circlet on
+  the poll and the king's cross. Its silhouette (cross over a horse's head) must stay distinct
+  from the knight's two ears at 19 px.
+- Small piece glyphs beside text (pieces lost, a civ card's piece) are one-colour silhouettes in
+  the seat's text colour: no brass, no outline.
+- The art must stay readable at 19–22 px squares at 1× density. Check every change in a
+  contact sheet at those sizes, in all four seat colours plus frozen, on maple and walnut.
 
 ## Banned
 

@@ -50,10 +50,13 @@ import {
   screenToBoard,
   type Vec,
   zoomAround,
+  zoomDiscFit,
   zoomLimits,
 } from './camera.ts'
 import { hexToNumber, hexToRgb, mixHex, shadeHex } from './color.ts'
 import {
+  BOARD_FRAME,
+  BOARD_MARGIN,
   BOARD_SIZE,
   type BoardLayout,
   boardExtent,
@@ -221,20 +224,16 @@ function uiFontReady(ms = 1200): Promise<void> {
   ])
 }
 
-/**
- * Frame width, medallion size and outer margin, in squares. The margin only has to clear the
- * medallions, which overhang the frame by about 0.42 squares (kept tight: on the 16×16 board
- * every pixel of a phone's width goes to the squares).
- */
-const FRAME = 0.8
-const MEDALLION = 1.08
-const MARGIN = 0.5
+/** Medallion size, in squares (the frame and the margin round it: `BOARD_FRAME`, `BOARD_MARGIN`). */
+const MEDALLION = 1
 /** Medallion centre, as a fraction of the frame width out from the field edge. */
-const MEDALLION_AT = 0.85
+const MEDALLION_AT = 0.8
 /** Scale of the medallion of the seat to move. */
 const MEDALLION_ACTIVE = 1.08
-/** Piece sprite size relative to a square (the art's king is 84% of the sprite). */
-const PIECE_SCALE = 1.03
+/** Piece sprite size relative to a square (the art's tallest piece fills 92% of its canvas). */
+const PIECE_SCALE = 1
+/** Piece size in the promotion picker, relative to its tile: clear of the tile's rim and focus ring. */
+const PICKER_PIECE_SCALE = 0.9
 /** Transparent border around the board render texture, in CSS px (clean edges when rotated). */
 const RT_PAD = 2
 /** How long the size must stay put before textures are re-rasterised, ms. */
@@ -462,7 +461,7 @@ export class BoardView {
   #interactive: Seat | null = null
   #moves = new MoveIndex([])
 
-  #layout: BoardLayout = { square: 48, frame: 48 * FRAME }
+  #layout: BoardLayout = { square: 48, frame: 48 * BOARD_FRAME }
   /** The square size the next rebuild will use (differs from the layout while a resize settles). */
   #targetSq = 48
   #res = 1
@@ -1276,7 +1275,7 @@ export class BoardView {
       this.#res = res
       app.renderer.resize(w, h, res)
     }
-    const units = BOARD_SIZE + 2 * FRAME + 2 * MARGIN
+    const units = BOARD_SIZE + 2 * BOARD_FRAME + 2 * BOARD_MARGIN
     const sq = Math.max(8, Math.floor((Math.min(w, h) / units) * res) / res)
     const changed = force || res !== this.#builtRes || Math.abs(sq - this.#layout.square) > 0.01
     this.#targetSq = changed ? sq : this.#layout.square
@@ -1311,7 +1310,7 @@ export class BoardView {
     this.#anim.finishAll()
     this.#particles?.clear()
     this.#chips?.clear()
-    this.#layout = { square: sq, frame: Math.round(sq * FRAME * res) / res }
+    this.#layout = { square: sq, frame: Math.round(sq * BOARD_FRAME * res) / res }
     this.#builtRes = res
     this.#setAngle(this.#angle)
     const gen = ++this.#generation
@@ -1501,7 +1500,7 @@ export class BoardView {
     this.#boardShadow.width = sh.width / shadowRes
     this.#boardShadow.height = sh.height / shadowRes
     const lightSize = Math.min(512, Math.ceil(extent * 0.5))
-    const radius = 0.12 / (BOARD_SIZE + 2 * FRAME)
+    const radius = 0.12 / (BOARD_SIZE + 2 * BOARD_FRAME)
     BoardView.#swapTexture(this.#light, canvasTexture(drawLighting(lightSize, radius)))
   }
 
@@ -1522,16 +1521,24 @@ export class BoardView {
     // A medallion's footprint at its largest (the seat to move): the labels next to it
     // step aside along the edge, or hide when they can't clear it.
     const medR = sq * MEDALLION * MEDALLION_ACTIVE * 0.46 + Math.max(1, sq * 0.02)
+    // The labels' strip: from the field's edge to the seat banner's inner brass hairline (at
+    // least a device px wide), less 1 px of clearance on each side. Each label is centred in
+    // it; one too wide for it (a two-digit rank on a phone's 20 px squares) is condensed.
+    const px = 1 / this.#rasterRes
+    const stripEnd = frame * BAND_INNER - Math.max(frame * 0.022, px)
+    const stripW = Math.max(1, stripEnd - 2)
+    const off = stripEnd / 2
     this.#labelTexts.forEach((t, i) => {
       const side = Math.floor(i / BOARD_SIZE)
       const k = i % BOARD_SIZE
       t.style.fontSize = fontSize
       t.resolution = this.#rasterRes
-      // Upright labels turn with the perspective, so allow for either orientation.
-      const labelR = Math.max(t.width, t.height) / 2
-      // Out from the field far enough that two-digit ranks don't reach into it, and clear of
-      // the seat banner.
-      const off = Math.min(frame * 0.34, Math.max(frame * 0.27, labelR + 1))
+      t.scale.set(1)
+      // Upright labels turn with the perspective, so a label must fit the strip both ways: its
+      // width, and its glyphs' height (about 0.75 of the font size; the text box is taller).
+      const wide = t.width
+      if (wide > stripW) t.scale.x = Math.max(0.72, stripW / wide)
+      const labelR = Math.max(t.width, fontSize * 0.75) / 2
       let along =
         side === 0 || side === 2 ? (k + 0.5) * sq - half : (BOARD_SIZE - 1 - k + 0.5) * sq - half
       const dy = r - (half + off)
@@ -1653,7 +1660,7 @@ export class BoardView {
     this.#angle = angle
     const app = this.#app
     if (!app) return
-    const extent = boardExtent(this.#layout) + 2 * MARGIN * this.#layout.square
+    const extent = boardExtent(this.#layout) + 2 * BOARD_MARGIN * this.#layout.square
     const c = Math.abs(Math.cos(angle))
     const s = Math.abs(Math.sin(angle))
     const avail = Math.min(app.screen.width, app.screen.height)
@@ -1708,7 +1715,7 @@ export class BoardView {
       width: app?.screen.width ?? 1,
       height: app?.screen.height ?? 1,
       unit: sq * this.#fitScale,
-      half: boardExtent(this.#layout) / 2 / sq + MARGIN,
+      half: boardExtent(this.#layout) / 2 / sq + BOARD_MARGIN,
       angle: this.#angle,
     }
   }
@@ -1946,7 +1953,7 @@ export class BoardView {
     // The lower-right corner of the board's footprint on screen (at zoom 1 the disc sits in
     // the frame strip, off the squares), never outside the canvas: the canvas may be wider
     // than the board, and a zoomed board overflows it.
-    const ext = boardExtent(this.#layout) / 2 + MARGIN * this.#layout.square
+    const ext = boardExtent(this.#layout) / 2 + BOARD_MARGIN * this.#layout.square
     let right = Number.NEGATIVE_INFINITY
     let bottom = Number.NEGATIVE_INFINITY
     for (const [cx, cy] of [
@@ -1962,18 +1969,23 @@ export class BoardView {
     }
     right = Math.min(app.screen.width, right)
     bottom = Math.min(app.screen.height, bottom)
-    b.style.left = `${Math.round(right - ZOOM_BUTTON_PX)}px`
+    // At zoom 1 the disc keeps off the corner square (shrinking, then sliding out: zoomDiscFit).
+    const fit = zoomed
+      ? { disc: ZOOM_DISC_PX, shift: 0 }
+      : zoomDiscFit((BOARD_FRAME + BOARD_MARGIN) * unit, ZOOM_DISC_PX)
+    b.style.left = `${Math.round(right - ZOOM_BUTTON_PX + fit.shift)}px`
     b.style.top = `${Math.round(bottom - ZOOM_BUTTON_PX)}px`
     const state = zoomed ? 'out' : 'in'
-    if (b.dataset.boardZoom !== state || !b.firstChild) {
+    if (b.dataset.boardZoom !== state || b.dataset.disc !== String(fit.disc) || !b.firstChild) {
+      b.dataset.disc = String(fit.disc)
       b.dataset.boardZoom = state
       const label = zoomed ? 'Zoom out to the whole board' : 'Zoom in on the board'
       b.setAttribute('aria-label', label)
       b.title = label
       const bar = zoomed ? '' : '<path d="M10 7v6"/>'
       const disc = [
-        `width:${ZOOM_DISC_PX}px`,
-        `height:${ZOOM_DISC_PX}px`,
+        `width:${fit.disc}px`,
+        `height:${fit.disc}px`,
         'display:flex',
         'align-items:center',
         'justify-content:center',
@@ -2191,10 +2203,10 @@ export class BoardView {
     n.shadow.width = size * ratio
     n.shadow.height = size * ratio
     n.shadow.scale.x = Math.abs(n.shadow.scale.x) * (mirrored ? -1 : 1)
-    // The marker texture's shape spans 80% of it: about 0.26 sq, upper right, clear of the base.
-    n.marker.width = sq * 0.33
-    n.marker.height = sq * 0.33
-    n.marker.position.set(sq * 0.31, -sq * 0.31)
+    // About 0.25 sq (with its rim), tucked into the upper right corner clear of the tallest heads.
+    n.marker.width = sq * 0.27
+    n.marker.height = sq * 0.27
+    n.marker.position.set(sq * 0.37, -sq * 0.37)
     n.marker.visible = this.#options.colorblindPatterns
     n.body.alpha = 1
   }
@@ -4831,9 +4843,8 @@ export class BoardView {
       hl.visible = false
       const sp = new Sprite(atlas ? atlas.piece(kind, owner) : Texture.EMPTY)
       sp.anchor.set(0.5)
-      // The art fills about 84% of its sprite: the piece spans ~0.85 of the tile.
-      sp.width = tile
-      sp.height = tile
+      sp.width = tile * PICKER_PIECE_SCALE
+      sp.height = tile * PICKER_PIECE_SCALE
       t.addChild(base, hl, sp)
       t.eventMode = 'static'
       t.cursor = 'pointer'

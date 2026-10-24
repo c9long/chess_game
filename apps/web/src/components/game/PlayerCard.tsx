@@ -148,9 +148,10 @@ const EDGE_BAR: Record<PlateEdge, string> = {
  * One player's nameplate at the board's edge: a brass-edged plate with the seat colour along
  * the side that faces the board, the civ's enamel medallion (it opens the civ's details), the
  * name engraved in Fraunces, a detail line (civ or bot strength, status, pieces lost) and the
- * clock. `shape` is `row` above and below the board and `column` for the upright plates beside
- * it; `size` is `compact` on phones. `toMove` lights the plate gold, `inCheck` (the viewer's
- * own plate only) in the check colour, and a seat that is out is struck through and dimmed.
+ * clock. `shape` is `row` above and below the board and `column` for the slim upright plates
+ * in the corners beside it on wide screens; `size` is `compact` on phones. `toMove` lights
+ * the plate gold, `inCheck` (the viewer's own plate only) in the check colour, and a seat that is
+ * out is struck through and dimmed.
  */
 export const PlayerPlate = memo(function PlayerPlate({
   index,
@@ -293,9 +294,12 @@ export const PlayerPlate = memo(function PlayerPlate({
       >
         {title}
       </span>
-      {/* Phones keep the name's room: the plate at the bottom left is always yours. */}
+      {/* Phones and the slim upright plates keep the name's room: the plate at the bottom
+          left is always yours. */}
       {me ? (
-        <span className={compact ? 'sr-only' : 'shrink-0 text-caption text-faint'}>(you)</span>
+        <span className={compact || column ? 'sr-only' : 'shrink-0 text-caption text-faint'}>
+          (you)
+        </span>
       ) : null}
     </p>
   )
@@ -383,14 +387,14 @@ export const PlayerPlate = memo(function PlayerPlate({
   )
 
   if (column) {
-    // Every row is reserved (ability, status, clock), so the two side plates keep one height
-    // and nothing jumps as the turn passes or a status comes and goes.
+    // Sized to its content; the status line under the name is always reserved, so the plate
+    // keeps its height as the turn passes.
+    const lostShown = armyRemoved || (material !== null && material.points > 0)
     return (
       <li
         className={cx(
           shared,
-          'flex w-full flex-col items-center gap-1.5 px-2.5 pt-3 pb-2.5 text-center',
-          timed ? 'min-h-[12.5rem]' : 'min-h-[10.5rem]',
+          'flex w-full flex-col items-center gap-1.5 px-2 pt-2.5 pb-2.5 text-center',
         )}
         data-testid={`player-${name}`}
         data-to-move={toMove || undefined}
@@ -404,16 +408,23 @@ export const PlayerPlate = memo(function PlayerPlate({
         <div className="flex w-full min-w-0 flex-col items-center gap-0.5">
           {nameLine}
           <p className="w-full truncate text-caption text-faint">{detail}</p>
-          <span className="flex h-4 max-w-full justify-center">
-            {hasAbility ? <CivAbilityLine civ={seat.civ} className="max-w-full" /> : null}
-          </span>
+          {hasAbility ? (
+            <span className="flex h-4 max-w-full justify-center">
+              <CivAbilityLine civ={seat.civ} className="max-w-full" />
+            </span>
+          ) : null}
         </div>
-        <div className="flex h-5 max-w-full min-w-0 flex-wrap items-center justify-center gap-1.5 overflow-hidden">
+        <div className="flex min-h-5 max-w-full min-w-0 flex-wrap items-center justify-center gap-x-1.5 gap-y-1">
+          {timed ? null : turnNote}
           {partnerMark}
           {statusChip}
-          {lost}
         </div>
-        <div className="mt-auto flex min-h-8 w-full items-center justify-center">{clockSlot}</div>
+        {lostShown ? (
+          <div className="flex h-4 max-w-full min-w-0 justify-center">{lost}</div>
+        ) : null}
+        {timed || medal ? (
+          <div className="flex min-h-8 w-full items-center justify-center">{clockSlot}</div>
+        ) : null}
       </li>
     )
   }

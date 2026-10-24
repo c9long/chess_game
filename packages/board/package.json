@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./svg": "./src/svg.ts"
   },
   "scripts": {
     "sandbox": "vite --config sandbox/vite.config.ts",

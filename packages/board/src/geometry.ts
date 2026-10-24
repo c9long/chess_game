@@ -121,6 +121,16 @@ export function isDarkSquare(index: number): boolean {
   return ((index % BOARD_SIZE) + Math.floor(index / BOARD_SIZE)) % 2 === 0
 }
 
+/**
+ * The walnut frame round the field and the transparent margin outside it, in squares. The margin
+ * only has to clear the medallions, which overhang the frame by about 0.36 squares at their
+ * largest (kept tight: on the 16×16 board every pixel of a phone's width goes to the squares).
+ */
+export const BOARD_FRAME = 0.66
+export const BOARD_MARGIN = 0.42
+/** The canvas's transparent margin as a fraction of its width (for page layouts that line up with the frame). */
+export const BOARD_CANVAS_MARGIN = BOARD_MARGIN / (BOARD_SIZE + 2 * (BOARD_FRAME + BOARD_MARGIN))
+
 /** Pixel layout of the board in the south frame, origin at the board centre. */
 export interface BoardLayout {
   /** Side of one square, CSS px. */

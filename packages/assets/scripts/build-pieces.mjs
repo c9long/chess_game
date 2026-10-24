@@ -1,9 +1,11 @@
 // Builds packages/assets/pieces/*.svg from the hand-tuned component outlines
-// below. Each piece is a stack of simple closed shapes (base, collar, stem,
-// head...) drawn back to front. The script unions them into the body, outlines
-// every visible edge as a filled band (stroke converted to fill, never a
-// stroke), adds interior detail lines, mirrors symmetric pieces exactly about
-// x = 128 and writes two-tone SVGs (see ../pieces/README.md).
+// below. Each piece is a stack of simple closed shapes (stem, collar, head,
+// base...) drawn back to front. The script unions them into the body (the
+// silhouette plus one "turning" path per visible component), collects the
+// brass components into the trim, outlines every visible edge as a filled band
+// (stroke converted to fill, never a stroke), adds interior detail lines,
+// mirrors symmetric pieces exactly about x = 128 and writes three-tone SVGs
+// (body, trim, detail; see ../pieces/README.md).
 //
 // Geometry ops use Skia via canvaskit-wasm, which is deliberately not a
 // workspace dependency. Install it anywhere and point CANVASKIT_DIR at it:
@@ -111,7 +113,8 @@ function strokeOf(path, width, cap = 'Round') {
 // (mirrored) coordinates. Output is meant for fill-rule="evenodd": PathOps
 // results are non-overlapping contours, so even-odd is always correct.
 function symmetrise(path) {
-  const right = op(path, P('M128 -10H300V300H128Z'), 'Intersect')
+  // Rounded to 0.01 first, so each mirrored coordinate rounds to its exact twin.
+  const right = P(plain(op(path, P('M128 -10H300V300H128Z'), 'Intersect')))
   const left = right.copy().transform([-1, 0, 2 * CX, 0, 1, 0, 0, 0, 1])
   return plain(op(right, left, 'Union'))
 }
@@ -122,33 +125,43 @@ function plain(path) {
 }
 
 // ---------- piece set ---------------------------------------------------------
-const W = 7 // outline width (centred on the body edge)
-const DW = 5.5 // interior detail line width
+const W = 8 // outline width (centred on the body edge)
+const DW = 6 // interior detail line width
 const DETAIL = '#1a1612'
+const TRIM = '#b8913f'
 const X = (dx) => CX + dx
 
 // ---------- shared parts -------------------------------------------------------
-const BASE_BOTTOM = 230
-function base(hw = 70) {
+// A chunky Staunton base: a wide foot (body half width HW, about 72% of the
+// canvas with its outline) and a deep rounded step on it. It is stacked in
+// front of everything else, so stems and the knight's neck tuck in behind it.
+const HW = 88
+const FOOT_BOTTOM = 242
+function base() {
   return [
-    // foot: a low convex torus
+    // foot: a low, wide torus
     sym([
-      ['M', CX, 210],
-      ['L', X(hw - 16), 210],
-      ['C', X(hw - 6), 210, X(hw), 214, X(hw), 221],
-      ['C', X(hw), 226, X(hw - 2), BASE_BOTTOM, X(hw - 8), BASE_BOTTOM],
-      ['L', CX, BASE_BOTTOM],
+      ['M', CX, 220],
+      ['L', X(HW - 22), 220],
+      ['C', X(HW - 8), 220, X(HW), 225, X(HW), 232],
+      ['C', X(HW), 238, X(HW - 3), FOOT_BOTTOM, X(HW - 10), FOOT_BOTTOM],
+      ['L', CX, FOOT_BOTTOM],
     ]),
-    // step: smaller torus
+    // step: a deeper, narrower torus
     sym([
-      ['M', CX, 198],
-      ['L', X(hw - 24), 198],
-      ['C', X(hw - 15), 198, X(hw - 10), 201, X(hw - 10), 206],
-      ['C', X(hw - 10), 210, X(hw - 13), 213, X(hw - 18), 213],
-      ['L', CX, 213],
+      ['M', CX, 199],
+      ['L', X(HW - 31), 199],
+      ['C', X(HW - 18), 199, X(HW - 12), 204, X(HW - 12), 211],
+      ['C', X(HW - 12), 218, X(HW - 17), 224, X(HW - 25), 224],
+      ['L', CX, 224],
     ]),
   ]
 }
+
+// Component tags: `brass` parts form the trim group; `crown` parts stop the
+// Prime Minister's head details; `mitre` clips the bishop's slit.
+const brass = (d) => ({ d, brass: true })
+const tag = (d, name) => ({ d, [name]: true })
 
 // concave stem: half width wTop at yTop flaring to wBot at yBot
 function stem(yTop, wTop, yBot, wBot, flare = 0.5) {
@@ -162,141 +175,133 @@ function stem(yTop, wTop, yBot, wBot, flare = 0.5) {
   ])
 }
 
+// The cross (king, Prime Minister): a vertical bar of half width bw from
+// yTop to yBot, arms of half width aw from y0 to y1, softly rounded corners.
+function cross(yTop, yBot, bw, aw, y0, y1) {
+  return sym([
+    ['M', CX, yTop],
+    ['L', X(bw - 2), yTop],
+    ['C', X(bw - 0.9), yTop, X(bw), yTop + 0.9, X(bw), yTop + 2],
+    ['L', X(bw), y0],
+    ['L', X(aw - 2), y0],
+    ['C', X(aw - 0.9), y0, X(aw), y0 + 0.9, X(aw), y0 + 2],
+    ['L', X(aw), y1 - 2],
+    ['C', X(aw), y1 - 0.9, X(aw - 0.9), y1, X(aw - 2), y1],
+    ['L', X(bw), y1],
+    ['L', X(bw), yBot],
+    ['L', CX, yBot],
+  ])
+}
+
 // ---------- pieces ---------------------------------------------------------------
+// `comps` are stacked back to front: plain path strings, or tagged objects.
 const pieces = {}
 
 pieces.pawn = {
   comps: [
-    ...base(),
-    stem(140, 17, 204, 44, 0.6),
-    band(42, 190, 204, 7),
-    band(34, 134, 148, 7),
-    circle(CX, 108, 30),
+    stem(148, 24, 206, 58, 0.6),
+    circle(CX, 108, 37),
+    brass(band(44, 137, 157, 8)),
+    ...base().map((d) => tag(d, 'base')),
   ],
 }
 
 pieces.rook = {
   comps: [
-    ...base(),
-    // tower body, gently tapering
+    // tower, gently tapering upwards
     sym([
-      ['M', CX, 104],
-      ['L', X(38), 104],
-      ['C', X(34), 140, X(36), 180, X(44), 200],
-      ['L', CX, 200],
+      ['M', CX, 106],
+      ['L', X(45), 106],
+      ['C', X(42), 146, X(46), 180, X(58), 206],
+      ['L', CX, 206],
     ]),
-    band(52, 188, 204, 7),
-    // battlements: three merlons in profile
+    // battlements: three merlons in profile, a wide block below them
     sym([
-      ['M', CX, 66],
-      ['L', X(12), 66],
-      ['L', X(12), 82],
-      ['L', X(30), 82],
-      ['L', X(30), 66],
-      ['L', X(48), 66],
-      ['C', X(50), 66, X(52), 68, X(52), 70],
-      ['L', X(52), 102],
-      ['L', CX, 102],
+      ['M', CX, 52],
+      ['L', X(13), 52],
+      ['L', X(13), 71],
+      ['L', X(33), 71],
+      ['L', X(33), 52],
+      ['L', X(54), 52],
+      ['C', X(57), 52, X(60), 55, X(60), 58],
+      ['L', X(60), 106],
+      ['L', CX, 106],
     ]),
-    band(48, 98, 114, 7),
+    brass(band(58, 98, 118, 8)),
+    ...base().map((d) => tag(d, 'base')),
   ],
 }
 
 pieces.bishop = {
   comps: [
-    ...base(),
-    stem(132, 15, 204, 42, 0.5),
-    band(46, 190, 203, 6.5),
+    stem(142, 23, 206, 56, 0.5),
     // mitre
-    sym([
-      ['M', CX, 58],
-      ['C', X(10), 64, X(35), 78, X(35), 100],
-      ['C', X(35), 114, X(27), 124, X(19), 128],
-      ['L', CX, 128],
-    ]),
-    band(23, 122, 133, 5),
-    band(35, 129, 141, 6),
-    circle(CX, 50, 10),
+    tag(
+      sym([
+        ['M', CX, 50],
+        ['C', X(14), 56, X(45), 76, X(45), 102],
+        ['C', X(45), 118, X(35), 130, X(24), 135],
+        ['L', CX, 135],
+      ]),
+      'mitre',
+    ),
+    brass(band(38, 126, 146, 8)),
+    circle(CX, 43, 11.5),
+    ...base().map((d) => tag(d, 'base')),
   ],
-  // diagonal slit (asymmetric detail)
-  extra: [{ d: 'M164 78L132 104', w: 7, clipTo: 4 }],
+  // diagonal slit (asymmetric detail, clipped to the mitre)
+  extra: [{ d: 'M172 76L132 110', w: 8 }],
 }
 
 pieces.queen = {
   comps: [
-    ...base(),
-    stem(112, 15, 204, 42, 0.5),
-    band(46, 190, 203, 6.5),
-    // crown cup with coronet
+    stem(122, 23, 206, 56, 0.5),
+    // crown cup with a five-point coronet
     sym([
-      ['M', CX, 40],
-      ['L', X(10), 64],
-      ['L', X(24), 42],
-      ['L', X(34), 68],
-      ['L', X(50), 48],
-      ['C', X(44), 72, X(30), 92, X(20), 106],
-      ['L', CX, 106],
+      ['M', CX, 46],
+      ['L', X(13), 72],
+      ['L', X(29), 44],
+      ['L', X(41), 76],
+      ['L', X(58), 52],
+      ['C', X(53), 78, X(39), 98, X(28), 114],
+      ['L', CX, 114],
     ]),
-    band(26, 100, 112, 6),
-    band(34, 108, 120, 6),
-    circle(X(50), 46, 7),
-    circle(X(-50), 46, 7),
-    circle(X(24), 38, 7),
-    circle(X(-24), 38, 7),
-    circle(CX, 32, 9),
+    brass(band(42, 106, 126, 8)),
+    circle(X(58), 48, 9),
+    circle(X(-58), 48, 9),
+    circle(X(29), 40, 9),
+    circle(X(-29), 40, 9),
+    brass(circle(CX, 34, 10.5)),
+    ...base().map((d) => tag(d, 'base')),
   ],
   details: [
-    // crown band
-    'M90 82C100 86 114 88 128 88C142 88 156 86 166 82',
+    // crown band (thin, so the cup keeps its colour on small squares)
+    { d: 'M84 86C97 91 112 93 128 93C144 93 159 91 172 86', w: 4.5 },
   ],
 }
 
 pieces.king = {
   comps: [
-    ...base(),
-    stem(110, 15, 204, 42, 0.5),
-    band(46, 190, 203, 6.5),
+    stem(120, 23, 206, 56, 0.5),
     // crown cup
     sym([
-      ['M', CX, 56],
-      ['L', X(40), 56],
-      ['C', X(30), 70, X(21), 86, X(20), 104],
-      ['L', CX, 104],
+      ['M', CX, 60],
+      ['L', X(52), 60],
+      ['C', X(44), 76, X(35), 92, X(32), 108],
+      ['L', CX, 108],
     ]),
-    band(27, 96, 108, 6),
-    band(35, 104, 116, 6),
-    band(43, 51, 62, 5.5),
+    band(57, 52, 67, 6),
     // dome
     sym([
-      ['M', CX, 36],
-      ['C', X(14), 36, X(24), 42, X(24), 52],
-      ['L', CX, 52],
+      ['M', CX, 38],
+      ['C', X(17), 38, X(29), 45, X(29), 56],
+      ['L', CX, 56],
     ]),
-    // cross
-    sym([
-      ['M', CX, 9],
-      ['L', X(5.5), 9],
-      ['C', X(7.5), 9, X(8.5), 10, X(8.5), 12],
-      ['L', X(8.5), 19],
-      ['L', X(18.5), 19],
-      ['C', X(20.5), 19, X(21.5), 20, X(21.5), 22],
-      ['L', X(21.5), 30],
-      ['C', X(21.5), 32, X(20.5), 33, X(18.5), 33],
-      ['L', X(8.5), 33],
-      ['L', X(8.5), 44],
-      ['L', CX, 44],
-    ]),
+    brass(band(42, 102, 122, 8)),
+    brass(cross(14, 44, 10, 24, 21, 35.5)),
+    ...base().map((d) => tag(d, 'base')),
   ],
 }
-
-// scale a path's coordinates about (ox, oy)
-const tf = (d, k, ox = CX, oy = 196) =>
-  d.replace(/(-?\d*\.?\d+)\s+(-?\d*\.?\d+)/g, (_, x, y) => {
-    const nx = Math.round((ox + (Number(x) - ox) * k) * 100) / 100
-    const ny = Math.round((oy + (Number(y) - oy) * k) * 100) / 100
-    return `${nx} ${ny}`
-  })
-const KN = 0.91
 
 // Mane locks: convex lobes between successive points, bulging to the left of
 // the direction of travel, meeting in small notches.
@@ -316,112 +321,92 @@ function lobes(points, bulge) {
   return d
 }
 
+// map every "x y" coordinate pair of a path through fn, rounded to 0.01
+const mapXY = (d, fn) =>
+  d.replace(/(-?\d*\.?\d+)\s+(-?\d*\.?\d+)/g, (_, x, y) =>
+    fn(Number(x), Number(y)).map(f).join(' '),
+  )
+
+// scale a path's coordinates by k about (ox, oy)
+const tf = (d, k, ox = CX, oy = 211) => mapXY(d, (x, y) => [ox + (x - ox) * k, oy + (y - oy) * k])
+
+// The horse's head and neck, facing right: two clear ears, a long face ending
+// in a blunt muzzle, and a deep throat notch under the jaw, so it reads as a
+// head (not a blob) on a 19 px square.
+const HORSE =
+  'M80 212' +
+  'C72 190 68 168 71 146' + // back of neck
+  lobes(
+    [
+      [71, 146],
+      [75, 120],
+      [84, 97],
+      [97, 77],
+      [112, 61],
+    ],
+    -5,
+  ) + // mane locks along the crest
+  'C112 54 113 45 116 34' + // back ear
+  'C122 41 125 49 127 56' +
+  'C129 48 133 40 141 33' + // front ear
+  'C145 42 147 51 147 59' +
+  'C160 64 172 74 182 86' + // forehead
+  'C195 102 206 120 214 136' + // face
+  'C221 149 221 162 211 167' + // muzzle
+  'C205 169 199 167 194 164' + // upper lip to mouth corner
+  'C192 172 185 176 176 175' + // chin
+  'C166 174 152 166 140 157' + // jaw underside
+  'C128 176 138 200 174 212' + // throat and chest
+  'Z'
+
+const KNIGHT_DETAILS = [
+  { d: 'M143 96C149 88 160 87 168 92C161 99 151 100 143 96Z', fill: true }, // eye
+  { d: 'M205 141L209 148', w: 6.5 }, // nostril
+  { d: 'M223 160C215 160 207 161 200 163', w: 5 }, // mouth
+  { d: 'M128 104C146 112 156 126 154 147', w: 5.5 }, // cheek / jaw
+  { d: 'M123 68C108 88 97 114 92 142C89 160 89 176 90 192', w: 5.5 }, // mane edge
+]
+
 pieces.knight = {
   symmetric: false,
-  comps: [
-    ...base(),
-    // horse head and neck, facing right
-    tf(
-      'M78 196' +
-        'C75 180 75 164 78 150' + // back of neck
-        lobes(
-          [
-            [78, 150],
-            [80, 124],
-            [87, 100],
-            [99, 79],
-            [114, 60],
-          ],
-          -5,
-        ) + // mane locks along the crest
-        'C114 50 115 40 117 30' + // back ear
-        'C121 36 124 42 126 46' +
-        'C128 40 130 36 134 32' + // front ear
-        'C138 40 140 48 140 56' +
-        'C150 60 160 66 168 74' + // forehead
-        'C180 88 194 106 202 120' + // face
-        'C208 130 208 142 200 146' + // nose
-        'C194 148 188 146 184 144' + // upper lip to mouth corner
-        'C182 150 176 152 170 150' + // chin
-        'C160 148 150 146 144 148' + // jaw underside
-        'C140 164 152 182 180 196' + // throat and chest
-        'Z',
-      KN,
-    ),
-    band(46, 190, 203, 6.5),
-  ],
-  details: [
-    { d: tf('M143 86C148 79 157 78 163 83C157 88 150 89 143 86Z', KN), fill: true }, // eye
-    { d: tf('M194 124L196 128', KN), w: 6 }, // nostril
-    { d: tf('M206 140C200 140 194 140 188 142', KN), w: 4.5 }, // mouth
-    { d: tf('M128 92C146 100 158 116 160 140', KN), w: 5 }, // cheek / jaw
-    { d: tf('M124 62C110 80 100 104 96 130C93 150 94 172 96 194', KN), w: 5 }, // mane edge
-  ],
+  comps: [HORSE, brass(band(58, 180, 200, 8)), ...base().map((d) => tag(d, 'base'))],
+  details: KNIGHT_DETAILS,
 }
 
-// Prime Minister (England): the knight's head, smaller, wearing the king's
-// crown (band, cup, dome and cross) between its ears. The crown is drawn in
-// front of the head, so the head's detail lines stop at its edge. It is wider
-// than the king's and about a third of the piece's height, so on a phone's
-// ~20 px square it still reads as a coloured crown, not a dark bump.
-const KM = 0.74
-const PMX = 124 // crown centre line (over the poll, between the ears)
-const PM_CROWN_X = 1.15 // crown size relative to the king's: wider,
-const PM_CROWN_Y = 0.9 // a little squatter, so it fits above the head
-const PM_CROWN_DY = 12
-const crown = (d) =>
-  d.replace(/(-?\d*\.?\d+)\s+(-?\d*\.?\d+)/g, (_, x, y) => {
-    const nx = Math.round((PMX + (Number(x) - CX) * PM_CROWN_X) * 100) / 100
-    const ny = Math.round((Number(y) * PM_CROWN_Y + PM_CROWN_DY) * 100) / 100
-    return `${nx} ${ny}`
-  })
+// Prime Minister (England): the knight's head at 90%, its ears smoothed into a
+// poll (beside the cross they would only be a smudge of outline), wearing a
+// brass circlet with the king's cross standing where the ears were. The crown
+// is drawn in front of the head, so only the eye, mouth and mane line remain.
+const KM = 0.9
+const POLLED = HORSE.replace(
+  'C112 54 113 45 116 34C122 41 125 49 127 56C129 48 133 40 141 33C145 42 147 51 147 59',
+  'C118 55 136 54 147 59',
+)
+if (POLLED === HORSE) throw new Error('prime minister: ear outline not found')
+const PMX = 128.5 // crown centre line (over the poll)
+const pm = (d) => ({ d: mapXY(d, (x, y) => [x - CX + PMX, y]), brass: true, crown: true })
 pieces['prime-minister'] = {
   title: 'Prime Minister',
   symmetric: false,
   comps: [
-    ...base(),
-    // the knight's head and neck (same outline as the knight), scaled about its foot
-    tf(pieces.knight.comps[2], KM / KN),
-    band(46, 190, 203, 6.5),
-    // crown: cup, rim band sitting on the head, dome, cross (no upper band:
-    // fewer outlines keep the seat colour visible at 19 px)
-    crown(
+    tf(POLLED, KM),
+    brass(band(58, 180, 200, 8)),
+    // the cross stands on the poll, its foot tucked behind the circlet
+    pm(cross(24, 80, 9.5, 22.5, 32, 45)),
+    pm(
       sym([
-        ['M', CX, 50],
-        ['L', X(42), 50],
-        ['C', X(32), 66, X(25), 78, X(24), 92],
-        ['L', CX, 92],
+        ['M', CX, 75],
+        ['L', X(24), 75],
+        ['C', X(28), 75, X(30), 77, X(30), 81],
+        ['L', X(30), 86],
+        ['C', X(30), 90, X(28), 93, X(24), 93],
+        ['C', X(15), 93, X(6), 95, CX, 95],
       ]),
     ),
-    crown(band(30, 86, 100, 6)),
-    crown(
-      sym([
-        ['M', CX, 36],
-        ['C', X(14), 36, X(24), 42, X(24), 52],
-        ['L', CX, 52],
-      ]),
-    ),
-    crown(
-      sym([
-        ['M', CX, 9],
-        ['L', X(6), 9],
-        ['C', X(8), 9, X(9), 10, X(9), 12],
-        ['L', X(9), 19],
-        ['L', X(19), 19],
-        ['C', X(21), 19, X(22), 20, X(22), 22],
-        ['L', X(22), 30],
-        ['C', X(22), 32, X(21), 33, X(19), 33],
-        ['L', X(9), 33],
-        ['L', X(9), 44],
-        ['L', CX, 44],
-      ]),
-    ),
+    ...base().map((d) => tag(d, 'base')),
   ],
-  // the knight's eye, nostril, mouth and cheek, rescaled with the head (no
-  // mane line: at small sizes it merges with the crown's outline)
-  details: pieces.knight.details.slice(0, 4).map((dd) => ({ ...dd, d: tf(dd.d, KM / KN) })),
-  // details never cross the crown (components 4.. are the crown)
-  detailClipFrom: 4,
+  // the knight's eye, mouth and mane line, rescaled with the head
+  details: [0, 2, 4].map((i) => ({ ...KNIGHT_DETAILS[i], d: tf(KNIGHT_DETAILS[i].d, KM) })),
 }
 
 // ---------- validation: emitted path must match the Skia geometry ---------------
@@ -453,48 +438,83 @@ function checkSymmetric(name, ds) {
   }
 }
 
-// ---------- build ----------------------------------------------------------------
-// Global fit: scale every shape about (128, 136) so the tallest piece keeps a
-// margin for the renderer's shadow; line widths stay constant.
-const FIT = 0.94
-const fit = (p) => p.transform([FIT, 0, CX * (1 - FIT), 0, FIT, 136 * (1 - FIT), 0, 0, 1])
+// The ink box (body plus outline) must stay inside the canvas, the tallest
+// piece reaching about 92% of it, and every piece must share the base.
+function checkBounds(name, body) {
+  const b = body.computeTightBounds()
+  const half = W / 2
+  const box = [b[0] - half, b[1] - half, b[2] + half, b[3] + half]
+  if (box[0] < 2 || box[1] < 2 || box[2] > 254 || box[3] > 254)
+    throw new Error(`${name}: ink box ${box.map(f)} leaves the canvas`)
+  if (Math.abs(b[3] - FOOT_BOTTOM) > 0.5) throw new Error(`${name}: base bottom ${b[3]}`)
+  return box
+}
 
+// ---------- build ----------------------------------------------------------------
 function build(name, def) {
-  const comps = def.comps.map((c) => fit(union([c])))
+  const specs = def.comps.map((c) => (typeof c === 'string' ? { d: c } : c))
+  const comps = specs.map((c) => union([c.d]))
+  const tagged = (key) => union(comps.filter((_, i) => specs[i][key]))
   const body = union(comps)
-  const parts = []
-  for (let i = 0; i < comps.length; i++) {
-    const s = strokeOf(comps[i], W)
-    const front = comps.slice(i + 1)
-    parts.push(front.length ? op(s, union(front), 'Difference') : s)
-  }
-  const front = def.detailClipFrom ? union(comps.slice(def.detailClipFrom)) : null
+  // what is stacked in front of each component, and what of it stays visible
+  const ahead = comps.map((_, i) => (i + 1 < comps.length ? union(comps.slice(i + 1)) : null))
+  const visible = comps.map((c, i) => (ahead[i] ? op(c, ahead[i], 'Difference') : c.copy()))
+  const parts = comps.map((c, i) => {
+    const s = strokeOf(c, W)
+    return ahead[i] ? op(s, ahead[i], 'Difference') : s
+  })
+  const front = specs.some((c) => c.crown) ? tagged('crown') : null
+  const lower = union(comps.filter((_, i) => specs[i].brass || specs[i].base))
   for (const dd of def.details ?? []) {
     const { d, w, fill } = typeof dd === 'string' ? { d: dd, w: DW } : dd
-    let part = op(fill ? fit(union([d])) : strokeOf(fit(P(d)), w), body, 'Intersect')
+    // details stay on the body above the brass and the base
+    let part = op(fill ? union([d]) : strokeOf(P(d), w), body, 'Intersect')
+    if (lower) part = op(part, lower, 'Difference')
     if (front) part = op(part, front, 'Difference')
     parts.push(part)
   }
   const detail = union(parts)
+  // brass: the visible part of each trim component
+  const trimParts = visible.filter((_, i) => specs[i].brass)
+  if (!trimParts.length) throw new Error(`${name}: every piece needs a trim (collar)`)
+  const trim = union(trimParts)
   const symmetric = def.symmetric !== false
-  const bodyD = symmetric ? symmetrise(body) : plain(body)
-  const detailD = symmetric ? symmetrise(detail) : plain(detail)
+  const emit = (p) => (symmetric ? symmetrise(p) : plain(p))
+  const bodyD = emit(body)
+  // Turnings: the visible part of each (non-brass) component as its own path
+  // after the silhouette, so the renderer's objectBoundingBox gradients light
+  // every turned ring, ball and head as a cylinder of its own.
+  const turnings = []
+  for (let i = 0; i < comps.length; i++) {
+    if (specs[i].brass) continue
+    const part = visible[i]
+    const b = part.computeTightBounds()
+    if (b[2] - b[0] < 1 || b[3] - b[1] < 1) continue
+    // (symmetrised, a mirror pair such as the queen's side balls becomes one path)
+    const d = emit(part)
+    if (d && !turnings.includes(d)) turnings.push(d)
+  }
+  const trimD = emit(trim)
+  const detailD = emit(detail)
   check(name, 'body', body, bodyD)
+  check(name, 'trim', trim, trimD)
   check(name, 'detail', detail, detailD)
+  const box = checkBounds(name, body)
   let extra = ''
   for (const e of def.extra ?? []) {
-    const s = op(strokeOf(fit(P(e.d)), e.w, 'Butt'), comps[e.clipTo], 'Intersect')
+    const s = op(strokeOf(P(e.d), e.w, 'Butt'), tagged('mitre'), 'Intersect')
     extra += `<path fill-rule="evenodd" d="${plain(s)}"/>`
   }
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
 <title>${def.title ?? `${name[0].toUpperCase()}${name.slice(1)}`}</title>
-<g id="body" fill="currentColor"><path fill-rule="evenodd" d="${bodyD}"/></g>
+<g id="body" fill="currentColor"><path fill-rule="evenodd" d="${bodyD}"/>${turnings.map((d) => `<path fill-rule="evenodd" d="${d}"/>`).join('')}</g>
+<g id="trim" fill="${TRIM}"><path fill-rule="evenodd" d="${trimD}"/></g>
 <g id="detail" fill="${DETAIL}"><path fill-rule="evenodd" d="${detailD}"/>${extra}</g>
 </svg>
 `
-  if (symmetric) checkSymmetric(name, [bodyD, detailD])
+  if (symmetric) checkSymmetric(name, [bodyD, trimD, detailD, ...turnings])
   writeFileSync(join(out, `${name}.svg`), svg)
-  return svg.length
+  return `${svg.length} bytes, ink x ${f(box[0])}-${f(box[2])}, y ${f(box[1])}-${f(box[3])}`
 }
 
 // Optional: build only some pieces, e.g. `PIECES=prime-minister`.
@@ -502,5 +522,5 @@ const only = process.env.PIECES?.split(',')
 mkdirSync(out, { recursive: true })
 for (const [name, def] of Object.entries(pieces)) {
   if (only && !only.includes(name)) continue
-  console.log(`${name}.svg`, build(name, def), 'bytes')
+  console.log(`${name}.svg`, build(name, def))
 }

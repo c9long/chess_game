@@ -1,3 +1,4 @@
+import { DETAIL_TOKEN, TRIM_TOKEN } from '@game/board/svg'
 import { CIVILIZATIONS, civInfo } from '@game/config'
 import { PIECE_KINDS } from '@game/rules'
 import { describe, expect, it } from 'vitest'
@@ -13,6 +14,9 @@ describe('civ info', () => {
     for (const kind of pieces) {
       expect(pieceSprite(kind), kind).toMatch(/^<svg[\s\S]*<\/svg>\s*$/)
       expect(pieceSprite(kind), kind).not.toContain('<title>')
+      // A one-colour silhouette: no brass trim, no outline.
+      expect(pieceSprite(kind), kind).not.toContain(TRIM_TOKEN)
+      expect(pieceSprite(kind), kind).not.toContain(DETAIL_TOKEN)
       expect(pieceName(kind), kind).not.toContain('_')
     }
     expect(pieceSprite('toString')).toBeNull()

@@ -241,3 +241,28 @@ export function flingOffset(v: Vec, t: number): Vec {
   const f = FLING.tau * (1 - Math.exp(-Math.max(0, t) / FLING.tau))
   return { x: v.x * f, y: v.y * f }
 }
+
+/**
+ * The zoom button's disc on a board at zoom 1: its size and how far it slides outward (right)
+ * past the board's corner. The disc sits in the bottom-right corner of the board's footprint,
+ * whose frame and margin are `gap` CSS px wide, and keeps 1.5 px clear of the corner square
+ * (the field's corner, `gap` in from both edges): on small boards it shrinks to `min`, then
+ * slides out by up to `maxShift` into the page gutter.
+ */
+export function zoomDiscFit(
+  gap: number,
+  max: number,
+  min = 24,
+  maxShift = 8,
+): { disc: number; shift: number } {
+  for (let disc = max; disc >= min; disc -= 2) {
+    const r = disc / 2
+    const inset = gap - r // field corner to disc centre along each axis, before sliding
+    const need = r + 1.5
+    if (inset >= need / Math.SQRT2) return { disc, shift: 0 }
+    if (inset < 0) continue
+    const shift = Math.ceil(Math.sqrt(need * need - inset * inset) - inset)
+    if (shift <= maxShift) return { disc, shift }
+  }
+  return { disc: min, shift: maxShift }
+}

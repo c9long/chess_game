@@ -9,9 +9,17 @@ import {
   type MarkerShape,
   outlineFor,
   outlineWeight,
+  PIECE_TRIM,
   SEAT_STYLES,
+  trimFor,
 } from './palette.ts'
-import { type PieceShading, shadePieceSvg, svgDataUrl, tintEmblemSvg } from './svg.ts'
+import {
+  type PieceShading,
+  shadePieceSvg,
+  svgDataUrl,
+  type TrimShading,
+  tintEmblemSvg,
+} from './svg.ts'
 
 /**
  * Runtime-rasterised textures: pieces (per seat colour, plus frozen grey),
@@ -58,7 +66,7 @@ function ctx2d(c: HTMLCanvasElement): CanvasRenderingContext2D {
  * Shading colours for a body base colour. The highlight is kept modest so
  * saturated seats (Crimson) stay saturated instead of washing out to pink.
  */
-export function shadingFor(base: string, weight = 1): PieceShading {
+export function shadingFor(base: string, trim: TrimShading, weight = 1): PieceShading {
   return {
     base,
     light: mixHex(base, '#fff8ea', 0.2),
@@ -66,14 +74,19 @@ export function shadingFor(base: string, weight = 1): PieceShading {
     deep: shadeHex(base, 0.42),
     outline: outlineFor(base),
     outlineBoost: weight > 1 ? (weight - 1) * 3.5 : 0,
+    trim,
   }
 }
 
 function shadingForVariant(v: PieceVariant): PieceShading {
   if (v === 'frozen') {
-    return { ...shadingFor(FROZEN_BASE), outline: FROZEN_OUTLINE, light: '#a9b0b9' }
+    return {
+      ...shadingFor(FROZEN_BASE, PIECE_TRIM.frozen),
+      outline: FROZEN_OUTLINE,
+      light: '#a9b0b9',
+    }
   }
-  return shadingFor(SEAT_STYLES[v].base, outlineWeight(v))
+  return shadingFor(SEAT_STYLES[v].base, trimFor(v), outlineWeight(v))
 }
 
 /** Traces a marker shape of radius `r` around (cx, cy). */
@@ -368,13 +381,13 @@ export async function drawMedallion(
   g.fill()
   g.restore()
 
-  // Brass bezel: the app's brass, brushed rather than mirror-bright.
+  // Brass bezel: the pieces' brass trim, brushed rather than mirror-bright.
   const bezel = g.createLinearGradient(cx - R, cy - R, cx + R, cy + R)
   const metal =
-    state === 'removed' ? ['#d8d4cc', '#8d8a84', '#5b5853'] : ['#efd9a0', '#c9a55a', '#7a5d2c']
-  bezel.addColorStop(0, metal[0] as string)
-  bezel.addColorStop(0.55, metal[1] as string)
-  bezel.addColorStop(1, metal[2] as string)
+    state === 'removed' ? { light: '#d8d4cc', base: '#8d8a84', dark: '#5b5853' } : PIECE_TRIM.normal
+  bezel.addColorStop(0, metal.light)
+  bezel.addColorStop(0.55, metal.base)
+  bezel.addColorStop(1, metal.dark)
   g.beginPath()
   g.arc(cx, cy, R, 0, Math.PI * 2)
   g.fillStyle = bezel

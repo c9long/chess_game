@@ -1,7 +1,7 @@
 import type { Seat } from '@game/rules'
 import { describe, expect, it } from 'vitest'
 import { hexToRgb, perceivedDistance, srgbToLinear, VISION_TYPES } from './color.ts'
-import { BOARD_MATERIALS, FROZEN_BASE, SEAT_STYLES } from './palette.ts'
+import { BOARD_MATERIALS, FROZEN_BASE, PIECE_TRIM, SEAT_STYLES, trimFor } from './palette.ts'
 
 /** WCAG relative luminance. */
 function luminance(hex: string): number {
@@ -66,5 +66,27 @@ describe('seat palette', () => {
 
   it('gives every seat its own marker shape', () => {
     expect(new Set(SEATS.map((s) => SEAT_STYLES[s].marker)).size).toBe(4)
+  })
+})
+
+describe('piece trim', () => {
+  const chroma = (hex: string) => {
+    const [r, g, b] = hexToRgb(hex)
+    return Math.max(r, g, b) - Math.min(r, g, b)
+  }
+  it('stands apart from every seat body, not melting into it', () => {
+    for (const seat of SEATS) {
+      const trim = trimFor(seat).base
+      expect(perceivedDistance(trim, SEAT_STYLES[seat].base), seat).toBeGreaterThan(0.15)
+    }
+    // Gold needs its own, paler brass: the plain one is the same tone as its body.
+    expect(contrast(trimFor('north').base, SEAT_STYLES.north.base)).toBeGreaterThan(1.5)
+  })
+  it('is dulled when frozen, and each tone set runs light to dark', () => {
+    expect(chroma(PIECE_TRIM.frozen.base)).toBeLessThan(chroma(PIECE_TRIM.normal.base) * 0.6)
+    for (const t of Object.values(PIECE_TRIM)) {
+      expect(luminance(t.light)).toBeGreaterThan(luminance(t.base))
+      expect(luminance(t.base)).toBeGreaterThan(luminance(t.dark))
+    }
   })
 })

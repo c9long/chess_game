@@ -17,10 +17,13 @@ import {
   sameCamera,
   screenToBoard,
   zoomAround,
+  zoomDiscFit,
   zoomLimits,
 } from './camera.ts'
+import { BOARD_FRAME, BOARD_MARGIN } from './geometry.ts'
 
-// A phone: 390 px wide, 20 px squares, the 16x16 board with frame and margin (9.3 squares).
+// A phone: 390 px wide, 20 px squares, a half-width of 9.3 squares (a round figure near the
+// real board's 8 + frame + margin; the expectations below are worked out for it).
 const phone: CameraViewport = { width: 390, height: 390, unit: 20, half: 9.3, angle: 0 }
 
 function close(a: number, b: number, eps = 1e-6) {
@@ -229,5 +232,24 @@ describe('fling (pan momentum)', () => {
     expect(b).toBeLessThan(a)
     expect(flingOffset(v, 1e6).x).toBeCloseTo(FLING.tau)
     expect(flingOffset(v, 0).x).toBe(0)
+  })
+})
+
+describe('zoomDiscFit', () => {
+  const clear = (gap: number, { disc, shift }: { disc: number; shift: number }) => {
+    const r = disc / 2
+    return Math.hypot(gap - r + shift, gap - r) - r
+  }
+  it('leaves the disc alone where the frame is wide enough', () => {
+    expect(zoomDiscFit(30, 28)).toEqual({ disc: 28, shift: 0 })
+  })
+  it('keeps the disc off the corner square on phone-sized boards', () => {
+    for (const unit of [16, 17, 18, 19, 20, 21, 22]) {
+      const gap = (BOARD_FRAME + BOARD_MARGIN) * unit
+      const fit = zoomDiscFit(gap, 28)
+      expect(fit.shift, `${unit}`).toBeLessThanOrEqual(8)
+      expect(fit.disc, `${unit}`).toBeGreaterThanOrEqual(24)
+      expect(clear(gap, fit), `${unit}`).toBeGreaterThanOrEqual(1.5)
+    }
   })
 })

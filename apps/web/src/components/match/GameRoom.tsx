@@ -1,4 +1,4 @@
-import { BoardView } from '@game/board'
+import { BOARD_CANVAS_MARGIN, BoardView } from '@game/board'
 import { isUntimed, REMATCH_VOTE, SOLO_DEFAULT_NAME } from '@game/protocol'
 import {
   Game,
@@ -529,8 +529,9 @@ function useTurnTitle(myTurn: boolean) {
  * - `phone` and `tablet` (portrait): the board full width, a plate above each top corner and
  *   below each bottom corner, the actions under it. Tablets put the title beside the banner.
  * - `desk`: the same corners around the board, with the side panel beside it.
- * - `table`: wide screens with width to spare (the board is height-bound anyway): North and
- *   South plates above and below the board, upright West and East plates beside it.
+ * - `table`: wide screens, where height is what limits the board: the same four corners, but
+ *   with slim upright plates beside the board instead of rows above and below it, so the board
+ *   takes the full height.
  * - `side`: phones held sideways. The board takes the full height and the plates sit in the
  *   side panel, in the same corners as on a phone.
  * Corners, from the viewer's seat: West top left, North top right, East bottom right and the
@@ -544,9 +545,77 @@ function subscribeResize(onChange: () => void) {
   return () => window.removeEventListener('resize', onChange)
 }
 
-/** Upright side plates cost width only: worth it once the board is bound by height anyway. */
+/** The slim upright plates beside the board (`table`) and their gap to it, px. */
+const PLATE_W = 112
+const PLATE_GAP = 8
+
+/**
+ * What each layout keeps off the board, px across (`x`) and down (`y`): the header, padding and
+ * gaps; the plate rows above and below the board (phone, tablet, desk); the side panel and its
+ * gutters (wide layouts); and on phones, tablets and sideways phones the canvas's overhang
+ * (below). `table` trades desk's two plate rows for the upright plates' width.
+ */
+const BUDGET = {
+  phone: { y: 340 },
+  tablet: { y: 308 },
+  desk: { x: 392, y: 196 },
+  table: { x: 392 + 2 * (PLATE_W + PLATE_GAP), y: 88 },
+  side: { x: 328, y: 88 },
+} as const
+
+/**
+ * The board's size per layout (`--board`), from `BUDGET` and the safe-area insets. Phones and
+ * tablets use 100% (the page may show a scrollbar); wide layouts use the viewport, as nothing on
+ * them scrolls. On phones, tablets and sideways phones the canvas is 16px larger than this and
+ * overhangs the page gutter by 8px a side, so its transparent margin sits in the gutter and the
+ * walnut frame lines up with the plates.
+ */
+const SAFE_Y = 'var(--safe-top) - var(--safe-bottom)'
+const SAFE_X = 'var(--safe-left) - var(--safe-right)'
+const fitWide = ({ x, y }: { x: number; y: number }) =>
+  `min(calc(100vw - ${x}px - ${SAFE_X}), calc(100dvh - ${y}px - ${SAFE_Y}))`
+const fitTall = (y: number) => `max(min(100%, 300px), min(100%, calc(100dvh - ${y}px - ${SAFE_Y})))`
+const BOARD_SIZE: Record<Layout, string> = {
+  phone: fitTall(BUDGET.phone.y),
+  tablet: fitTall(BUDGET.tablet.y),
+  desk: fitWide(BUDGET.desk),
+  table: fitWide(BUDGET.table),
+  side: `max(240px, ${fitWide(BUDGET.side)})`,
+}
+
+/**
+ * Upright plates beside the board win whenever they make it larger than desk's plate rows do, as
+ * long as the board is tall enough for two of them, one above the other (shorter wide screens
+ * keep the rows). The same sums as `BOARD_SIZE`, safe-area insets included, so the two agree.
+ */
+const TABLE_MIN_BOARD = 420
+let tableCache = { w: -1, h: -1, fits: false }
 function tableFits(): boolean {
-  return window.innerWidth >= 1200 && window.innerWidth - window.innerHeight >= 480
+  const w = window.innerWidth
+  const h = window.innerHeight
+  if (w !== tableCache.w || h !== tableCache.h) {
+    const safe = safeInsets()
+    const room = ({ x, y }: { x: number; y: number }) => Math.min(w - x - safe.x, h - y - safe.y)
+    const table = room(BUDGET.table)
+    tableCache = { w, h, fits: table >= TABLE_MIN_BOARD && table > room(BUDGET.desk) }
+  }
+  return tableCache.fits
+}
+
+/** The safe-area insets across and down, px, read through the same `--safe-*` variables. */
+function safeInsets(): { x: number; y: number } {
+  const probe = document.createElement('div')
+  probe.style.cssText =
+    'position:fixed;visibility:hidden;padding:var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left)'
+  document.body.append(probe)
+  const s = getComputedStyle(probe)
+  const px = (v: string) => Number.parseFloat(v) || 0
+  const out = {
+    x: px(s.paddingLeft) + px(s.paddingRight),
+    y: px(s.paddingTop) + px(s.paddingBottom),
+  }
+  probe.remove()
+  return out
 }
 
 function useGameLayout(): Layout {
@@ -562,25 +631,6 @@ function useGameLayout(): Layout {
   return tablet ? 'tablet' : 'phone'
 }
 
-/**
- * The board's size per layout (`--board`), from what else must fit on screen. Phones (324px):
- * header 64, title row 24, banner 40, two plate rows 2x(44+6), actions 40, gaps and padding.
- * Tablets (292px): the title shares the banner's row. Desk and table (196px): header 64,
- * padding 24, two plate rows 2x(48+6); across, the side panel (336 + gap 24 + gutters 32) and
- * at the table the upright plates (2x(134+8)). Sideways phones: header and padding (80px);
- * across, the panel (280 + gap 16 + gutters 32). Phones and tablets use 100% (the page may
- * show a scrollbar); wide layouts use the viewport, as nothing on them scrolls.
- */
-const SAFE_Y = 'var(--safe-top) - var(--safe-bottom)'
-const SAFE_X = 'var(--safe-left) - var(--safe-right)'
-const BOARD_SIZE: Record<Layout, string> = {
-  phone: `max(min(100%, 300px), min(100%, calc(100dvh - 324px - ${SAFE_Y})))`,
-  tablet: `max(min(100%, 300px), min(100%, calc(100dvh - 292px - ${SAFE_Y})))`,
-  desk: `min(calc(100vw - 392px - ${SAFE_X}), calc(100dvh - 196px - ${SAFE_Y}))`,
-  table: `min(calc(100vw - 676px - ${SAFE_X}), calc(100dvh - 196px - ${SAFE_Y}))`,
-  side: `max(240px, min(calc(100vw - 328px - ${SAFE_X}), calc(100dvh - 80px - ${SAFE_Y})))`,
-}
-
 type PlatePosition = 'bottom' | 'left' | 'top' | 'right'
 /** Seat positions relative to the viewer's seat (index 0 is the viewer, then clockwise). */
 const POSITIONS: readonly PlatePosition[] = ['bottom', 'left', 'top', 'right']
@@ -590,6 +640,27 @@ const CORNER_AREA: Record<PlatePosition, string> = {
   top: '[grid-area:tr]',
   bottom: '[grid-area:bl]',
   right: '[grid-area:br]',
+}
+
+/** Table plates: the edge their seat colour runs along, and their popover side. */
+const TABLE_EDGE: Record<PlatePosition, PlateEdge> = {
+  left: 'right',
+  top: 'top',
+  bottom: 'bottom',
+  right: 'left',
+}
+const TABLE_SIDE: Record<PlatePosition, 'top' | 'bottom' | 'left'> = {
+  left: 'bottom',
+  top: 'left',
+  bottom: 'top',
+  right: 'left',
+}
+
+/** Row plates move toward the board to hug the walnut frame (the canvas has a margin round it). */
+const ROW_HUG: Partial<Record<Layout, { upper: string; lower: string }>> = {
+  phone: { upper: 'translate-y-1', lower: '-translate-y-1' },
+  tablet: { upper: 'translate-y-1', lower: '-translate-y-1' },
+  desk: { upper: 'translate-y-2', lower: '-translate-y-2' },
 }
 
 /** Where a seat's plate goes, which edge its seat colour runs along, and its popover side. */
@@ -602,48 +673,28 @@ function placement(
   side: 'top' | 'bottom' | 'left'
   shape: 'row' | 'column'
 } {
+  const upper = pos === 'left' || pos === 'top'
   if (layout === 'table') {
-    if (pos === 'top') {
-      return {
-        // Plates hug the walnut frame (the board's canvas has a margin round it).
-        className: '[grid-area:t] max-w-[22rem] translate-y-2 justify-self-center',
-        edge: 'bottom',
-        side: 'bottom',
-        shape: 'row',
-      }
-    }
-    if (pos === 'bottom') {
-      return {
-        className: '[grid-area:b] max-w-[22rem] -translate-y-2 justify-self-center',
-        edge: 'top',
-        side: 'top',
-        shape: 'row',
-      }
-    }
+    // Upright plates in the board's corners, lined up with the frame's outer edge. West and
+    // East face the board with their seat colour; North and South carry theirs along the edge
+    // they share with the board's top or bottom, in line with that seat's banner. Each is at
+    // most half the board tall, so the two in a column can never overlap.
+    const leftSide = pos === 'left' || pos === 'bottom'
     return {
-      className:
-        pos === 'left'
-          ? '[grid-area:l] translate-x-2 self-center'
-          : '[grid-area:r] -translate-x-2 self-center',
-      edge: pos === 'left' ? 'right' : 'left',
-      side: pos === 'left' ? 'bottom' : 'left',
+      className: cx(
+        CORNER_AREA[pos],
+        'min-h-0 max-h-[calc(var(--board)/2-var(--board-inset))]',
+        upper ? 'mt-[var(--board-inset)] self-start' : 'mb-[var(--board-inset)] self-end',
+        leftSide ? 'translate-x-[var(--board-inset)]' : '-translate-x-[var(--board-inset)]',
+      ),
+      edge: TABLE_EDGE[pos],
+      side: TABLE_SIDE[pos],
       shape: 'column',
     }
   }
-  const upper = pos === 'left' || pos === 'top'
-  // Plates hug the walnut frame (the board's canvas has a margin round it).
-  const hug =
-    layout === 'side'
-      ? ''
-      : layout === 'desk'
-        ? upper
-          ? 'translate-y-2'
-          : '-translate-y-2'
-        : upper
-          ? 'translate-y-1'
-          : '-translate-y-1'
+  const hug = ROW_HUG[layout]
   return {
-    className: cx(CORNER_AREA[pos], hug),
+    className: cx(CORNER_AREA[pos], hug && (upper ? hug.upper : hug.lower)),
     edge: upper ? 'bottom' : 'top',
     side: layout === 'side' ? 'left' : upper ? 'bottom' : 'top',
     shape: 'row',
@@ -893,23 +944,30 @@ export function GameRoom({
         layout === 'side' &&
           'grid grid-cols-[auto_minmax(280px,26rem)] items-start justify-center gap-4 py-2',
       )}
-      style={{ '--board': BOARD_SIZE[layout] } as CSSProperties}
+      style={
+        {
+          '--board': BOARD_SIZE[layout],
+          '--board-inset': `calc(var(--board) * ${BOARD_CANVAS_MARGIN})`,
+          '--plate-w': `${PLATE_W}px`,
+          '--plate-gap': `${PLATE_GAP}px`,
+        } as CSSProperties
+      }
       data-layout={layout}
     >
       {/* The table: the board, with each player's plate at its edge. */}
       {layout === 'side' ? (
-        <div className="w-[var(--board)]">{board}</div>
+        <div className="-m-2 w-[calc(var(--board)+16px)]">{board}</div>
       ) : (
         <div className={cx('flex min-w-0 justify-center', !wide && 'order-3')}>
           <div
             className={cx(
               'grid gap-y-1.5',
               layout === 'table'
-                ? 'grid-cols-[134px_var(--board)_134px] gap-x-2 [grid-template-areas:"._t_."_"l_c_r"_"._b_."]'
+                ? 'grid-cols-[var(--plate-w)_var(--board)_var(--plate-w)] grid-rows-2 gap-x-[var(--plate-gap)] [grid-template-areas:"tl_c_tr"_"bl_c_br"]'
                 : 'w-[var(--board)] grid-cols-2 gap-x-2 [grid-template-areas:"tl_tr"_"c_c"_"bl_br"]',
             )}
           >
-            <div className="min-w-0 [grid-area:c]">{board}</div>
+            <div className={cx('min-w-0 [grid-area:c]', !wide && '-mx-2')}>{board}</div>
             {players}
           </div>
         </div>
@@ -921,7 +979,9 @@ export function GameRoom({
           !wide && 'contents',
           wide &&
             'sticky flex min-w-0 flex-col overflow-y-auto rounded-panel border border-rule-brass bg-surface-rail shadow-rim',
-          panel && 'top-3 h-[max(calc(var(--board)+108px),min(34rem,calc(100dvh-88px)))] gap-3 p-4',
+          panel && 'top-3 gap-3 p-4',
+          layout === 'desk' && 'h-[max(calc(var(--board)+108px),min(34rem,calc(100dvh-88px)))]',
+          layout === 'table' && 'h-[max(var(--board),min(34rem,calc(100dvh-88px)))]',
           layout === 'side' &&
             'top-2 h-[calc(100dvh-80px-var(--safe-top)-var(--safe-bottom))] gap-2 p-3',
         )}

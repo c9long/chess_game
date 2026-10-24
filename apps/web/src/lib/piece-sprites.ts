@@ -5,12 +5,10 @@ import pawn from '@game/assets/pieces/pawn.svg?raw'
 import primeMinister from '@game/assets/pieces/prime-minister.svg?raw'
 import queen from '@game/assets/pieces/queen.svg?raw'
 import rook from '@game/assets/pieces/rook.svg?raw'
+import { pieceSilhouetteSvg as strip } from '@game/board/svg'
 import type { PieceKind } from '@game/rules'
 
-// Decorative copies of the piece art: no <title> (nearby text says what the piece is), and the
-// near-black outline is dropped so a small glyph reads as a clean silhouette on the panel.
-const strip = (svg: string) =>
-  svg.replace(/<title>[^<]*<\/title>/, '').replace(/<g id="detail"[\s\S]*?<\/g>/, '')
+// Decorative one-colour silhouettes of the piece art: nearby text says what each piece is.
 
 /** Piece art (trusted, bundled SVG) by engine piece kind, drawn in `currentColor`. */
 export const PIECE_SPRITES: Readonly<Record<PieceKind, string>> = {
