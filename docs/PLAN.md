@@ -1,6 +1,6 @@
-# LinkedLists's Chess Game — Master Plan (v3)
+# LinkedList's Chess Game — Master Plan (v3)
 
-*Working title: "LinkedLists's Chess Game". The previous title was dropped because of trademark risk around "Civilization". The display name lives in one config constant (`APP_NAME`), and code/package names are deliberately neutral, so a future rename touches one line.*
+*Working title: "LinkedList's Chess Game". The previous title was dropped because of trademark risk around "Civilization". The display name lives in one config constant (`APP_NAME`), and code/package names are deliberately neutral, so a future rename touches one line.*
 
 ## Context
 

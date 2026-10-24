@@ -3,7 +3,7 @@ import { APP_NAME, CIVILIZATIONS, LEGAL_DOCUMENTS, LEGAL_VERSIONS, TIME_CONTROLS
 
 describe('config', () => {
   it('exposes the working title', () => {
-    expect(APP_NAME).toBe("LinkedLists's Chess Game")
+    expect(APP_NAME).toBe("LinkedList's Chess Game")
   })
 
   it('lists exactly the nine v1 civilizations with unique slugs', () => {

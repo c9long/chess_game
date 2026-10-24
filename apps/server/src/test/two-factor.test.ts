@@ -22,7 +22,7 @@ describe('TOTP two-factor', () => {
     expect(backupCodes.length).toBeGreaterThanOrEqual(8)
     const totp = OTPAuth.URI.parse(totpURI) as OTPAuth.TOTP
     // Better Auth form-encodes spaces as '+'; the web client normalizes before drawing the QR.
-    expect(totp.issuer.replaceAll('+', ' ')).toBe("LinkedLists's Chess Game")
+    expect(totp.issuer.replaceAll('+', ' ')).toBe("LinkedList's Chess Game")
 
     // Not enabled until a code is verified.
     let [u] = await h.db.select().from(users).where(eq(users.id, a.userId))

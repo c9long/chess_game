@@ -2,7 +2,7 @@
 
 # Privacy Policy
 
-**[GAME NAME]** (working title: "LinkedLists's Chess Game")
+**[GAME NAME]** (working title: "LinkedList's Chess Game")
 
 - **Version:** v0.2 (draft)
 - **Effective date:** [EFFECTIVE DATE]

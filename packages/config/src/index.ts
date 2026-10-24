@@ -2,7 +2,7 @@
  * Display name of the game. This is the only place the title may appear;
  * code identifiers and package names stay neutral so a rename is one line.
  */
-export const APP_NAME = "LinkedLists's Chess Game"
+export const APP_NAME = "LinkedList's Chess Game"
 
 /**
  * Label under the home-screen icon (web manifest `short_name`, app stores later). Launchers

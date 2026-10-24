@@ -14,7 +14,7 @@ describe('passkeys (WebAuthn options)', () => {
     const a = await signUpVerified(h)
     const res = await a.client.get('/api/auth/passkey/generate-register-options')
     expect(res.status).toBe(200)
-    expect(res.body.rp).toEqual({ name: "LinkedLists's Chess Game", id: 'localhost' })
+    expect(res.body.rp).toEqual({ name: "LinkedList's Chess Game", id: 'localhost' })
     expect(typeof res.body.challenge).toBe('string')
     expect(res.body.challenge.length).toBeGreaterThan(20)
     expect(res.body.user.name).toContain(a.username)

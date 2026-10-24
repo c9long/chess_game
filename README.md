@@ -1,4 +1,4 @@
-# LinkedLists's Chess Game
+# LinkedList's Chess Game
 
 A four-player chess variant on a 16×16 board. Each player picks a civilization before the match. Free-for-All and 2v2 Teams are both supported, with timed games, bots at selectable strength, and accounts shared with a future Unity/Steam client.
 

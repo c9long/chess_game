@@ -378,9 +378,10 @@ export function appNameWords(appName = APP_NAME): string[] {
     .split(/[^a-z0-9]+/)
     .filter((w) => w.length >= 3 && !GENERIC_APP_WORDS.has(w))
   const whole = lettersOnly(fold(appName).replace(/['’]s\b/g, ''))
-  // Singular too ("LinkedLists" → "linkedlist").
+  // Singular and plural too ("LinkedList" → "linkedlists", and back).
   const singular = words.filter((w) => w.length >= 5 && w.endsWith('s')).map((w) => w.slice(0, -1))
-  return [...new Set([...words, ...singular, whole])]
+  const plural = words.filter((w) => w.length >= 5 && !w.endsWith('s')).map((w) => `${w}s`)
+  return [...new Set([...words, ...singular, ...plural, whole])]
 }
 
 /** Whole names that only staff or the system may show. */
