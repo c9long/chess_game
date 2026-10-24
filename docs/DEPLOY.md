@@ -89,7 +89,12 @@ You'll paste these into one settings file in step 4.
      for 2 OCPUs or `0.5` for 1 OCPU, so the bots leave room for the game server.
    - **Security:** leave everything off (Shielded instance, Confidential computing). The game
      doesn't need them, and they aren't available on every free shape.
-   - **Networking:** keep the new virtual cloud network it offers, with a public IPv4 address.
+   - **Networking:**
+     - Primary network: **Create new virtual cloud network** (keep the suggested name).
+     - Subnet: **Create new public subnet** (keep the suggested name and address range).
+     - **Automatically assign public IPv4 address:** on. This is the address you log in
+       to (and, for the $0 beta, point DuckDNS at).
+     - Leave IPv6 and everything else at the defaults.
    - **SSH keys:** upload your public key (`~/.ssh/id_ed25519.pub`; make one with
      `ssh-keygen -t ed25519` if you have none).
    - **Boot volume:** 100 GB is plenty (up to 200 GB is free).
