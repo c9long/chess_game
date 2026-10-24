@@ -77,7 +77,7 @@ const requireOpt = process.env.REQUIRE_WASM_OPT === '1'
 if (output('wasm-opt', ['--version'])) {
   const tmp = `${wasmFile}.opt`
   try {
-    execFileSync('wasm-opt', ['-O3', '--all-features', wasmFile, '-o', tmp], {
+    execFileSync('wasm-opt', ['-O3', wasmFile, '-o', tmp], {
       env,
       stdio: 'inherit',
     })
@@ -92,7 +92,8 @@ if (output('wasm-opt', ['--version'])) {
 } else {
   console.warn(
     '\n@game/rules: WARNING wasm-opt (binaryen) not found; the module is NOT size-optimized.\n' +
-      '  Install binaryen (e.g. `apt install binaryen` or `brew install binaryen`) before release builds.\n',
+      '  Install binaryen version_132 or newer (github.com/WebAssembly/binaryen/releases; distro packages\n' +
+      '  can be too old) before release builds.\n',
   )
 }
 

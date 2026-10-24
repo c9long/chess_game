@@ -1,0 +1,18 @@
+name: Set up binaryen
+description: Installs a pinned binaryen release (wasm-opt) and puts it on PATH.
+inputs:
+  version:
+    description: binaryen release number
+    default: '132'
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        V: ${{ inputs.version }}
+      run: |
+        f=binaryen-version_$V-x86_64-linux.tar.gz
+        curl -fsSLO https://github.com/WebAssembly/binaryen/releases/download/version_$V/$f
+        curl -fsSL https://github.com/WebAssembly/binaryen/releases/download/version_$V/$f.sha256 | sha256sum -c -
+        tar xzf $f -C "$RUNNER_TEMP"
+        echo "$RUNNER_TEMP/binaryen-version_$V/bin" >> "$GITHUB_PATH"
