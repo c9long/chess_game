@@ -1,6 +1,8 @@
 import { lightFor, SEAT_STYLES } from '@game/board'
 import { seatName } from './labels.ts'
 
+/** A bot's nameplate name, the same as the server's history and profiles use. */
+export { botName } from '@game/protocol'
 export * from './labels.ts'
 
 /** The seat's piece colour (shared with the board renderer). */
@@ -18,11 +20,6 @@ export function seatTextHex(index: number): string {
 
 export function seatColorName(index: number): string {
   return SEAT_STYLES[seatName(index)].name
-}
-
-/** A bot's name on its nameplate: "Bot 1200", or "Bot Max" at full strength. */
-export function botName(level: string): string {
-  return `Bot ${level === 'max' ? 'Max' : level}`
 }
 
 /**

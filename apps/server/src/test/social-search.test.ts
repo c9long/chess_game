@@ -362,11 +362,11 @@ describe('who can send me friend requests', () => {
     const b = await registeredAs(`${tag}_priv`)
     const get = async (x: Browser) =>
       (await x.get('/api/friends/settings')).body as unknown as SocialSettingsResponse
-    expect(await get(b)).toEqual({ friendRequests: 'anyone' })
+    expect(await get(b)).toEqual({ friendRequests: 'anyone', publicHistory: false })
 
     const set = await b.request('PUT', '/api/friends/settings', { friendRequests: 'played_with' })
     expect(set.status).toBe(200)
-    expect(await get(b)).toEqual({ friendRequests: 'played_with' })
+    expect(await get(b)).toEqual({ friendRequests: 'played_with', publicHistory: false })
     expect(
       (await b.request('PUT', '/api/friends/settings', { friendRequests: 'nobody' })).status,
     ).toBe(400)
@@ -388,7 +388,10 @@ describe('who can send me friend requests', () => {
 
     // In the export.
     const exp = await b.get('/api/account/export')
-    expect((exp.body as { settings: unknown }).settings).toEqual({ friendRequests: 'played_with' })
+    expect((exp.body as { settings: unknown }).settings).toEqual({
+      friendRequests: 'played_with',
+      publicHistory: false,
+    })
 
     // Back to anyone: strangers can add again.
     await b.request('PUT', '/api/friends/settings', { friendRequests: 'anyone' })
@@ -458,6 +461,7 @@ describe('public profiles', () => {
       blockedByYou: false,
       capReached: false,
       outgoingFull: false,
+      recentGames: null,
     })
     expect(JSON.stringify(body)).not.toContain('@')
   })

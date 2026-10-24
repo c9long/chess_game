@@ -9,6 +9,7 @@ import { matchMaker } from '@colyseus/core'
 import { type Database, sessions } from '@game/db'
 import {
   BLOCKS_MAX,
+  CHALLENGE_MAX_INVITEES,
   CHALLENGE_TTL_MS,
   type Challenge,
   type ChallengeCloseReason,
@@ -78,6 +79,7 @@ interface ChallengeRecord {
   roomId: string
   mode: 'ffa' | 'teams'
   timeControl: string
+  ranked: boolean
   createdAt: Date
   expiresAt: Date
   invitees: Map<string, { user: SocialUser; status: ChallengeInviteeStatus }>
@@ -320,6 +322,7 @@ export class SocialService {
       roomId: c.roomId,
       mode: c.mode,
       timeControl: c.timeControl,
+      ranked: c.ranked,
       createdAt: c.createdAt.toISOString(),
       expiresAt: c.expiresAt.toISOString(),
       invitees: [...c.invitees.values()].map((i) => ({
@@ -360,9 +363,11 @@ export class SocialService {
   }
 
   /**
-   * Creates an invite-only casual lobby hosted by `me` for `friendIds` (accepted friends),
-   * and notifies each invitee. The challenger then joins it like any lobby (`joinById`),
-   * within the usual seat-reservation window.
+   * Creates an invite-only lobby hosted by `me` for `friendIds` (accepted friends), and
+   * notifies each invitee. The challenger then joins it like any lobby (`joinById`), within
+   * the usual seat-reservation window. A ranked one is a ranked lobby in every way (no guests,
+   * no bots, Elo, spectator delay) plus the invitation, so it needs three friends to fill
+   * the table.
    */
   async challenge(
     me: SocialUser,
@@ -370,6 +375,7 @@ export class SocialService {
       friendIds: string[]
       mode: 'ffa' | 'teams'
       timeControl: string
+      ranked?: boolean | undefined
       roomId?: string | undefined
     },
   ): Promise<Challenge> {
@@ -392,6 +398,14 @@ export class SocialService {
       invitees.push(u)
     }
     if (body.roomId) return this.#reinvite(me, body.roomId, invitees)
+    const ranked = body.ranked === true
+    if (ranked && invitees.length !== CHALLENGE_MAX_INVITEES) {
+      throw new SocialError(
+        'BAD_REQUEST',
+        400,
+        'A ranked challenge needs three friends: bots can’t take a ranked seat.',
+      )
+    }
     if (svc.seats.has(me.userId) || svc.liveClaim(me.userId)) {
       throw new SocialError(
         'ALREADY_IN_ROOM',
@@ -420,6 +434,7 @@ export class SocialService {
         name,
         mode: body.mode,
         timeControl: body.timeControl,
+        ranked,
         creatorTicket: ticket,
       })
       roomId = room.roomId
@@ -428,7 +443,13 @@ export class SocialService {
       this.logger.error({ err: (err as Error).message }, 'challenge lobby create failed')
       throw new SocialError('MAINTENANCE', 503, 'Could not create the lobby. Try again.')
     }
-    return this.#open(id, me, roomId, body.mode, body.timeControl, invitees)
+    return this.#open(
+      id,
+      me,
+      roomId,
+      { mode: body.mode, timeControl: body.timeControl, ranked },
+      invitees,
+    )
   }
 
   /**
@@ -453,7 +474,8 @@ export class SocialService {
       waiting.map((u) => u.userId),
     )
     const s = room.state
-    return this.#open(id, me, roomId, s.mode as 'ffa' | 'teams', s.timeControl, waiting)
+    const game = { mode: s.mode as 'ffa' | 'teams', timeControl: s.timeControl, ranked: s.ranked }
+    return this.#open(id, me, roomId, game, waiting)
   }
 
   /** Records a challenge for lobby `roomId` and notifies the invitees. */
@@ -461,8 +483,7 @@ export class SocialService {
     id: string,
     me: SocialUser,
     roomId: string,
-    mode: 'ffa' | 'teams',
-    timeControl: string,
+    game: Pick<ChallengeRecord, 'mode' | 'timeControl' | 'ranked'>,
     invitees: SocialUser[],
   ): Promise<Challenge> {
     const now = new Date()
@@ -470,8 +491,7 @@ export class SocialService {
       id,
       from: me,
       roomId,
-      mode,
-      timeControl,
+      ...game,
       createdAt: now,
       expiresAt: new Date(now.getTime() + this.options.challengeTtlMs),
       invitees: new Map(invitees.map((u) => [u.userId, { user: u, status: 'pending' }])),

@@ -1,5 +1,14 @@
 import { sql } from 'drizzle-orm'
-import { check, index, pgEnum, pgTable, primaryKey, text, timestamp } from 'drizzle-orm/pg-core'
+import {
+  boolean,
+  check,
+  index,
+  pgEnum,
+  pgTable,
+  primaryKey,
+  text,
+  timestamp,
+} from 'drizzle-orm/pg-core'
 import { users } from './auth.ts'
 
 const ts = (name: string) => timestamp(name, { withTimezone: true, mode: 'date' })
@@ -57,5 +66,7 @@ export const userSettings = pgTable('user_settings', {
     .primaryKey()
     .references(() => users.id, { onDelete: 'cascade' }),
   friendRequests: friendRequestPolicy('friend_requests').notNull().default('anyone'),
+  /** "Show my recent games on my profile": opt-in, so off until the user turns it on. */
+  publicHistory: boolean('public_history').notNull().default(false),
   updatedAt: ts('updated_at').notNull().defaultNow(),
 })

@@ -19,6 +19,10 @@
   ],
   "matchKinds": ["lobby", "solo"],
   "untimed": "untimed",
+  "rankedRepeat": {
+    "max": 3,
+    "windowMs": 86400000
+  },
   "errorCodes": [
     "unauthorized",
     "age_confirmation_required",
@@ -1216,7 +1220,8 @@
       "playerSearchMinChars": 3,
       "playerSearchMaxResults": 10,
       "playerSearchesPerMin": 30,
-      "profileViewsPerMin": 60
+      "profileViewsPerMin": 60,
+      "profileRecentGames": 10
     },
     "errorCodes": [
       "ACCOUNT_REQUIRED",
@@ -1313,6 +1318,9 @@
             "type": "string",
             "enum": ["10+0", "3+2"]
           },
+          "ranked": {
+            "type": "boolean"
+          },
           "roomId": {
             "type": "string",
             "minLength": 1,
@@ -1329,10 +1337,13 @@
           "friendRequests": {
             "type": "string",
             "enum": ["anyone", "played_with"]
+          },
+          "publicHistory": {
+            "type": "boolean"
           }
         },
-        "required": ["friendRequests"],
-        "additionalProperties": false
+        "additionalProperties": false,
+        "minProperties": 1
       }
     },
     "restQueries": {
@@ -1450,6 +1461,9 @@
           "timeControl": {
             "type": "string"
           },
+          "ranked": {
+            "type": "boolean"
+          },
           "createdAt": {
             "type": "string"
           },
@@ -1490,6 +1504,7 @@
           "roomId",
           "mode",
           "timeControl",
+          "ranked",
           "createdAt",
           "expiresAt",
           "invitees"

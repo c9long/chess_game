@@ -82,6 +82,8 @@ export interface StartMatchInput {
   timeControl: string
   /** Ranked lobby: the game gets Elo when it finishes (casual games never do). */
   rated: boolean
+  /** Played in a ranked lobby (one past the repeat limit is ranked but not `rated`). */
+  ranked: boolean
   rulesVersion: number
   startedAt: Date
   players: MatchPlayerInput[]
@@ -195,7 +197,7 @@ export class MatchRecorder {
           mode: input.mode,
           timeControl: input.timeControl,
           rated: input.rated,
-          ranked: input.rated,
+          ranked: input.ranked,
           rulesVersion: input.rulesVersion,
           startedAt: input.startedAt,
         })

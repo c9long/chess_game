@@ -28,6 +28,7 @@ import { CivCard } from '../civ/CivCard.tsx'
 import { CivInfoOverlay, civInfoLabel } from '../civ/CivInfoOverlay.tsx'
 import { LobbyInvite } from '../social/LobbyInvite.tsx'
 import {
+  Alert,
   Button,
   cx,
   inputClass,
@@ -48,6 +49,7 @@ import {
   seatsAround,
   seatTextHex,
   teamLabel,
+  UNRATED_REPEAT_NOTE,
 } from './seats.ts'
 
 const LEVEL_LABELS = BOT_LEVELS.map(String)
@@ -876,6 +878,7 @@ export function LobbyRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) 
     : state.hasPassword
       ? { icon: <Lock aria-hidden="true" />, text: 'Private lobby' }
       : { icon: <Globe aria-hidden="true" />, text: 'Public lobby' }
+  const botsLine = state.ranked ? 'Bots can’t sit in.' : 'Fill empty seats with bots.'
 
   return (
     <div className="mx-auto w-full max-w-6xl px-4 pt-6 pb-28 sm:pt-10 sm:pb-12">
@@ -898,9 +901,14 @@ export function LobbyRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) 
           </ul>
           {state.inviteOnly ? (
             <p className="mt-2 max-w-[65ch] text-ui text-faint" data-testid="invite-only-note">
-              Invite-only: just the friends who were challenged can join. Fill empty seats with
-              bots.
+              Invite-only{state.ranked ? ' and ranked' : ''}: just the friends who were challenged
+              can join. {botsLine}
             </p>
+          ) : null}
+          {state.unratedRepeat ? (
+            <div className="mt-3 max-w-[65ch]" data-testid="unrated-repeat-note">
+              <Alert tone="info">{UNRATED_REPEAT_NOTE}</Alert>
+            </div>
           ) : null}
           {state.inviteOnly && viewerIsHost ? <LobbyInvite roomId={room.roomId} /> : null}
         </div>
@@ -1004,10 +1012,11 @@ export function LobbyRoom({ room, feed }: { room: MatchRoom; feed: MatchFeed }) 
             >
               <p className="text-ui text-muted">
                 {state.inviteOnly
-                  ? 'Your challenged friends can join while the invitation is open. Fill empty seats with bots, swap seats to set teams, and start when every box is ticked.'
+                  ? 'Your challenged friends can join while the invitation is open.'
                   : state.ranked
-                    ? 'Share the invite link with players who have accounts. Swap seats to set teams, and start when every box is ticked.'
-                    : 'Invite friends or fill empty seats with bots. Swap seats to set teams, and start when every box is ticked.'}
+                    ? 'Share the invite link with players who have accounts.'
+                    : 'Share the invite link with friends.'}{' '}
+                {botsLine} Swap seats to set teams, and start when every box is ticked.
               </p>
               <ul
                 className="mt-3 divide-y divide-rule border-y border-rule"

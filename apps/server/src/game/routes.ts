@@ -1,15 +1,8 @@
 /** Match history, ratings and the leaderboard (REST, for the web and later Unity). */
 import { TIME_CONTROLS } from '@game/config'
+import { type Database, eloRatings, matchEvents, matches, matchPlayers, users } from '@game/db'
 import {
-  civilizations,
-  type Database,
-  eloRatings,
-  matchEvents,
-  matches,
-  matchPlayers,
-  users,
-} from '@game/db'
-import {
+  botName,
   type FriendGame,
   type FriendGamesResponse,
   GAME_MODES,
@@ -24,7 +17,7 @@ import {
   type RatingsResponse,
 } from '@game/protocol'
 import { isSupportedRulesVersion } from '@game/rules'
-import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lt, ne, or } from 'drizzle-orm'
+import { and, asc, desc, eq, gte, isNotNull, isNull, lt, ne, or } from 'drizzle-orm'
 import { type Request, Router } from 'express'
 import { z } from 'zod'
 import type { Auth } from '../auth/auth.ts'
@@ -34,6 +27,7 @@ import { requireCurrentAcceptance } from '../legal/routes.ts'
 import { blockedAmong, blockedByAmong } from '../social/blocks.ts'
 import { friendIdsOf, relationsOf } from '../social/friends.ts'
 import { MatchRoom } from './match-room.ts'
+import { isRegisteredSeat, type PlayerRow, playersOf, ratingDeltaOf } from './match-rows.ts'
 import { loadReplay, playReplay } from './persistence.ts'
 
 const leaderboardQuery = z.object({
@@ -69,62 +63,11 @@ function decodeCursor(cursor: string): { startedAt: Date; id: string } | null {
   return { startedAt, id }
 }
 
-interface PlayerRow {
-  matchId: string
-  seat: number
-  team: number | null
-  userId: string | null
-  botLevel: string | null
-  civ: string
-  civVersion: number
-  finalStatus: string | null
-  placement: number | null
-  defeatReason: string | null
-  defeatSeq: number | null
-  ratingBefore: number | null
-  ratingAfter: number | null
-  name: string | null
-  displayUsername: string | null
-  isGuest: boolean | null
-  username: string | null
-  deletedAt: Date | null
-}
-
 /** Name shown for a seat. Deleted accounts show their "Deleted player #…" placeholder. */
 function nameOf(p: PlayerRow): string {
-  if (p.botLevel) return `Bot ${p.botLevel === 'max' ? 'Max' : p.botLevel}`
+  if (p.botLevel) return botName(p.botLevel)
   if (!p.userId) return 'Removed player'
   return p.displayUsername ?? p.name ?? 'Player'
-}
-
-async function playersOf(db: Database, matchIds: string[]): Promise<PlayerRow[]> {
-  if (matchIds.length === 0) return []
-  return db
-    .select({
-      matchId: matchPlayers.matchId,
-      seat: matchPlayers.seat,
-      team: matchPlayers.team,
-      userId: matchPlayers.userId,
-      botLevel: matchPlayers.botLevel,
-      civ: civilizations.slug,
-      civVersion: matchPlayers.civVersion,
-      finalStatus: matchPlayers.finalStatus,
-      placement: matchPlayers.placement,
-      defeatReason: matchPlayers.defeatReason,
-      defeatSeq: matchPlayers.defeatSeq,
-      ratingBefore: matchPlayers.ratingBefore,
-      ratingAfter: matchPlayers.ratingAfter,
-      name: users.name,
-      displayUsername: users.displayUsername,
-      isGuest: users.isAnonymous,
-      username: users.username,
-      deletedAt: users.deletedAt,
-    })
-    .from(matchPlayers)
-    .innerJoin(civilizations, eq(civilizations.id, matchPlayers.civId))
-    .leftJoin(users, eq(users.id, matchPlayers.userId))
-    .where(inArray(matchPlayers.matchId, matchIds))
-    .orderBy(asc(matchPlayers.seat))
 }
 
 /** Re-simulated final positions of finished matches (they never change), newest last. */
@@ -213,13 +156,7 @@ export function gameRouter({ db, auth }: { db: Database; auth: Auth }) {
     const canFriend = !viewer.isAnonymous && Boolean(viewer.username)
     const finished = new Set(page.filter((m) => m.status === 'finished').map((m) => m.id))
     const addable = (p: PlayerRow) =>
-      canFriend &&
-      finished.has(p.matchId) &&
-      p.userId !== null &&
-      p.userId !== me &&
-      !p.isGuest &&
-      !p.deletedAt &&
-      Boolean(p.username)
+      canFriend && finished.has(p.matchId) && p.userId !== me && isRegisteredSeat(p)
     const relations = canFriend
       ? await relationsOf(
           db,
@@ -229,13 +166,7 @@ export function gameRouter({ db, auth }: { db: Database; auth: Auth }) {
       : new Map()
     // Block and report menus: registered viewers can block registered live opponents (any
     // game status); anyone can report a person (not a bot or a deleted account's placeholder).
-    const blockable = (p: PlayerRow) =>
-      canFriend &&
-      p.userId !== null &&
-      p.userId !== me &&
-      !p.isGuest &&
-      !p.deletedAt &&
-      Boolean(p.username)
+    const blockable = (p: PlayerRow) => canFriend && p.userId !== me && isRegisteredSeat(p)
     const reportable = (p: PlayerRow) => p.userId !== null && p.userId !== me && !p.deletedAt
     const blocked = canFriend
       ? await blockedAmong(
@@ -255,10 +186,6 @@ export function gameRouter({ db, auth }: { db: Database; auth: Auth }) {
     const items: MatchListItem[] = page.map((m) => {
       const seats = players.filter((p) => p.matchId === m.id)
       const mine = seats.find((p) => p.seat === m.seat)
-      const delta =
-        mine?.ratingBefore != null && mine.ratingAfter != null
-          ? Math.round(mine.ratingAfter - mine.ratingBefore)
-          : null
       return {
         id: m.id,
         status: m.status,
@@ -275,7 +202,7 @@ export function gameRouter({ db, auth }: { db: Database; auth: Auth }) {
         placement: mine?.placement ?? null,
         ratingBefore: mine?.ratingBefore ?? null,
         ratingAfter: mine?.ratingAfter ?? null,
-        ratingDelta: delta,
+        ratingDelta: ratingDeltaOf(m.rated, mine),
         opponents: seats
           .filter((p) => p.seat !== m.seat)
           .map((p) => ({

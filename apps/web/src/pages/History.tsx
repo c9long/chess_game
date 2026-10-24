@@ -1,23 +1,18 @@
-import {
-  isUntimed,
-  type MatchListItem,
-  type MatchListResponse,
-  type RatingsResponse,
-} from '@game/protocol'
-import { isSupportedRulesVersion } from '@game/rules'
-import { Play } from 'lucide-react'
+import type { MatchListItem, MatchListResponse, RatingsResponse } from '@game/protocol'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
-import { CivEmblem, civName } from '../components/CivEmblem.tsx'
 import { Medal } from '../components/game/Medal.tsx'
 import {
   ELO_START,
   END_REASON_LABEL,
   MODE_LABEL,
+  matchLine,
   ordinal,
   RATING_BUCKETS,
   relativeTime,
+  resultLabel,
 } from '../components/match/labels.ts'
+import { ReplayLink, ResultAsCiv, SeatCivEmblem } from '../components/match/MatchRowParts.tsx'
 import { EloDelta, RankedBadge } from '../components/match/RankedBadge.tsx'
 import { FriendButton } from '../components/social/FriendButton.tsx'
 import { PlayerMenu } from '../components/social/PlayerMenu.tsx'
@@ -29,8 +24,6 @@ import {
   linkButtonClass,
   PageTitle,
   RuleList,
-  SEAT_CLASSES,
-  SEAT_ORDER,
   SectionHeading,
   Spinner,
 } from '../components/ui.tsx'
@@ -48,28 +41,12 @@ function when(iso: string): string {
   })
 }
 
-const DRAW_REASONS = new Set(['agreed_draw', 'move_limit'])
-
-/** "Free-for-all, 10+0, casual" (ranked games add the Ranked tag beside it). */
-function matchLine(m: MatchListItem): string {
-  const untimed = isUntimed(m.timeControl)
-  return [
-    MODE_LABEL[m.mode] ?? m.mode,
-    untimed ? 'untimed, against bots' : m.timeControl,
-    !m.ranked && !untimed ? 'casual' : null,
-    m.ranked && !m.rated ? 'not rated' : null,
-  ]
-    .filter(Boolean)
-    .join(', ')
-}
-
 function MatchRow({ m, viewerRegistered }: { m: MatchListItem; viewerRegistered: boolean }) {
   const caps = capsFrom(useSocial((s) => s.friends))
   const delta = m.ratingDelta
   const aborted = m.status === 'aborted'
   const place = aborted ? null : m.placement
-  const draw = place === 1 && DRAW_REASONS.has(m.endReason ?? '')
-  const win = place === 1 && !draw
+  const result = resultLabel(place, m.endReason)
   const reason = aborted
     ? (END_REASON_LABEL[m.endReason ?? ''] ?? 'Cancelled')
     : m.endReason
@@ -79,35 +56,18 @@ function MatchRow({ m, viewerRegistered }: { m: MatchListItem; viewerRegistered:
     <li className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-4 gap-y-3 py-5 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:gap-x-5">
       <Medal place={place} size="lg" label={place ? ordinal(place) : undefined} />
       <div className="min-w-0">
-        <p className="flex min-w-0 flex-wrap items-baseline gap-x-2">
-          <span
-            className={cx(
-              'font-display text-lead font-semibold',
-              win ? 'text-gold' : aborted ? 'text-muted' : 'text-parchment',
-            )}
-          >
-            {aborted
+        <ResultAsCiv
+          result={
+            aborted
               ? 'Cancelled'
-              : win
-                ? 'Victory'
-                : draw
-                  ? 'Draw'
-                  : place
-                    ? `${ordinal(place)} place`
-                    : m.status === 'in_progress'
-                      ? 'In progress'
-                      : 'Finished'}
-          </span>
-          <span className="inline-flex min-w-0 items-center gap-1.5 text-ui text-muted">
-            as
-            <span className={SEAT_CLASSES[SEAT_ORDER[m.seat] ?? 'south'].text}>
-              <CivEmblem civ={m.civ} className="h-4 w-4" />
-            </span>
-            <span className="truncate font-display font-semibold text-parchment">
-              {civName(m.civ)}
-            </span>
-          </span>
-        </p>
+              : !place && m.status === 'in_progress'
+                ? 'In progress'
+                : result.label
+          }
+          tone={result.win ? 'win' : aborted ? 'muted' : 'plain'}
+          seat={m.seat}
+          civ={m.civ}
+        />
         <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-ui text-faint">
           <span>{matchLine(m)}</span>
           {m.ranked ? <RankedBadge /> : null}
@@ -122,9 +82,7 @@ function MatchRow({ m, viewerRegistered }: { m: MatchListItem; viewerRegistered:
           <ul aria-label="Opponents" className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
             {m.opponents.map((o) => (
               <li key={o.seat} className="inline-flex min-w-0 items-center gap-1.5 text-ui">
-                <span className={SEAT_CLASSES[SEAT_ORDER[o.seat] ?? 'south'].text}>
-                  <CivEmblem civ={o.civ} className="h-4 w-4" />
-                </span>
+                <SeatCivEmblem seat={o.seat} civ={o.civ} />
                 <span className="truncate font-display font-semibold text-muted">{o.name}</span>
                 {o.friend ? (
                   <FriendButton
@@ -170,24 +128,7 @@ function MatchRow({ m, viewerRegistered }: { m: MatchListItem; viewerRegistered:
           <span />
         )}
         {m.status === 'finished' ? (
-          isSupportedRulesVersion(m.rulesVersion) ? (
-            <Link
-              to={`/history/${m.id}`}
-              className={linkButtonClass('secondary', '', 'sm')}
-              data-testid="history-replay"
-            >
-              <Play className="h-3.5 w-3.5 fill-current" aria-hidden="true" />
-              Replay
-            </Link>
-          ) : (
-            <Link
-              to={`/history/${m.id}`}
-              className={linkButtonClass('quiet', '', 'sm')}
-              data-testid="history-replay"
-            >
-              Details
-            </Link>
-          )
+          <ReplayLink id={m.id} rulesVersion={m.rulesVersion} testId="history-replay" />
         ) : null}
       </div>
     </li>

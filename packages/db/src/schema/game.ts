@@ -71,6 +71,9 @@ export const matches = pgTable(
   (t) => [
     index('matches_status_idx').on(t.status),
     index('matches_started_at_idx').on(t.startedAt),
+    // Finished games by when they ended: a profile's recent games and the ranked repeat
+    // limit's window (ratings.ts).
+    index('matches_finished_ended_idx').on(t.endedAt).where(sql`${t.status} = 'finished'`),
   ],
 )
 
@@ -100,7 +103,8 @@ export const matchPlayers = pgTable(
   },
   (t) => [
     primaryKey({ columns: [t.matchId, t.seat] }),
-    index('match_players_user_idx').on(t.userId),
+    // A player's matches; with match_id, a join to `matches` needs no table lookup.
+    index('match_players_user_match_idx').on(t.userId, t.matchId),
     check('match_players_seat_range', sql`${t.seat} between 0 and 3`),
     check('match_players_human_xor_bot', sql`(${t.userId} is null) <> (${t.botLevel} is null)`),
     // A match can only reference a civ version that exists (replays re-simulate under it).

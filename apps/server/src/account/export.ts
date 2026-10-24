@@ -15,7 +15,7 @@ import {
 import { asc, desc, eq } from 'drizzle-orm'
 import { blocksForExport } from '../social/blocks.ts'
 import { rowsOf } from '../social/friends.ts'
-import { friendRequestPolicyOf } from '../social/profiles.ts'
+import { socialSettingsOf } from '../social/profiles.ts'
 
 /**
  * Everything we hold about a user, as a JSON-serializable object (PLAN §8 export).
@@ -111,9 +111,9 @@ export async function buildAccountExport(db: Database, userId: string, now: Date
         .where(eq(sessions.userId, userId)),
       rowsOf(db, userId),
     ])
-  const [blocked, friendRequests, filed] = await Promise.all([
+  const [blocked, settings, filed] = await Promise.all([
     blocksForExport(db, userId),
-    friendRequestPolicyOf(db, userId),
+    socialSettingsOf(db, userId),
     db
       .select({
         reason: reports.reason,
@@ -164,8 +164,11 @@ export async function buildAccountExport(db: Database, userId: string, now: Date
     })),
     /** Players you blocked (usernames only). */
     blocked,
-    /** Your settings: who can send you friend requests (`anyone` or `played_with`). */
-    settings: { friendRequests },
+    /**
+     * Your settings: who can send you friend requests (`anyone` or `played_with`), and whether
+     * your public profile shows your recent games (`publicHistory`).
+     */
+    settings,
     /**
      * Reports you filed (who they were about is left out: that is another player's data).
      * Reports about you are kept for moderation and aren't listed, to protect reporters.

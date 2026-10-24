@@ -1,8 +1,9 @@
 /**
- * Player search, public profiles and the "who can send me friend requests" setting (PLAN §3
- * "Friends", 2026-10-17). Postgres only: exact usernames use the unique index on
- * `users.username` (stored normalized, lowercase), search-as-you-type uses a pg_trgm GIN index
- * on `lower(username)` (migration 0011), or a prefix match when the extension is missing.
+ * Player search, public profiles and the profile privacy settings ("who can send me friend
+ * requests", "show my recent games on my profile") (PLAN §3 "Friends", 2026-10-17). Postgres
+ * only: exact usernames use the unique index on `users.username` (stored normalized,
+ * lowercase), search-as-you-type uses a pg_trgm GIN index on `lower(username)` (migration
+ * 0011), or a prefix match when the extension is missing.
  */
 import {
   blocks,
@@ -15,13 +16,18 @@ import {
   users,
 } from '@game/db'
 import {
-  type FriendRequestPolicy,
+  botName,
   LEADERBOARD_MIN_GAMES,
   PLAYER_SEARCH_MAX_RESULTS,
   type PlayerRelation,
   type PlayerSearchResult,
+  PROFILE_RECENT_GAMES,
+  type ProfileGame,
+  type ProfileGamePlayer,
   type ProfileRating,
   type PublicProfileResponse,
+  type SocialSettingsBody,
+  type SocialSettingsResponse,
 } from '@game/protocol'
 import {
   and,
@@ -41,7 +47,7 @@ import {
   sql,
 } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/pg-core'
-import { hasBlocked } from './blocks.ts'
+import { isRegisteredSeat, type PlayerRow, playersOf, ratingDeltaOf } from '../game/match-rows.ts'
 import {
   type Counts,
   countsOf,
@@ -249,7 +255,8 @@ export async function profileOf(
   const u = await findByUsername(db, username)
   if (!u) return undefined
   const self = viewer === u.id
-  const [ratingRows, games, civRows, relations, counts, blockedByYou] = await Promise.all([
+  const other = viewer && !self ? viewer : undefined
+  const [ratingRows, games, civRows, relations, counts, blockers, settings] = await Promise.all([
     db
       .select({
         mode: eloRatings.mode,
@@ -271,10 +278,18 @@ export async function profileOf(
       .groupBy(civilizations.slug)
       .orderBy(desc(count()), desc(max(matches.startedAt)), asc(civilizations.slug))
       .limit(1),
-    viewer && !self ? relationsOf(db, viewer, [u.id]) : Promise.resolve(undefined),
-    viewer && !self ? countsOf(db, viewer) : Promise.resolve(undefined),
-    viewer && !self ? hasBlocked(db, viewer, u.id) : Promise.resolve(false),
+    other ? relationsOf(db, other, [u.id]) : Promise.resolve(undefined),
+    other ? countsOf(db, other) : Promise.resolve(undefined),
+    other ? blockersBetween(db, other, u.id) : Promise.resolve([]),
+    viewer ? socialSettingsOf(db, u.id) : Promise.resolve(undefined),
   ])
+  const blockedByYou = blockers.includes(viewer ?? '')
+  // Guests (no `viewer`) never see recent games: a guest session would get around a block. A
+  // block either way gives the same null as a private history, so it isn't revealed.
+  const recentGames =
+    viewer && settings?.publicHistory && blockers.length === 0
+      ? await recentGamesOf(db, u.id, viewer)
+      : null
   const relation = relations?.get(u.id) ?? 'none'
   const ratings: ProfileRating[] = ratingRows.map((r) => ({
     ...r,
@@ -291,39 +306,151 @@ export async function profileOf(
     blockedByYou,
     capReached: counts ? counts.friends >= limits.maxFriends : false,
     outgoingFull: counts ? counts.outgoing >= limits.maxOutgoing : false,
+    recentGames,
   }
   if (!self && viewer && (relation !== 'none' || blockedByYou)) profile.userId = u.id
   return profile
 }
 
 // ---------------------------------------------------------------------------
-// "Who can send me friend requests"
+// Recent games on the profile (opt-in public match history)
 // ---------------------------------------------------------------------------
 
-export async function friendRequestPolicyOf(
-  db: Executor,
-  userId: string,
-): Promise<FriendRequestPolicy> {
-  const [row] = await db
-    .select({ policy: userSettings.friendRequests })
-    .from(userSettings)
-    .where(eq(userSettings.userId, userId))
-  return row?.policy ?? 'anyone'
+/** Which of `a` and `b` blocked the other (none, one or both of them). */
+async function blockersBetween(db: Executor, a: string, b: string): Promise<string[]> {
+  const rows = await db
+    .select({ id: blocks.blockerId })
+    .from(blocks)
+    .where(
+      or(
+        and(eq(blocks.blockerId, a), eq(blocks.blockedId, b)),
+        and(eq(blocks.blockerId, b), eq(blocks.blockedId, a)),
+      ),
+    )
+  return rows.map((r) => r.id)
 }
 
-export async function setFriendRequestPolicy(
+/**
+ * How another seat is named on a public profile: no guest names or deletion numbers.
+ * Suspended accounts read like any other registered player (name and link), as in search and
+ * friend requests. Their link answers 404, so a careful viewer can still tell; a name without
+ * a link would tell every viewer at a glance.
+ */
+function profilePlayer(p: PlayerRow): ProfileGamePlayer {
+  const base = { seat: p.seat, team: p.team, civ: p.civ, placement: p.placement }
+  if (p.botLevel || !p.userId) return { ...base, kind: 'bot', name: botName(p.botLevel ?? '') }
+  if (isRegisteredSeat(p)) {
+    const name = usernameOf({ ...p, name: p.name ?? '' })
+    return { ...base, kind: 'player', name, username: name }
+  }
+  return p.deletedAt
+    ? { ...base, kind: 'deleted', name: 'Deleted player' }
+    : { ...base, kind: 'guest', name: 'Guest' }
+}
+
+/**
+ * `owner`'s last PROFILE_RECENT_GAMES finished games, newest (by end) first. `viewer` gets a
+ * game's id only if they played in it too, for the link to their own replay.
+ */
+export async function recentGamesOf(
+  db: Executor,
+  owner: string,
+  viewer: string,
+): Promise<ProfileGame[]> {
+  const rows = await db
+    .select({
+      id: matches.id,
+      // Set together with status 'finished' (persistence.ts), so never null here.
+      endedAt: sql<Date>`${matches.endedAt}`.mapWith(matches.endedAt),
+      mode: matches.mode,
+      timeControl: matches.timeControl,
+      ranked: matches.ranked,
+      rated: matches.rated,
+      rulesVersion: matches.rulesVersion,
+      endReason: matches.endReason,
+      seat: matchPlayers.seat,
+    })
+    .from(matchPlayers)
+    .innerJoin(matches, eq(matches.id, matchPlayers.matchId))
+    .where(and(eq(matchPlayers.userId, owner), eq(matches.status, 'finished')))
+    // Sorted on an expression, not the column, so the planner reads this player's own seats
+    // instead of walking every finished game's ended_at looking for theirs (slow when their
+    // last game is old).
+    .orderBy(desc(sql`${matches.endedAt} + interval '0 seconds'`), desc(matches.id))
+    .limit(PROFILE_RECENT_GAMES)
+  const seats = new Map<string, PlayerRow[]>()
+  for (const p of await playersOf(
+    db,
+    rows.map((r) => r.id),
+  )) {
+    seats.set(p.matchId, [...(seats.get(p.matchId) ?? []), p])
+  }
+  return rows.map((m) => {
+    const all = seats.get(m.id) ?? []
+    const mine = all.find((p) => p.seat === m.seat)
+    const game: ProfileGame = {
+      // The UTC day only: an exact time would show when the other players were online.
+      playedOn: m.endedAt.toISOString().slice(0, 10),
+      mode: m.mode,
+      timeControl: m.timeControl,
+      ranked: m.ranked,
+      rated: m.rated,
+      rulesVersion: m.rulesVersion,
+      endReason: m.endReason,
+      seat: m.seat,
+      team: mine?.team ?? null,
+      civ: mine?.civ ?? '',
+      placement: mine?.placement ?? null,
+      ratingDelta: ratingDeltaOf(m.rated, mine),
+      others: all.filter((p) => p !== mine).map(profilePlayer),
+    }
+    if (all.some((p) => p.userId === viewer)) game.id = m.id
+    return game
+  })
+}
+
+// ---------------------------------------------------------------------------
+// Profile privacy settings (Account page)
+// ---------------------------------------------------------------------------
+
+/** Every default: anyone may send requests, recent games stay private (opt-in). */
+const DEFAULT_SETTINGS: SocialSettingsResponse = { friendRequests: 'anyone', publicHistory: false }
+
+export async function socialSettingsOf(
   db: Executor,
   userId: string,
-  policy: FriendRequestPolicy,
-): Promise<void> {
-  const now = new Date()
-  await db
-    .insert(userSettings)
-    .values({ userId, friendRequests: policy, updatedAt: now })
-    .onConflictDoUpdate({
-      target: userSettings.userId,
-      set: { friendRequests: policy, updatedAt: now },
+): Promise<SocialSettingsResponse> {
+  const [row] = await db
+    .select({
+      friendRequests: userSettings.friendRequests,
+      publicHistory: userSettings.publicHistory,
     })
+    .from(userSettings)
+    .where(eq(userSettings.userId, userId))
+  return row ?? { ...DEFAULT_SETTINGS }
+}
+
+/** Changes the settings in `body` (the others keep their value); returns them all. */
+export async function updateSocialSettings(
+  db: Executor,
+  userId: string,
+  body: SocialSettingsBody,
+): Promise<SocialSettingsResponse> {
+  const now = new Date()
+  const set = {
+    ...(body.friendRequests !== undefined ? { friendRequests: body.friendRequests } : {}),
+    ...(body.publicHistory !== undefined ? { publicHistory: body.publicHistory } : {}),
+    updatedAt: now,
+  }
+  const [row] = await db
+    .insert(userSettings)
+    .values({ userId, ...set })
+    .onConflictDoUpdate({ target: userSettings.userId, set })
+    .returning({
+      friendRequests: userSettings.friendRequests,
+      publicHistory: userSettings.publicHistory,
+    })
+  return row as SocialSettingsResponse
 }
 
 /** Whether `a` and `b` sat in the same running or finished match. */

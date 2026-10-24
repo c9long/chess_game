@@ -328,6 +328,7 @@ describe('state schema', () => {
       'rematchVotes',
       'rematchDeadline',
       'rematchRoomId',
+      'unratedRepeat',
     ])
     expect(state.inviteOnly).toBe(false)
     // No spectators and no rematch proposal by default (appended after `inviteOnly`).
@@ -337,6 +338,7 @@ describe('state schema', () => {
     expect([...state.rematchVotes]).toEqual([-1, -1, -1, -1])
     expect(state.rematchDeadline).toBe(0)
     expect(state.rematchRoomId).toBe('')
+    expect(state.unratedRepeat).toBe(false)
     const encoder = new Encoder(state)
     expect(encoder.encodeAll().length).toBeGreaterThan(0)
     const reflected = Reflection.decode(Reflection.encode(encoder))

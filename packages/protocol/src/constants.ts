@@ -36,6 +36,14 @@ export const SPECTATORS_MAX = 20
  */
 export const SPECTATOR_DELAY_ROUNDS = 2
 
+/**
+ * Ranked games' repeat limit: four players who already finished RANKED_REPEAT_MAX rated games
+ * together within RANKED_REPEAT_WINDOW_MS play their next ranked game unrated. Why, and what it
+ * doesn't cover: README "Ranked repeat limit".
+ */
+export const RANKED_REPEAT_MAX = 3
+export const RANKED_REPEAT_WINDOW_MS = 24 * 60 * 60_000
+
 /** Rematch: how long the other players have to answer a proposal (then it counts as no). */
 export const REMATCH_TIMEOUT_MS = 60_000
 
@@ -122,6 +130,11 @@ export type MatchPhase = (typeof MATCH_PHASES)[number]
 /** Bot strength labels as strings on the wire ('600' ... '2400', 'max'). */
 export const BOT_LEVEL_LABELS = BOT_LEVELS.map(String) as [string, ...string[]]
 export type BotLevelLabel = `${(typeof BOT_LEVELS)[number]}`
+
+/** A bot's name: "Bot 1200", or "Bot Max" at full strength. */
+export function botName(level: string): string {
+  return `Bot ${level === 'max' ? 'Max' : level}`
+}
 
 export const CIV_SLUGS = CIVILIZATIONS.map((c) => c.slug) as [string, ...string[]]
 

@@ -21,7 +21,7 @@ import {
   type SocialUser,
 } from '@game/protocol'
 import { and, asc, count, eq, inArray, or, sql } from 'drizzle-orm'
-import { friendRequestPolicyOf, playedTogether } from './profiles.ts'
+import { playedTogether, socialSettingsOf } from './profiles.ts'
 
 /** A refused social action: the route answers `{ error: code, message }` with `status`. */
 export class SocialError extends Error {
@@ -383,7 +383,7 @@ export async function sendRequest(
     if (blocked.byThem) throw notEligible()
     if (
       options.respectPolicy &&
-      (await friendRequestPolicyOf(tx, target)) === 'played_with' &&
+      (await socialSettingsOf(tx, target)).friendRequests === 'played_with' &&
       !(await playedTogether(tx, me, target))
     ) {
       throw notEligible()

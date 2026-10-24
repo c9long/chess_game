@@ -1,20 +1,28 @@
 /**
  * A player's public profile (/u/:username): username, member since, Elo per mode and time
  * control (the numbers the leaderboard shows), games played and favourite civ, with Add friend,
- * Challenge (friends) and the Block / Report menu. Match history stays private. Unknown,
+ * Challenge (friends) and the Block / Report menu. Match history stays private unless the
+ * player turned on "Show my recent games on my profile" (Account page): then registered viewers
+ * see their last finished games, with a replay link only on games the viewer played in. Unknown,
  * deleted and suspended players all read "Player not found"; guests have no profile.
  */
 import { APP_NAME, CIVILIZATIONS } from '@game/config'
 import {
   LEADERBOARD_MIN_GAMES,
+  type ProfileGame,
+  type ProfileGamePlayer,
   type ProfileRating,
   type PublicProfileResponse,
 } from '@game/protocol'
 import { Lock, Swords } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
+import { civName } from '../components/CivEmblem.tsx'
 import { CivMedallion } from '../components/civ/CivMedallion.tsx'
-import { MODE_LABEL } from '../components/match/labels.ts'
+import { Medal } from '../components/game/Medal.tsx'
+import { MODE_LABEL, matchLine, ordinal, resultLabel } from '../components/match/labels.ts'
+import { ReplayLink, ResultAsCiv, SeatCivEmblem } from '../components/match/MatchRowParts.tsx'
+import { EloDelta, RankedBadge } from '../components/match/RankedBadge.tsx'
 import { FriendButton, Monogram } from '../components/social/FriendButton.tsx'
 import { PlayerMenu } from '../components/social/PlayerMenu.tsx'
 import {
@@ -31,9 +39,11 @@ import {
 } from '../components/ui.tsx'
 import { ApiError } from '../lib/api.ts'
 import { isGuest, useAppState } from '../lib/app-state.tsx'
+import { playedOnLabel, sidesOf } from '../lib/profile-games.ts'
 import {
   acceptFriendRequest,
   fetchProfile,
+  profilePath,
   sendFriendRequestByUsername,
   useSocial,
 } from '../lib/social.ts'
@@ -74,6 +84,179 @@ function RatingRow({ r }: { r: ProfileRating }) {
         ) : null}
       </p>
     </li>
+  )
+}
+
+/** Another seat of a recent game: the civ emblem in its seat colour, then the name. */
+function SeatName({ p }: { p: ProfileGamePlayer }) {
+  const nameClass = 'truncate font-display font-semibold'
+  return (
+    <li className="inline-flex min-w-0 items-center gap-1.5">
+      <SeatCivEmblem seat={p.seat} civ={p.civ} title={civName(p.civ)} />
+      {p.username ? (
+        <Link
+          to={profilePath(p.username)}
+          className={cx(textLinkClass, nameClass)}
+          data-testid="profile-game-player"
+        >
+          {p.name}
+        </Link>
+      ) : (
+        <span className={cx(nameClass, 'text-muted')} data-testid="profile-game-player">
+          {p.name}
+        </span>
+      )}
+    </li>
+  )
+}
+
+/** "With" or "Against", then those players (`name`: the list's accessible name). */
+function SeatNames({
+  label,
+  name,
+  players,
+}: {
+  label: string
+  name: string
+  players: ProfileGamePlayer[]
+}) {
+  return (
+    <div className="flex min-w-0 items-start gap-2">
+      <span className="text-faint">{label}</span>
+      <ul aria-label={name} className="flex min-w-0 flex-wrap gap-x-4 gap-y-1">
+        {players.map((p) => (
+          <SeatName key={p.seat} p={p} />
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+/** One of the owner's recent games: result and civ, the game line, who played. */
+function RecentGameRow({ g }: { g: ProfileGame }) {
+  const result = resultLabel(g.placement, g.endReason)
+  const { partners, opponents } = sidesOf(g)
+  const day = playedOnLabel(g.playedOn)
+  return (
+    <li
+      className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-4 gap-y-3 py-4 sm:grid-cols-[auto_minmax(0,1fr)_auto]"
+      data-testid="profile-game"
+    >
+      {/* The result next to it already says the placing. */}
+      <span aria-hidden="true">
+        <Medal place={g.placement} label={g.placement ? ordinal(g.placement) : undefined} />
+      </span>
+      <div className="min-w-0">
+        <ResultAsCiv
+          result={result.label}
+          tone={result.win ? 'win' : 'plain'}
+          seat={g.seat}
+          civ={g.civ}
+          size="body"
+        />
+        <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-ui text-faint">
+          <time dateTime={g.playedOn}>{day}</time>
+          <span>{matchLine(g)}</span>
+          {g.ranked ? <RankedBadge /> : null}
+        </p>
+        <div className="mt-2 flex flex-col gap-1 text-ui">
+          {partners.length > 0 ? (
+            <SeatNames label="With" name="Partner" players={partners} />
+          ) : null}
+          <SeatNames label="Against" name="Opponents" players={opponents} />
+        </div>
+      </div>
+      {g.ratingDelta !== null || g.id ? (
+        <div className="col-start-2 flex items-center justify-between gap-4 sm:col-start-3 sm:row-start-1 sm:flex-col sm:items-end sm:justify-start sm:gap-3">
+          {g.ratingDelta !== null ? (
+            <span className="text-ui lining-nums tabular-nums" data-testid="profile-game-elo">
+              <EloDelta delta={g.ratingDelta} className="font-semibold" />{' '}
+              <span className="text-caption text-faint">Elo</span>
+            </span>
+          ) : (
+            <span />
+          )}
+          {g.id ? (
+            <ReplayLink
+              id={g.id}
+              rulesVersion={g.rulesVersion}
+              label={`${result.label} as ${civName(g.civ)}, ${day}`}
+              testId="profile-game-replay"
+            />
+          ) : null}
+        </div>
+      ) : null}
+    </li>
+  )
+}
+
+/** A link to the Account page's recent-games setting, in running copy. */
+const settingLink = (
+  <Link to="/account#profile-history" className={textLinkClass}>
+    Account page
+  </Link>
+)
+
+/** The owner's recent games (they turned them on), or an empty state. */
+function RecentGamesSection({ games, self }: { games: ProfileGame[]; self: boolean }) {
+  return (
+    <section aria-labelledby="profile-games">
+      <SectionHeading
+        id="profile-games"
+        title="Recent games"
+        description={
+          self ? (
+            <>
+              Your last finished games, as registered players see them. You can hide them from your{' '}
+              {settingLink}.
+            </>
+          ) : (
+            'Their last finished games. Replays are only open to the players in each game.'
+          )
+        }
+      />
+      {games.length > 0 ? (
+        <RuleList data-testid="profile-games">
+          {games.map((g, i) => (
+            // One response's rows never reorder, and a viewer gets no id for most games.
+            // biome-ignore lint/suspicious/noArrayIndexKey: see above
+            <RecentGameRow key={i} g={g} />
+          ))}
+        </RuleList>
+      ) : self ? (
+        <p className="border-y border-rule py-4 text-ui text-muted">
+          Your finished games will show here.{' '}
+          <Link to="/play" className={textLinkClass}>
+            Play a game
+          </Link>
+        </p>
+      ) : (
+        <p className="border-y border-rule py-4 text-ui text-muted">No finished games yet.</p>
+      )}
+    </section>
+  )
+}
+
+/** Why there are no recent games on the profile: private, or shown to registered players only. */
+function HistoryPrivateNote({ self, guest }: { self: boolean; guest: boolean }) {
+  const text = self ? (
+    <span>
+      Your match history is private: only the players in a game can see it. You can show your recent
+      games here from your {settingLink}.
+    </span>
+  ) : guest ? (
+    'Match history is private. Players who share their recent games show them to registered players only.'
+  ) : (
+    'Match history is private: only the players in a game can see it.'
+  )
+  return (
+    <p
+      className="flex items-center gap-2 text-caption text-faint"
+      data-testid="profile-history-private"
+    >
+      <Lock aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-brass" />
+      {text}
+    </p>
   )
 }
 
@@ -314,10 +497,11 @@ export function Profile() {
         )}
       </section>
 
-      <p className="flex items-center gap-2 text-caption text-faint">
-        <Lock aria-hidden="true" className="h-3.5 w-3.5 text-brass" />
-        Match history is private: only the players in a game can see it.
-      </p>
+      {p.recentGames ? (
+        <RecentGamesSection games={p.recentGames} self={p.relation === 'self'} />
+      ) : (
+        <HistoryPrivateNote self={p.relation === 'self'} guest={guest} />
+      )}
     </div>
   )
 }

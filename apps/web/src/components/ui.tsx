@@ -227,6 +227,80 @@ export function Field({
 }
 
 /**
+ * An on/off setting: a bordered row with its name (and a caption) and a switch at the end, plus
+ * an optional hint under the row that says what the choice means or why it is unavailable.
+ */
+export function SwitchRow({
+  label,
+  caption,
+  hint,
+  checked,
+  disabled = false,
+  busy = false,
+  onChange,
+  testId,
+  hintTestId,
+}: {
+  label: string
+  caption?: ReactNode
+  hint?: ReactNode
+  checked: boolean
+  disabled?: boolean
+  /** Saving: announced as busy, never disabled (that would drop keyboard focus off it). */
+  busy?: boolean
+  onChange: (checked: boolean) => void
+  testId?: string
+  hintTestId?: string
+}) {
+  const id = useId()
+  const described = [caption ? `${id}-caption` : '', hint ? `${id}-hint` : ''].join(' ').trim()
+  return (
+    <div className="flex flex-col gap-1.5">
+      <label
+        className={cx(
+          'flex items-center justify-between gap-4 rounded-control border px-3 py-2.5 transition-colors duration-150',
+          checked ? 'border-brass/60 bg-brass/[0.07]' : 'border-rule-strong',
+          disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:border-parchment/35',
+        )}
+      >
+        <span className="flex min-w-0 flex-col">
+          <span id={`${id}-label`} className="text-ui font-semibold text-parchment">
+            {label}
+          </span>
+          {caption ? (
+            <span id={`${id}-caption`} className="text-caption text-faint">
+              {caption}
+            </span>
+          ) : null}
+        </span>
+        <span className="relative inline-flex shrink-0">
+          <input
+            type="checkbox"
+            role="switch"
+            aria-checked={checked}
+            aria-labelledby={`${id}-label`}
+            aria-describedby={described || undefined}
+            aria-busy={busy || undefined}
+            className="peer sr-only"
+            checked={checked}
+            disabled={disabled}
+            onChange={(e) => onChange(e.target.checked)}
+            data-testid={testId}
+          />
+          <span className="h-6 w-11 rounded-full bg-parchment/20 shadow-well transition-colors duration-150 peer-checked:bg-brass peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-gold" />
+          <span className="pointer-events-none absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-parchment shadow-plate transition-transform duration-150 peer-checked:translate-x-5" />
+        </span>
+      </label>
+      {hint ? (
+        <p id={`${id}-hint`} className="text-caption text-faint" data-testid={hintTestId}>
+          {hint}
+        </p>
+      ) : null}
+    </div>
+  )
+}
+
+/**
  * A standalone block on the room's ink (sign-in, a form, a notice): panel, brass hairline,
  * panel radius. For a group of actions inside a page use `Panel`; for lists use `RuleList`.
  */

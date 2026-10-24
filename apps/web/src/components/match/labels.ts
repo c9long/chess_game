@@ -1,4 +1,12 @@
-import { GAME_MODES, SEAT_NAMES, type SeatName, TIME_CONTROL_IDS } from '@game/protocol'
+import {
+  GAME_MODES,
+  isUntimed,
+  RANKED_REPEAT_MAX,
+  RANKED_REPEAT_WINDOW_MS,
+  SEAT_NAMES,
+  type SeatName,
+  TIME_CONTROL_IDS,
+} from '@game/protocol'
 import { pieceName } from '../../lib/civ-info.ts'
 
 /** Text labels for seats, modes and results (no renderer dependency, safe for any page). */
@@ -25,6 +33,45 @@ export function ordinal(n: number): string {
 }
 
 export const MODE_LABEL: Record<string, string> = { ffa: 'Free-for-all', teams: 'Teams 2v2' }
+
+/** End reasons where 1st place is shared: a draw, not a win. */
+const DRAW_REASONS = new Set(['agreed_draw', 'move_limit'])
+
+/** A finished seat's result: "Victory", "Draw", "2nd place", or "Finished" without a place. */
+export function resultLabel(
+  placement: number | null,
+  endReason: string | null,
+): { label: string; win: boolean } {
+  if (placement === 1) {
+    return DRAW_REASONS.has(endReason ?? '')
+      ? { label: 'Draw', win: false }
+      : { label: 'Victory', win: true }
+  }
+  return { label: placement ? `${ordinal(placement)} place` : 'Finished', win: false }
+}
+
+/** "Free-for-all, 10+0, casual"; ranked games get the Ranked tag beside it (and "not rated"). */
+export function matchLine(m: {
+  mode: string
+  timeControl: string
+  ranked: boolean
+  rated: boolean
+}): string {
+  const untimed = isUntimed(m.timeControl)
+  return [
+    MODE_LABEL[m.mode] ?? m.mode,
+    untimed ? 'untimed, against bots' : m.timeControl,
+    !m.ranked && !untimed ? 'casual' : null,
+    m.ranked && !m.rated ? 'not rated' : null,
+  ]
+    .filter(Boolean)
+    .join(', ')
+}
+
+export const REPEAT_WINDOW_HOURS = Math.round(RANKED_REPEAT_WINDOW_MS / 3_600_000)
+
+/** A full ranked lobby whose four players reached the repeat limit (`state.unratedRepeat`). */
+export const UNRATED_REPEAT_NOTE = `You four have already played ${RANKED_REPEAT_MAX} rated games together in the last ${REPEAT_WINDOW_HOURS} hours, so this game won’t change anyone’s Elo. It still plays by ranked rules.`
 
 /** Everyone's starting Elo (shown greyed out before a first ranked game). */
 export const ELO_START = 1200

@@ -26,6 +26,7 @@ import { CivSelect } from '../components/CivSelect.tsx'
 import { CivCard } from '../components/civ/CivCard.tsx'
 import { SeatEmblem, TableBoard } from '../components/match/LobbyRoom.tsx'
 import { RankedBadge } from '../components/match/RankedBadge.tsx'
+import { RankedToggle } from '../components/match/RankedToggle.tsx'
 import { SpectatorCount } from '../components/match/Spectators.tsx'
 import { botName, SEAT_LABEL, seatHex, seatName } from '../components/match/seats.ts'
 import { Dialog, DialogClose } from '../components/overlay.tsx'
@@ -485,7 +486,7 @@ function CreateLobby() {
               : '3 minutes per player, plus 2 seconds per move.'
           }
         />
-        <RankedToggle ranked={ranked && !guest} guest={guest} onChange={setRanked} />
+        <LobbyRankedToggle ranked={ranked && !guest} guest={guest} onChange={setRanked} />
         <Field
           label="Password (optional)"
           type="password"
@@ -516,7 +517,7 @@ function CreateLobby() {
 }
 
 /** Ranked or casual (registered accounts only for ranked; guests see why it's disabled). */
-function RankedToggle({
+function LobbyRankedToggle({
   ranked,
   guest,
   onChange,
@@ -525,38 +526,14 @@ function RankedToggle({
   guest: boolean
   onChange: (ranked: boolean) => void
 }) {
-  const hintId = useId()
   return (
-    <div className="flex flex-col gap-1.5">
-      <label
-        className={cx(
-          'flex items-center justify-between gap-4 rounded-control border px-3 py-2.5 transition-colors duration-150',
-          ranked ? 'border-brass/60 bg-brass/[0.07]' : 'border-rule-strong',
-          guest ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:border-parchment/35',
-        )}
-      >
-        <span className="flex flex-col">
-          <span className="text-ui font-semibold text-parchment">Ranked</span>
-          <span className="text-caption text-faint">Rated games, for players with accounts</span>
-        </span>
-        <span className="relative inline-flex shrink-0">
-          <input
-            type="checkbox"
-            role="switch"
-            aria-checked={ranked}
-            className="peer sr-only"
-            checked={ranked}
-            disabled={guest}
-            aria-describedby={hintId}
-            onChange={(e) => onChange(e.target.checked)}
-            data-testid="ranked-toggle"
-          />
-          <span className="h-6 w-11 rounded-full bg-parchment/20 shadow-well transition-colors duration-150 peer-checked:bg-brass peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-gold" />
-          <span className="pointer-events-none absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-parchment shadow-plate transition-transform duration-150 peer-checked:translate-x-5" />
-        </span>
-      </label>
-      <p id={hintId} className="text-caption text-faint" data-testid="ranked-hint">
-        {guest ? (
+    <RankedToggle
+      ranked={ranked}
+      disabled={guest}
+      onChange={onChange}
+      caption="Rated games, for players with accounts"
+      hint={
+        guest ? (
           <>
             <Link to="/sign-up" className={cx(textLinkClass, 'font-semibold')}>
               Create an account
@@ -567,9 +544,9 @@ function RankedToggle({
           'Counts toward your Elo. Bots can’t join; empty seats wait for players with accounts.'
         ) : (
           'Casual: no rating changes. You can fill empty seats with bots.'
-        )}
-      </p>
-    </div>
+        )
+      }
+    />
   )
 }
 

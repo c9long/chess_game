@@ -1,10 +1,14 @@
 /**
  * Friends and challenges, end to end: two registered players finish a short Teams game with
  * two bots, one adds the other from the result screen, the other accepts on the Friends page,
- * then a challenge brings both into an invite-only lobby. With UX_SHOTS set it also runs at
- * phone width and saves screenshots there.
+ * then a challenge brings both into an invite-only lobby. A ranked challenge brings four
+ * friends to a ranked, invite-only table (three friends needed, no bots), and the lobby warns
+ * when the four already played their rated games together for the day. With UX_SHOTS set it
+ * also runs at phone width and saves screenshots there.
  */
 import { type Browser, expect, type Page, test } from '@playwright/test'
+import postgres from 'postgres'
+import { E2E_DATABASE_URL, E2E_WEB_ORIGIN } from '../env.ts'
 import { chooseCiv, signUpAndVerify, uniqueUser, YOUR_TURN } from './helpers.ts'
 
 const OUT = process.env.UX_SHOTS ?? ''
@@ -133,6 +137,11 @@ for (const size of [
     const dialog = A.getByTestId('challenge-dialog')
     await expect(dialog).toBeVisible()
     await expect(dialog.getByTestId('challenge-pick').first()).toBeChecked()
+    // One friend is too few for a ranked challenge: the switch is locked and says why.
+    await expect(dialog.getByTestId('ranked-toggle')).toBeDisabled()
+    await expect(dialog.getByTestId('ranked-hint')).toHaveText(
+      'A ranked challenge needs 3 friends. You have 1.',
+    )
     await shot(A, `${tag}-challenge-form`)
     await dialog.getByTestId('challenge-send').click()
     await expect(A.getByRole('heading', { name: `${a.name}'s challenge` })).toBeVisible()
@@ -157,3 +166,134 @@ for (const size of [
     await B.context().close()
   })
 }
+
+/** A friend request by username over REST (as the app sends it). */
+async function requestFriend(page: Page, username: string) {
+  const res = await page.request.post('/api/friends/requests', {
+    data: { username },
+    headers: { origin: E2E_WEB_ORIGIN },
+  })
+  expect(res.ok(), await res.text()).toBe(true)
+}
+
+/** Three finished rated games of these four players today: the ranked repeat limit. */
+async function seedRatedGames(usernames: string[]) {
+  const sql = postgres(E2E_DATABASE_URL, { max: 1, onnotice: () => {} })
+  try {
+    const ids: string[] = []
+    for (const name of usernames) {
+      const [u] = await sql<{ id: string }[]>`select id from users where username = ${name}`
+      if (!u) throw new Error(`player ${name} missing`)
+      ids.push(u.id)
+    }
+    const [civ] = await sql<{ id: number }[]>`select id from civilizations where slug = 'japan'`
+    for (let i = 0; i < 3; i++) {
+      const [m] = await sql<{ id: string }[]>`
+        insert into matches (mode, time_control, rules_version, status, rated, ranked, ended_at)
+        values ('ffa', '10+0', 1, 'finished', true, true, now()) returning id`
+      for (const [seat, id] of ids.entries()) {
+        await sql`
+          insert into match_players (match_id, seat, user_id, civ_id, civ_version, placement)
+          values (${m?.id ?? ''}, ${seat}, ${id}, ${civ?.id ?? 0}, 1, ${seat + 1})`
+      }
+    }
+  } finally {
+    await sql.end()
+  }
+}
+
+test('friends: ranked challenge for a full table, unrated past the daily limit', async ({
+  browser,
+}) => {
+  test.setTimeout(240_000)
+  const size = { width: 1280, height: 800 }
+  const a = await player(browser, size)
+  const others = [
+    await player(browser, size),
+    await player(browser, size),
+    await player(browser, size),
+  ]
+  const A = a.page
+  const [B, C, D] = others.map((o) => o.page) as [Page, Page, Page]
+  // A asks each by username; a request back accepts it.
+  for (const o of others) {
+    await requestFriend(A, o.name)
+    await requestFriend(o.page, a.name)
+  }
+  // The four already played 3 rated games together today: this one will be unrated.
+  await seedRatedGames([a.name, ...others.map((o) => o.name)])
+  // B and D wait elsewhere (a prompt); C waits on the Friends page (a row).
+  await B.goto('/history')
+  await D.goto('/history')
+  await C.goto('/friends')
+
+  await A.goto('/friends')
+  await expect(A.getByTestId('friend-row')).toHaveCount(3)
+  await A.getByTestId('challenge-friends').click()
+  const dialog = A.getByTestId('challenge-dialog')
+  await expect(dialog).toBeVisible()
+  await expect(dialog.getByTestId('challenge-blocker')).toHaveText('Pick at least one friend.')
+  await dialog.getByText('Elo-rated, for you and 3 friends').click()
+  await expect(dialog.getByTestId('ranked-toggle')).toBeChecked()
+  await expect(dialog.getByTestId('ranked-hint')).toContainText('Bots can’t sit in.')
+  await expect(dialog.getByTestId('challenge-blocker')).toHaveText('Pick 3 more friends.')
+  const picks = dialog.getByTestId('challenge-pick')
+  await picks.nth(0).check()
+  await picks.nth(1).check()
+  await expect(dialog.getByTestId('challenge-blocker')).toHaveText('Pick 1 more friend.')
+  await expect(dialog.getByTestId('challenge-send')).toBeDisabled()
+  await picks.nth(2).check()
+  await expect(dialog.getByTestId('challenge-blocker')).toHaveCount(0)
+  await shot(A, 'ranked-challenge-form')
+  await dialog.getByTestId('challenge-send').click()
+
+  // A ranked, invite-only lobby with no bot controls.
+  const lobby = `${a.name}'s challenge`
+  await expect(A.getByRole('heading', { name: lobby })).toBeVisible()
+  await expect(A.locator('header').getByTestId('ranked-badge')).toBeVisible()
+  await expect(A.getByTestId('invite-only-note')).toContainText('ranked')
+  await expect(A.getByTestId('add-bot')).toHaveCount(0)
+  await expect(A.getByTestId('ranked-seat-hint').first()).toBeVisible()
+
+  // The prompt and the Friends row say it is ranked.
+  for (const P of [B, D]) {
+    const prompt = P.getByTestId('challenge-prompt')
+    await expect(prompt).toBeVisible()
+    await expect(prompt).toContainText('ranked.')
+    await expect(prompt.getByTestId('ranked-badge')).toBeVisible()
+  }
+  await shot(B, 'ranked-challenge-prompt')
+  const row = C.getByTestId('friends-challenge-join').locator('xpath=ancestor::li[1]')
+  await expect(row.getByTestId('ranked-badge')).toBeVisible()
+  await C.getByTestId('friends-challenge-join').click()
+  for (const P of [B, D])
+    await P.getByTestId('challenge-prompt').getByTestId('challenge-join').click()
+  for (const P of [B, C, D]) await expect(P.getByRole('heading', { name: lobby })).toBeVisible()
+
+  // Full table: everyone is told before the start that it won't be rated.
+  for (const P of [A, B, C, D]) {
+    await expect(P.getByTestId('unrated-repeat-note')).toContainText(
+      '3 rated games together in the last 24 hours',
+    )
+  }
+  await shot(A, 'ranked-challenge-unrated')
+  for (const [P, civ] of [
+    [A, 'mali'],
+    [B, 'japan'],
+    [C, 'china'],
+    [D, 'canada'],
+  ] as const) {
+    await chooseCiv(P, civ)
+    await P.getByTestId('ready').click()
+  }
+  await expect(A.getByTestId('start-game')).toBeEnabled()
+  await A.getByTestId('start-game').click()
+  await expect(A.getByTestId('turn-banner')).toHaveText(YOUR_TURN, { timeout: 30_000 })
+  // Ranked rules, no Elo: the resign dialog says so.
+  await A.getByTestId('resign').click()
+  await expect(A.getByTestId('resign-ranked-note')).toHaveText(
+    'This ranked game isn’t rated, so nobody’s Elo changes.',
+  )
+  await A.getByRole('button', { name: 'Keep playing' }).click()
+  for (const P of [A, B, C, D]) await P.context().close()
+})

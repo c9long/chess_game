@@ -1,4 +1,8 @@
-import type { FriendRequestPolicy } from '@game/protocol'
+import {
+  type FriendRequestPolicy,
+  PROFILE_RECENT_GAMES,
+  type SocialSettingsResponse,
+} from '@game/protocol'
 import { startAuthentication } from '@simplewebauthn/browser'
 import {
   Check,
@@ -31,6 +35,7 @@ import {
   linkButtonClass,
   PageTitle,
   Pill,
+  SwitchRow,
   textLinkClass,
 } from '../components/ui.tsx'
 import {
@@ -201,6 +206,7 @@ export function Account() {
           { id: 'two-step', label: 'Two-step verification' },
           { id: 'linked', label: 'Linked accounts' },
           { id: 'privacy', label: 'Friend requests' },
+          { id: 'profile-history', label: 'Recent games' },
         ]),
     { id: 'your-data', label: 'Your data' },
     { id: 'danger-zone', label: guest ? 'Delete guest account' : 'Delete account' },
@@ -284,7 +290,7 @@ export function Account() {
                 hasPassword={hasPassword}
               />
               <LinkedAccounts accounts={accounts} reload={loadAccounts} />
-              <FriendRequestPrivacy />
+              <PrivacySettings />
             </>
           )}
           <DataExport />
@@ -1007,39 +1013,93 @@ const FRIEND_REQUEST_OPTIONS: { value: FriendRequestPolicy; label: string; hint:
   },
 ]
 
-/** "Who can send me friend requests" (saved as soon as it changes). */
-function FriendRequestPrivacy() {
-  const [policy, setPolicy] = useState<FriendRequestPolicy>()
+type SaveStatus = { tone: 'error' | 'success'; text: string }
+
+const LOAD_ERROR: SaveStatus = {
+  tone: 'error',
+  text: 'Your privacy settings didn’t load. Reload the page to try again.',
+}
+
+/**
+ * One privacy setting saved as soon as it changes: the loaded value until the user picks
+ * another, put back if the save fails.
+ */
+function useAutoSave<T>(loaded: T | undefined, save: (next: T) => Promise<unknown>) {
+  const [chosen, setChosen] = useState<T>()
   const [saving, setSaving] = useState(false)
-  const [status, setStatus] = useState<{ tone: 'error' | 'success'; text: string }>()
+  const [status, setStatus] = useState<SaveStatus>()
+  const value = chosen ?? loaded
 
-  useEffect(() => {
-    fetchSocialSettings()
-      .then((s) => setPolicy(s.friendRequests))
-      .catch(() =>
-        setStatus({
-          tone: 'error',
-          text: 'This setting didn’t load. Reload the page to try again.',
-        }),
-      )
-  }, [])
-
-  async function choose(next: FriendRequestPolicy) {
-    if (next === policy || saving) return
-    const before = policy
-    setPolicy(next)
+  async function choose(next: T) {
+    if (next === value || saving) return
+    const before = value
+    setChosen(next)
     setSaving(true)
     setStatus(undefined)
     try {
-      await saveSocialSettings({ friendRequests: next })
+      await save(next)
       setStatus({ tone: 'success', text: 'Saved.' })
     } catch {
-      setPolicy(before)
+      setChosen(before)
       setStatus({ tone: 'error', text: 'That didn’t save. Check your connection and try again.' })
     } finally {
       setSaving(false)
     }
   }
+
+  return { value, saving, status, choose }
+}
+
+function SaveStatusLine({ status }: { status: SaveStatus | undefined }) {
+  return (
+    <p
+      role="status"
+      className={cx(
+        'mt-2 min-h-5 text-caption',
+        status?.tone === 'error' ? 'text-destructive-light' : 'text-ok',
+      )}
+    >
+      {status?.text ?? ''}
+    </p>
+  )
+}
+
+/** The profile privacy settings: loaded once, each saved as soon as it changes. */
+function PrivacySettings() {
+  const [settings, setSettings] = useState<SocialSettingsResponse>()
+  const [loadFailed, setLoadFailed] = useState(false)
+
+  useEffect(() => {
+    fetchSocialSettings()
+      .then(setSettings)
+      .catch(() => setLoadFailed(true))
+  }, [])
+
+  // A failed load is said once, in the first section; both stay disabled.
+  return (
+    <>
+      <FriendRequestPrivacy loaded={settings?.friendRequests} loadFailed={loadFailed} />
+      <HistoryPrivacy loaded={settings?.publicHistory} />
+    </>
+  )
+}
+
+/** "Who can send me friend requests". */
+function FriendRequestPrivacy({
+  loaded,
+  loadFailed,
+}: {
+  loaded: FriendRequestPolicy | undefined
+  loadFailed: boolean
+}) {
+  const {
+    value: policy,
+    saving,
+    status,
+    choose,
+  } = useAutoSave(loaded, (friendRequests: FriendRequestPolicy) =>
+    saveSocialSettings({ friendRequests }),
+  )
 
   return (
     <Section
@@ -1082,15 +1142,33 @@ function FriendRequestPrivacy() {
           </label>
         ))}
       </fieldset>
-      <p
-        role="status"
-        className={cx(
-          'mt-2 min-h-5 text-caption',
-          status?.tone === 'error' ? 'text-destructive-light' : 'text-ok',
-        )}
-      >
-        {status?.text ?? ''}
-      </p>
+      <SaveStatusLine status={status ?? (loadFailed ? LOAD_ERROR : undefined)} />
+    </Section>
+  )
+}
+
+/** "Show my recent games on my profile" (opt-in public match history, off by default). */
+function HistoryPrivacy({ loaded }: { loaded: boolean | undefined }) {
+  const { value, saving, status, choose } = useAutoSave(loaded, (publicHistory: boolean) =>
+    saveSocialSettings({ publicHistory }),
+  )
+  return (
+    <Section
+      id="profile-history"
+      title="Recent games on my profile"
+      description="Your match history is private unless you turn this on. Replays stay open only to the players in each game, and players you blocked, or who blocked you, never see your games."
+      testId="history-privacy"
+    >
+      <SwitchRow
+        label="Show my recent games on my profile"
+        caption={`Registered players who open your profile see your last ${PROFILE_RECENT_GAMES} finished games: the day, the result, the civs, your Elo change and the other players’ names.`}
+        checked={value === true}
+        disabled={value === undefined}
+        busy={saving}
+        onChange={(on) => void choose(on)}
+        testId="public-history-toggle"
+      />
+      <SaveStatusLine status={status} />
     </Section>
   )
 }

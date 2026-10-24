@@ -8,6 +8,7 @@ import type { Room } from '@colyseus/sdk'
 import { type Challenge, CLOSE_CODES, ROOM_NAMES, type SocialMessages } from '@game/protocol'
 import { type ReactNode, useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router'
+import { challengeLine } from '../../lib/challenges.ts'
 import { gameClient, matchErrorCode } from '../../lib/match.ts'
 import {
   addIncomingChallenge,
@@ -22,7 +23,7 @@ import {
   socialChanged,
   useSocial,
 } from '../../lib/social.ts'
-import { MODE_LABEL } from '../match/labels.ts'
+import { RankedBadge } from '../match/RankedBadge.tsx'
 import { Dialog, type ToastInput, ToastViewport, useToast } from '../overlay.tsx'
 import { Button, cx, textLinkClass } from '../ui.tsx'
 
@@ -53,13 +54,6 @@ function useCountdown(iso: string | undefined): string {
 }
 
 const PROMPT_TEST_ID = 'challenge-prompt'
-
-/** "Free-for-all, 10+0, casual. Also invited: Ada." */
-function challengeLine(c: Challenge, viewerId: string): string {
-  const others = c.invitees.filter((i) => i.user.userId !== viewerId).map((i) => i.user.username)
-  const base = `${MODE_LABEL[c.mode] ?? c.mode}, ${c.timeControl}, casual.`
-  return others.length > 0 ? `${base} Also invited: ${others.join(', ')}.` : base
-}
 
 /** Whether a dialog other than the challenge prompt is open (it waits until that closes). */
 function useOtherDialogOpen(): boolean {
@@ -106,7 +100,17 @@ function ChallengePrompt({
         if (!open) onClose(c.id)
       }}
       title={`${c.from.username} challenges you`}
-      description={challengeLine(c, viewerId)}
+      description={
+        <>
+          {/* Visual only: the line itself says "ranked". */}
+          {c.ranked ? (
+            <span aria-hidden="true">
+              <RankedBadge className="mr-2 align-middle" />
+            </span>
+          ) : null}
+          {challengeLine(c, viewerId)}
+        </>
+      }
       testId={PROMPT_TEST_ID}
       actions={
         <>
@@ -194,7 +198,7 @@ function SocialEvents({ userId }: { userId: string }) {
         addIncomingChallenge(c)
         if (toastOnlyRef.current) {
           notify({
-            title: `${c.from.username} challenges you`,
+            title: `${c.from.username} challenges you${c.ranked ? ' to a ranked game' : ''}`,
             description: onFriendsPage() ? (
               'Answer under Challenges.'
             ) : (

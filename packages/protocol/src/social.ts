@@ -30,6 +30,8 @@ export const PLAYER_SEARCH_MAX_RESULTS = 10
 export const PLAYER_SEARCHES_PER_MIN = 30
 /** Public profiles a signed-in user may open per minute. */
 export const PROFILE_VIEWS_PER_MIN = 60
+/** Finished games a public profile lists when its owner shows their recent games. */
+export const PROFILE_RECENT_GAMES = 10
 
 /**
  * "Who can send me friend requests" (Account page): `anyone` (the default) or `played_with`
@@ -123,16 +125,27 @@ export const playerSearchQuerySchema = z.strictObject({
   q: usernameQuerySchema.pipe(z.string().min(PLAYER_SEARCH_MIN_CHARS).regex(PLAYER_SEARCH_NEEDS)),
 })
 
-/** `PUT /api/friends/settings` */
-export const socialSettingsBodySchema = z.strictObject({
-  friendRequests: z.enum(FRIEND_REQUEST_POLICIES),
-})
+/**
+ * `PUT /api/friends/settings`: the settings to change (at least one); the others keep their
+ * value, so a client that only knows `friendRequests` never resets `publicHistory`.
+ */
+export const socialSettingsBodySchema = z
+  .strictObject({
+    friendRequests: z.enum(FRIEND_REQUEST_POLICIES).optional(),
+    publicHistory: z.boolean().optional(),
+  })
+  .refine((b) => b.friendRequests !== undefined || b.publicHistory !== undefined, {
+    message: 'Nothing to change',
+  })
 export type SocialSettingsBody = z.input<typeof socialSettingsBodySchema>
 
 /**
- * `POST /api/challenges`: invite 1-3 friends to a new invite-only casual lobby. With `roomId`
- * (the challenge lobby you host, still before the game, after its invitation ended), invites
- * them to that lobby again instead; `mode` and `timeControl` are then the lobby's own.
+ * `POST /api/challenges`: invite 1-3 friends to a new invite-only lobby, casual by default.
+ * `ranked: true` makes it a ranked lobby (every ranked rule: registered accounts only, no bots,
+ * Elo-rated, spectators see it late), which needs CHALLENGE_MAX_INVITEES friends since bots
+ * can't fill a seat (`BAD_REQUEST` otherwise). With `roomId` (the challenge lobby you host,
+ * still before the game, after its invitation ended), invites them to that lobby again
+ * instead; `mode`, `timeControl` and `ranked` are then the lobby's own.
  */
 export const challengeBodySchema = z.strictObject({
   friendIds: z
@@ -142,6 +155,7 @@ export const challengeBodySchema = z.strictObject({
     .refine((ids) => new Set(ids).size === ids.length, 'duplicate friend'),
   mode: z.enum(GAME_MODES),
   timeControl: z.enum(TIME_CONTROL_IDS as [string, ...string[]]),
+  ranked: z.boolean().optional(),
   roomId: z.string().min(1).max(64).optional(),
 })
 export type ChallengeBody = z.input<typeof challengeBodySchema>
@@ -177,6 +191,8 @@ export const challengeSchema = z.object({
   roomId: z.string(),
   mode: z.enum(GAME_MODES),
   timeControl: z.string(),
+  /** A ranked lobby: Elo-rated, registered accounts only, no bots. */
+  ranked: z.boolean(),
   createdAt: z.string(),
   expiresAt: z.string(),
   /**
@@ -299,9 +315,61 @@ export interface ProfileRating extends RatingEntry {
 }
 
 /**
+ * Another seat of a game on a public profile. `kind` says how it is named: `player` is a
+ * registered account (`name` is its username), `guest` reads "Guest", `deleted` reads
+ * "Deleted player" and `bot` reads "Bot <level>" (no guest names or deletion numbers).
+ */
+export interface ProfileGamePlayer {
+  seat: number
+  team: number | null
+  kind: 'player' | 'guest' | 'deleted' | 'bot'
+  name: string
+  /**
+   * The username to link to (`/u/<username>`): every registered account that keeps its
+   * username. Suspended accounts read the same (their profile answers the same 404 as an
+   * unknown name), so the list never tells who is suspended.
+   */
+  username?: string
+  civ: string
+  placement: number | null
+}
+
+/** One finished game of the profile's owner (their recent games, newest first). */
+export interface ProfileGame {
+  /** Only when the viewer played in this game too (their /history/:id page). */
+  id?: string
+  /**
+   * The day the game ended, `YYYY-MM-DD` (UTC). Only the day: an exact time would let anyone
+   * follow when the other players in it were online.
+   */
+  playedOn: string
+  mode: 'ffa' | 'teams'
+  timeControl: string
+  /** Played in a ranked lobby. */
+  ranked: boolean
+  /** Elo-rated: a ranked game whose Elo was applied (not past the repeat limit). */
+  rated: boolean
+  /** The rules version it was played under (older ones have details but no replay). */
+  rulesVersion: number
+  /** `MatchEndReason`, e.g. `checkmate` or `agreed_draw`. */
+  endReason: string | null
+  /** The owner's seat, team, civ and placement. */
+  seat: number
+  team: number | null
+  civ: string
+  placement: number | null
+  /** The owner's Elo change in a rated game; null otherwise. */
+  ratingDelta: number | null
+  /** The other three seats, by seat. */
+  others: ProfileGamePlayer[]
+}
+
+/**
  * `GET /api/players/:username` (signed in, PROFILE_VIEWS_PER_MIN per minute): a registered
  * player's public profile. 404 NOT_FOUND ("Player not found") for unknown, guest, deleted and
- * suspended accounts alike. Match history stays private (participants only).
+ * suspended accounts alike. Match history stays private (participants only) unless the owner
+ * turned on `publicHistory`: then `recentGames` lists their last PROFILE_RECENT_GAMES finished
+ * games. Replays stay participants only.
  */
 export interface PublicProfileResponse {
   username: string
@@ -321,11 +389,19 @@ export interface PublicProfileResponse {
   blockedByYou: boolean
   capReached: boolean
   outgoingFull: boolean
+  /**
+   * The owner's last finished games, or null: they didn't turn on `publicHistory`, the viewer
+   * is a guest (registered viewers only, so a block can't be dodged with a guest session), or
+   * either of you blocked the other (the same null either way, so a block isn't revealed).
+   */
+  recentGames: ProfileGame[] | null
 }
 
 /** `GET /api/friends/settings` and `PUT /api/friends/settings` */
 export interface SocialSettingsResponse {
   friendRequests: FriendRequestPolicy
+  /** Show my recent games on my public profile (off by default). */
+  publicHistory: boolean
 }
 
 /** `GET /api/challenges`: open challenges to you and from you. */

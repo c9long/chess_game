@@ -31,12 +31,7 @@ import { requireCurrentAcceptance } from '../legal/routes.ts'
 import { resolveTarget } from '../moderation/targets.ts'
 import { blockedAmong, blockedByAmong } from './blocks.ts'
 import { countsOf, matchSeatsOf, relationsOf, SocialError, usernameOf } from './friends.ts'
-import {
-  friendRequestPolicyOf,
-  profileOf,
-  searchPlayers,
-  setFriendRequestPolicy,
-} from './profiles.ts'
+import { profileOf, searchPlayers, socialSettingsOf, updateSocialSettings } from './profiles.ts'
 import type { SocialService } from './service.ts'
 
 /** Ids in paths: Better Auth ids (letters, digits, `-`, `_`). */
@@ -189,14 +184,15 @@ export function socialRouter({
     }),
   )
 
-  /** Your "who can send me friend requests" setting (Account page). */
+  /**
+   * Your profile privacy settings (Account page): who can send you friend requests, and
+   * whether your profile shows your recent games. A PUT changes only the fields it names.
+   */
   router.get(
     '/friends/settings',
     ...guard,
     handle(async (_req, res) => {
-      const body: SocialSettingsResponse = {
-        friendRequests: await friendRequestPolicyOf(db, me(res).userId),
-      }
+      const body: SocialSettingsResponse = await socialSettingsOf(db, me(res).userId)
       res.setHeader('Cache-Control', 'no-store')
       res.json(body)
     }),
@@ -207,8 +203,7 @@ export function socialRouter({
     ...guard,
     handle(async (req, res) => {
       const body = socialSettingsBodySchema.parse(req.body)
-      await setFriendRequestPolicy(db, me(res).userId, body.friendRequests)
-      const out: SocialSettingsResponse = { friendRequests: body.friendRequests }
+      const out: SocialSettingsResponse = await updateSocialSettings(db, me(res).userId, body)
       res.json(out)
     }),
   )
@@ -353,6 +348,7 @@ export function socialRouter({
         friendIds: body.friendIds,
         mode: body.mode,
         timeControl: body.timeControl,
+        ranked: body.ranked,
         roomId: body.roomId,
       })
       res.status(201).json({ challenge })

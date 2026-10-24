@@ -51,7 +51,9 @@ never listed. Seated players rejoin by id.
 Ranked lobbies (`ranked: true`, default false): Elo-rated (see REST below). Guests can't
 create or join one (`account_required`), bots can't be added (`addBot` answers
 `ranked_no_bots`), and solo games can't be ranked (`invalid_options`). Casual lobbies are
-never rated, whoever plays. `state.ranked` and `metadata.ranked` say which a room is.
+never rated, whoever plays. `state.ranked` and `metadata.ranked` say which a room is. Four
+players who keep meeting hit the repeat limit (see "Ranked repeat limit"). A friends challenge
+can be ranked too (see "Challenge lobbies").
 
 Solo games (`kind: 'solo'`, singleplayer): the creator plays South with `civ`; three bots at
 `botLevel` sit at West, North and East with random civs (distinct from each other and from the
@@ -84,6 +86,18 @@ message is the code: `unauthorized`, `age_confirmation_required`, `legal_accepta
 joining `social`), `not_invited` (joining a challenge lobby you weren't invited to),
 `spectators_full` (watching a room that already has `SPECTATORS_MAX` spectators),
 `not_implemented` (`pickMode: 'draft'`).
+
+### Ranked repeat limit
+
+Elo farming needs the same accounts to play each other over and over, so a ranked game counts
+for Elo only while its four players have finished fewer than `RANKED_REPEAT_MAX` (3) rated games
+together within `RANKED_REPEAT_WINDOW_MS` (24 h), in any ranked lobby: public, password or
+challenge (a limit on challenges alone would send the same four to a password lobby). Past that
+the game is still played, and still ranked (no bots, spectator delay, `matches.ranked` true),
+but unrated: `rated: false`, no Elo change. Once the table is full the lobby shows it before the
+start (`state.unratedRepeat`); the check at the start decides, and clients read `state.rated`
+during the game. It isn't yet a full guard: it counts games of the exact group of four, so
+rotating a fifth account in makes a new group (a cap per pair of players is an open follow-up).
 
 ### Spectators
 
@@ -208,11 +222,13 @@ Render clocks with `remainingNow(sync, Date.now(), offset)` from `@game/protocol
 countdownEndsAt, seats[4], matchId, rated, positionString, seatToMove, actionSeq, clock,
 lastEvents[], result, reconnectGraceMs, drawOfferSeat, drawVotes[4], drawOfferActionSeq,
 drawCooldowns[4], ranked, teamResignSeat[2], teamResignCooldowns[4], inviteOnly, spectators,
-delayRounds, rematchSeat, rematchVotes[4], rematchDeadline, rematchRoomId` (the four draw
-fields, `ranked`, the two resignation-vote fields, `inviteOnly` and the spectator and rematch
-fields were appended in protocol v1; older decoders ignore them). `inviteOnly`: a challenge
-lobby (see below). `spectators`: how many watch; `delayRounds`: watch rooms of ranked games
-only (see "Spectators"). `rematchSeat` (-1 = none), `rematchVotes[i]` (`REMATCH_VOTE`: -1 not
+delayRounds, rematchSeat, rematchVotes[4], rematchDeadline, rematchRoomId, unratedRepeat` (the
+four draw fields, `ranked`, the two resignation-vote fields, `inviteOnly`, the spectator and
+rematch fields and `unratedRepeat` were appended in protocol v1; older decoders ignore them).
+`inviteOnly`: a challenge lobby (see below). `unratedRepeat`: lobby only, the four seated
+players of this ranked lobby reached the repeat limit, so the game will be unrated (see "Ranked
+repeat limit"). `spectators`: how many watch; `delayRounds`: watch rooms of ranked games only
+(see "Spectators"). `rematchSeat` (-1 = none), `rematchVotes[i]` (`REMATCH_VOTE`: -1 not
 asked, 0 pending, 1 accepted, 2 declined), `rematchDeadline` (server ms, 0 = none) and
 `rematchRoomId` ('' until the new lobby exists): see "Rematch".
 
@@ -393,15 +409,15 @@ never reflects the other player's blocks or setting.
 | `GET /api/friends/match/:matchId` | participants only: `MatchRelationsResponse` `{ matchId, capReached, outgoingFull, seats: [{ seat, relation, blocked, blockable }] }`, relation `self` \| `ineligible` \| `none` \| `outgoing` \| `incoming` \| `friends` (`ineligible` also when that player blocked you, so the block isn't revealed); `blocked`: you blocked that player; `blockable`: another registered player (the menu offers Block / Unblock) |
 | `POST /api/friends/requests` | `{ matchId, seat }` or `{ username }` (exact, any case; the other player's setting applies) → `{ relation: 'outgoing' \| 'friends', user }` (`friends`: they had asked you, so it is accepted at once, whatever their setting). `FRIEND_REQUESTS_PER_HOUR` counts both forms |
 | `GET /api/players?q=` | 3-20 username characters (`[A-Za-z0-9_]`, including 3 letters or digits in a row, so the trigram index always applies) → `PlayerSearchResponse` `{ query, results: [{ username, rating: { rating, mode, timeControl } \| null, gamesPlayed, relation, userId? }], capReached, outgoingFull }`; `rating` is the Elo of the mode × time control with the most ranked games; `gamesPlayed` counts finished games. `400 BAD_REQUEST` for a shorter or invalid query, `429 RATE_LIMITED` past 30 a minute |
-| `GET /api/players/:username` | any signed-in viewer (guests too; guests have no profile themselves) → `PublicProfileResponse` `{ username, memberSince: 'YYYY-MM', gamesPlayed, ratings: [{ mode, timeControl, rating, gamesPlayed, peak, provisional }], favoriteCiv: { slug, games } \| null, relation: … \| 'self', userId?, blockedByYou, capReached, outgoingFull }` (`provisional`: fewer ranked games than the leaderboard needs; `favoriteCiv`: most played in finished games). `404 { error: 'NOT_FOUND', message: 'Player not found.' }` alike for unknown, guest, deleted and suspended accounts. Match history stays private (participants only) |
-| `GET /api/friends/settings` | → `{ friendRequests: 'anyone' \| 'played_with' }` |
-| `PUT /api/friends/settings` | `{ friendRequests: 'anyone' \| 'played_with' }` → the same (included in the account export as `settings`) |
+| `GET /api/players/:username` | any signed-in viewer (guests too; guests have no profile themselves) → `PublicProfileResponse` `{ username, memberSince: 'YYYY-MM', gamesPlayed, ratings: [{ mode, timeControl, rating, gamesPlayed, peak, provisional }], favoriteCiv: { slug, games } \| null, relation: … \| 'self', userId?, blockedByYou, capReached, outgoingFull, recentGames: ProfileGame[] \| null }` (`provisional`: fewer ranked games than the leaderboard needs; `favoriteCiv`: most played in finished games). `404 { error: 'NOT_FOUND', message: 'Player not found.' }` alike for unknown, guest, deleted and suspended accounts. Match history stays private (participants only) unless the owner turned on `publicHistory`: then `recentGames` holds their last `PROFILE_RECENT_GAMES` (10) finished games, newest first, each `{ id?, playedOn: 'YYYY-MM-DD' (UTC day the game ended), mode, timeControl, ranked, rated, rulesVersion, endReason, seat, team, civ, placement, ratingDelta, others: [{ seat, team, kind: 'player' \| 'guest' \| 'deleted' \| 'bot', name, username?, civ, placement }] }`. `id` only on games the viewer played in (their replay; replays stay participants only); `username` (a profile link) for registered players (suspended ones too, so the list doesn't reveal a suspension); guests read `Guest`, deleted accounts `Deleted player`, bots `Bot <level>`. Ordered by when each game ended. `null` when the owner didn't opt in, the viewer is a guest, or either of you blocked the other (only the list: the profile itself stays visible across a block) |
+| `GET /api/friends/settings` | → `{ friendRequests: 'anyone' \| 'played_with', publicHistory: boolean }` (`publicHistory`: show my recent games on my profile, off by default) |
+| `PUT /api/friends/settings` | `{ friendRequests?, publicHistory? }` (at least one; the other keeps its value) → all settings (included in the account export as `settings`) |
 | `POST /api/friends/requests/:userId/accept` | → `{ relation: 'friends', user }` |
 | `POST /api/friends/requests/:userId/decline` | → 204 |
 | `DELETE /api/friends/requests/:userId` | cancel your own request → 204 |
 | `DELETE /api/friends/:userId` | remove a friend → 204 |
 | `GET /api/challenges` | `{ incoming: Challenge[], outgoing: Challenge[] }` (incoming: still waiting for your answer) |
-| `POST /api/challenges` | `{ friendIds: 1-3 ids, mode: 'ffa' \| 'teams', timeControl: '10+0' \| '3+2' }` → 201 `{ challenge }`; then `joinById(challenge.roomId, { protocolVersion })` within the 10 s seat reservation |
+| `POST /api/challenges` | `{ friendIds: 1-3 ids, mode: 'ffa' \| 'teams', timeControl: '10+0' \| '3+2', ranked?: boolean, roomId? }` → 201 `{ challenge }` (`challenge.ranked` says which); then `joinById(challenge.roomId, { protocolVersion })` within the 10 s seat reservation. `ranked: true` needs 3 friends (`400 BAD_REQUEST` otherwise: bots can't fill a ranked seat). With `roomId` (your challenge lobby, before the game, its invitation over) it invites them again; mode, time control and `ranked` are the lobby's |
 | `POST /api/challenges/:id/decline` | → 204 |
 | `DELETE /api/challenges/:id` | the challenger withdraws it → 204 (the lobby stays open) |
 
@@ -412,6 +428,10 @@ finished games, `null` otherwise (also while you block them); `blocked` (you blo
 `SOCIAL_ERROR_CODES` (`NOT_ELIGIBLE`, `FRIEND_CAP` / `TARGET_FRIEND_CAP` (both sides are checked
 when a request is accepted), `OUTGOING_CAP`, `ALREADY_FRIENDS`, `ALREADY_REQUESTED`,
 `NOT_FRIENDS`, `ALREADY_IN_ROOM`, `CHALLENGE_CLOSED`, `RATE_LIMITED` (429, per user), ...).
+
+**Ranked challenges** (`ranked: true`): a ranked lobby in every way (registered accounts only, so
+guests get `account_required`; no bots, `ranked_no_bots`; Elo-rated, with the repeat limit;
+spectators see it `SPECTATOR_DELAY_ROUNDS` late) that is also invite-only.
 
 ### `social` room
 
@@ -514,12 +534,12 @@ Only user ids in the server's `ADMIN_USER_IDS` (comma list, empty by default); e
 
 ### Challenge lobbies
 
-`POST /api/challenges` creates a casual `match` room hosted by the challenger: never listed, no
-password, `state.inviteOnly = true`. Only the challenger and the invited friends can take a
-seat; anyone else gets `not_invited`. The host fills empty seats with bots as usual. The
+`POST /api/challenges` creates a `match` room hosted by the challenger, casual unless `ranked`:
+never listed, no password, `state.inviteOnly = true`. Only the challenger and the invited friends
+can take a seat; anyone else gets `not_invited`. The host of a casual one fills empty seats with
+bots as usual; a ranked one takes no bots, so it invites 3 friends. The
 invitation ends after 5 minutes, when the game starts or when the lobby closes; after it
 expires (or is withdrawn) only players already seated can come back. A challenge also ends for
 an invitee when the friendship does (either side removes the other) or an account is deleted:
 the invitee gets `challengeClosed` (`cancelled`), the challenger `challengeUpdate` (`expired`),
-and the invitee can no longer join unless already seated. Ranked challenges are not
-available yet.
+and the invitee can no longer join unless already seated.

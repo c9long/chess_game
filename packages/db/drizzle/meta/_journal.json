@@ -85,6 +85,13 @@
       "when": 1792267625834,
       "tag": "0011_profile_search",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1792826240568,
+      "tag": "0012_public_history",
+      "breakpoints": true
     }
   ]
 }

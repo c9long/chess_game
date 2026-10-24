@@ -17,6 +17,8 @@ import {
 } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router'
 import { MODE_LABEL, relativeTime } from '../components/match/labels.ts'
+import { RankedBadge } from '../components/match/RankedBadge.tsx'
+import { RankedToggle } from '../components/match/RankedToggle.tsx'
 import { ConfirmDialog, Dialog, DialogClose } from '../components/overlay.tsx'
 import { FindPlayers } from '../components/social/FindPlayers.tsx'
 import { Monogram } from '../components/social/FriendButton.tsx'
@@ -36,6 +38,12 @@ import {
 } from '../components/ui.tsx'
 import { ApiError } from '../lib/api.ts'
 import { isGuest, useAppState } from '../lib/app-state.tsx'
+import {
+  challengeBlocker,
+  challengeLine,
+  RANKED_CHALLENGE_HINT,
+  rankedNeedsFriends,
+} from '../lib/challenges.ts'
 import { keepFocusNear } from '../lib/focus-fallback.ts'
 import { useMatchStore } from '../lib/match.ts'
 import { moderationErrorMessage, unblockPlayer } from '../lib/moderation.ts'
@@ -55,13 +63,6 @@ import {
   socialNotice,
   useSocial,
 } from '../lib/social.ts'
-
-/** "Free-for-all, 10+0, casual. Also invited: Ada." */
-function challengeLine(c: Challenge, viewerId: string): string {
-  const others = c.invitees.filter((i) => i.user.userId !== viewerId).map((i) => i.user.username)
-  const base = `${MODE_LABEL[c.mode] ?? c.mode}, ${c.timeControl}, casual.`
-  return others.length > 0 ? `${base} Also invited: ${others.join(', ')}.` : base
-}
 
 /** A section of the page: a heading over a rule, then its rows. */
 function Section({
@@ -142,9 +143,12 @@ function IncomingChallenge({ c, me, primary }: { c: Challenge; me: string; prima
     >
       <Monogram name={c.from.username} />
       <div className="min-w-0 flex-1">
-        <p className="truncate text-body text-parchment">
-          <span className="font-display text-lead font-semibold">{c.from.username}</span> challenges
-          you
+        <p className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-body text-parchment">
+          <span className="min-w-0 truncate">
+            <span className="font-display text-lead font-semibold">{c.from.username}</span>{' '}
+            challenges you
+          </span>
+          {c.ranked ? <RankedBadge /> : null}
         </p>
         <p className="text-ui text-faint">
           {challengeLine(c, me)} Expires in{' '}
@@ -200,9 +204,12 @@ function OutgoingChallenge({ c }: { c: Challenge }) {
         <Swords className="h-4 w-4" />
       </span>
       <div className="min-w-0 flex-1">
-        <p className="font-display text-lead font-semibold">Your challenge</p>
+        <p className="flex items-center gap-2">
+          <span className="font-display text-lead font-semibold">Your challenge</span>
+          {c.ranked ? <RankedBadge /> : null}
+        </p>
         <p className="text-ui text-faint">
-          {MODE_LABEL[c.mode]}, {c.timeControl}. Open for{' '}
+          {challengeLine(c)} Open for{' '}
           <span className="font-semibold text-parchment lining-nums tabular-nums">{left}</span>.
         </p>
         <ul className="mt-2 flex flex-wrap gap-1.5">
@@ -436,6 +443,7 @@ function ChallengeDialog({
   const navigate = useNavigate()
   const [mode, setMode] = useState<'ffa' | 'teams'>('ffa')
   const [timeControl, setTimeControl] = useState<keyof typeof TIME_CONTROLS>('10+0')
+  const [ranked, setRanked] = useState(false)
   const [picked, setPicked] = useState<string[]>([])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<{ message: string; roomId?: string | undefined }>()
@@ -454,14 +462,18 @@ function ChallengeDialog({
     (a, b) => Number(b.online) - Number(a.online) || a.username.localeCompare(b.username),
   )
   const full = picked.length >= CHALLENGE_MAX_INVITEES
+  const tooFew = rankedNeedsFriends(sorted.length)
+  // Too few friends for a full table: off and locked (switching it off stays possible).
+  const locked = tooFew !== null && !ranked
+  const blocker = challengeBlocker(picked.length, ranked, sorted.length)
 
   async function submit(e: FormEvent) {
     e.preventDefault()
-    if (picked.length === 0) return
+    if (blocker) return
     setBusy(true)
     setError(undefined)
     try {
-      const c = await createChallenge({ friendIds: picked, mode, timeControl })
+      const c = await createChallenge({ friendIds: picked, mode, timeControl, ranked })
       onOpenChange(false)
       navigate(`/match/${c.roomId}`)
     } catch (err) {
@@ -480,7 +492,11 @@ function ChallengeDialog({
       open={open}
       onOpenChange={onOpenChange}
       title="Challenge friends"
-      description="A casual, invite-only lobby: only the friends you pick can join. Empty seats can take bots."
+      description={
+        ranked
+          ? 'A ranked, invite-only lobby: only the friends you pick can join.'
+          : 'A casual, invite-only lobby: only the friends you pick can join. Empty seats can take bots.'
+      }
       returnFocusTo={returnFocusTo}
       testId="challenge-dialog"
     >
@@ -517,6 +533,19 @@ function ChallengeDialog({
             ))}
           </div>
         </fieldset>
+        <RankedToggle
+          ranked={ranked}
+          disabled={locked}
+          onChange={setRanked}
+          caption="Elo-rated, for you and 3 friends"
+          hint={
+            locked
+              ? tooFew
+              : ranked
+                ? RANKED_CHALLENGE_HINT
+                : 'Casual: no rating changes. You can fill empty seats with bots.'
+          }
+        />
         <fieldset className="flex flex-col gap-2" aria-describedby={`${listId}-hint`}>
           <legend className="mb-1 text-ui font-medium">
             Friends to invite{' '}
@@ -566,6 +595,10 @@ function ChallengeDialog({
             })}
           </ul>
           <p id={`${listId}-hint`} className="text-caption text-faint">
+            {/* Announced as it changes: Send is disabled meanwhile, so focus never reaches it. */}
+            <span aria-live="polite" className="text-parchment">
+              {blocker ? <span data-testid="challenge-blocker">{blocker} </span> : null}
+            </span>
             Offline friends see the invitation when they come back. Invitations expire after 5
             minutes or when the game starts.
           </p>
@@ -594,7 +627,7 @@ function ChallengeDialog({
           <Button
             type="submit"
             busy={busy}
-            disabled={picked.length === 0}
+            disabled={blocker !== null}
             data-testid="challenge-send"
           >
             <Swords aria-hidden="true" className="h-4 w-4" />

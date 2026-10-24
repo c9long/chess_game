@@ -9,6 +9,8 @@
  *   bot labels. OpenSkill: Plackett–Luce over placements (a tie is rated as the average over
  *   the strict orders of the tied players). The 'public' OpenSkill pool is no longer written.
  * - Guests are never rated. Each mode x time control is a separate rating.
+ * - A ranked game is played unrated once its four players reach the repeat limit
+ *   (`repeatLimitReached`).
  *
  * Display rating ("Elo-like"): round(900 + 30 * (mu - 3 * sigma)), i.e. a conservative
  * estimate (mu - 3 sigma, 0 for a new player) scaled so that 400 points is roughly a 10:1
@@ -18,8 +20,17 @@
  */
 import type { BotLevel } from '@game/config'
 import { BOT_LEVELS } from '@game/config'
-import { botLevelAnchors, type Executor, eloRatings, ratings, users } from '@game/db'
-import { and, asc, eq, inArray, sql } from 'drizzle-orm'
+import {
+  botLevelAnchors,
+  type Executor,
+  eloRatings,
+  matches,
+  matchPlayers,
+  ratings,
+  users,
+} from '@game/db'
+import { RANKED_REPEAT_MAX, RANKED_REPEAT_WINDOW_MS } from '@game/protocol'
+import { and, asc, eq, gte, inArray, sql } from 'drizzle-orm'
 import { ordinal, type Rating, rate, rating } from 'openskill'
 import { plackettLuce } from 'openskill/models'
 import { type EloEntrant, newEloPlayer, rateElo } from './elo.ts'
@@ -171,6 +182,43 @@ export function poolForGame(players: RatedSeat[]): RatingPool | null {
 
 const isRegisteredHuman = (p: RatedSeat): p is RatedSeat & { userId: string } =>
   Boolean(p.userId && !p.isGuest && !p.botLevel)
+
+/**
+ * How many rated games the players in `userIds` (all of them, together) finished since
+ * `since`. Starts from the finished games in the window (`matches_finished_ended_idx`).
+ */
+export async function ratedGamesTogether(
+  db: Executor,
+  userIds: string[],
+  since: Date,
+): Promise<number> {
+  const ids = [...new Set(userIds)]
+  if (ids.length === 0) return 0
+  const rows = await db
+    .select({ matchId: matches.id })
+    .from(matches)
+    .innerJoin(
+      matchPlayers,
+      and(eq(matchPlayers.matchId, matches.id), inArray(matchPlayers.userId, ids)),
+    )
+    .where(
+      and(eq(matches.status, 'finished'), eq(matches.rated, true), gte(matches.endedAt, since)),
+    )
+    .groupBy(matches.id)
+    .having(sql`count(distinct ${matchPlayers.userId}) = ${ids.length}`)
+  return rows.length
+}
+
+/**
+ * The ranked repeat limit (RANKED_REPEAT_MAX): whether these four players already finished
+ * that many rated games together within RANKED_REPEAT_WINDOW_MS, so their next ranked game is
+ * played unrated. Every ranked game asks at its start, which decides; its lobby asks earlier
+ * for the `unratedRepeat` note.
+ */
+export async function repeatLimitReached(db: Executor, userIds: string[]): Promise<boolean> {
+  const since = new Date(Date.now() - RANKED_REPEAT_WINDOW_MS)
+  return (await ratedGamesTogether(db, userIds, since)) >= RANKED_REPEAT_MAX
+}
 
 /**
  * Applies a ranked game's Elo inside `tx` (the transaction that marks the match finished).

@@ -293,6 +293,8 @@ function ResignDialog({
   const teams = state.mode === 'teams'
   const solo = isUntimed(state.timeControl)
   const ranked = Boolean(state.ranked)
+  // Ranked but unrated past the repeat limit.
+  const rated = ranked && Boolean(state.rated)
   const vote = teams && partnerPlaying
   return (
     <Dialog
@@ -344,7 +346,9 @@ function ResignDialog({
         )}
         {ranked ? (
           <li data-testid="resign-ranked-note">
-            {teams ? (
+            {!rated ? (
+              'This ranked game isn’t rated, so nobody’s Elo changes.'
+            ) : teams ? (
               <>
                 This is a ranked game: if your team resigns, it counts as a loss in{' '}
                 <strong className="text-parchment">Elo</strong> for both of you.

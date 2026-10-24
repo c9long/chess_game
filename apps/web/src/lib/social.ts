@@ -156,7 +156,7 @@ export const searchPlayers = (q: string) =>
 export const fetchProfile = (username: string) =>
   api<PublicProfileResponse>(`/api/players/${encodeURIComponent(username)}`)
 
-/** Your "who can send me friend requests" setting. */
+/** Your profile privacy settings: who can send you friend requests, and your recent games. */
 export const fetchSocialSettings = () => api<SocialSettingsResponse>('/api/friends/settings')
 
 export const saveSocialSettings = (body: SocialSettingsBody) =>
@@ -204,6 +204,7 @@ export function inviteAgain(c: Challenge, friendIds: string[]): Promise<Challeng
     friendIds,
     mode: c.mode,
     timeControl: c.timeControl,
+    ranked: c.ranked,
     roomId: c.roomId,
   })
 }

@@ -78,6 +78,7 @@ import {
 } from './lobby-logic.ts'
 import { type FinishResult, type MatchEventType, MatchRecorder } from './persistence.ts'
 import { type PlayerAuth, resolvePlayer } from './player-auth.ts'
+import { repeatLimitReached } from './ratings.ts'
 import { botAcceptsTeamResign, resignLapseReason, teammateOf, teamOf } from './resign-logic.ts'
 import type { AttemptLimiter, GameService, ManagedRoom, RematchSpec } from './service.ts'
 import type { WatchRoom } from './watch-room.ts'
@@ -274,6 +275,8 @@ export class MatchRoom
    * (the challenger and the invited friends); everyone else gets `not_invited`.
    */
   private invite: { challengeId: string; userIds: Set<string> } | null = null
+  /** Ranked lobby: the full table `state.unratedRepeat` was last checked for ('' = none). */
+  private repeatCheckedFor = ''
   /** Bot pacing: monotonic time of the latest game action (or the game start). */
   private lastActionAt = 0
   /** Bot pacing: how long after `lastActionAt` a bot's move may be applied. */
@@ -494,7 +497,7 @@ export class MatchRoom
     s.hasPassword = Boolean(this.passwordHash)
     this.ranked = parsed.kind === 'lobby' && parsed.ranked
     s.ranked = this.ranked
-    if (creator.invite && parsed.kind === 'lobby' && !this.ranked && !this.passwordHash) {
+    if (creator.invite && parsed.kind === 'lobby' && !this.passwordHash) {
       this.invite = {
         challengeId: creator.invite.challengeId,
         userIds: new Set([creator.player.userId, ...creator.invite.userIds]),
@@ -1519,7 +1522,42 @@ export class MatchRoom
     const host = this.hostUserId ? seatOfUser(this.bindings, this.hostUserId) : -1
     this.state.hostSeat = host
     this.updateListing()
+    this.refreshUnratedRepeat()
     this.maybeAutoStart()
+  }
+
+  /** The four players of a full ranked table, or null (a bot seat never counts as one). */
+  private rankedTable(): string[] | null {
+    if (!this.ranked || this.state.seats.some((seat) => seat.isBot)) return null
+    const ids = this.bindings.map((b) => b?.userId)
+    return ids.every((id) => id) ? (ids as string[]) : null
+  }
+
+  /**
+   * Ranked lobby: once the table is full, tells the players before the start whether the game
+   * will be rated (`unratedRepeat`). Advisory only; beginGame checks again and decides.
+   */
+  private refreshUnratedRepeat() {
+    if (!isLobbyPhase(this.state.phase)) return
+    const table = this.rankedTable()
+    const key = table ? [...table].sort().join(' ') : ''
+    // Ready and civ changes land here too: the same four players need no new query.
+    if (key === this.repeatCheckedFor) return
+    this.repeatCheckedFor = key
+    if (!table) {
+      this.state.unratedRepeat = false
+      return
+    }
+    // A late answer for a table that has changed since is dropped.
+    repeatLimitReached(this.svc.db, table).then(
+      (reached) => {
+        if (this.repeatCheckedFor === key) this.state.unratedRepeat = reached
+      },
+      (err: Error) => {
+        if (this.repeatCheckedFor === key) this.repeatCheckedFor = ''
+        this.svc.logger.warn({ room: this.roomId, err: err.message }, 'repeat check failed')
+      },
+    )
   }
 
   /** A solo room starts (countdown) as soon as its player is seated and connected. */
@@ -1609,9 +1647,16 @@ export class MatchRoom
       // Only ranked lobbies are rated (Elo); casual games never are, even with four
       // registered players. Untimed (solo) games are never rated in any pool. A ranked
       // lobby seats registered people only, so the seat check is a safety net.
-      const rated =
+      const eligible =
         this.ranked && !this.untimed && s.seats.every((seat) => !seat.isBot && !seat.isGuest)
-      if (this.ranked && !rated) throw new GameError('not_ready')
+      if (this.ranked && !eligible) throw new GameError('not_ready')
+      // Past the repeat limit a ranked game is still played, unrated.
+      const rated =
+        eligible &&
+        !(await repeatLimitReached(
+          svc.db,
+          players.map((p) => p.userId as string),
+        ))
       recorder = await MatchRecorder.start(
         svc.db,
         svc.logger,
@@ -1619,6 +1664,7 @@ export class MatchRoom
           mode: s.mode as 'ffa' | 'teams',
           timeControl: s.timeControl,
           rated,
+          ranked: this.ranked,
           rulesVersion: RULES_VERSION,
           startedAt: new Date(),
           players,

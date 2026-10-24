@@ -182,6 +182,12 @@ export const MatchState = schema(
     rematchDeadline: t.float64().default(0),
     /** The rematch lobby's room id once it exists ('' before); see `rematchEvent` `ready`. */
     rematchRoomId: t.string().default(''),
+    /**
+     * Lobby only: the four seated players of this ranked lobby already reached the repeat
+     * limit (RANKED_REPEAT_MAX), so the game will be played unrated. Advisory; the check at the
+     * start decides `rated`, which is what clients read once the game runs.
+     */
+    unratedRepeat: t.boolean().default(false),
   },
   'MatchState',
 )
@@ -265,6 +271,8 @@ export interface MatchStateJson {
   rematchDeadline: number
   /** The rematch lobby's room id, or '' (appended in protocol v1). */
   rematchRoomId: string
+  /** Ranked lobby past the repeat limit: the game will be unrated (appended in protocol v1). */
+  unratedRepeat: boolean
 }
 
 export interface SeatStateJson {
