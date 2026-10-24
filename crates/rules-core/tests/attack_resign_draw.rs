@@ -24,6 +24,13 @@ fn start(mode: GameMode) -> GameState {
     GameState::new(GameConfig::new(mode)).unwrap()
 }
 
+/// The start position with en passant on (it is off from rules version 3).
+fn start_ep(mode: GameMode) -> GameState {
+    let mut config = GameConfig::new(mode);
+    config.en_passant_enabled = true;
+    GameState::new(config).unwrap()
+}
+
 fn ended(ev: &[GameEvent]) -> Option<Outcome> {
     ev.iter().find_map(|e| match e {
         GameEvent::GameEnded { outcome } => Some(*outcome),
@@ -175,7 +182,8 @@ fn own_turn_resign_in_teams_differs_from_timeout() {
 // ---------------------------------------------------------------------------
 
 /// South's only legal move is b4xc5 en passant on West's double-stepped pawn
-/// (d5, skipped c5).
+/// (d5, skipped c5). En passant is off from rules version 3, so positions
+/// built from it opt in with `ep=on`.
 const EP_TRAP: [&str; 14] = [
     "sKa1", "sRb1", "sBc1", "sBa3", "sPa2", "sPb2", "sPb3", "sPb4", "sPd2", "eRb5", "eNd3",
     "eKp11", "wKa11", "wPd5",
@@ -185,7 +193,7 @@ const EP_TRAP: [&str; 14] = [
 fn ep_trap_position_is_what_the_tests_assume() {
     let mut pieces = EP_TRAP.to_vec();
     pieces.push("nKk16");
-    let s = build("ffa", &pieces, "S AAAA - Wc5 0 0");
+    let s = build("ffa", &pieces, "S AAAA - Wc5 0 0 ep=on");
     assert_eq!(move_strings(&s), vec!["b4c5"]);
     let m = legal_moves(&s);
     assert_eq!(m[0].flag, MoveFlag::EnPassant);
@@ -195,7 +203,7 @@ fn ep_trap_position_is_what_the_tests_assume() {
 fn ffa_off_turn_resign_of_ep_victim_stalemates_seat_on_move() {
     let mut pieces = EP_TRAP.to_vec();
     pieces.push("nKk16");
-    let mut s = build("ffa", &pieces, "S AAAA - Wc5 0 0");
+    let mut s = build("ffa", &pieces, "S AAAA - Wc5 0 0 ep=on");
     let ev = apply_resign(&mut s, Seat::West).unwrap();
     assert_eq!(
         ev,
@@ -224,7 +232,7 @@ fn teams_off_turn_abandon_clears_ep_target_and_stalemates_seat_on_move() {
     // -> South has no move.
     let mut pieces = EP_TRAP.to_vec();
     pieces.push("nKk16");
-    let mut s = build("teams", &pieces, "S AAAA - Wc5 0 0");
+    let mut s = build("teams", &pieces, "S AAAA - Wc5 0 0 ep=on");
     assert_eq!(move_strings(&s), vec!["b4c5"]);
     let ev = apply_abandon(&mut s, Seat::West).unwrap();
     assert_eq!(
@@ -266,7 +274,7 @@ fn teams_off_turn_abandon_clears_ep_target_and_stalemates_seat_on_move() {
 fn teams_off_turn_abandon_makes_defeated_seat_on_move_pass() {
     let mut pieces = EP_TRAP.to_vec();
     pieces.push("nKk16");
-    let mut s = build("teams", &pieces, "S DAAA - Wc5 7 30 def=Sl");
+    let mut s = build("teams", &pieces, "S DAAA - Wc5 7 30 def=Sl ep=on");
     assert_eq!(move_strings(&s), vec!["b4c5"]);
     let ev = apply_abandon(&mut s, Seat::West).unwrap();
     assert_eq!(
@@ -481,7 +489,7 @@ fn off_turn_departure_clears_only_the_leavers_ep_target() {
     // FFA: a resignation. Teams: a single seat leaving (abandon), since a
     // Teams resignation ends the game.
     for mode in [GameMode::Ffa, GameMode::Teams] {
-        let mut s = start(mode);
+        let mut s = start_ep(mode);
         play(&mut s, "e2e4");
         play(&mut s, "b7d7");
         play(&mut s, "f15f13");
@@ -510,7 +518,7 @@ fn own_turn_abandon_after_double_step_skip_expires_targets_on_the_walk() {
     // Teams: West double-steps; North leaves; East and South move; when the
     // pointer reaches/skips North its (absent) target and West's expire as
     // normal.
-    let mut s = start(GameMode::Teams);
+    let mut s = start_ep(GameMode::Teams);
     play(&mut s, "e2e4");
     play(&mut s, "b7d7");
     apply_abandon(&mut s, Seat::North).unwrap(); // North to move
@@ -599,7 +607,7 @@ fn ffa_agreed_draw_two_prior_defeats_mixed_reasons() {
     // West resigned before it: order is West (resign), South (stalemate).
     let mut pieces = EP_TRAP.to_vec();
     pieces.push("nKk16");
-    let mut s = build("ffa", &pieces, "S AAAA - Wc5 0 0");
+    let mut s = build("ffa", &pieces, "S AAAA - Wc5 0 0 ep=on");
     apply_resign(&mut s, Seat::West).unwrap();
     let ev = apply_agreed_draw(&mut s).unwrap();
     let o = ended(&ev).unwrap();
@@ -960,7 +968,7 @@ fn random_resigns_and_draws_obey_the_spec() {
         } else {
             GameMode::Teams
         };
-        let mut s = start(mode);
+        let mut s = start_ep(mode);
         for _ in 0..400 {
             if s.is_over() {
                 // Probe errors on finished games too.

@@ -35,13 +35,13 @@ pub struct ConfigInput {
     /// Default: Canada v1 for every seat.
     #[serde(default)]
     pub civs: Option<[CivInput; 4]>,
-    /// En passant on/off (provisional rule). Default `true`.
+    /// En passant on/off. Default: as the rules version has it (off from 3).
     #[serde(default)]
     pub en_passant: Option<bool>,
     /// No-progress rounds before the game ends. Default 25.
     #[serde(default)]
     pub move_limit_rounds: Option<u16>,
-    /// Must equal the engine's rules version when given. Default: current.
+    /// A supported rules version (replays of older games). Default: current.
     #[serde(default)]
     pub rules_version: Option<u32>,
 }
@@ -59,7 +59,8 @@ pub enum CivInput {
 impl ConfigInput {
     /// Builds the engine config (validated later by `GameState::new`).
     pub fn into_config(self) -> GameConfig {
-        let mut c = GameConfig::new(self.mode);
+        let mut c =
+            GameConfig::for_rules_version(self.mode, self.rules_version.unwrap_or(RULES_VERSION));
         if let Some(civs) = self.civs {
             for (slot, civ) in c.civs.iter_mut().zip(civs) {
                 *slot = match civ {
@@ -76,9 +77,6 @@ impl ConfigInput {
         }
         if let Some(ml) = self.move_limit_rounds {
             c.move_limit_rounds = ml;
-        }
-        if let Some(rv) = self.rules_version {
-            c.rules_version = rv;
         }
         c
     }
@@ -287,7 +285,7 @@ impl From<&GameState> for SnapshotView {
     fn from(s: &GameState) -> Self {
         let attacked = Seat::ALL.map(|seat| attacked_leader_squares(s, seat));
         SnapshotView {
-            rules_version: RULES_VERSION,
+            rules_version: s.config().rules_version,
             config: s.config().into(),
             board: s.board().iter().map(|p| p.map(PieceView::from)).collect(),
             statuses: s.statuses(),

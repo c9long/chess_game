@@ -25,11 +25,11 @@
 //!
 //! | Key | Value | Default |
 //! |---|---|---|
-//! | `ep` | `on` / `off` — en passant enabled | `on` |
+//! | `ep` | `on` / `off` — en passant enabled | `on` in rules version 2, `off` from 3 |
 //! | `ml` | move-limit rounds (≥ 1) | `25` |
 //! | `civ` | four `slug.version` in seat order | `canada.1` ×4 |
 //! | `def` | defeat order: comma list of seat letter + reason letter (`l` leader captured, `s` stalemate, `t` timeout, `a` abandon, `r` resign), or `-` | `-` |
-//! | `rv` | rules version (only the current version, `2`, parses; 12×12 version-1 positions are rejected) | `2` |
+//! | `rv` | rules version (`2` or `3`; 12×12 version-1 positions are rejected) | `3` |
 //! | `end` | `draw` — the game ended in a draw by agreement ([`crate::apply_agreed_draw`]). Only valid if the game is not otherwise over (no elimination, move limit not reached) and the seat to move could still play. | absent |
 //!
 //! Resignations need no extra field: a resigned seat is `R` (FFA) or `F`
@@ -39,7 +39,7 @@
 //! The start position (FFA) is:
 //!
 //! ```text
-//! ffa 4nRnNnBnQnKnBnNnR4/4nPnPnPnPnPnPnPnP4/16/16/wRwP12ePeR/wNwP12ePeN/wBwP12ePeB/wKwP12ePeK/wQwP12ePeQ/wBwP12ePeB/wNwP12ePeN/wRwP12ePeR/16/16/4sPsPsPsPsPsPsPsP4/4sRsNsBsQsKsBsNsR4 S AAAA Se1,Sl1,Wa5,Wa12,Ne16,Nl16,Ep5,Ep12 - 0 0 ep=on ml=25 civ=canada.1,canada.1,canada.1,canada.1 def=- rv=2
+//! ffa 4nRnNnBnQnKnBnNnR4/4nPnPnPnPnPnPnPnP4/16/16/wRwP12ePeR/wNwP12ePeN/wBwP12ePeB/wKwP12ePeK/wQwP12ePeQ/wBwP12ePeB/wNwP12ePeN/wRwP12ePeR/16/16/4sPsPsPsPsPsPsPsP4/4sRsNsBsQsKsBsNsR4 S AAAA Se1,Sl1,Wa5,Wa12,Ne16,Nl16,Ep5,Ep12 - 0 0 ep=off ml=25 civ=canada.1,canada.1,canada.1,canada.1 def=- rv=3
 //! ```
 //!
 //! The result is not stored: it is derived from statuses, defeat order,
@@ -51,11 +51,11 @@
 
 use core::fmt::Write as _;
 
-use crate::RULES_VERSION;
 use crate::civ::CivId;
-use crate::config::{CivSpec, GameConfig, GameMode};
+use crate::config::{CivSpec, GameConfig, GameMode, en_passant_by_default};
 use crate::error::{PositionError, perr as err};
 use crate::geometry::{BOARD_SIZE, NUM_SQUARES, Seat, Square};
+use crate::is_supported_rules_version;
 use crate::piece::{Piece, PieceKind};
 use crate::setup::{self, CastleSide};
 use crate::state::{
@@ -240,6 +240,7 @@ pub fn parse_position(s: &str) -> Result<GameState, PositionError> {
         .ok_or_else(|| err("ply", format!("not a number: {:?}", fields[7])))?;
 
     let mut config = GameConfig::new(mode);
+    let mut en_passant = None;
     let mut defeats = Vec::new();
     let mut agreed_draw = false;
     let mut seen: Vec<&str> = Vec::new();
@@ -253,9 +254,9 @@ pub fn parse_position(s: &str) -> Result<GameState, PositionError> {
         seen.push(k);
         match k {
             "ep" => {
-                config.en_passant_enabled = match v {
-                    "on" => true,
-                    "off" => false,
+                en_passant = match v {
+                    "on" => Some(true),
+                    "off" => Some(false),
                     _ => return Err(err("options", format!("ep must be on/off, found {v:?}"))),
                 }
             }
@@ -299,7 +300,7 @@ pub fn parse_position(s: &str) -> Result<GameState, PositionError> {
             "rv" => {
                 let rv: u32 =
                     parse_canonical(v).ok_or_else(|| err("options", format!("bad rv {v:?}")))?;
-                if rv != RULES_VERSION {
+                if !is_supported_rules_version(rv) {
                     return Err(err("options", format!("unsupported rules version {rv}")));
                 }
                 config.rules_version = rv;
@@ -313,6 +314,7 @@ pub fn parse_position(s: &str) -> Result<GameState, PositionError> {
             _ => return Err(err("options", format!("unknown key {k:?}"))),
         }
     }
+    config.en_passant_enabled = en_passant.unwrap_or(en_passant_by_default(config.rules_version));
 
     GameState::from_parts(StateParts {
         config,
@@ -446,7 +448,7 @@ fn parse_board(field: &str) -> Result<[Option<Piece>; NUM_SQUARES], PositionErro
 mod tests {
     use super::*;
 
-    const START: &str = "ffa 4nRnNnBnQnKnBnNnR4/4nPnPnPnPnPnPnPnP4/16/16/wRwP12ePeR/wNwP12ePeN/wBwP12ePeB/wKwP12ePeK/wQwP12ePeQ/wBwP12ePeB/wNwP12ePeN/wRwP12ePeR/16/16/4sPsPsPsPsPsPsPsP4/4sRsNsBsQsKsBsNsR4 S AAAA Se1,Sl1,Wa5,Wa12,Ne16,Nl16,Ep5,Ep12 - 0 0 ep=on ml=25 civ=canada.1,canada.1,canada.1,canada.1 def=- rv=2";
+    const START: &str = "ffa 4nRnNnBnQnKnBnNnR4/4nPnPnPnPnPnPnPnP4/16/16/wRwP12ePeR/wNwP12ePeN/wBwP12ePeB/wKwP12ePeK/wQwP12ePeQ/wBwP12ePeB/wNwP12ePeN/wRwP12ePeR/16/16/4sPsPsPsPsPsPsPsP4/4sRsNsBsQsKsBsNsR4 S AAAA Se1,Sl1,Wa5,Wa12,Ne16,Nl16,Ep5,Ep12 - 0 0 ep=off ml=25 civ=canada.1,canada.1,canada.1,canada.1 def=- rv=3";
     /// Teams kings only: North i16, West a9, East p9, South i1.
     const KINGS: &str = "8nK7/16/16/16/16/16/16/wK14eK/16/16/16/16/16/16/16/8sK7";
 
@@ -485,7 +487,7 @@ mod tests {
             &format!("ffa 8sK8sK/{} S AAAA - - 0 0", ["16"; 15].join("/")),
             // The old 12×12 start position (rules version 1) is not a v2 board.
             "ffa 2nRnNnBnQnKnBnNnR2/2nPnPnPnPnPnPnPnP2/wRwP8ePeR/wNwP8ePeN/wBwP8ePeB/wKwP8ePeK/wQwP8ePeQ/wBwP8ePeB/wNwP8ePeN/wRwP8ePeR/2sPsPsPsPsPsPsPsP2/2sRsNsBsQsKsBsNsR2 S AAAA Sc1,Sj1,Wa3,Wa10,Nc12,Nj12,El3,El10 - 0 0 ep=on ml=25 civ=canada.1,canada.1,canada.1,canada.1 def=- rv=1",
-            &START.replace("rv=2", "rv=1"),
+            &START.replace("rv=3", "rv=1"),
             // No leaders at all for ACTIVE seats.
             &format!("ffa {blank} S AAAA - - 0 0"),
             &format!("ffa {blank} S RRRR - - 0 0"),
@@ -502,14 +504,16 @@ mod tests {
             &START.replace(" - 0 0", " - +5 0"),
             &START.replace(" - 0 0", " - 0 007"),
             &START.replace("ml=25", "ml=025"),
-            &START.replace("rv=2", "rv=+2"),
+            &START.replace("rv=3", "rv=+3"),
             // Castling right with the e1 rook missing from its home square.
             &START.replace("4sRsNsBsQsKsBsNsR4 S", "5sNsBsQsKsBsNsR4 S"),
             // South is on move, so its own en passant target has expired.
-            &START.replace(" - 0 0", " Sf3 0 0"),
+            &START
+                .replace(" - 0 0", " Sf3 0 0")
+                .replace("ep=off", "ep=on"),
             &START.replace("ml=25", "ml=0"),
             &START.replace("ml=25", "ml=99999999"),
-            &START.replace("rv=2", "rv=3"),
+            &START.replace("rv=3", "rv=4"),
             &START.replace("canada.1,canada.1,canada.1,canada.1", "canada.1"),
             &START.replace(
                 "canada.1,canada.1,canada.1,canada.1",
@@ -561,6 +565,58 @@ mod tests {
         crate::apply_agreed_draw(&mut live).unwrap();
         assert_eq!(live, s);
         assert_eq!(live.hash(), s.hash());
+    }
+
+    /// Kings on their home squares, South's e2 pawn and a West pawn on d4
+    /// that attacks e3 (the square South's e2-e4 double step skips).
+    const EP_BOARD: &str = "8nK7/16/16/16/16/16/16/wK14eK/16/16/16/16/3wP12/16/4sP11/8sK7";
+
+    /// Whether West can take South's e2-e4 double step en passant.
+    fn west_can_take_en_passant(mut s: GameState) -> bool {
+        crate::apply_move(&mut s, crate::parse_move("e2e4").unwrap()).unwrap();
+        let ep = crate::legal_moves(&s)
+            .iter()
+            .any(|m| m.flag == crate::MoveFlag::EnPassant);
+        assert_eq!(ep, s.ep_target(Seat::South).is_some(), "{s}");
+        ep
+    }
+
+    #[test]
+    fn en_passant_only_in_rules_version_2_unless_set() {
+        for (options, rules_version, en_passant) in [
+            ("", 3, false),
+            (" rv=3", 3, false),
+            (" rv=2", 2, true),
+            (" ep=off rv=2", 2, false),
+            (" ep=on", 3, true),
+            (" ep=on rv=3", 3, true),
+        ] {
+            let text = format!("ffa {EP_BOARD} S AAAA - - 0 0{options}");
+            let s = parse_position(&text).unwrap();
+            assert_eq!(s.config().rules_version, rules_version, "{text}");
+            assert_eq!(s.config().en_passant_enabled, en_passant, "{text}");
+            let written = format_position(&s);
+            assert!(written.contains(if en_passant { " ep=on " } else { " ep=off " }));
+            assert!(
+                written.ends_with(&format!(" rv={rules_version}")),
+                "{written}"
+            );
+            assert_eq!(parse_position(&written).unwrap(), s);
+            assert_eq!(west_can_take_en_passant(s), en_passant, "{text}");
+        }
+
+        // The same from the start position (South e2-e4, West's pawns are
+        // not adjacent): only the version-2 game records a target.
+        for (config, en_passant) in [
+            (GameConfig::default(), false),
+            (GameConfig::new(GameMode::Teams), false),
+            (GameConfig::for_rules_version(GameMode::Ffa, 2), true),
+            (GameConfig::for_rules_version(GameMode::Teams, 2), true),
+        ] {
+            let mut s = GameState::new(config).unwrap();
+            crate::apply_move(&mut s, crate::parse_move("e2e4").unwrap()).unwrap();
+            assert_eq!(s.ep_target(Seat::South).is_some(), en_passant);
+        }
     }
 
     #[test]

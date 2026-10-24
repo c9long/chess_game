@@ -25,6 +25,16 @@ fn teams(pieces: &[&str], to_move: char) -> GameState {
     build("teams", pieces, &format!("{to_move} AAAA - - 0 0"))
 }
 
+/// Like [`ffa`] with en passant on (it is off from rules version 3).
+fn ffa_ep(pieces: &[&str], to_move: char) -> GameState {
+    build("ffa", pieces, &format!("{to_move} AAAA - - 0 0 ep=on"))
+}
+
+/// Like [`teams`] with en passant on (it is off from rules version 3).
+fn teams_ep(pieces: &[&str], to_move: char) -> GameState {
+    build("teams", pieces, &format!("{to_move} AAAA - - 0 0 ep=on"))
+}
+
 fn strs(a: &[&str]) -> Vec<String> {
     let mut v: Vec<String> = a.iter().map(|s| s.to_string()).collect();
     v.sort();
@@ -727,7 +737,7 @@ fn stalemated_teams_seat_loses_castling_rights() {
 
 #[test]
 fn double_step_creates_target_single_step_does_not() {
-    let mut s = ffa(&with_kings(&["sPd2", "sPg2", "wPb8"]), 'S');
+    let mut s = ffa_ep(&with_kings(&["sPd2", "sPg2", "wPb8"]), 'S');
     let mut t = s.clone();
     play(&mut t, "g2g3");
     assert_eq!(t.ep_target(Seat::South), None);
@@ -758,7 +768,7 @@ fn double_step_creates_target_single_step_does_not() {
 fn west_captures_south_en_passant_from_ahead_and_from_behind() {
     for capturer in ["c4", "c2"] {
         let wp = format!("wP{capturer}");
-        let mut s = ffa(&with_kings(&["sPd2", wp.as_str()]), 'S');
+        let mut s = ffa_ep(&with_kings(&["sPd2", wp.as_str()]), 'S');
         play(&mut s, "d2d4");
         let m = format!("{capturer}d3");
         assert_eq!(flag_of(&s, &m), Some(MoveFlag::EnPassant), "{m}");
@@ -779,7 +789,7 @@ fn west_captures_south_en_passant_from_ahead_and_from_behind() {
 
 #[test]
 fn south_captures_west_en_passant_three_turns_later() {
-    let mut s = ffa(&with_kings(&["wPb5", "sPd4"]), 'W');
+    let mut s = ffa_ep(&with_kings(&["wPb5", "sPd4"]), 'W');
     play(&mut s, "b5d5");
     tempo(&mut s); // N
     tempo(&mut s); // E
@@ -793,7 +803,7 @@ fn south_captures_west_en_passant_three_turns_later() {
 
 #[test]
 fn north_captures_west_en_passant() {
-    let mut s = ffa(&with_kings(&["wPb13", "nPd14"]), 'W');
+    let mut s = ffa_ep(&with_kings(&["wPb13", "nPd14"]), 'W');
     play(&mut s, "b13d13");
     play(&mut s, "d14c13");
     assert_eq!(s.piece_at(sq("d13")), None);
@@ -802,7 +812,7 @@ fn north_captures_west_en_passant() {
 
 #[test]
 fn east_captures_south_en_passant_two_turns_later() {
-    let mut s = ffa(&with_kings(&["sPl2", "ePm4"]), 'S');
+    let mut s = ffa_ep(&with_kings(&["sPl2", "ePm4"]), 'S');
     play(&mut s, "l2l4");
     tempo(&mut s); // W
     tempo(&mut s); // N
@@ -813,7 +823,7 @@ fn east_captures_south_en_passant_two_turns_later() {
 
 #[test]
 fn east_captures_north_en_passant() {
-    let mut s = ffa(&with_kings(&["nPl15", "ePm15"]), 'N');
+    let mut s = ffa_ep(&with_kings(&["nPl15", "ePm15"]), 'N');
     play(&mut s, "l15l13");
     play(&mut s, "m15l14");
     assert_eq!(s.piece_at(sq("l13")), None);
@@ -822,7 +832,7 @@ fn east_captures_north_en_passant() {
 
 #[test]
 fn south_captures_east_en_passant_from_behind() {
-    let mut s = ffa(&with_kings(&["ePo5", "sPo4"]), 'E');
+    let mut s = ffa_ep(&with_kings(&["ePo5", "sPo4"]), 'E');
     play(&mut s, "o5m5");
     assert_eq!(flag_of(&s, "o4n5"), Some(MoveFlag::EnPassant));
     play(&mut s, "o4n5");
@@ -832,7 +842,7 @@ fn south_captures_east_en_passant_from_behind() {
 
 #[test]
 fn west_captures_north_en_passant() {
-    let mut s = ffa(&with_kings(&["nPd15", "wPc15"]), 'N');
+    let mut s = ffa_ep(&with_kings(&["nPd15", "wPc15"]), 'N');
     play(&mut s, "d15d13");
     tempo(&mut s); // E
     tempo(&mut s); // S
@@ -843,7 +853,7 @@ fn west_captures_north_en_passant() {
 
 #[test]
 fn en_passant_expires_when_turn_returns_to_owner() {
-    let mut s = ffa(&with_kings(&["sPd2", "wPc4"]), 'S');
+    let mut s = ffa_ep(&with_kings(&["sPd2", "wPc4"]), 'S');
     play(&mut s, "d2d4");
     tempo(&mut s); // W declines
     tempo(&mut s); // N
@@ -863,7 +873,7 @@ fn en_passant_survives_a_frozen_seat_being_skipped() {
     let mut s = build(
         "teams",
         &with_kings(&["sPl2", "ePm4"]),
-        "S AFAA - - 0 0 def=Wt",
+        "S AFAA - - 0 0 def=Wt ep=on",
     );
     play(&mut s, "l2l4");
     assert_eq!(s.seat_to_move(), Seat::North);
@@ -874,7 +884,7 @@ fn en_passant_survives_a_frozen_seat_being_skipped() {
 
 #[test]
 fn en_passant_cleared_when_owner_stops_taking_turns() {
-    let mut s = teams(&with_kings(&["sPj2", "ePm4"]), 'S');
+    let mut s = teams_ep(&with_kings(&["sPj2", "ePm4"]), 'S');
     play(&mut s, "j2j4");
     tempo(&mut s); // W
     apply_abandon(&mut s, Seat::South).unwrap();
@@ -888,7 +898,7 @@ fn en_passant_cleared_when_owner_stops_taking_turns() {
 
 #[test]
 fn piece_on_skipped_square_blocks_en_passant_normal_capture_only() {
-    let mut s = ffa(&with_kings(&["sPl2", "wNk1", "ePm4"]), 'S');
+    let mut s = ffa_ep(&with_kings(&["sPl2", "wNk1", "ePm4"]), 'S');
     play(&mut s, "l2l4");
     // A knight landing on the skipped square captures nothing.
     let ev = play(&mut s, "k1l3");
@@ -907,7 +917,7 @@ fn piece_on_skipped_square_blocks_en_passant_normal_capture_only() {
 
 #[test]
 fn en_passant_needs_the_double_stepped_pawn_still_there() {
-    let mut s = ffa(&with_kings(&["sPh2", "wRh10", "ePi4"]), 'S');
+    let mut s = ffa_ep(&with_kings(&["sPh2", "wRh10", "ePi4"]), 'S');
     play(&mut s, "h2h4");
     play(&mut s, "h10h4"); // W rook takes the pawn and stands on its square
     tempo(&mut s); // N
@@ -917,7 +927,7 @@ fn en_passant_needs_the_double_stepped_pawn_still_there() {
 
 #[test]
 fn straight_push_onto_skipped_square_is_not_en_passant() {
-    let mut s = ffa(&with_kings(&["sPd2", "wPc3"]), 'S');
+    let mut s = ffa_ep(&with_kings(&["sPd2", "wPc3"]), 'S');
     play(&mut s, "d2d4");
     assert_eq!(flag_of(&s, "c3d3"), Some(MoveFlag::Normal));
     let ev = play(&mut s, "c3d3");
@@ -927,11 +937,11 @@ fn straight_push_onto_skipped_square_is_not_en_passant() {
 
 #[test]
 fn pawns_whose_forward_diagonal_misses_the_skipped_square_cannot_take() {
-    let mut s = ffa(&with_kings(&["sPd2", "wPg4", "wPg2"]), 'S');
+    let mut s = ffa_ep(&with_kings(&["sPd2", "wPg4", "wPg2"]), 'S');
     play(&mut s, "d2d4");
     assert!(!is_legal(&s, "g4d3"));
     assert!(!is_legal(&s, "g2d3"));
-    let mut s = ffa(&with_kings(&["sPj2", "ePi4", "ePi2"]), 'S');
+    let mut s = ffa_ep(&with_kings(&["sPj2", "ePi4", "ePi2"]), 'S');
     play(&mut s, "j2j4");
     tempo(&mut s);
     tempo(&mut s);
@@ -954,7 +964,7 @@ fn en_passant_disabled_by_config_flag() {
 #[test]
 fn en_passant_onto_promotion_line_must_promote() {
     // West takes North's i15-i13 double step onto i14 (West promotes on i).
-    let mut s = ffa(&with_kings(&["nPi15", "wPh13"]), 'N');
+    let mut s = ffa_ep(&with_kings(&["nPi15", "wPh13"]), 'N');
     play(&mut s, "i15i13");
     tempo(&mut s); // E
     tempo(&mut s); // S
@@ -964,7 +974,7 @@ fn en_passant_onto_promotion_line_must_promote() {
     assert_eq!(s.piece_at(sq("i14")), piece(Seat::West, PieceKind::Queen));
 
     // South takes West's b9-d9 double step onto c9 (South promotes on rank 9).
-    let mut s = ffa(&with_kings(&["wPb9", "sPd8"]), 'W');
+    let mut s = ffa_ep(&with_kings(&["wPb9", "sPd8"]), 'W');
     play(&mut s, "b9d9");
     tempo(&mut s); // N
     tempo(&mut s); // E
@@ -975,14 +985,14 @@ fn en_passant_onto_promotion_line_must_promote() {
     assert!(has_event(&ev, |e| matches!(e, GameEvent::EnPassant { .. })));
 
     // East takes North's h15-h13 double step onto h14 (East promotes on h).
-    let mut s = ffa(&with_kings(&["nPh15", "ePi13"]), 'N');
+    let mut s = ffa_ep(&with_kings(&["nPh15", "ePi13"]), 'N');
     play(&mut s, "h15h13");
     assert_eq!(moves_from(&s, "i13"), promos("i13", "h14"));
 }
 
 #[test]
 fn several_en_passant_targets_live_at_once() {
-    let mut s = ffa(&with_kings(&["sPl2", "wPb13", "nPd14", "ePm4"]), 'S');
+    let mut s = ffa_ep(&with_kings(&["sPl2", "wPb13", "nPd14", "ePm4"]), 'S');
     play(&mut s, "l2l4");
     play(&mut s, "b13d13");
     assert!(s.ep_target(Seat::South).is_some() && s.ep_target(Seat::West).is_some());
@@ -997,7 +1007,7 @@ fn defeated_teams_seat_double_step_can_be_taken_en_passant() {
     let mut s = build(
         "teams",
         &["sKa1", "nKl12", "eKl1", "wPb5", "sPd4"],
-        "W ADAA - - 0 0 def=Wl",
+        "W ADAA - - 0 0 def=Wl ep=on",
     );
     play(&mut s, "b5d5");
     assert!(s.ep_target(Seat::West).is_some());
@@ -1035,7 +1045,7 @@ fn en_passant_cleared_when_owner_turn_is_an_automatic_pass() {
     let mut s = build(
         "teams",
         &["sKa1", "nKl12", "eKl1", "wPb5", "sPd4", "sNe5"],
-        "W ADAA - - 0 0 def=Wl",
+        "W ADAA - - 0 0 def=Wl ep=on",
     );
     play(&mut s, "b5d5");
     tempo(&mut s); // N

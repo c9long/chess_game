@@ -19,6 +19,8 @@ export {
   initRules,
   initRulesSync,
   isRulesReady,
+  isSupportedRulesVersion,
+  MIN_SUPPORTED_RULES_VERSION,
   RULES_VERSION,
   type WasmBytes,
   type WasmSource,

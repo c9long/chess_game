@@ -1,10 +1,12 @@
 # How to Play
 
-Four-player chess on a 16×16 board. These are the rules of **rules version 2**. If you know regular chess, most of it will feel familiar. This page covers what is different.
+Four-player chess on a 16×16 board. These are the rules of **rules version 3**. If you know regular chess, most of it will feel familiar. This page covers what is different.
 
 Rules marked **(provisional)** are switched on for now but may still change.
 
 Rules version 2 is version 1 (with resigning and draws by agreement) on a bigger board: 16×16 instead of 12×12, with the promotion line moved to match. Everything else is unchanged. Games played on the old 12×12 board stay in your match history.
+
+Rules version 3 (2026-10-24) is version 2 without en passant: a pawn that moves two squares can't be captured "in passing". Games played under version 2 still replay exactly as they were played.
 
 ---
 
@@ -68,13 +70,9 @@ While the indicator is on, your king's square has a pulsing orange-red ring with
 - It captures one square diagonally forward.
 - **Promotion happens halfway:** when a pawn reaches the first line past the middle of the board, it **must** promote. That line is **rank 9 for South, rank 8 for North, file i for West and file h for East**, seven steps from where the pawn started. You choose a queen, rook, bishop or knight. You can never promote to a king (or, for England, to a Prime Minister). England's pawns may promote to a queen or knight even though England starts without them.
 
-### En passant (provisional)
+### No en passant
 
-- When a pawn moves two squares, it can be captured **en passant** ("in passing") as if it had moved only one square.
-- Any opponent's pawn that could capture diagonally onto the square the pawn skipped over may do so, as long as that square is still empty and the pawn that moved two squares hasn't moved or been captured. The capturing pawn lands on the skipped square and the other pawn is removed.
-- The chance lasts until it is the moving player's turn again: once the turn order comes back round to that player (even if their turn is skipped), it's gone. It is also gone if that player leaves the game.
-- Several players' en passant chances can be open at the same time.
-- The armies start four squares apart, so en passant only becomes possible once pawns have captured their way off their starting files.
+- A pawn that moves two squares can't be captured en passant. With four players the chance came round so rarely, and expired so confusingly, that it was dropped in rules version 3.
 
 ### Castling
 
@@ -127,7 +125,7 @@ You are knocked out when any one of these happens:
 
 1. **Your king is captured.** Any opponent can do it on their own turn, and it takes effect immediately. England is knocked out only when its **last** Prime Minister is captured; losing one, two or three of them is just a loss of material.
 2. **Stalemate is a loss, not a draw.** If you have **no legal move** at the start of your turn, you are defeated. In Teams this happens only once. After that, whenever a defeated player has no legal move on their turn, they **pass automatically**. A pass uses no clock time, earns no increment, and appears in the move log as `--`.
-   - Your turn starts once the previous player has finished. If, while it is your turn, another player leaves the game and that takes away your last legal move (for example, your only move captured one of their pieces and, in Free-for-All, their army is taken off the board; or it was an en passant capture of their pawn, which expires when they leave), your turn is judged again: an active player is stalemated, and a defeated Teams player passes.
+   - Your turn starts once the previous player has finished. If, while it is your turn, another player leaves the game and that takes away your last legal move (for example, your only move captured one of their pieces and, in Free-for-All, their army is taken off the board;), your turn is judged again: an active player is stalemated, and a defeated Teams player passes.
 3. **Your clock runs out.**
 4. **(provisional) You leave the game.** If you disconnect, your clock keeps running and the other players see a 60-second reconnect timer. If you don't come back in time, this counts exactly like running out of time.
 5. **You resign** (see below).

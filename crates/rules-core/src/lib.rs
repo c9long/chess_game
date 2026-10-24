@@ -79,11 +79,22 @@ pub use state::{
 /// so replays re-simulate under the exact rules they were played with.
 ///
 /// * `1` — the original 12×12 board (no longer playable by this engine).
-/// * `2` — the 16×16 board (centred armies, promotion on the 9th line).
+/// * `2` — the 16×16 board (centred armies, promotion on the 9th line), en
+///   passant on.
+/// * `3` — version 2 without en passant.
 ///
-/// Only the current version is supported: configs and position strings with
-/// any other version are rejected with an error, never mis-simulated.
-pub const RULES_VERSION: u32 = 2;
+/// New games use the current version. Configs and position strings with a
+/// version outside [`MIN_SUPPORTED_RULES_VERSION`]..=[`RULES_VERSION`] are
+/// rejected with an error, never mis-simulated.
+pub const RULES_VERSION: u32 = 3;
+
+/// The oldest rules version this engine can still play and replay.
+pub const MIN_SUPPORTED_RULES_VERSION: u32 = 2;
+
+/// Whether this engine can play `rules_version`.
+pub const fn is_supported_rules_version(rules_version: u32) -> bool {
+    rules_version >= MIN_SUPPORTED_RULES_VERSION && rules_version <= RULES_VERSION
+}
 
 impl GameState {
     /// Parses a position string (see [`position_string`]).
@@ -109,7 +120,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn rules_version_is_two() {
-        assert_eq!(RULES_VERSION, 2);
+    fn rules_version_is_three() {
+        assert_eq!(RULES_VERSION, 3);
+        let supported: Vec<u32> = (0..10).filter(|&v| is_supported_rules_version(v)).collect();
+        assert_eq!(supported, [2, 3]);
     }
 }

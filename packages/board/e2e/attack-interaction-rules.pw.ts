@@ -135,6 +135,7 @@ test('plain click-to-move pawn is animated (does not teleport)', async ({ page }
   ).toBe(true)
 })
 
+// En passant exists only in rules version 2, which the board still draws for replays.
 test('en passant removes the double-stepped pawn (South pawn, West captures)', async ({ page }) => {
   const pos = buildPosition(
     'ffa',
@@ -148,7 +149,7 @@ test('en passant removes the double-stepped pawn (South pawn, West captures)', a
       p9: 'east king',
       l5: 'east pawn',
     },
-    'S AAAA - - 0 0',
+    'S AAAA - - 0 0 rv=2',
   )
   await load(page, pos)
   await setPerspective(page, 'south')
@@ -179,7 +180,7 @@ test('en passant: North double-step, East captures', async ({ page }) => {
       m13: 'east pawn',
       e13: 'south rook',
     },
-    'N AAAA - - 0 0',
+    'N AAAA - - 0 0 rv=2',
   )
   await load(page, pos)
   await setPerspective(page, 'north')
@@ -210,7 +211,7 @@ test('en passant that also promotes (East i13xh14 e.p. onto file h)', async ({ p
       p9: 'east king',
       i13: 'east pawn',
     },
-    'N AAAA - - 0 0',
+    'N AAAA - - 0 0 rv=2',
   )
   await load(page, pos)
   await sb(page, 'play', 'h15h13')

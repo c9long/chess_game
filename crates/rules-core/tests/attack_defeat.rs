@@ -1076,7 +1076,7 @@ fn ffa_removed_seat_loses_its_en_passant_target() {
     let mut s = build(
         "ffa",
         &["sKk1", "wKa11", "wPb5", "nKk16", "nQk11", "eKp11"],
-        "W AAAA - - 0 0",
+        "W AAAA - - 0 0 ep=on", // en passant is off from rules version 3
     );
     play(&mut s, "b5d5");
     assert!(s.ep_target(Seat::West).is_some());

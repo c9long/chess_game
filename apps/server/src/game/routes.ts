@@ -23,6 +23,7 @@ import {
   type MatchReplayResponse,
   type RatingsResponse,
 } from '@game/protocol'
+import { isSupportedRulesVersion } from '@game/rules'
 import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lt, ne, or } from 'drizzle-orm'
 import { type Request, Router } from 'express'
 import { z } from 'zod'
@@ -33,7 +34,7 @@ import { requireCurrentAcceptance } from '../legal/routes.ts'
 import { blockedAmong, blockedByAmong } from '../social/blocks.ts'
 import { friendIdsOf, relationsOf } from '../social/friends.ts'
 import { MatchRoom } from './match-room.ts'
-import { canResimulate, loadReplay, playReplay } from './persistence.ts'
+import { loadReplay, playReplay } from './persistence.ts'
 
 const leaderboardQuery = z.object({
   mode: z.enum(GAME_MODES).default('ffa'),
@@ -386,7 +387,7 @@ export function gameRouter({ db, auth }: { db: Database; auth: Auth }) {
       res.status(409).json({ error: 'NOT_FINISHED' })
       return
     }
-    if (!canResimulate(match.rulesVersion)) {
+    if (!isSupportedRulesVersion(match.rulesVersion)) {
       res.status(409).json({ error: 'RULES_VERSION_UNSUPPORTED', rulesVersion: match.rulesVersion })
       return
     }

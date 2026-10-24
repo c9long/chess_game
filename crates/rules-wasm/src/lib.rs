@@ -27,6 +27,12 @@ pub fn rules_version() -> u32 {
     rules_core::RULES_VERSION
 }
 
+/// The oldest rules version this build still plays (replays of older games).
+#[wasm_bindgen(js_name = minSupportedRulesVersion)]
+pub fn min_supported_rules_version() -> u32 {
+    rules_core::MIN_SUPPORTED_RULES_VERSION
+}
+
 /// A game in progress. Call `free()` when done (or rely on the finalizer).
 #[wasm_bindgen]
 pub struct WasmGame {

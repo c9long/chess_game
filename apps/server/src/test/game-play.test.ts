@@ -1,6 +1,7 @@
 import { matchMaker } from '@colyseus/core'
 import { eloRatings, matchEvents, matches, matchPlayers, ratings } from '@game/db'
 import type { MatchDetailResponse, MatchListResponse, RatingsResponse } from '@game/protocol'
+import { RULES_VERSION } from '@game/rules'
 import { and, asc, eq } from 'drizzle-orm'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { abortOrphanedMatches, resimulate } from '../game/persistence.ts'
@@ -109,7 +110,7 @@ describe('a ranked FFA game between four registered players', () => {
     const [m] = await db.select().from(matches).where(eq(matches.id, matchId))
     expect(m).toMatchObject({ status: 'finished', rated: true, mode: 'ffa', timeControl: '10+0' })
     expect(m?.endReason).toBe('last_standing')
-    expect(m?.rulesVersion).toBe(2)
+    expect(m?.rulesVersion).toBe(RULES_VERSION)
     const rows = await db
       .select()
       .from(matchEvents)

@@ -4,7 +4,7 @@ import {
   type MatchListResponse,
   type RatingsResponse,
 } from '@game/protocol'
-import { RULES_VERSION } from '@game/rules'
+import { isSupportedRulesVersion } from '@game/rules'
 import { Play } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
@@ -170,7 +170,7 @@ function MatchRow({ m, viewerRegistered }: { m: MatchListItem; viewerRegistered:
           <span />
         )}
         {m.status === 'finished' ? (
-          m.rulesVersion === RULES_VERSION ? (
+          isSupportedRulesVersion(m.rulesVersion) ? (
             <Link
               to={`/history/${m.id}`}
               className={linkButtonClass('secondary', '', 'sm')}

@@ -648,12 +648,14 @@ fn promotion_line_is_seven_steps_from_the_start_line() {
 
 /// Kings on their home squares, South's e2 and f2 pawns, and a West pawn on
 /// d4 that attacks e3 (the square South's e2 pawn skips with a double step).
+/// En passant is off from rules version 3, so these positions opt in with
+/// `ep=on`.
 const EP_SETUP: [&str; 7] = ["sKi1", "wKa9", "nKi16", "eKp9", "sPe2", "sPf2", "wPd4"];
 
 #[test]
 fn en_passant_capture() {
     for mode in ["ffa", "teams"] {
-        let mut s = build(mode, &EP_SETUP, "S AAAA - - 0 0");
+        let mut s = build(mode, &EP_SETUP, "S AAAA - - 0 0 ep=on");
         play(&mut s, "e2e4");
         assert_eq!(
             s.ep_target(Seat::South),
@@ -681,7 +683,7 @@ fn en_passant_capture() {
 
 #[test]
 fn en_passant_expires_when_turn_order_returns() {
-    let mut s = build("ffa", &EP_SETUP, "S AAAA - - 0 0");
+    let mut s = build("ffa", &EP_SETUP, "S AAAA - - 0 0 ep=on");
     play(&mut s, "e2e4");
     play(&mut s, "a9a8"); // West declines
     assert!(s.ep_target(Seat::South).is_some()); // still live for North/East
@@ -696,7 +698,7 @@ fn en_passant_expires_when_turn_order_returns() {
 
 #[test]
 fn en_passant_expires_when_double_stepper_stops_taking_turns() {
-    let mut s = build("teams", &EP_SETUP, "S AAAA - - 0 0");
+    let mut s = build("teams", &EP_SETUP, "S AAAA - - 0 0 ep=on");
     play(&mut s, "e2e4");
     assert!(is_legal(&s, "d4e3"));
     apply_abandon(&mut s, Seat::South).unwrap(); // South frozen while West is on move
@@ -714,7 +716,7 @@ fn en_passant_skipped_seat_target_is_cleared() {
     let mut s = build(
         "teams",
         &["sKi1", "sPf2", "wKa9", "nKi16", "nPg15", "eKp9"],
-        "S AFAA - - 0 0 def=Wt",
+        "S AFAA - - 0 0 def=Wt ep=on",
     );
     play(&mut s, "f2f4");
     assert_eq!(s.seat_to_move(), Seat::North);
@@ -732,7 +734,7 @@ fn en_passant_can_promote() {
     let mut s = build(
         "ffa",
         &["sKi1", "wKa9", "wPh15", "nKp16", "nPi15", "eKp9"],
-        "N AAAA - - 0 0",
+        "N AAAA - - 0 0 ep=on",
     );
     play(&mut s, "i15i13");
     play(&mut s, "p9p8");

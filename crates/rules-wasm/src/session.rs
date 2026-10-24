@@ -186,11 +186,22 @@ mod tests {
                     {"id": "canada", "version": 1},
                     {"id": "canada", "version": 1}
                 ],
-                "enPassant": true,
+                "enPassant": false,
                 "moveLimitRounds": 25,
-                "rulesVersion": 2
+                "rulesVersion": 3
             })
         );
+
+        // Replays of version-2 games get that version's en passant by default.
+        let s = Session::from_config_json(r#"{"mode":"ffa","rulesVersion":2}"#).unwrap();
+        let snap = parse(&s.snapshot_json());
+        assert_eq!(snap["config"]["enPassant"], true);
+        assert_eq!(snap["config"]["rulesVersion"], 2);
+        assert!(s.position_string().contains("ep=on"));
+        assert!(s.position_string().ends_with(" rv=2"));
+        let s = Session::from_config_json(r#"{"mode":"ffa","rulesVersion":2,"enPassant":false}"#)
+            .unwrap();
+        assert_eq!(parse(&s.snapshot_json())["config"]["enPassant"], false);
 
         let s = Session::from_config_json(
             r#"{"mode":"teams","civs":["mali","japan",{"id":"france","version":1},"usa"],"enPassant":false,"moveLimitRounds":10}"#,
@@ -285,7 +296,7 @@ mod tests {
         assert_eq!(snap["noProgress"], 0);
         assert_eq!(snap["moveLimit"], 100);
         assert_eq!(snap["ply"], 0);
-        assert_eq!(snap["rulesVersion"], 2);
+        assert_eq!(snap["rulesVersion"], 3);
         assert_eq!(
             snap["leaderUnderAttack"],
             json!([false, false, false, false])
@@ -344,8 +355,9 @@ mod tests {
     #[test]
     fn en_passant_and_castle_events() {
         // South e2 pawn, West d4 pawn (attacks e3), kings on their homes.
+        // A rules-version-2 position: en passant is off from version 3.
         let mut s = Session::from_position(
-            "ffa 8nK7/16/16/16/16/16/16/wK14eK/16/16/16/16/3wP12/16/4sP11/8sK7 S AAAA - - 0 0",
+            "ffa 8nK7/16/16/16/16/16/16/wK14eK/16/16/16/16/3wP12/16/4sP11/8sK7 S AAAA - - 0 0 rv=2",
         )
         .unwrap();
         s.apply_move("e2e4").unwrap();

@@ -1,9 +1,9 @@
 import { civilizations, matchEvents, matches, matchPlayers } from '@game/db'
 import type { MatchDetailResponse, MatchListResponse } from '@game/protocol'
-import { RULES_VERSION } from '@game/rules'
+import { initRules, isSupportedRulesVersion, RULES_VERSION } from '@game/rules'
 import { eq } from 'drizzle-orm'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { canResimulate, resimulate, UnsupportedRulesVersionError } from '../game/persistence.ts'
+import { playReplay, resimulate, UnsupportedRulesVersionError } from '../game/persistence.ts'
 import { type Harness, signUpVerified, startHarness } from './harness.ts'
 
 let h: Harness
@@ -42,10 +42,20 @@ async function seedV1Match(userId: string) {
 }
 
 describe('matches from rules version 1 (12×12)', () => {
-  it('the engine plays rules version 2 (16×16)', () => {
-    expect(RULES_VERSION).toBe(2)
-    expect(canResimulate(2)).toBe(true)
-    expect(canResimulate(1)).toBe(false)
+  it('the engine plays rules version 3 and still replays version 2', () => {
+    expect(RULES_VERSION).toBe(3)
+    expect(isSupportedRulesVersion(3)).toBe(true)
+    expect(isSupportedRulesVersion(2)).toBe(true)
+    expect(isSupportedRulesVersion(1)).toBe(false)
+  })
+
+  it('replays a version 2 match with en passant on, and new games without it', async () => {
+    await initRules()
+    const civs = Array.from({ length: 4 }, () => ({ id: 'canada' as const, version: 1 }))
+    const v2 = playReplay({ config: { mode: 'ffa', civs, rulesVersion: 2 }, actions: [] })
+    expect(v2).toMatch(/ ep=on .* rv=2$/)
+    const v3 = playReplay({ config: { mode: 'ffa', civs, rulesVersion: 3 }, actions: [] })
+    expect(v3).toMatch(/ ep=off .* rv=3$/)
   })
 
   it('stay listed in history and their detail reports the old version', async () => {

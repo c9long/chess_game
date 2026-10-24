@@ -439,7 +439,11 @@ fn never_returns_an_illegal_move_long() {
 
 #[test]
 fn null_move_passes_the_turn() {
-    let mut s = GameState::new(GameConfig::new(GameMode::Ffa)).unwrap();
+    // En passant is off from rules version 3; turn it on to see the target
+    // expire.
+    let mut config = GameConfig::new(GameMode::Ffa);
+    config.en_passant_enabled = true;
+    let mut s = GameState::new(config).unwrap();
     apply_move(&mut s, mv("e2e4")).unwrap(); // South double-step: target e3
     assert!(s.ep_target(Seat::South).is_some());
     let mut ev = Vec::new();

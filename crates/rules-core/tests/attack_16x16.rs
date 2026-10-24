@@ -540,13 +540,14 @@ fn position_string_pawn_zones_per_seat() {
 #[test]
 fn en_passant_from_real_start_lines_each_seat() {
     // From the start position, set up each seat's double step with an enemy
-    // pawn next to the skipped square, all via position strings.
+    // pawn next to the skipped square, all via position strings (with
+    // `ep=on`: en passant is off from rules version 3).
     // South i2-i4 skips i3; West pawn on h4 captures to i3 (forward-diagonal
     // for West is (+1, ±1)).
     let s = build(
         "ffa",
         &["sPi2", "wPh4", "sKa1", "wKa16", "nKp16", "eKp1"],
-        "S AAAA - - 0 0",
+        "S AAAA - - 0 0 ep=on",
     );
     let mut s = s;
     play(&mut s, "i2i4");
@@ -568,7 +569,7 @@ fn en_passant_from_real_start_lines_each_seat() {
     let mut s = build(
         "ffa",
         &["wPb12", "nPd13", "sKa1", "wKa16", "nKp16", "eKp1"],
-        "W AAAA - - 0 0",
+        "W AAAA - - 0 0 ep=on",
     );
     play(&mut s, "b12d12");
     assert_eq!(s.ep_target(Seat::West).map(|t| t.skipped), Some(sq("c12")));
@@ -579,7 +580,7 @@ fn en_passant_from_real_start_lines_each_seat() {
     let mut s = build(
         "ffa",
         &["nPl15", "ePm13", "sKa1", "wKa16", "nKp16", "eKp1"],
-        "N AAAA - - 0 0",
+        "N AAAA - - 0 0 ep=on",
     );
     play(&mut s, "l15l13");
     assert_eq!(s.ep_target(Seat::North).map(|t| t.skipped), Some(sq("l14")));
@@ -590,7 +591,7 @@ fn en_passant_from_real_start_lines_each_seat() {
     let mut s = build(
         "ffa",
         &["ePo5", "sPm4", "sKa1", "wKa16", "nKp16", "eKp2"],
-        "E AAAA - - 0 0",
+        "E AAAA - - 0 0 ep=on",
     );
     play(&mut s, "o5m5");
     assert_eq!(s.ep_target(Seat::East).map(|t| t.skipped), Some(sq("n5")));
@@ -603,7 +604,7 @@ fn en_passant_expires_after_a_full_round() {
     let mut s = build(
         "ffa",
         &["sPi2", "ePj4", "sKa1", "wKa16", "nKp16", "eKp1"],
-        "S AAAA - - 0 0",
+        "S AAAA - - 0 0 ep=on",
     );
     play(&mut s, "i2i4");
     // East (third after South) may still capture: West and North move first.
@@ -834,11 +835,11 @@ fn position_string_edge_cases() {
     let t = s.to_position_string();
     assert!(t.contains(" Wa5,Wa12,Nl16,Ep12 "), "{t}");
     assert_eq!(parse_position(&t).unwrap(), s);
-    // A two-digit en passant square.
+    // A two-digit en passant square (en passant is off from rules version 3).
     let mut s = build(
         "ffa",
         &["sKa1", "wKa16", "nKp16", "nPf15", "eKp1"],
-        "N AAAA - - 0 0",
+        "N AAAA - - 0 0 ep=on",
     );
     play(&mut s, "f15f13");
     let t = s.to_position_string();

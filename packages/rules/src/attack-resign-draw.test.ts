@@ -41,7 +41,8 @@ function voters(s: Snapshot): boolean[] {
   return s.statuses.map((st) => st === 'active' || st === 'defeated')
 }
 
-// South's only move is b4xc5 en passant on West's pawn (d5, skipped c5).
+// South's only move is b4xc5 en passant on West's pawn (d5, skipped c5). En passant exists only
+// in rules version 2 (replays of older games), hence `rv=2` below.
 const EP_TRAP_BOARD =
   '10nK5/16/16/16/16/wK14eK/16/16/16/16/16/1eR1wP12/1sP14/sBsP1eN12/sPsP1sP12/sKsRsB13'
 
@@ -87,7 +88,7 @@ describe('resign (WASM/TS)', () => {
 
   it('Teams off-turn abandon clears only the leaver en passant target', () => {
     // A single Teams seat leaving is an abandon (a resignation takes the whole team out).
-    const game = Game.create({ mode: 'teams' })
+    const game = Game.create({ mode: 'teams', rulesVersion: 2 })
     act(game.applyMove('e2e4'))
     act(game.applyMove('b7d7'))
     act(game.applyMove('f15f13'))
@@ -108,7 +109,7 @@ describe('resign (WASM/TS)', () => {
   })
 
   it('Teams off-turn abandon can force an automatic pass of a defeated seat on move', () => {
-    const game = Game.fromPosition(`teams ${EP_TRAP_BOARD} S DAAA - Wc5 7 30 def=Sl`)
+    const game = Game.fromPosition(`teams ${EP_TRAP_BOARD} S DAAA - Wc5 7 30 def=Sl rv=2`)
     expect(game.legalMoveNotations()).toEqual(['b4c5'])
     const ev = act(game.applyAbandon('west'))
     expect(ev).toEqual([
@@ -125,7 +126,7 @@ describe('resign (WASM/TS)', () => {
   })
 
   it('FFA off-turn resign of the en passant victim stalemates the seat on move', () => {
-    const game = Game.fromPosition(`ffa ${EP_TRAP_BOARD} S AAAA - Wc5 0 0`)
+    const game = Game.fromPosition(`ffa ${EP_TRAP_BOARD} S AAAA - Wc5 0 0 rv=2`)
     const ev = act(game.applyResign('west'))
     expect(ev).toEqual([
       { type: 'defeat', seat: 'west', reason: 'resign' },

@@ -616,11 +616,13 @@ fn ffa_abandon_leaving_one_active_seat_ends_with_reverse_defeat_placements() {
 // En passant expiry
 // ---------------------------------------------------------------------------
 
+// En passant is off from rules version 3; these positions opt in with `ep=on`.
+
 fn ep_fixture() -> GameState {
     pos(
         "ffa",
         &["sKi1", "sPd2", "wKa9", "wPc4", "nKi16", "eKp9"],
-        "S AAAA - - 5 0",
+        "S AAAA - - 5 0 ep=on",
     )
 }
 
@@ -672,7 +674,7 @@ fn two_ep_targets_live_at_once_expire_independently() {
     let mut s = pos(
         "ffa",
         &["sKg1", "sPd4", "sPh2", "wKa7", "wPb5", "nKg12", "eKl7"],
-        "S AAAA - - 0 0",
+        "S AAAA - - 0 0 ep=on",
     );
     go(&mut s, "h2h4");
     go(&mut s, "b5d5");
@@ -693,7 +695,7 @@ fn ep_target_cleared_when_its_seat_abandons() {
     let mut s = pos(
         "teams",
         &["sKi1", "sPd4", "wKa9", "wPb7", "nKi16", "eKp9"],
-        "W AAAA - - 0 0",
+        "W AAAA - - 0 0 ep=on",
     );
     go(&mut s, "b7d7");
     assert!(s.ep_target(Seat::West).is_some());
@@ -713,7 +715,7 @@ fn ep_target_cleared_when_turn_reaches_its_seat_as_a_pass() {
     let mut s = pos(
         "teams",
         &["sKg1", "sPb4", "wPb5", "nKg12", "eKl7", "eRe5"],
-        "W ADAA - - 0 0 def=Wl",
+        "W ADAA - - 0 0 def=Wl ep=on",
     );
     go(&mut s, "b5d5");
     go(&mut s, "g12g11");
@@ -739,7 +741,7 @@ fn off_move_abandon_that_kills_the_only_move_makes_defeated_seat_pass() {
     let mut s = pos(
         "teams",
         &["sKk1", "wPc13", "nKk16", "nPd13", "eKp11"],
-        "W ADAA - Nd14 12 30 def=Wl",
+        "W ADAA - Nd14 12 30 def=Wl ep=on",
     );
     assert_eq!(legal_moves(&s).len(), 1);
     let ev = abandon(&mut s, Seat::North);
@@ -757,7 +759,7 @@ fn position_with_ep_target_for_the_seat_to_move_is_rejected_or_inert() {
     let r = try_pos(
         "ffa",
         &["sKi1", "sPf6", "wKa9", "wPe6", "nKi16", "eKp9"],
-        "S AAAA - Sf5 0 0",
+        "S AAAA - Sf5 0 0 ep=on",
     );
     if let Ok(mut s) = r {
         let accepted = s.ep_target(Seat::South);
@@ -780,7 +782,7 @@ fn position_with_ep_target_for_a_frozen_seat_is_rejected_or_inert() {
     let r = try_pos(
         "teams",
         &["sKi1", "sPf6", "wKa9", "wPf7", "nKi16", "eKp9"],
-        "S AFAA - We7 0 0 def=Wt",
+        "S AFAA - We7 0 0 def=Wt ep=on",
     );
     if let Ok(s) = r {
         assert_eq!(s.ep_target(Seat::West), None);
@@ -795,7 +797,7 @@ fn ep_capture_requires_the_double_stepped_pawn_on_its_square() {
     for occupant in [None, Some("nNf6"), Some("sNf6"), Some("wNf6")] {
         let mut pieces = vec!["sKi1", "wKa9", "wPe6", "nKi16", "eKp9"];
         pieces.extend(occupant);
-        if let Ok(s) = try_pos("ffa", &pieces, "W AAAA - Sf5 0 0") {
+        if let Ok(s) = try_pos("ffa", &pieces, "W AAAA - Sf5 0 0 ep=on") {
             assert!(
                 !legal(&s, "e6f5"),
                 "en passant without the double-stepped pawn ({occupant:?}) in {s}"
@@ -811,7 +813,7 @@ fn ep_target_that_no_double_step_can_create_is_rejected_or_inert() {
     if let Ok(s) = try_pos(
         "ffa",
         &["sKi1", "sPf8", "wKa9", "wPe6", "nKi16", "eKp9"],
-        "W AAAA - Sf7 0 0",
+        "W AAAA - Sf7 0 0 ep=on",
     ) {
         assert!(
             !legal(&s, "e6f7"),
@@ -825,7 +827,7 @@ fn north_and_west_ep_targets_round_trip_with_derived_pawn_squares() {
     let s = pos(
         "ffa",
         &["sKi1", "wKa9", "wPd7", "nKi16", "nPd13", "eKp9"],
-        "E AAAA - Wc7,Nd14 0 9",
+        "E AAAA - Wc7,Nd14 0 9 ep=on",
     );
     assert_eq!(
         s.ep_target(Seat::North),
@@ -909,8 +911,8 @@ fn hash_distinguishes_side_to_move_status_castling_and_ep() {
     assert_ne!(a.hash(), c.hash(), "castling");
 
     let pieces = ["sKi1", "sPd4", "wKa9", "wPc4", "nKi16", "eKp9"];
-    let d = pos("ffa", &pieces, "W AAAA - Sd3 0 0");
-    let e = pos("ffa", &pieces, "W AAAA - - 0 0");
+    let d = pos("ffa", &pieces, "W AAAA - Sd3 0 0 ep=on");
+    let e = pos("ffa", &pieces, "W AAAA - - 0 0 ep=on");
     assert_ne!(d.hash(), e.hash(), "en passant target");
 
     let pieces = ["sKi1", "wKa9", "wRa5", "nKi16", "eKp9"];
@@ -1050,7 +1052,7 @@ fn position_parser_never_panics_on_mutated_input() {
         pos(
             "teams",
             &["sKi1", "sRe1", "sPf4", "wRb10", "nKi16", "eKp9", "ePm7"],
-            "W ADFA Se1 En7 37 123 ml=30 def=Wl,Nt",
+            "W ADFA Se1 En7 37 123 ep=on ml=30 def=Wl,Nt",
         )
         .to_string(),
     ];

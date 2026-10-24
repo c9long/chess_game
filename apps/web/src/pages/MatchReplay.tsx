@@ -11,7 +11,7 @@ import {
   Game,
   type GameConfigInput,
   type GameEvent,
-  RULES_VERSION,
+  isSupportedRulesVersion,
   type Snapshot,
 } from '@game/rules'
 import {
@@ -877,7 +877,8 @@ export function MatchReplay() {
     ;(async () => {
       try {
         const detail = await api<MatchDetailResponse>(`/api/matches/${matchId}`)
-        const replayable = detail.status === 'finished' && detail.rulesVersion === RULES_VERSION
+        const replayable =
+          detail.status === 'finished' && isSupportedRulesVersion(detail.rulesVersion)
         const replay = replayable
           ? await api<MatchReplayResponse>(`/api/matches/${matchId}/replay`)
           : null
@@ -927,7 +928,7 @@ export function MatchReplay() {
   // Nothing to replay: an old 12×12 game, a cancelled game, or the engine didn't load.
   const message = rulesError
     ? 'The game engine could not be loaded. Reload the page to try again.'
-    : detail.rulesVersion !== RULES_VERSION
+    : !isSupportedRulesVersion(detail.rulesVersion)
       ? 'This game was played on the old 12×12 board and can’t be replayed.'
       : detail.status === 'aborted'
         ? 'This game was cancelled, so there is no replay.'

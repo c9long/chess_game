@@ -20,6 +20,8 @@ function snap(game: Game): Snapshot {
   return s
 }
 
+/** South e2 pawn, West d4 pawn (attacks e3), kings on their home squares: e2e4 allows d4xe3 e.p. */
+const EP_BOARD = '8nK7/16/16/16/16/16/16/wK14eK/16/16/16/16/3wP12/16/4sP11/8sK7'
 describe('Game', () => {
   it('starts in the §2 setup (16×16) with 30 legal moves for South', () => {
     const game = Game.create({ mode: 'ffa' })
@@ -121,11 +123,22 @@ describe('Game', () => {
     game.free()
   })
 
+  it('has no en passant in the current rules version, only when replaying version 2', () => {
+    const current = Game.fromPosition(`ffa ${EP_BOARD} S AAAA - - 0 0`)
+    play(current, ['e2e4'])
+    expect(snap(current).epTargets).toEqual([null, null, null, null])
+    expect(current.legalMoveNotations()).not.toContain('d4e3')
+    expect(snap(current).config).toMatchObject({ enPassant: false, rulesVersion: 3 })
+    current.free()
+    const v2 = Game.fromPosition(`ffa ${EP_BOARD} S AAAA - - 0 0 rv=2`)
+    play(v2, ['e2e4'])
+    expect(v2.legalMoveNotations()).toContain('d4e3')
+    v2.free()
+  })
+
   it('reports en passant, castling and leader capture', () => {
     // South e2 pawn, West d4 pawn (attacks e3), kings on their home squares.
-    const game = Game.fromPosition(
-      'ffa 8nK7/16/16/16/16/16/16/wK14eK/16/16/16/16/3wP12/16/4sP11/8sK7 S AAAA - - 0 0',
-    )
+    const game = Game.fromPosition(`ffa ${EP_BOARD} S AAAA - - 0 0 ep=on`)
     play(game, ['e2e4'])
     expect(snap(game).epTargets).toEqual([{ skipped: 'e3', pawn: 'e4' }, null, null, null])
     const ep = game.legalMoves().find((m) => m.notation === 'd4e3')

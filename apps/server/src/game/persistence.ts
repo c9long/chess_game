@@ -19,7 +19,15 @@ import {
   type ReplayAction,
   replayActionsOf,
 } from '@game/protocol'
-import { type CivId, Game, type GameConfigInput, type Outcome, RULES_VERSION } from '@game/rules'
+import {
+  type CivId,
+  Game,
+  type GameConfigInput,
+  isSupportedRulesVersion,
+  MIN_SUPPORTED_RULES_VERSION,
+  type Outcome,
+  RULES_VERSION,
+} from '@game/rules'
 import { and, asc, eq, inArray, sql } from 'drizzle-orm'
 import type { Logger } from '../logger.ts'
 import { applyElo, applyRatings, type EloChange, type RatedSeat } from './ratings.ts'
@@ -433,7 +441,7 @@ async function markAborted(db: Executor, matchId: string, reason: string, at: Da
 
 /**
  * A match recorded under another rules version than this engine plays (rules version 1 was the
- * 12×12 board; version 2 is 16×16). Such rows stay in the history, but their moves can't be
+ * 12×12 board; see `RULES_VERSION` in rules-core for the list). Such rows stay in the history, but their moves can't be
  * replayed on the current board, so re-simulation refuses them instead of mis-simulating.
  */
 export class UnsupportedRulesVersionError extends Error {
@@ -442,17 +450,12 @@ export class UnsupportedRulesVersionError extends Error {
 
   constructor(matchId: string, rulesVersion: number) {
     super(
-      `match ${matchId} was played under rules version ${rulesVersion}; this engine replays only version ${RULES_VERSION}`,
+      `match ${matchId} was played under rules version ${rulesVersion}; this engine replays only versions ${MIN_SUPPORTED_RULES_VERSION} to ${RULES_VERSION}`,
     )
     this.name = 'UnsupportedRulesVersionError'
     this.matchId = matchId
     this.rulesVersion = rulesVersion
   }
-}
-
-/** Whether `resimulate` can replay a match stored with this rules version. */
-export function canResimulate(rulesVersion: number): boolean {
-  return rulesVersion === RULES_VERSION
 }
 
 /** What a replay of a stored match needs: the engine config and the actions in order. */
@@ -469,7 +472,7 @@ export interface StoredReplay {
 export async function loadReplay(db: Executor, matchId: string): Promise<StoredReplay> {
   const [match] = await db.select().from(matches).where(eq(matches.id, matchId))
   if (!match) throw new Error(`match ${matchId} not found`)
-  if (!canResimulate(match.rulesVersion)) {
+  if (!isSupportedRulesVersion(match.rulesVersion)) {
     throw new UnsupportedRulesVersionError(matchId, match.rulesVersion)
   }
   const players = await db

@@ -147,7 +147,7 @@ Conventions (see [CLAUDE.md](CLAUDE.md)):
 
 ## Open rules questions
 
-- Confirm en passant rule (§2); stays behind a flag until confirmed
+- ~~Confirm en passant rule (§2); stays behind a flag until confirmed~~ (done 2026-10-24; dropped: rules version 3 is version 2 without en passant. The engine keeps en passant for replaying version-2 matches (`GameConfig::for_rules_version`), and the server and web replay versions 2 and 3)
 - Confirm "Abandon = timeout" after the 60-second reconnect grace
 - Confirm that a stalemated or timed-out player's leader no longer keeps a Teams team alive
 - ~~Teams resignation: player-only or whole team?~~ (done 2026-10-16; whole team, by teammate vote: the resigner proposes, the teammate agrees (both lose, the other team wins at once) or declines (both play on); a frozen teammate means the team resigns at once. User rule; see PLAN §2 and docs/RULES.md "Resigning")

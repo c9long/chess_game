@@ -137,6 +137,13 @@ fn start(mode: GameMode) -> GameState {
     GameState::new(GameConfig::new(mode)).unwrap()
 }
 
+/// The start position with en passant on (it is off from rules version 3).
+fn start_ep(mode: GameMode) -> GameState {
+    let mut config = GameConfig::new(mode);
+    config.en_passant_enabled = true;
+    GameState::new(config).unwrap()
+}
+
 fn play(state: &mut GameState, m: &str) -> Vec<GameEvent> {
     match apply_move(state, mv(m)) {
         Ok(ev) => ev,
@@ -355,7 +362,7 @@ fn server_drives_full_random_games_from_strings() {
 
 #[test]
 fn submitted_move_flag_is_ignored_and_engine_flag_reported() {
-    let mut s = start(GameMode::Ffa);
+    let mut s = start_ep(GameMode::Ffa);
     // A double step submitted with a bogus EnPassant flag.
     let bogus = Move {
         flag: MoveFlag::EnPassant,
@@ -383,7 +390,7 @@ fn submitted_move_flag_is_ignored_and_engine_flag_reported() {
 fn en_passant_through_strings_and_config_flag() {
     // §2: an opponent pawn that could capture onto the skipped square takes e.p.
     let pieces = ["sKi1", "wKa9", "nKi16", "eKp9", "sPe2", "wPd4"];
-    let mut s = pos("ffa", &pieces, "S AAAA - - 0 0");
+    let mut s = pos("ffa", &pieces, "S AAAA - - 0 0 ep=on");
     play(&mut s, "e2e4");
     let ev = play(&mut s, "d4e3");
     assert!(matches!(
@@ -424,7 +431,7 @@ fn en_passant_through_strings_and_config_flag() {
 
 #[test]
 fn en_passant_expires_when_turn_order_returns() {
-    let mut s = start(GameMode::Ffa);
+    let mut s = start_ep(GameMode::Ffa);
     play(&mut s, "e2e4");
     play(&mut s, "b7c7"); // West declines
     play(&mut s, "f15f13");
@@ -1280,7 +1287,7 @@ mod json {
         let mut s = pos(
             "teams",
             &["sKi1", "wKa9", "nKi16", "eKp9", "sPe2", "wPd4"],
-            "S AAAA - - 0 0",
+            "S AAAA - - 0 0 ep=on",
         );
         // Clients send {from,to,promotion}; the flag is optional and ignored.
         let m: Move =

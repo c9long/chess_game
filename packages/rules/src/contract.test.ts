@@ -105,7 +105,7 @@ describe('wire contract', () => {
     // on the 16×16 board rarely set up: exercise it from a prepared position.
     {
       const game = Game.fromPosition(
-        'ffa 8nK7/16/16/16/16/16/16/wK14eK/16/16/16/16/3wP12/16/4sP11/8sK7 S AAAA - - 0 0',
+        'ffa 8nK7/16/16/16/16/16/16/wK14eK/16/16/16/16/3wP12/16/4sP11/8sK7 S AAAA - - 0 0 ep=on',
       )
       for (const notation of ['e2e4', 'd4e3']) {
         const m = game.legalMoves().find((x) => x.notation === notation)

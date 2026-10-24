@@ -9,7 +9,7 @@ import {
   type MatchReplayResponse,
   type ReplayAction,
 } from '@game/protocol'
-import { Game, type GameConfigInput } from '@game/rules'
+import { Game, type GameConfigInput, RULES_VERSION } from '@game/rules'
 import { eq } from 'drizzle-orm'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import {
@@ -87,7 +87,7 @@ describe('move log and replays', () => {
     expect((await finishedMatch(matchId))?.status).toBe('finished')
 
     const list = (await creator.get('/api/matches')).body as unknown as MatchListResponse
-    expect(list.matches.find((m) => m.id === matchId)?.rulesVersion).toBe(2)
+    expect(list.matches.find((m) => m.id === matchId)?.rulesVersion).toBe(RULES_VERSION)
 
     const res = await creator.get(`/api/matches/${matchId}/replay`)
     expect(res.status).toBe(200)

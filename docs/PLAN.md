@@ -84,13 +84,18 @@ chess_game/
 
 ---
 
-## 2. Game Rules Specification (rules version 2)
+## 2. Game Rules Specification (rules version 3)
 
 **Rules version 2 (2026-10-17)** is version 1 on a 16×16 board instead of 12×12: the setup below,
 the promotion line moved to the first line past the new centre, castling along the new back
 lines. Everything else (statuses, move limit, resign and draw rules, ...) is unchanged. Matches
 stored as rules version 1 stay in the history but are not replayed by the current engine
 (re-simulation refuses them with a clear error).
+
+**Rules version 3 (2026-10-24)** is version 2 without en passant (decided 2026-10-24: it rarely
+arises with four armies and its expiry rule is hard to follow). The engine still implements en
+passant for replaying version-2 matches: `GameConfig::for_rules_version(mode, 2)` turns it on,
+and versions 2 and 3 are both replayable.
 
 ### Board & seats
 - 16×16 board. Files are **a–p** (left→right from South's view), ranks **1–16** (bottom→top). Square a1 is dark.
@@ -122,7 +127,7 @@ stored as rules version 1 stay in the history but are not replayed by the curren
 - **No check restriction:** any move is legal even if it leaves your own leader attacked.
 - **Check indicator** (decided 2026-10-16, replaces the optional "under attack" glow; with several leaders it shows when any is attacked and rings only the attacked ones): information only, never a restriction or an advance warning. Only for a player's own seat (other players and spectators see none): when their turn starts with their leader under attack ("Check! Your leader is under attack" in the turn banner), and right after their own move leaves their leader attacked ("Your leader is in check", shown until it is no longer attacked). A check that opponents create while it is not that player's turn is not shown until their turn starts. The board marks the leader's square(s) with a pulsing vermilion ring and a light inner line (steady under reduced motion; a dedicated `danger` colour no seat uses) and plays a short check sound. "Under attack" and the leader squares come from `rules-core`; the visibility rule is a pure client function (`apps/web/src/lib/check-indicator.ts`). Always on; no setting or lobby toggle.
 - **Pawn double-step** from its starting square.
-- **En passant** *(behind a rules-config flag until you confirm; see TODO)*:
+- **En passant** *(rules version 2 only; dropped in version 3, 2026-10-24)*:
   - Each seat holds at most one en passant target (skipped square + pawn square), created by its pawn's double-step.
   - The target is cleared when the turn order next reaches that seat (even if that seat is skipped), or when the seat stops taking turns.
   - Any *opponent* pawn that could capture diagonally onto the skipped square may take en passant, provided the skipped square is empty and the double-stepped pawn is still on its square. The capturer lands on the skipped square and the double-stepped pawn is removed.
@@ -501,7 +506,7 @@ If many players fill seats with strong bots, the next step is a bigger OVH tier 
 **Initial contents:**
 - **Now: v1 build.** M0–M7 (§11), one item per sub-deliverable.
 - **Open rules questions:**
-  - confirm the en passant rule (§2; it stays behind a flag until then);
+  - ~~confirm the en passant rule (§2; it stays behind a flag until then)~~ (dropped in rules version 3, 2026-10-24);
   - confirm "Abandon = timeout" after the 60-second grace;
   - confirm that a stalemated or timed-out player's leader no longer keeps a Teams team alive;
   - ~~Teams resignation: player-only or whole team?~~ Whole team, by teammate vote (§2, decided 2026-10-16);

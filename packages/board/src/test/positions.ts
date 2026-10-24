@@ -39,6 +39,7 @@ export const TO_PROMOTION = [
  * En passant needs captures first on the 16×16 board (no pawn starts next to
  * another army's pawn), so it is set up directly: kings at home, South's e2
  * pawn and West's d4 pawn. After `e2e4`, West's `d4e3` takes en passant.
+ * Rules version 2 only (replays): the board still has to draw those games.
  */
 export const EN_PASSANT_READY =
-  'ffa 8nK7/16/16/16/16/16/16/wK14eK/16/16/16/16/3wP12/16/4sP11/8sK7 S AAAA - - 0 0'
+  'ffa 8nK7/16/16/16/16/16/16/wK14eK/16/16/16/16/3wP12/16/4sP11/8sK7 S AAAA - - 0 0 rv=2'

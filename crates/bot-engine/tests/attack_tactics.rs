@@ -581,7 +581,8 @@ fn en_passant_saves_the_leader() {
             "sKe6", "sPd4", "sNd6", "sBd7", "sNe7", "sBf7", "sRf6", "sNf5", "sRe5", "wPd5", "wPc4",
             "wKa7", "nKg12", "eKl7",
         ],
-        "S AAAA - Wc5 0 0",
+        // Rules version 2 had en passant; version 3 games never reach this.
+        "S AAAA - Wc5 0 0 ep=on rv=2",
     );
     let ep = legal_moves(&s)
         .into_iter()

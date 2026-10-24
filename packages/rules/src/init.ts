@@ -1,4 +1,4 @@
-import initWasm, { initSync, rulesVersion } from '../wasm/rules_wasm.js'
+import initWasm, { initSync, minSupportedRulesVersion, rulesVersion } from '../wasm/rules_wasm.js'
 
 /**
  * Location of the compiled engine. Vite turns this `new URL(..., import.meta.url)`
@@ -15,8 +15,16 @@ export type WasmBytes = Uint8Array | ArrayBuffer
  */
 export type WasmSource = URL | string | WasmBytes
 
-/** Rules version these TypeScript types describe (checked against the engine on init). */
-export const RULES_VERSION = 2
+/** Rules version of new games (checked against the engine on init). 3 is 2 without en passant. */
+export const RULES_VERSION = 3
+
+/** The oldest rules version the engine still replays (checked on init); older matches can't be re-simulated. */
+export const MIN_SUPPORTED_RULES_VERSION = 2
+
+/** Whether a match stored with `rulesVersion` can be replayed by this engine. */
+export function isSupportedRulesVersion(rulesVersion: number): boolean {
+  return rulesVersion >= MIN_SUPPORTED_RULES_VERSION && rulesVersion <= RULES_VERSION
+}
 
 let initialized = false
 let pending: Promise<void> | undefined
@@ -48,8 +56,11 @@ function nodeFs(): NodeFs | undefined {
 
 function finish(): void {
   const v = rulesVersion()
-  if (v !== RULES_VERSION) {
-    throw new Error(`@game/rules expects rules version ${RULES_VERSION}, engine has ${v}`)
+  const min = minSupportedRulesVersion()
+  if (v !== RULES_VERSION || min !== MIN_SUPPORTED_RULES_VERSION) {
+    throw new Error(
+      `@game/rules expects rules versions ${MIN_SUPPORTED_RULES_VERSION} to ${RULES_VERSION}, engine has ${min} to ${v}`,
+    )
   }
   initialized = true
 }
