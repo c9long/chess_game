@@ -89,12 +89,10 @@ You'll paste these into one settings file in step 4.
      for 2 OCPUs or `0.5` for 1 OCPU, so the bots leave room for the game server.
    - **Security:** leave everything off (Shielded instance, Confidential computing). The game
      doesn't need them, and they aren't available on every free shape.
-   - **Networking:**
-     - Primary network: **Create new virtual cloud network** (keep the suggested name).
-     - Subnet: **Create new public subnet** (keep the suggested name and address range).
-     - **Automatically assign public IPv4 address:** on. This is the address you log in
-       to (and, for the $0 beta, point DuckDNS at).
-     - Leave IPv6 and everything else at the defaults.
+   - **Networking:** first create the network with Oracle's VCN wizard, exactly as in
+     [DEPLOY-BETA.md step 2](DEPLOY-BETA.md#step-2-the-network-about-5-minutes). Skip its
+     "Open the web ports" part, because the tunnel needs no open ports. Then pick that VCN
+     and its **public** subnet here, with **Automatically assign public IPv4 address** on.
    - **SSH keys:** upload your public key (`~/.ssh/id_ed25519.pub`; make one with
      `ssh-keygen -t ed25519` if you have none).
    - **Boot volume:** 100 GB is plenty (up to 200 GB is free).
