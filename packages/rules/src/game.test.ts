@@ -52,6 +52,20 @@ describe('Game', () => {
     game.free()
   })
 
+  it('lists the moves a seat could make out of turn (premoves) without changing the turn', () => {
+    const game = Game.create({ mode: 'ffa' })
+    const west = game.movesForSeat('west')
+    for (const m of west) validateMove(m)
+    expect(west).toHaveLength(30)
+    expect(west.map((m) => m.notation)).toContain('b5c5')
+    expect(west.every((m) => m.from.startsWith('a') || m.from.startsWith('b'))).toBe(true)
+    // The seat to move gets its own legal moves.
+    expect(game.movesForSeat('south')).toEqual(game.legalMoves())
+    expect(snap(game).seatToMove).toBe('south')
+    expect(() => game.movesForSeat('up' as never)).toThrow('invalid seat')
+    game.free()
+  })
+
   it('plays a scripted game with a capture and a promotion', () => {
     const game = Game.create({ mode: 'ffa', civs: ['mali', 'japan', 'france', 'usa'] })
     // South's rook slides into the empty corner; West's rook takes it.

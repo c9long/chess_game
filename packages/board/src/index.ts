@@ -9,6 +9,7 @@
  * view.setSnapshot(game.snapshot(), { events })
  * view.setInteractive('west')
  * view.setLegalMoves(game.legalMoves())
+ * view.setPremoves('west', game.movesForSeat('west')) // while another seat is to move
  * ```
  *
  * The renderer never decides legality; it only displays engine output and
@@ -26,6 +27,7 @@ export {
   type BoardOptions,
   BoardView,
   type BoardViewInit,
+  type PremoveInfo,
   type SetCheckOptions,
   type SetSnapshotOptions,
   type SetZoomOptions,

@@ -12,6 +12,8 @@ export interface BoardPrefs {
    * moves, moves that take your pieces, checks and results ('own').
    */
   announceMoves: 'all' | 'own'
+  /** Queue one move while another player is to move; it plays when your turn comes. */
+  premoves: boolean
 }
 
 /** Allowed values of the non-boolean preferences (anything else falls back to the default). */
@@ -30,6 +32,7 @@ function load(): BoardPrefs {
       typeof window !== 'undefined' &&
       window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true,
     announceMoves: 'all',
+    premoves: true,
   }
   try {
     const raw = localStorage.getItem(KEY)

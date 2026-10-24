@@ -1,4 +1,4 @@
-import { BOARD_CANVAS_MARGIN, BoardView } from '@game/board'
+import { BOARD_CANVAS_MARGIN, BoardView, type PremoveInfo } from '@game/board'
 import { isUntimed, REMATCH_VOTE, SOLO_DEFAULT_NAME } from '@game/protocol'
 import {
   Game,
@@ -48,26 +48,39 @@ import { useSeatFriendActions } from '../social/SeatFriendButton.tsx'
 import { Alert, cx, Pill, Spinner } from '../ui.tsx'
 import { DrawOfferCard, GameActions, TeamResignCard } from './GameActions.tsx'
 import { GameOver } from './GameOver.tsx'
-import { defeatReasonLabel } from './labels.ts'
+import { defeatReasonLabel, unratedGameNote } from './labels.ts'
 import { MoveLogPanel, useLiveLogItems } from './MoveLog.tsx'
 import { RankedBadge } from './RankedBadge.tsx'
 import { rematchNotice } from './Rematch.tsx'
 import { SpectatorCount, WatchLinkButton } from './Spectators.tsx'
 import { MODE_LABEL, seatHex, seatName, teamLabel } from './seats.ts'
 
+/** The board's queued premove, with a way to cancel it (the banner's button). */
+type QueuedPremove = PremoveInfo & { readonly cancel: () => void }
+
 interface Position {
   snapshot: Snapshot
   legal: ReturnType<Game['legalMoves']>
+  /** The moves `legalFor` could make out of turn, for premoves (empty on its turn or unasked). */
+  premoves: ReturnType<Game['movesForSeat']>
 }
 
-function readPosition(positionString: string, legalFor: number): Position | null {
+function readPosition(
+  positionString: string,
+  legalFor: number,
+  withPremoves = false,
+): Position | null {
   if (!positionString) return null
   const game = Game.fromPosition(positionString)
   try {
     const snapshot = game.snapshot()
     const toMove = ['south', 'west', 'north', 'east'].indexOf(snapshot.seatToMove)
     const legal = !snapshot.isOver && toMove === legalFor ? game.legalMoves() : []
-    return { snapshot, legal }
+    const premoves =
+      withPremoves && legalFor >= 0 && !snapshot.isOver && toMove !== legalFor
+        ? game.movesForSeat(seatName(legalFor))
+        : []
+    return { snapshot, legal, premoves }
   } finally {
     game.free()
   }
@@ -233,6 +246,7 @@ function Board({
   check,
   onFinalMoves,
   onFrameInset,
+  onPremove,
 }: {
   room: MatchRoom
   feed: MatchFeed
@@ -242,6 +256,8 @@ function Board({
   onFinalMoves: (text: string) => void
   /** Where the walnut frame sits inside the canvas, px from its edge (`BoardView.frameInset`). */
   onFrameInset: (inset: number) => void
+  /** The queued premove changed (`null`: none). */
+  onPremove: (premove: QueuedPremove | null) => void
 }) {
   const host = useRef<HTMLDivElement>(null)
   const viewRef = useRef<BoardView | null>(null)
@@ -259,6 +275,8 @@ function Board({
   finalMoves.current = onFinalMoves
   const frameInset = useRef(onFrameInset)
   frameInset.current = onFrameInset
+  const premoveChanged = useRef(onPremove)
+  premoveChanged.current = onPremove
 
   useEffect(() => {
     const el = frame.current
@@ -282,6 +300,11 @@ function Board({
   useEffect(() => {
     const el = host.current
     if (!el) return
+    // The banner's cancel button goes with the premove: keep the focus on the board.
+    const cancel = () => {
+      view.cancelPremove()
+      view.canvas?.focus()
+    }
     const view = new BoardView({
       onMoveIntent: (move) => send('move', { move }),
       sound: usePrefs.getState().sound,
@@ -295,6 +318,7 @@ function Board({
         if (view.isOver) finalMoves.current(text)
       },
       onFrameInset: (inset) => frameInset.current(inset),
+      onPremove: (premove) => premoveChanged.current(premove ? { ...premove, cancel } : null),
     })
     viewRef.current = view
     if (import.meta.env.DEV) {
@@ -307,6 +331,7 @@ function Board({
         },
         position: () => appliedRef.current,
         checkSquares: () => view.checkSquares,
+        premove: () => view.premove?.notation ?? null,
       }
     }
     let live = true
@@ -320,6 +345,7 @@ function Board({
       live = false
       viewRef.current = null
       appliedRef.current = ''
+      premoveChanged.current(null)
       view.destroy()
     }
   }, [send])
@@ -346,10 +372,12 @@ function Board({
   // Follow the authoritative position. The `events` message carries the rules events that
   // make animations exact; a state patch alone (e.g. after a reconnect) still animates by diff.
   const { ps, events } = shownPosition(feed)
+  // Premoves: a seated player in a game in progress, unless turned off in the board settings.
+  const premoves = prefs.premoves && mySeat >= 0 && state.phase === 'in_game'
   useEffect(() => {
     const view = viewRef.current
     if (viewGen === 0 || !view || !ps) return
-    const pos = readPosition(ps, mySeat)
+    const pos = readPosition(ps, mySeat, premoves)
     if (!pos) return
     const first = appliedRef.current === ''
     const changed = appliedRef.current !== ps
@@ -361,8 +389,10 @@ function Board({
       !pos.snapshot.isOver &&
       pos.snapshot.seatToMove === seatName(mySeat)
     view.setInteractive(myTurn ? seatName(mySeat) : null)
+    // On the viewer's turn this sends a queued premove that is still legal.
     view.setLegalMoves(myTurn ? pos.legal : [])
-  }, [viewGen, ps, events, mySeat, state.phase])
+    view.setPremoves(premoves ? seatName(mySeat) : null, pos.premoves)
+  }, [viewGen, ps, events, mySeat, state.phase, premoves])
 
   // The check indicator on the viewer's leader square(s). After the position above, so the
   // board times it (and its sound) after the move that caused it.
@@ -734,6 +764,7 @@ export function GameRoom({
   // fraction is a first guess, since its squares are whole device pixels).
   const [frameInset, setFrameInset] = useState<number | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [premove, setPremove] = useState<QueuedPremove | null>(null)
   const [confirmLeave, setConfirmLeave] = useState(false)
   const leaveButton = useRef<HTMLButtonElement>(null)
   const settingsId = useId()
@@ -934,6 +965,7 @@ export function GameRoom({
       check={check}
       onFinalMoves={setFinalMoves}
       onFrameInset={setFrameInset}
+      onPremove={setPremove}
     />
   ) : (
     <div className="flex aspect-square w-full items-center justify-center gap-3 text-ui text-muted">
@@ -942,6 +974,7 @@ export function GameRoom({
   )
 
   const modeLine = `${MODE_LABEL[state.mode]}, ${untimed ? 'untimed' : state.timeControl}`
+  const unratedNote = unratedGameNote(state, spectator)
   // A solo game's default name speaks to its player; someone watching sees whose game it is.
   const host = state.seats.find((s) => s.occupied && !s.isBot)
   const title =
@@ -1049,6 +1082,11 @@ export function GameRoom({
                 {teamLabel(0)} against {teamLabel(1)}
               </p>
             ) : null}
+            {unratedNote ? (
+              <p className="w-full text-caption text-faint" data-testid="unrated-note">
+                {unratedNote}
+              </p>
+            ) : null}
           </header>
 
           {spectator ? (
@@ -1078,6 +1116,8 @@ export function GameRoom({
               myTurn={myTurn}
               inCheck={myTurn && check === 'check'}
               selfCheck={!myTurn && check === 'self_check'}
+              premove={premove}
+              onCancelPremove={premove?.cancel}
               mover={state.seats[seatToMove]}
               moverColor={seatHex(seatToMove)}
               reduceMotion={reduceMotion}

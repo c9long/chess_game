@@ -220,7 +220,7 @@ An ACTIVE seat is **defeated** when:
 | **Civ abilities** | Roster/leader data model, per-civ defeat condition and modifier hooks (§2), versioned civ definitions (§5). |
 | **Progression / XP / unlocks / civ mastery** | DB tables reserved, keyed by user id, so they are shared with Unity. |
 | **Rematch** | Built (2026-10-17): after the game a seated human proposes (`proposeRematch`), the other humans answer within 60 s (no answer or leaving = no), bots come along; the server opens a fresh lobby (new room, later a new match id) with the same settings, seats, civs and bots, holding the accepting players' seats for 30 s (shown in the lobby as "Saved for <name>" until they arrive). Ranked only if the game was ranked and all four accepted, else casual with declined seats open. |
-| **AFK → bot takeover (casual), premoves** | A bot-service seat can replace an abandoning human. Premoves are a client-side queue validated by the server. |
+| **AFK → bot takeover (casual), premoves** | A bot-service seat can replace an abandoning human. Premoves are a client-side queue validated by the server. Premoves built (2026-10-24): one queued move, picked from the engine's moves for the player's seat as if it were on move (`movesForSeat`), sent when the turn comes only if it is then legal (else dropped and announced), the server checking it like any move; promotions take the queen; board setting, on by default; never for spectators or replays. |
 | **Unity client + Steam** | See §7. |
 
 ### Friends and challenges (built 2026-10-17)
@@ -529,7 +529,7 @@ If many players fill seats with strong bots, the next step is a bigger OVH tier 
 - **Monetization (undecided):** options are cosmetic piece sets/boards/emblem frames, a supporter subscription, a paid Steam version alongside a free web version, or battle-pass-style progression. Constraints: no pay-to-win, and the choice affects progression data design.
 - **Mobile:** responsive layout, touch drag/tap controls, portrait board scaling, PWA install.
 - **Designed-for-later features:**
-  - **in-game:** move log UI, resign, draw offers, takebacks, chat/emotes, spectating, replays, rematch, AFK bot takeover (casual), premoves (built so far: move log, resign, draw offers, spectating, replays, rematch, AFK bot takeover);
+  - **in-game:** move log UI, resign, draw offers, takebacks, chat/emotes, spectating, replays, rematch, AFK bot takeover (casual), premoves (built so far: move log, resign, draw offers, spectating, replays, rematch, AFK bot takeover, premoves);
   - **game modes:** draft mode, unique-civ matchmaking, civ abilities, progression/XP/unlocks/civ mastery;
   - **Unity / Steam:** Unity client, Steam auth plugin + publisher Web API key, Steam integration;
   - **platform:** Sign in with Apple, NNUE bots, Redis scale-out, analytics (with cookie consent), marketing email (opt-in).

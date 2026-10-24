@@ -269,6 +269,15 @@ test('the live move log stays clear of the pinned actions and follows them in Ta
     .getByRole('complementary', { name: 'Game' })
     .evaluate((el) => el.scrollHeight - el.clientHeight)
   expect(overflow).toBeLessThanOrEqual(1)
+  // Room for at least six rounds, even here (one round measured, so a new row size still counts).
+  const { room, round } = await page.getByRole('region', { name: 'Move log' }).evaluate((el) => {
+    const list = el.querySelector('ol') as HTMLElement
+    const first = list.firstElementChild as HTMLElement
+    const gap = Number.parseFloat(getComputedStyle(list).rowGap) || 0
+    return { room: el.clientHeight, round: first.getBoundingClientRect().height + gap }
+  })
+  expect(round).toBeGreaterThan(0)
+  expect(room).toBeGreaterThanOrEqual(6 * round)
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/move-log-teams-desktop.png` })
 
   // Phones: the Moves bar comes after the actions in Tab order, as on screen.

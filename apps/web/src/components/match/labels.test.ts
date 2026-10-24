@@ -5,6 +5,7 @@ import {
   resultLabel,
   takeoverNotice,
   UNRATED_REPEAT_NOTE,
+  unratedGameNote,
 } from './labels.ts'
 
 describe('takeoverNotice', () => {
@@ -60,5 +61,31 @@ describe('matchLine', () => {
 describe('UNRATED_REPEAT_NOTE', () => {
   it('states the repeat limit and its window', () => {
     expect(UNRATED_REPEAT_NOTE).toContain('3 rated games together in the last 24 hours')
+  })
+})
+
+describe('unratedGameNote', () => {
+  const game = { ranked: true, rated: false, phase: 'in_game', result: { type: '' } }
+
+  it('explains a ranked game played unrated past the repeat limit', () => {
+    expect(unratedGameNote(game, false)).toBe(
+      'Not rated: you four have already played 3 rated games together in the last 24 hours.',
+    )
+    expect(unratedGameNote(game, true)).toContain('these four players have already played')
+  })
+
+  it('drops the reason once the game is over, which can also lose its Elo at the end', () => {
+    expect(
+      unratedGameNote({ ...game, phase: 'finished', result: { type: 'ffa_winner' } }, false),
+    ).toBe('Not rated: nobody’s Elo changed.')
+  })
+
+  it('says nothing for rated, casual, cancelled or not yet started games', () => {
+    expect(unratedGameNote({ ...game, rated: true }, false)).toBeNull()
+    expect(unratedGameNote({ ...game, ranked: false }, false)).toBeNull()
+    expect(unratedGameNote({ ...game, phase: 'countdown' }, false)).toBeNull()
+    expect(
+      unratedGameNote({ ...game, phase: 'finished', result: { type: 'aborted' } }, false),
+    ).toBeNull()
   })
 })

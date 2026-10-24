@@ -1,4 +1,5 @@
 import type { SeatStateJson } from '@game/protocol/state'
+import { X } from 'lucide-react'
 import { useAnimate } from 'motion/react'
 import { useEffect, useRef } from 'react'
 import { CivEmblem, civName } from '../CivEmblem.tsx'
@@ -9,6 +10,8 @@ import { plateName } from './PlayerCard.tsx'
 export const CHECK_TEXT = 'Check! Your leader is under attack'
 /** The notice after the viewer's own move left their leader under attack (self-check). */
 export const SELF_CHECK_TEXT = 'Your leader is in check'
+/** Before the queued premove's words in its pill: "Premove: knight b7 to c9". */
+export const PREMOVE_PREFIX = 'Premove:'
 
 /**
  * Whose turn it is. "Your move" (a gold turn token and gold text, never a filled gold bar,
@@ -21,6 +24,10 @@ export const SELF_CHECK_TEXT = 'Your leader is in check'
  * board's own announcer reads every move, then "Your move" (with the check) when the turn
  * arrives and the result at the end, in that order, so nothing here runs ahead of the moves
  * that caused it. The pill is visual only: the host announces it through its own live region.
+ * While waiting, a queued premove (`premove`, with the board's words for it) sits beside the
+ * banner in the premove lavender, with a button that cancels it; the board itself announces
+ * premoves. On phones the pill shows only the board's bracket mark and "k1→j3", so the banner
+ * keeps the room to say whose turn it is.
  * The texts "Your move", the check text and "Game over" are exact (tests rely on them).
  */
 export function TurnBanner({
@@ -28,6 +35,8 @@ export function TurnBanner({
   myTurn,
   inCheck = false,
   selfCheck = false,
+  premove = null,
+  onCancelPremove,
   mover,
   moverColor,
   reduceMotion,
@@ -39,6 +48,10 @@ export function TurnBanner({
   inCheck?: boolean
   /** Not the viewer's turn, and their own move left their leader under attack. */
   selfCheck?: boolean
+  /** Not the viewer's turn: their queued premove (`text` in words: "knight b7 to c9"). */
+  premove?: { readonly from: string; readonly to: string; readonly text: string } | null
+  /** Cancels the queued premove. */
+  onCancelPremove?: (() => void) | undefined
   /** The seat to move (when it isn't the viewer's turn). */
   mover: SeatStateJson | undefined
   moverColor: string
@@ -138,6 +151,38 @@ export function TurnBanner({
           {SELF_CHECK_TEXT}
         </p>
       ) : null}
+      {!finished && !myTurn && premove ? (
+        <p
+          className="flex h-10 min-w-0 shrink-0 items-center gap-1 rounded-control border border-premove/45 bg-premove/[0.12] pl-2.5 text-caption font-semibold text-premove-light sm:shrink sm:text-ui wide:w-full"
+          data-testid="premove-notice"
+        >
+          <span
+            aria-hidden="true"
+            className="flex items-center gap-1.5 whitespace-nowrap sm:hidden"
+            data-testid="premove-short"
+          >
+            <PremoveMark />
+            <span className="font-normal text-parchment">
+              {premove.from}→{premove.to}
+            </span>
+          </span>
+          <span className="min-w-0 truncate max-sm:sr-only" data-testid="premove-text">
+            {PREMOVE_PREFIX} <span className="font-normal text-parchment">{premove.text}</span>
+          </span>
+          {onCancelPremove ? (
+            <button
+              type="button"
+              onClick={onCancelPremove}
+              aria-label="Cancel premove"
+              // The pill's full height (a touch target like the buttons around it).
+              className="ml-auto inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-control text-muted hover:bg-black/20 hover:text-parchment"
+              data-testid="premove-cancel"
+            >
+              <X aria-hidden="true" className="h-4 w-4" />
+            </button>
+          ) : null}
+        </p>
+      ) : null}
       {finished && onShowResults ? (
         <button
           type="button"
@@ -149,6 +194,24 @@ export function TurnBanner({
         </button>
       ) : null}
     </div>
+  )
+}
+
+/** The board's premove mark (corner brackets) before the short premove text on phones. */
+function PremoveMark() {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 16 16"
+      className="h-4 w-4 shrink-0 text-premove"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4" />
+    </svg>
   )
 }
 

@@ -80,8 +80,31 @@ export function matchLine(m: {
 
 export const REPEAT_WINDOW_HOURS = Math.round(RANKED_REPEAT_WINDOW_MS / 3_600_000)
 
+/** Why a ranked game is unrated: shared by the lobby and the game screen so they read alike. */
+const repeatLimitReason = (who: string) =>
+  `${who} have already played ${RANKED_REPEAT_MAX} rated games together in the last ${REPEAT_WINDOW_HOURS} hours`
+
 /** A full ranked lobby whose four players reached the repeat limit (`state.unratedRepeat`). */
-export const UNRATED_REPEAT_NOTE = `You four have already played ${RANKED_REPEAT_MAX} rated games together in the last ${REPEAT_WINDOW_HOURS} hours, so this game won’t change anyone’s Elo. It still plays by ranked rules.`
+export const UNRATED_REPEAT_NOTE = `${repeatLimitReason('You four')}, so this game won’t change anyone’s Elo. It still plays by ranked rules.`
+
+/**
+ * The game screen's line for a ranked game played unrated, else null. While it runs that can
+ * only be the repeat limit (the start check sets `rated`). A finished game can also have lost
+ * its Elo at the end (an account deleted mid-game), so it doesn't claim the reason; a
+ * cancelled one says nothing, as its result already explains it.
+ */
+export function unratedGameNote(
+  state: { ranked: boolean; rated: boolean; phase: string; result: { type: string } },
+  spectator: boolean,
+): string | null {
+  if (!state.ranked || state.rated) return null
+  if (state.phase === 'finished') {
+    return state.result.type === 'aborted' ? null : 'Not rated: nobody’s Elo changed.'
+  }
+  if (state.phase !== 'in_game') return null
+  // No "Ranked" here: the Ranked badge sits just above the note.
+  return `Not rated: ${repeatLimitReason(spectator ? 'these four players' : 'you four')}.`
+}
 
 /** Everyone's starting Elo (shown greyed out before a first ranked game). */
 export const ELO_START = 1200

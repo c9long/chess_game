@@ -54,6 +54,15 @@ export class Game {
     return this.#inner.legalMoveNotations()
   }
 
+  /**
+   * The moves `seat` could make if it were on move now, whoever's turn it is (empty once the
+   * seat stops taking turns or the game is over). For premoves: a move picked from these is
+   * still checked against `legalMoves()` when the turn comes.
+   */
+  movesForSeat(seat: Seat): MoveView[] {
+    return JSON.parse(this.#inner.movesForSeat(seat)) as MoveView[]
+  }
+
   /** Validates and applies a move ('e2e4', 'e8e9q'); returns what happened, in order. */
   applyMove(notation: string): GameEvent[] {
     return JSON.parse(this.#inner.applyMove(notation)) as GameEvent[]

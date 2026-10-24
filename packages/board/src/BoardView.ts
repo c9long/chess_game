@@ -109,6 +109,7 @@ import {
 } from './palette.ts'
 import { Particles } from './particles.ts'
 import { type AnimationPlan, planTransition, soundCues } from './plan.ts'
+import { choosePremove, type Premove, PremoveSlot, premovesOver, premoveText } from './premove.ts'
 import {
   BAND_INNER,
   BAND_OUTER,
@@ -167,8 +168,28 @@ export interface SetZoomOptions {
   readonly focus?: Square
 }
 
+/** A queued premove, as reported to the host (`onPremove`). */
+export interface PremoveInfo {
+  readonly from: Square
+  readonly to: Square
+  readonly piece: PieceKind
+  /** Promotes to this (queen by default); null when the move doesn't promote. */
+  readonly promotion: PieceKind | null
+  /** Captures, in the position it was made in. */
+  readonly capture: boolean
+  /** Engine notation as made ('b7c9'); the move sent is matched again when the turn comes. */
+  readonly notation: string
+  /** Plain words for a banner or announcement: "knight b7 to c9". */
+  readonly text: string
+}
+
 export interface BoardViewInit extends Partial<BoardOptions> {
   onMoveIntent?: (move: string) => void
+  /**
+   * The queued premove changed (see `setPremoves`): set or replaced (`PremoveInfo`), or gone
+   * (`null`: cancelled, dropped, or sent as a move intent when the turn came).
+   */
+  onPremove?: (premove: PremoveInfo | null) => void
   onSquareHover?: (square: Square | null) => void
   /** The zoom level changed (1 = the whole board). */
   onZoomChange?: (zoom: number) => void
@@ -213,6 +234,18 @@ export interface BoardViewInit extends Partial<BoardOptions> {
 
 const SEATS: readonly Seat[] = ['south', 'west', 'north', 'east']
 
+function premoveInfo(p: Premove): PremoveInfo {
+  return {
+    from: nameOf(p.from) as Square,
+    to: nameOf(p.to) as Square,
+    piece: p.piece,
+    promotion: p.promotion,
+    capture: p.capture,
+    notation: p.notation,
+    text: premoveText(p),
+  }
+}
+
 /**
  * Resolves once the coordinates' UI face has loaded, after `ms` at the latest, or at once
  * where the Font Loading API (or the face itself) is missing.
@@ -256,6 +289,7 @@ const HINT_EASE = outBackWith(1.7)
 const LAST_MOVE_FILL = hexToNumber(HIGHLIGHT.lastMove)
 /** The selected piece's square: the gold that marks "to move" across the app. */
 const SELECT_GOLD = hexToNumber(HIGHLIGHT.gold)
+const PREMOVE_FILL = hexToNumber(HIGHLIGHT.premove)
 /** Coordinates are set in the app's UI face (Inter), with system fallbacks. */
 const UI_FONT =
   '"Inter Variable", Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif'
@@ -450,6 +484,8 @@ export class BoardView {
   onMoveIntent: ((move: string) => void) | null
   /** The square under the pointer changed (`null` when off the field). */
   onSquareHover: ((square: Square | null) => void) | null
+  /** The queued premove changed (`null`: none any more). */
+  onPremove: ((premove: PremoveInfo | null) => void) | null
   /** The zoom level changed (1 = the whole board). */
   onZoomChange: ((zoom: number) => void) | null
   /** The frame's outer edge moved in the canvas (`frameInset`). */
@@ -467,6 +503,16 @@ export class BoardView {
   #perspective: Seat = 'south'
   #interactive: Seat | null = null
   #moves = new MoveIndex([])
+  /** The seat that may premove while it isn't its turn (`setPremoves`), and its moves. */
+  #premoveSeat: Seat | null = null
+  #premoveMoves = new MoveIndex([])
+  readonly #premove = new PremoveSlot()
+  /** Both squares of the queued premove (redrawn with the other static highlights). */
+  readonly #premoveGfx = new Graphics()
+  /** A premove sent when the turn came, still shown until the position that confirms it. */
+  #sentPremove: Premove | null = null
+  /** A right click just cancelled a premove: keep the browser's menu shut for that click. */
+  #swallowMenu = false
 
   #layout: BoardLayout = { square: 48, frame: 48 * BOARD_FRAME }
   /** The square size the next rebuild will use (differs from the layout while a resize settles). */
@@ -655,6 +701,7 @@ export class BoardView {
   constructor(init: BoardViewInit = {}) {
     this.onMoveIntent = init.onMoveIntent ?? null
     this.onSquareHover = init.onSquareHover ?? null
+    this.onPremove = init.onPremove ?? null
     this.onZoomChange = init.onZoomChange ?? null
     this.onFrameInset = init.onFrameInset ?? null
     this.#announce = init.announce ?? true
@@ -768,7 +815,6 @@ export class BoardView {
     if (!this.#ready) return
     this.#snapshotClock = this.#clock
     this.#closePromo(false)
-    this.#endDrag(false)
     const events = options.events ?? []
     const animate = (options.animate ?? true) && prev !== null
     const resync = prev !== null && prev.hash === snapshot.hash && prev.ply === snapshot.ply
@@ -780,6 +826,10 @@ export class BoardView {
     // confirms exactly that move, let the slide finish instead of snapping it.
     const commit = this.#commitSlide
     this.#commitSlide = null
+    // A piece picked up for a premove stays in hand while the other seats move, as long as
+    // this step leaves it alone.
+    const held = this.#heldForPremove(prev, snapshot, willAnimate ? plan : null)
+    if (this.#drag?.square !== held) this.#endDrag(false)
     const keep =
       willAnimate &&
       commit?.tween.alive &&
@@ -794,8 +844,10 @@ export class BoardView {
       start = this.#anim.hurry(policy.mode === 'chain' ? policy.hurryMs : 0, TAG_MOTION)
     else this.#anim.finishAll(keep?.tween ?? null)
     if (prev && !resync) this.#lastMove = this.#nextLastMove(prev, snapshot, events, plan)
-    this.#selected = -1
+    if (this.#selected !== held) this.#selected = -1
     this.#moves = new MoveIndex([])
+    this.#sentPremove = null
+    const dropped = this.#premoveAfterPosition(snapshot)
     this.#handoverAt = start
     this.#lastMoveAt = { from: start, to: start }
     if (resync) {
@@ -841,6 +893,46 @@ export class BoardView {
     }
     this.#refreshAll()
     if (this.#announcer && prev && !resync) this.#announceStep(prev, snapshot, events)
+    if (dropped) {
+      const kind = pieceWord(dropped.piece)
+      this.#announcer?.queue([
+        `Premove cancelled: your ${kind} on ${nameOf(dropped.from)} is gone.`,
+      ])
+    }
+  }
+
+  /**
+   * The square of a piece picked up (selected or dragged) for a premove that the step from
+   * `prev` to `next` leaves in place, or -1. `plan` is the animated plan (null when the step is
+   * applied at once, which re-lays every piece, so nothing stays in hand).
+   */
+  #heldForPremove(prev: Snapshot | null, next: Snapshot, plan: AnimationPlan | null): number {
+    const seat = this.#premoveSeat
+    const sq = this.#drag?.square ?? this.#selected
+    if (seat === null || !this.#holdingPremovePiece(sq) || !prev || !plan) return -1
+    if (premovesOver(next, seat)) return -1
+    // The same piece of the seat before and after (`#holdingPremovePiece` saw `next`).
+    const before = prev.board[sq]
+    if (before?.owner !== seat || before.kind !== next.board[sq]?.kind) return -1
+    const touched =
+      plan.moves.some((m) => m.from === sq || m.to === sq) ||
+      plan.captures.some((c) => c.square === sq) ||
+      plan.dissolves.some((d) => d.square === sq)
+    return touched ? -1 : sq
+  }
+
+  /**
+   * Keeps the queued premove in step with a new position: dropped quietly once the game is
+   * over or the seat is out (the step's own announcements say that), and returned, to be
+   * announced after the step, when its piece left its square.
+   */
+  #premoveAfterPosition(next: Snapshot): Premove | null {
+    const seat = this.#premoveSeat
+    if (seat === null) return null
+    const drop = this.#premove.onPosition(next, seat)
+    if (!drop) return null
+    this.onPremove?.(null)
+    return drop.reason === 'gone' ? drop.premove : null
   }
 
   /**
@@ -951,7 +1043,8 @@ export class BoardView {
   setInteractive(seat: Seat | null): void {
     if (seat === this.#interactive) return
     this.#interactive = seat
-    this.#selected = -1
+    // A piece in hand for a premove stays picked up as the turn comes and goes.
+    if (!this.#holdingPremovePiece()) this.#selected = -1
     this.#setHoverPiece(null)
     this.#closePromo(true)
     this.#refreshFx()
@@ -960,10 +1053,162 @@ export class BoardView {
   /** Legal moves of the seat to move (from the engine). Used for hints and input. */
   setLegalMoves(moves: readonly MoveView[]): void {
     this.#moves = new MoveIndex(moves)
+    if (this.#playPremove()) return
+    // While premoving, the piece in hand follows the premove targets (`setPremoves`).
+    if (this.#premoveInput()) return
     if (this.#selected >= 0 && !this.#moves.canMoveFrom(this.#selected)) this.#selected = -1
     // Re-show the hints of a still-selected piece for the new move list.
     if (this.#selected >= 0) this.#hintsFor = -2
     this.#refreshFx()
+  }
+
+  /**
+   * Premoves for `seat` while it isn't that seat's turn: `moves` are the moves it could make
+   * if it were on move now (the engine's `movesForSeat`), given again after every position.
+   * The player picks one like a normal move (drag, click or keyboard; a promotion takes the
+   * queen); it is shown on both squares and, when the turn comes and `setLegalMoves` brings
+   * the legal moves, sent at once through `onMoveIntent` if it is among them, else dropped
+   * with an announcement. One at a time: a new premove replaces the old one; a right click,
+   * Escape or a click on the premoved piece cancels it (also `cancelPremove`). `null` (the
+   * default: spectators, replays, the setting turned off) turns premoves off and drops a
+   * queued one.
+   */
+  setPremoves(seat: Seat | null, moves: readonly MoveView[] = []): void {
+    if (seat !== this.#premoveSeat) {
+      const holding = this.#holdingPremovePiece()
+      this.#premoveSeat = seat
+      if (this.#premove.cancel()) this.onPremove?.(null)
+      if (holding && !this.#canAct()) {
+        this.#endDrag(false)
+        this.#selected = -1
+      }
+    }
+    const sel = this.#selected
+    const before = sel >= 0 ? this.#targetKey(this.#premoveMoves, sel) : ''
+    this.#premoveMoves = new MoveIndex(seat === null ? [] : moves)
+    if (sel >= 0 && this.#premoveInput()) {
+      if (!this.#premoveMoves.canMoveFrom(sel)) {
+        this.#endDrag(false)
+        this.#selected = -1
+      } else if (this.#targetKey(this.#premoveMoves, sel) !== before) {
+        // Re-show the hints only when they changed (the other seats move often).
+        this.#hintsFor = -2
+      }
+    }
+    this.#refreshFx()
+  }
+
+  /** The queued premove (null when none). */
+  get premove(): PremoveInfo | null {
+    const p = this.#premove.current
+    return p ? premoveInfo(p) : null
+  }
+
+  /** Drops the queued premove, and says so (e.g. a cancel button beside the host's banner). */
+  cancelPremove(): void {
+    this.#cancelPremoveByUser()
+  }
+
+  #targetKey(index: MoveIndex, from: number): string {
+    return index
+      .targetsFrom(from)
+      .map((t) => t.to)
+      .join(',')
+  }
+
+  /**
+   * Whether the user may pick a premove now: premoves are on, another seat is to move, and the
+   * premoving seat still takes turns.
+   */
+  #premoving(): boolean {
+    const s = this.#snapshot
+    const seat = this.#premoveSeat
+    return (
+      !!s &&
+      seat !== null &&
+      !premovesOver(s, seat) &&
+      s.seatToMove !== seat &&
+      this.#rotTween === null
+    )
+  }
+
+  /** Whether input picks a premove now (rather than a move, or nothing). */
+  #premoveInput(): boolean {
+    return !this.#canAct() && this.#premoving()
+  }
+
+  /** Whether the piece on `sq` (the selected one by default) belongs to the premoving seat. */
+  #holdingPremovePiece(sq = this.#selected): boolean {
+    const seat = this.#premoveSeat
+    return seat !== null && sq >= 0 && this.#snapshot?.board[sq]?.owner === seat
+  }
+
+  /** The moves input works with: the legal moves on the user's turn, else the premove moves. */
+  get #input(): MoveIndex {
+    return this.#premoveInput() ? this.#premoveMoves : this.#moves
+  }
+
+  /** Whether pieces can be picked up now (a move, or a premove). */
+  #canInput(): boolean {
+    return this.#canAct() || this.#premoving()
+  }
+
+  /**
+   * The turn came (`setLegalMoves` on the user's turn) with a premove queued: sends it when
+   * it is still legal, else drops it and says so. Returns whether a move was sent.
+   */
+  #playPremove(): boolean {
+    // Whose turn it is, not `#canAct()`: a turn that comes during an animated rotation still
+    // plays (or drops) the premove rather than leaving it queued past the turn.
+    const s = this.#snapshot
+    const mine = !!s && !s.isOver && s.seatToMove === this.#interactive
+    if (!this.#premove.current || !mine) return false
+    const out = this.#premove.onTurn(this.#moves)
+    if (!out) return false
+    this.onPremove?.(null)
+    if (out.kind === 'drop') {
+      this.#announcer?.queue(
+        [`Premove cancelled: ${premoveText(out.premove)} is not a legal move now.`],
+        true,
+      )
+      this.#refreshFx()
+      return false
+    }
+    // No local slide: the confirmed move animates after the move that is still landing. Until
+    // that position comes the premove stays marked, and no second move can be started.
+    this.#endDrag(false)
+    this.#selected = -1
+    this.#moves = new MoveIndex([])
+    this.#sentPremove = out.premove
+    this.#refreshFx()
+    this.#sentMove = { from: out.premove.from, to: out.premove.to }
+    this.onMoveIntent?.(out.notation)
+    return true
+  }
+
+  /** Queues the premove `from -> to` (from the premove moves) and shows it. */
+  #setPremove(from: number, to: number): void {
+    const piece = this.#snapshot?.board[from]?.kind
+    const p = piece ? choosePremove(this.#premoveMoves, from, to, piece) : null
+    this.#selected = -1
+    if (!p) {
+      this.#refreshFx()
+      return
+    }
+    this.#premove.set(p)
+    this.#sound.play('select')
+    this.#refreshFx()
+    this.#say(`Premove: ${premoveText(p)}. It plays when your turn comes.`)
+    this.onPremove?.(premoveInfo(p))
+  }
+
+  /** Cancels the queued premove at the user's request; returns whether there was one. */
+  #cancelPremoveByUser(): boolean {
+    if (!this.#premove.cancel()) return false
+    this.onPremove?.(null)
+    this.#refreshFx()
+    this.#say('Premove cancelled.')
+    return true
   }
 
   /**
@@ -1239,6 +1484,7 @@ export class BoardView {
       [this.#bandDims, 'bandDims'],
       [this.#labels, 'labels'],
       [this.#lastMoveLayer, 'lastMove'],
+      [this.#premoveGfx, 'premove'],
       [this.#fx, 'fx'],
       [this.#selectLayer, 'select'],
       ...this.#leaderGlows.map((g, i) => [g, `leaderGlow${i}`] as [Container, string]),
@@ -1913,7 +2159,7 @@ export class BoardView {
   /** Shows the selected piece and its legal targets (zoomed in only). */
   #revealSelection(): void {
     if (this.#selected < 0) return
-    this.#reveal([this.#selected, ...this.#moves.targetsFrom(this.#selected).map((t) => t.to)])
+    this.#reveal([this.#selected, ...this.#input.targetsFrom(this.#selected).map((t) => t.to)])
   }
 
   /** Screen position relative to the viewport centre. */
@@ -3760,8 +4006,57 @@ export class BoardView {
         width: inner,
       })
     }
+    this.#drawPremove()
     this.#syncSelection()
     this.#syncTarget()
+  }
+
+  /**
+   * The queued premove on both squares: a lavender wash (no seat, the selection or the last
+   * move uses that colour) with brackets in its corners, a shape cue that doesn't depend on
+   * hue, stronger on the destination.
+   */
+  #drawPremove(): void {
+    const g = this.#premoveGfx
+    g.clear()
+    const p = this.#premove.current ?? this.#sentPremove
+    if (!p) return
+    const sq = this.#layout.square
+    const w = Math.max(1.5, sq * 0.06)
+    const arm = sq * 0.28
+    const inset = w / 2 + sq * 0.05
+    for (const [i, dest] of [
+      [p.from, false],
+      [p.to, true],
+    ] as const) {
+      this.#squareOrigin(i, this.#tmpVec)
+      const x = this.#tmpVec.x
+      const y = this.#tmpVec.y
+      g.rect(x, y, sq, sq).fill({ color: PREMOVE_FILL, alpha: dest ? 0.42 : 0.3 })
+      const l = x + inset
+      const r = x + sq - inset
+      const t = y + inset
+      const b = y + sq - inset
+      g.moveTo(l, t + arm)
+        .lineTo(l, t)
+        .lineTo(l + arm, t)
+      g.moveTo(r - arm, t)
+        .lineTo(r, t)
+        .lineTo(r, t + arm)
+      g.moveTo(r, b - arm)
+        .lineTo(r, b)
+        .lineTo(r - arm, b)
+      g.moveTo(l + arm, b)
+        .lineTo(l, b)
+        .lineTo(l, b - arm)
+      g.stroke({
+        color: PREMOVE_FILL,
+        width: w,
+        alpha: dest ? 1 : 0.8,
+        cap: 'round',
+        join: 'round',
+      })
+    }
   }
 
   /**
@@ -3852,9 +4147,11 @@ export class BoardView {
     }
     const fx = this.#effects
     if (!fx) return
-    const targets = this.#moves.targetsFrom(from)
+    const targets = this.#input.targetsFrom(from)
     const mover = this.#snapshot?.board[from]?.owner ?? 'south'
-    const ringTint = hexToNumber(lightFor(seatColor(mover)))
+    // Premove targets wear the premove lavender, so a click there reads as queuing, not moving.
+    const pre = this.#premoveInput()
+    const ringTint = pre ? PREMOVE_FILL : hexToNumber(lightFor(seatColor(mover)))
     while (this.#hintPool.length < targets.length) {
       const sprite = new Sprite(fx.hintDot)
       const promo = new Sprite(fx.hintPromo)
@@ -3877,12 +4174,15 @@ export class BoardView {
       const h = this.#hintPool[i] as Hint
       squareCenter(t.to, this.#layout, this.#tmpVec)
       h.sprite.texture = t.capture ? fx.hintRing : fx.hintDot
-      h.sprite.tint = t.capture ? ringTint : 0xffffff
+      h.sprite.tint = t.capture ? ringTint : pre ? PREMOVE_FILL : 0xffffff
       h.sprite.position.set(this.#tmpVec.x, this.#tmpVec.y)
       h.promo.position.set(this.#tmpVec.x, this.#tmpVec.y)
-      h.promo.tint = 0xffd36b
+      // While premoving, every target also gets the inner ring, in lavender (gold still marks
+      // a promotion), as the dark dot alone barely takes a tint.
+      const promo = t.promotions.length > 0
+      h.promo.tint = promo ? 0xffd36b : PREMOVE_FILL
       h.sprite.visible = true
-      h.promo.visible = t.promotions.length > 0
+      h.promo.visible = promo || pre
       h.delay = reduced ? 0 : hintDelay(from, t.to)
       maxDelay = Math.max(maxDelay, h.delay)
       this.#scaleHint(h, reduced ? 1 : 0.4)
@@ -3935,7 +4235,7 @@ export class BoardView {
   #syncTarget(): void {
     const t =
       this.#selected >= 0 && this.#hover >= 0 && this.#hover !== this.#selected
-        ? this.#moves.target(this.#selected, this.#hover)
+        ? this.#input.target(this.#selected, this.#hover)
         : null
     if (!t) {
       this.#targetGfx.visible = false
@@ -4160,7 +4460,10 @@ export class BoardView {
       this.#setHoverPiece(null)
     })
     cv.addEventListener('contextmenu', (e) => {
-      if (this.#drag || this.#gesture || this.#pointers.size > 0) e.preventDefault()
+      if (this.#drag || this.#gesture || this.#pointers.size > 0 || this.#swallowMenu) {
+        e.preventDefault()
+      }
+      this.#swallowMenu = false
     })
   }
 
@@ -4184,7 +4487,7 @@ export class BoardView {
   #touchTarget(e: FederatedPointerEvent, from: number): number {
     if (e.pointerType === 'mouse' || from < 0) return -1
     this.#root.toLocal(e.global, undefined, this.#tmpPoint)
-    const targets = this.#moves.targetsFrom(from).map((m) => m.to)
+    const targets = this.#input.targetsFrom(from).map((m) => m.to)
     return nearestTarget(
       this.#tmpPoint.x,
       this.#tmpPoint.y,
@@ -4198,7 +4501,7 @@ export class BoardView {
   #touchPiece(e: FederatedPointerEvent): number {
     if (e.pointerType === 'mouse') return -1
     this.#root.toLocal(e.global, undefined, this.#tmpPoint)
-    const pieces = this.#moves.movableSquares()
+    const pieces = this.#input.movableSquares()
     return nearestTarget(
       this.#tmpPoint.x,
       this.#tmpPoint.y,
@@ -4228,6 +4531,9 @@ export class BoardView {
    */
   #onDown(e: FederatedPointerEvent): void {
     this.#sound.unlock()
+    // Only the menu of the press that cancelled a premove is kept shut, even when that press
+    // never brought a contextmenu event (released off the canvas, say).
+    this.#swallowMenu = false
     const touch = e.pointerType !== 'mouse'
     if (touch) this.#pointers.set(e.pointerId, { x: e.global.x, y: e.global.y })
     if (this.#promo) return
@@ -4252,6 +4558,7 @@ export class BoardView {
     }
     if (e.button !== 0 && !touch) {
       this.#select(-1)
+      if (e.button === 2 && this.#cancelPremoveByUser()) this.#swallowMenu = true
       return
     }
     this.#hideKeyboardCursor()
@@ -4273,13 +4580,13 @@ export class BoardView {
     }
     // Only a double tap on an empty square (or off the field) zooms: never on pieces.
     const empty = sq < 0 || !this.#snapshot?.board[sq]
-    if (sq < 0 || !this.#canAct()) {
+    if (sq < 0 || !this.#canInput()) {
       // Nothing to act on: a drag pans a zoomed board, a double tap zooms.
       this.#select(-1)
       this.#press = { ...press, tapZoom: before < 0 && empty }
       return
     }
-    if (this.#selected >= 0 && this.#selected !== sq && this.#moves.target(this.#selected, sq)) {
+    if (this.#selected >= 0 && this.#selected !== sq && this.#input.target(this.#selected, sq)) {
       this.#lastTap = null
       if (touch) {
         this.#press = { ...press, kind: 'commit', square: this.#selected, to: sq }
@@ -4296,7 +4603,14 @@ export class BoardView {
       return
     }
     // A movable piece, or (touch) one just beside the fingertip.
-    const piece = this.#moves.canMoveFrom(sq) ? sq : this.#touchPiece(e)
+    const piece = this.#input.canMoveFrom(sq) ? sq : this.#touchPiece(e)
+    if (piece >= 0 && this.#selected < 0 && piece === this.#premove.current?.from) {
+      // The premoved piece again: that cancels the premove.
+      this.#lastTap = null
+      this.#cancelPremoveByUser()
+      this.#press = press
+      return
+    }
     if (piece >= 0) {
       this.#lastTap = null
       const wasSelected = this.#selected === piece
@@ -4360,13 +4674,13 @@ export class BoardView {
       if (cv) cv.style.cursor = 'grabbing'
       return
     }
-    const act = this.#canAct()
-    const movable = act && sq >= 0 && this.#moves.canMoveFrom(sq)
+    const act = this.#canInput()
+    const movable = act && sq >= 0 && this.#input.canMoveFrom(sq)
     const mouse = e.pointerType === 'mouse'
     this.#setHoverPiece(movable && !press && mouse ? (this.#pieces[sq] ?? null) : null)
     if (cv && mouse) {
       if (movable) cv.style.cursor = 'grab'
-      else if (act && this.#selected >= 0 && sq >= 0 && this.#moves.target(this.#selected, sq))
+      else if (act && this.#selected >= 0 && sq >= 0 && this.#input.target(this.#selected, sq))
         cv.style.cursor = 'pointer'
       else cv.style.cursor = this.#camera.zoom > 1.01 ? 'grab' : 'default'
     }
@@ -4387,7 +4701,7 @@ export class BoardView {
     this.#placeShadow(n)
     // Fade a piece about to be captured so the lifted piece reads on top of it.
     const sq = pointToSquare(this.#tmpPoint.x, this.#tmpPoint.y, this.#layout)
-    const t = sq >= 0 ? this.#moves.target(d.square, sq) : null
+    const t = sq >= 0 ? this.#input.target(d.square, sq) : null
     const victim = t?.capture ? (this.#pieces[sq] ?? null) : null
     this.#fadeNode(victim && victim !== n ? victim : null)
   }
@@ -4416,12 +4730,13 @@ export class BoardView {
       const from = this.#drag.square
       this.#dragAt = null
       let to = this.#hit(e)
-      if (to !== from && !(to >= 0 && this.#moves.target(from, to))) {
+      if (to !== from && !(to >= 0 && this.#input.target(from, to))) {
         const near = this.#touchTarget(e, from)
         if (near >= 0) to = near
       }
-      if (to >= 0 && to !== from && this.#moves.target(from, to)) {
-        this.#endDrag(true)
+      if (to >= 0 && to !== from && this.#input.target(from, to)) {
+        // A premove leaves the piece at home until the turn comes.
+        this.#endDrag(this.#canAct())
         this.#commit(from, to, true)
       } else {
         if (to >= 0 && to !== from) {
@@ -4730,6 +5045,10 @@ export class BoardView {
 
   /** A user move from -> to; asks for the promotion piece if needed. */
   #commit(from: number, to: number, dropped: boolean): void {
+    if (!this.#canAct()) {
+      if (this.#premoveInput()) this.#setPremove(from, to)
+      return
+    }
     const r = this.#moves.resolve(from, to)
     if (r === null) return
     const n = this.#pieces[from]
@@ -5012,17 +5331,24 @@ export class BoardView {
     if (s.isOver) return 'The game is over.'
     if (this.#canAct()) return 'Your move.'
     if (s.seatToMove === this.#localSeat) return 'Your turn is coming.'
-    return `${this.#seatLabel(s.seatToMove)} to move.`
+    const turn = `${this.#seatLabel(s.seatToMove)} to move.`
+    if (!this.#premoving()) return turn
+    const p = this.#premove.current
+    return p ? `${turn} Premove: ${premoveText(p)}.` : `${turn} You can premove.`
   }
 
   /** What the cursor square holds, and what the selected piece could do there. */
   #cursorText(i: number): string {
     let text = describeSquare(this.#snapshot, i, this.#ctx())
+    const p = this.#premove.current
+    if (p && i === p.from) text += ', premove from here'
+    else if (p && i === p.to) text += ', premove to here'
     if (this.#selected >= 0) {
       if (i === this.#selected) text += ', selected'
       else {
-        const t = this.#moves.target(this.#selected, i)
-        if (t) {
+        const t = this.#input.target(this.#selected, i)
+        if (t && this.#premoveInput()) text += t.capture ? ', premove capture' : ', premove here'
+        else if (t) {
           text += t.castle
             ? ', castle here'
             : t.promotions.length > 0
@@ -5119,26 +5445,30 @@ export class BoardView {
         this.#say(`Cursor on ${this.#cursorText(this.#cursor)}.`)
         return
       }
-      if (!this.#canAct()) {
+      if (!this.#canInput()) {
         this.#say(
           this.#snapshot?.isOver ? 'The game is over.' : `Not your turn. ${this.#turnText()}`,
         )
         return
       }
       const c = this.#cursor
-      if (this.#selected >= 0 && this.#moves.target(this.#selected, c)) {
-        // Confirmed by the moves region ("You: pawn e2 to e4."), read soon after.
+      const pre = this.#premoveInput()
+      if (this.#selected >= 0 && this.#input.target(this.#selected, c)) {
+        // Confirmed by the moves region ("You: pawn e2 to e4."), read soon after; a premove
+        // by the cursor region.
         this.#commit(this.#selected, c, false)
-      } else if (this.#moves.canMoveFrom(c)) {
+      } else if (pre && this.#selected < 0 && c === this.#premove.current?.from) {
+        this.#cancelPremoveByUser()
+      } else if (this.#input.canMoveFrom(c)) {
         if (c === this.#selected) {
           this.#select(-1)
           this.#say('Put down. Nothing selected.')
         } else {
           this.#select(c)
-          const n = this.#moves.targetsFrom(c).length
+          const n = this.#input.targetsFrom(c).length
           const kind = this.#snapshot?.board[c]?.kind
           this.#say(
-            `Picked up ${kind ? pieceWord(kind) : 'piece'} on ${nameOf(c)}: ${n} ${n === 1 ? 'move' : 'moves'}. Arrow to a square and press Enter.`,
+            `Picked up ${kind ? pieceWord(kind) : 'piece'} on ${nameOf(c)}${pre ? ' for a premove' : ''}: ${n} ${n === 1 ? 'move' : 'moves'}. Arrow to a square and press Enter.`,
           )
           this.#revealSelection()
         }
@@ -5160,6 +5490,8 @@ export class BoardView {
       if (this.#selected >= 0) {
         this.#select(-1)
         this.#say('Nothing selected.')
+      } else if (this.#premove.current) {
+        this.#cancelPremoveByUser()
       } else if (this.#cursorVisible) {
         this.#cursorVisible = false
         this.#say('Cursor hidden. An arrow key shows it again.')

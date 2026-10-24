@@ -289,6 +289,17 @@ test('friends: ranked challenge for a full table, unrated past the daily limit',
   await expect(A.getByTestId('start-game')).toBeEnabled()
   await A.getByTestId('start-game').click()
   await expect(A.getByTestId('turn-banner')).toHaveText(YOUR_TURN, { timeout: 30_000 })
+  // The game screen says why under its title.
+  await expect(A.getByTestId('unrated-note')).toHaveText(
+    'Not rated: you four have already played 3 rated games together in the last 24 hours.',
+  )
+  await shot(A, 'ranked-game-unrated')
+  if (OUT) {
+    await A.setViewportSize({ width: 390, height: 844 })
+    await expect(A.getByTestId('unrated-note')).toBeVisible()
+    await shot(A, 'ranked-game-unrated-phone')
+    await A.setViewportSize(size)
+  }
   // Ranked rules, no Elo: the resign dialog says so.
   await A.getByTestId('resign').click()
   await expect(A.getByTestId('resign-ranked-note')).toHaveText(

@@ -100,6 +100,7 @@ test('four registered players finish a ranked game and see their Elo changes', a
   await expect(south.getByTestId('turn-banner')).toHaveText(YOUR_TURN, { timeout: 20_000 })
   // The game header carries the Ranked badge.
   for (const p of pages) await expect(p.getByTestId('ranked-badge').first()).toBeVisible()
+  await expect(south.getByTestId('unrated-note')).toHaveCount(0)
   await south.waitForTimeout(600)
   if (SHOTS) await south.screenshot({ path: `${SHOTS}/ranked-game.png` })
 

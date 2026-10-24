@@ -78,6 +78,13 @@ impl WasmGame {
         self.inner.legal_move_notations()
     }
 
+    /// The moves `seat` could make if it were on move now (premoves), as a JSON array of
+    /// move objects; empty when the seat no longer takes turns or the game is over.
+    #[wasm_bindgen(js_name = movesForSeat)]
+    pub fn moves_for_seat(&mut self, seat: &str) -> Result<String, JsError> {
+        self.inner.moves_for_seat_json(seat).map_err(js_err)
+    }
+
     /// Applies a move in notation (`"e2e4"`, `"e8e9q"`); returns events JSON.
     #[wasm_bindgen(js_name = applyMove)]
     pub fn apply_move(&mut self, notation: &str) -> Result<String, JsError> {

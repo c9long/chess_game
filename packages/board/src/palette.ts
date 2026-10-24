@@ -73,8 +73,9 @@ export const SEAT_STYLES: Readonly<Record<Seat, SeatStyle>> = {
 
 /**
  * Board-wide highlight colours, shared with the app's tokens: gold for the selected piece (the
- * same gold that marks "to move"), parchment for drop targets, and the danger vermilion that
- * only the check warning uses.
+ * same gold that marks "to move"), parchment for drop targets, the danger vermilion that only
+ * the check warning uses, and lavender for a queued premove (a colour no seat, the last move or
+ * the selection uses; palette.test.ts checks the margins).
  */
 export const HIGHLIGHT = {
   gold: '#e6b42a',
@@ -83,6 +84,7 @@ export const HIGHLIGHT = {
   danger: '#ff5a1f',
   dangerLight: '#ffd2b8',
   illegal: '#e0553f',
+  premove: '#b18cf0',
 } as const
 
 /**

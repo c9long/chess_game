@@ -114,6 +114,7 @@ export function TouchHints() {
     ['Pinch, or double-tap an empty square', 'Zoom in / out'],
     ['Drag with one finger off your pieces', 'Move the zoomed board'],
     ['Magnifier button (board corner)', 'Zoom in / out with one hand'],
+    ['Tap the premoved piece again', 'Cancel a premove'],
   ]
   return (
     <dl className="flex flex-col gap-1.5 text-caption text-faint">
@@ -158,6 +159,11 @@ export function BoardSettings({ id }: { id: string }) {
           label="Reduced motion"
           checked={prefs.reducedMotion}
           onChange={(v) => prefs.set({ reducedMotion: v })}
+        />
+        <Toggle
+          label="Premoves"
+          checked={prefs.premoves}
+          onChange={(v) => prefs.set({ premoves: v })}
         />
         <AnnounceSetting />
       </div>

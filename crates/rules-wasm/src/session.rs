@@ -3,8 +3,8 @@
 
 use rules_core::{
     GameEvent, GameState, Move, apply_abandon, apply_agreed_draw, apply_move_into, apply_resign,
-    apply_timeout, draw_voters, generate_legal_moves, leader_under_attack, parse_move,
-    parse_position, perft,
+    apply_timeout, draw_voters, generate_legal_moves, generate_moves_for_seat, leader_under_attack,
+    parse_move, parse_position, perft,
 };
 
 use crate::dto::{ConfigInput, EventView, MoveView, SnapshotView, parse_seat};
@@ -68,6 +68,24 @@ impl Session {
     pub fn legal_move_notations(&mut self) -> Vec<String> {
         generate_legal_moves(&self.state, &mut self.moves);
         self.moves.iter().map(Move::to_string).collect()
+    }
+
+    /// The moves `seat` could make if it were on move now, whoever's turn it is (empty
+    /// when the seat no longer takes turns or the game is over). Clients use it for
+    /// premoves; the move is still checked against the legal moves when the turn comes.
+    pub fn moves_for_seat(&mut self, seat: &str) -> Result<Vec<MoveView>, String> {
+        let seat = parse_seat(seat)?;
+        generate_moves_for_seat(&self.state, seat, &mut self.moves);
+        Ok(self
+            .moves
+            .iter()
+            .map(|m| MoveView::new(&self.state, m))
+            .collect())
+    }
+
+    /// [`Session::moves_for_seat`] as a JSON array.
+    pub fn moves_for_seat_json(&mut self, seat: &str) -> Result<String, String> {
+        self.moves_for_seat(seat).map(|m| to_json(&m))
     }
 
     fn events_json(&self) -> String {
@@ -645,5 +663,25 @@ mod tests {
             json!({"type": "pass", "seat": "north", "notation": "--"})
         );
         assert_eq!(parse(&s.snapshot_json())["seatToMove"], "south");
+    }
+
+    #[test]
+    fn moves_for_a_seat_not_on_move() {
+        let mut s = Session::from_config_json(r#"{"mode":"ffa"}"#).unwrap();
+        // South is on move; West's moves come out as if it were West's turn.
+        let west = s.moves_for_seat("west").unwrap();
+        assert_eq!(west.len(), s.legal_moves().len());
+        // West's army stands on files a and b.
+        assert!(west.iter().all(|m| m.from.file() < 2));
+        let json = parse(&s.moves_for_seat_json("west").unwrap());
+        assert!(
+            json.as_array()
+                .unwrap()
+                .iter()
+                .any(|m| m["notation"] == "b5c5")
+        );
+        // Nothing changed: South is still on move.
+        assert_eq!(parse(&s.snapshot_json())["seatToMove"], "south");
+        assert_eq!(s.moves_for_seat("up").unwrap_err(), "invalid seat \"up\"");
     }
 }

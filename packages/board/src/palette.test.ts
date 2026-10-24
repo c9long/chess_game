@@ -1,7 +1,14 @@
 import type { Seat } from '@game/rules'
 import { describe, expect, it } from 'vitest'
 import { hexToRgb, perceivedDistance, srgbToLinear, VISION_TYPES } from './color.ts'
-import { BOARD_MATERIALS, FROZEN_BASE, PIECE_TRIM, SEAT_STYLES, trimFor } from './palette.ts'
+import {
+  BOARD_MATERIALS,
+  FROZEN_BASE,
+  HIGHLIGHT,
+  PIECE_TRIM,
+  SEAT_STYLES,
+  trimFor,
+} from './palette.ts'
 
 /** WCAG relative luminance. */
 function luminance(hex: string): number {
@@ -66,6 +73,26 @@ describe('seat palette', () => {
 
   it('gives every seat its own marker shape', () => {
     expect(new Set(SEATS.map((s) => SEAT_STYLES[s].marker)).size).toBe(4)
+  })
+})
+
+describe('highlights', () => {
+  it('gives the premove a colour of its own', () => {
+    const others = [
+      ...SEATS.map((s) => SEAT_STYLES[s].base),
+      HIGHLIGHT.gold,
+      HIGHLIGHT.lastMove,
+      HIGHLIGHT.danger,
+      HIGHLIGHT.parchment,
+      BOARD_MATERIALS.brass,
+    ]
+    for (const c of others) {
+      expect(perceivedDistance(HIGHLIGHT.premove, c), c).toBeGreaterThan(0.2)
+      // The corner brackets carry it too, so a smaller margin will do under a deficiency.
+      for (const type of VISION_TYPES) {
+        expect(perceivedDistance(HIGHLIGHT.premove, c, type), `${type} ${c}`).toBeGreaterThan(0.08)
+      }
+    }
   })
 })
 

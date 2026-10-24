@@ -61,6 +61,13 @@ let followTurn = false
 /** Hot seat: mark the seat to move when its leader is under attack (the web app's rule is per viewer). */
 let showCheck = true
 let perspective: Seat = 'south'
+/**
+ * Premove practice: this seat is "you" (moves only on its own turn, premoves otherwise) and the
+ * other seats move from the API or the console. Null: plain hot seat.
+ */
+let premoveSeat: Seat | null = null
+/** The last premove the board reported (scripted checks read it). */
+let premoveShown: string | null = null
 const history: string[] = []
 const log: { ply: number; seat: Seat | null; text: string; major: boolean }[] = []
 let options: BoardOptions = {
@@ -71,7 +78,14 @@ let options: BoardOptions = {
   panMomentum: true,
 }
 
-const view = new BoardView({ ...options, onMoveIntent: (m) => play(m) })
+const view = new BoardView({
+  ...options,
+  // A premove is sent from inside `setLegalMoves` during `sync`: play it once that returns.
+  onMoveIntent: (m) => (premoveSeat === null ? play(m) : queueMicrotask(() => play(m))),
+  onPremove: (p) => {
+    premoveShown = p ? p.text : null
+  },
+})
 const hover = document.createElement('div')
 hover.className = 'hover-readout'
 stage.appendChild(hover)
@@ -149,8 +163,12 @@ function pushEvents(events: readonly GameEvent[], ply: number): void {
 function sync(events: readonly GameEvent[] | null, animate = true): void {
   snapshot = game.snapshot()
   view.setSnapshot(snapshot, events ? { animate, events } : { animate })
-  view.setInteractive(snapshot.isOver ? null : snapshot.seatToMove)
-  view.setLegalMoves(snapshot.isOver ? [] : game.legalMoves())
+  // Like the web app: the local seat moves on its turn and premoves on the others'.
+  const local = premoveSeat
+  const mine = !snapshot.isOver && (local === null || snapshot.seatToMove === local)
+  view.setInteractive(mine ? snapshot.seatToMove : null)
+  view.setLegalMoves(mine ? game.legalMoves() : [])
+  view.setPremoves(local, local && !mine && !snapshot.isOver ? game.movesForSeat(local) : [])
   const toMove = SEAT_INDEX[snapshot.seatToMove]
   view.setCheck(
     showCheck && !snapshot.isOver && snapshot.leaderUnderAttack[toMove]
@@ -286,6 +304,18 @@ function checkToggle(): HTMLLabelElement {
 }
 
 const SEAT_INDEX: Record<Seat, number> = { south: 0, west: 1, north: 2, east: 3 }
+
+function premoveSelect(): HTMLLabelElement {
+  const select = el('select', { title: 'Premoves' })
+  select.append(el('option', { value: '', textContent: 'Off (hot seat)' }))
+  for (const seat of SEATS)
+    select.append(el('option', { value: seat, textContent: SEAT_LABEL[seat] }))
+  select.addEventListener('change', () => {
+    premoveSeat = (select.value || null) as Seat | null
+    sync(null, false)
+  })
+  return el('label', { className: 'toggle' }, 'Premoves for ', select)
+}
 
 const statusEl = el('div', { className: 'status' })
 const seatsEl = el('div', { className: 'seats' })
@@ -458,6 +488,7 @@ panel.append(
       toggle('Reduced motion', 'reducedMotion'),
       toggle('Colour-blind marks', 'colorblindPatterns'),
       toggle('Sound', 'sound'),
+      premoveSelect(),
     ),
   ),
   el('section', { className: 'log' }, el('h2', { textContent: 'Events' }), logList),
@@ -511,5 +542,12 @@ const api = {
   },
   setCiv,
   legal: () => game.legalMoveNotations(),
+  /** Premove practice for `seat` (null: hot seat again). */
+  setPremoveSeat: (seat: Seat | null) => {
+    premoveSeat = seat
+    sync(null, false)
+  },
+  /** The queued premove's words ("knight b7 to c9"), or null. */
+  premove: () => premoveShown,
 }
 ;(globalThis as unknown as { __sandbox: typeof api }).__sandbox = api

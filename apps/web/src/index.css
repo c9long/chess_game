@@ -56,6 +56,11 @@
   --color-seat-east: #1f9e6e;
   --color-seat-east-light: #6fd3aa;
 
+  /* A queued premove (HIGHLIGHT.premove in packages/board/src/palette.ts): a lavender that no
+     seat, the last move or the selection uses. */
+  --color-premove: #b18cf0;
+  --color-premove-light: #d3bffa;
+
   /* Check warnings only. A hot vermilion that no seat uses (South is crimson), with ink text. */
   --color-danger: #ff5a1f;
   --color-danger-light: #ffd2b8;

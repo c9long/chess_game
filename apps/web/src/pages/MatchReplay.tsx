@@ -34,7 +34,7 @@ import { RankedBadge } from '../components/match/RankedBadge.tsx'
 import {
   botName,
   END_REASON_LABEL,
-  MODE_LABEL,
+  matchLine,
   ordinal,
   SEAT_LABEL,
   STATUS_LABEL,
@@ -237,20 +237,12 @@ function ReplayBoard({
   )
 }
 
-/** "Free-for-all, 10+0, casual" (ranked games add the Ranked tag beside it). */
+/** The match line History and Profile show too, with the Ranked tag beside it. */
 function MatchMeta({ detail }: { detail: MatchDetailResponse }) {
-  const untimed = isUntimed(detail.timeControl)
-  const line = [
-    MODE_LABEL[detail.mode] ?? detail.mode,
-    untimed ? 'untimed, against bots' : detail.timeControl,
-    !detail.ranked && !untimed ? 'casual' : null,
-  ]
-    .filter(Boolean)
-    .join(', ')
   return (
     <div className="flex flex-col gap-0.5 text-ui text-muted">
       <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
-        <span>{line}</span>
+        <span>{matchLine(detail)}</span>
         {detail.ranked ? <RankedBadge /> : null}
       </p>
       <p className="text-faint">

@@ -42,6 +42,8 @@ To style by surface in CSS, use `[data-surface="baize"] &`.
 - Seat colours (`seat-south/west/north/east`, plus `-light` tints for text) appear only where
   they identify a seat. Use `SEAT_CLASSES[seat]` and `SeatDot` from `ui.tsx`.
 - `danger` vermilion is for check warnings only.
+- `premove` lavender (#b18cf0, with `premove-light` for text) marks a queued premove: its two
+  squares on the board and its pill beside the turn banner. Nothing else uses it.
 - Status colours are deliberately not seat colours: `destructive` and `destructive-light`
   (errors, destructive buttons), `ok` (success) and `warn` (warnings).
 - Rules: `border-rule` (neutral row separators), `border-rule-strong` (inputs, dashed empty
@@ -86,6 +88,7 @@ ratings and counts, and never monospace. Keep body copy at `max-w-[65ch]`.
 | Delete, resign, remove | `variant="danger"`. Confirm with `ConfirmDialog tone="danger"` |
 | Sizes | `size`: `sm`, `md` or `lg`. Never shrink with `h-*` in `className` |
 | Text input | `<Field label hint error valid>`. For bare controls use `inputClass` (with `.select` on `<select>`) |
+| An on/off setting (Ranked, public history) | `<SwitchRow label caption hint checked busy onChange>`: the whole row toggles; `hint` says what the choice means or why it's unavailable. While saving it is `busy`, never `disabled` (that drops focus) |
 | Link in running copy | `className={textLinkClass}` |
 | Page h1 | `<PageTitle title subtitle actions>` (one per page) |
 | Section inside a page | `<SectionHeading title description actions ruled>` |
