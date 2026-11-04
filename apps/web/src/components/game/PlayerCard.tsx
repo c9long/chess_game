@@ -463,7 +463,8 @@ export const PlayerPlate = memo(function PlayerPlate({
             {status || armyRemoved || partner ? null : (
               <span className="min-w-0 truncate">{detail}</span>
             )}
-            {lost}
+            {/* A status ("In check") and the turn note leave no room for the lost material. */}
+            {status ? null : lost}
             <span className="ml-auto flex shrink-0 items-center gap-1">
               {friendAction ? (
                 <span className="-my-1 flex items-center">{friendAction}</span>

@@ -29,7 +29,8 @@ export function MaterialLost({
   )
   return (
     <span
-      className="inline-flex min-w-0 shrink items-center gap-1"
+      // Clipped rather than spilling over its neighbours when a plate runs out of room.
+      className="inline-flex min-w-0 shrink items-center gap-1 overflow-hidden"
       title={label}
       role="img"
       aria-label={label}
