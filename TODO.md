@@ -149,7 +149,7 @@ Conventions (see [CLAUDE.md](CLAUDE.md)):
 
 ### Game screen polish (design critique, 2026-11-04)
 
-- Phones: make the board zoom easy to find (a one-time labelled hint on the zoom button; squares are about 20 px on a 390 px phone, under the 24 px tap minimum)
+- ~~Phones: make the board zoom easy to find (a one-time labelled hint on the zoom button; squares are about 20 px on a 390 px phone, under the 24 px tap minimum)~~ (done 2026-11-04; "Tap to zoom in for bigger squares" points at the zoom button for 7 s whenever the board shows it, in at most 3 games per device and never again once the player has zoomed by any means; `hint:board-zoom` in localStorage)
 - The seat to move stands out more on its plate (the plates sit closer to where players look than the side panel's turn banner)
 - ~~Phones held sideways: keep Leave and Board settings in view (pin the action row to the bottom of the side panel)~~ (done 2026-11-04; the actions go last in the sideways panel and stick to its bottom, the move log scrolls above them)
 - ~~Bots named by their civ ("China bot") on plates, the turn banner and the result screen, with the strength ("Bot 1200") as the detail line, so three bots of one strength can be told apart~~ (done 2026-11-04)

@@ -239,6 +239,30 @@ function useCheckNotice(
   }, [ready, ps, actionSeat, actionKind, mySeat])
 }
 
+const ZOOM_HINT_KEY = 'hint:board-zoom'
+/** The zoom hint shows in at most this many games on a device, and never after a zoom. */
+const ZOOM_HINT_GAMES = 3
+/** How long the zoom hint stays up, ms. */
+const ZOOM_HINT_MS = 7000
+
+/** Games the zoom hint has shown in on this device, or 'done' once the player has zoomed. */
+function readZoomHint(): number | 'done' {
+  try {
+    const v = localStorage.getItem(ZOOM_HINT_KEY)
+    if (v === 'done') return 'done'
+    const n = Number(v ?? 0)
+    return Number.isFinite(n) ? n : 0
+  } catch {
+    return 'done'
+  }
+}
+
+function writeZoomHint(v: number | 'done') {
+  try {
+    localStorage.setItem(ZOOM_HINT_KEY, String(v))
+  } catch {}
+}
+
 /** Mounts the PixiJS board and keeps it in sync with the server's position. */
 function Board({
   room,
@@ -277,6 +301,10 @@ function Board({
   frameInset.current = onFrameInset
   const premoveChanged = useRef(onPremove)
   premoveChanged.current = onPremove
+  // Phones: a one-time pointer to the zoom button, as 16 squares across leave each about 20 px
+  // (under a fingertip). Where it sits: px from the board's right and bottom edges.
+  const [zoomHint, setZoomHint] = useState<{ right: number; bottom: number } | null>(null)
+  const zoomHintCounted = useRef(false)
 
   useEffect(() => {
     const el = frame.current
@@ -296,6 +324,35 @@ function Board({
     const t = window.setTimeout(() => setHint('done'), 4000)
     return () => window.clearTimeout(t)
   }, [hint])
+
+  // Once the board is up, point at its zoom button if the board shows one (small squares) and
+  // this device hasn't zoomed yet. Counted once per game screen.
+  useEffect(() => {
+    if (viewGen === 0 || zoomHintCounted.current) return
+    const seen = readZoomHint()
+    if (seen === 'done' || seen >= ZOOM_HINT_GAMES) return
+    const t = window.setTimeout(() => {
+      const button = host.current?.querySelector<HTMLElement>('[data-board-zoom="in"]')
+      const box = frame.current?.getBoundingClientRect()
+      if (!button || button.style.display === 'none' || !box) return
+      zoomHintCounted.current = true
+      writeZoomHint(seen + 1)
+      const b = button.getBoundingClientRect()
+      // The visible disc sits in the button box's lower-right corner.
+      const disc = Number(button.dataset.disc) || 28
+      setZoomHint({
+        right: Math.max(0, box.right - b.right),
+        bottom: box.bottom - b.bottom + disc + 6,
+      })
+    }, 600)
+    return () => window.clearTimeout(t)
+  }, [viewGen])
+
+  useEffect(() => {
+    if (!zoomHint) return
+    const t = window.setTimeout(() => setZoomHint(null), ZOOM_HINT_MS)
+    return () => window.clearTimeout(t)
+  }, [zoomHint])
 
   useEffect(() => {
     const el = host.current
@@ -319,6 +376,12 @@ function Board({
       },
       onFrameInset: (inset) => frameInset.current(inset),
       onPremove: (premove) => premoveChanged.current(premove ? { ...premove, cancel } : null),
+      // Zoomed once (button, pinch or double tap): the player knows, the hint is done for good.
+      onZoomChange: (zoom) => {
+        if (zoom <= 1.01) return
+        if (readZoomHint() !== 'done') writeZoomHint('done')
+        setZoomHint(null)
+      },
     })
     viewRef.current = view
     if (import.meta.env.DEV) {
@@ -424,6 +487,30 @@ function Board({
           <Spinner /> Setting up the board…
         </div>
       )}
+      {zoomHint ? (
+        // Visual only (the board's focus announcement names the zoom keys), and it lets taps
+        // through to the board and the button under it.
+        <div
+          className="pointer-events-none absolute z-[2] flex animate-pop-in flex-col items-end"
+          style={{ right: zoomHint.right, bottom: zoomHint.bottom }}
+          aria-hidden="true"
+          data-testid="zoom-hint"
+        >
+          <span className="rounded-control border border-brass/60 bg-baize-deep/95 px-2.5 py-1.5 text-caption font-semibold whitespace-nowrap text-parchment shadow-lift">
+            Tap to zoom in for bigger squares
+          </span>
+          {/* A tail like a speech bubble's, pointing down at the disc's centre (14 px in from
+              the button's right edge); dark, as it sits on the brass-and-walnut frame. */}
+          <svg
+            className="mr-2 -mt-px h-[7px] w-3 text-baize-deep"
+            viewBox="0 0 12 7"
+            aria-hidden="true"
+          >
+            <path d="M0 0 6 7 12 0z" fill="currentColor" fillOpacity="0.95" />
+            <path d="M0 0 6 7 12 0" fill="none" stroke="rgb(201 165 90 / 0.6)" />
+          </svg>
+        </div>
+      ) : null}
       {hint === 'shown' ? (
         // Visual only: the board's own focus announcement already says how to play.
         <div
