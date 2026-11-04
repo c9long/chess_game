@@ -229,4 +229,17 @@ describe('move log model', () => {
     expect(itemLabel(items[1] as never)).toBe('West: b7c7, 0:08.4 left')
     expect(itemLabel(items[2] as never)).toBe('North: h15h13')
   })
+
+  it('records the piece that moved and names it to screen readers (pawns stay bare)', () => {
+    const step = move(0, 'f1e3')
+    const knight: LogStep = {
+      ...step,
+      events: step.events.map((e) => (e.type === 'move_made' ? { ...e, piece: 'knight' } : e)),
+    }
+    const [item] = itemsOfStep(knight, 0)
+    expect(item?.piece).toBe('knight')
+    expect(itemLabel(item as never)).toBe('South: knight f1e3')
+    expect(itemsOfStep(move(0, 'e2e4'), 0)[0]?.piece).toBe('pawn')
+    expect(itemLabel(itemsOfStep(move(0, 'e2e4'), 0)[0] as never)).toBe('South: e2e4')
+  })
 })

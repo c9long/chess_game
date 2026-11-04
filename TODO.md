@@ -146,6 +146,19 @@ Conventions (see [CLAUDE.md](CLAUDE.md)):
 - ~~Optional: GitHub Actions workflow that runs `infra/csclub/package.sh` and attaches the release file, so releases don't need Docker at home~~ (dropped 2026-10-24; CSC hosting is scrapped: CSC machines can't host anything commercial)
 - ~~Only if the CSC host turns out to be a shared general-use machine: have the server require a shared secret header that the Cloudflare Tunnel adds (Cloudflare Access service token or a request-header rule), so other local users can't reach `127.0.0.1` directly and fake `CF-Connecting-IP` (see "If you only get a general-use machine" in `docs/DEPLOY-CSCLUB.md`)~~ (dropped 2026-10-24; CSC hosting is scrapped: CSC machines can't host anything commercial)
 
+
+### Game screen polish (design critique, 2026-11-04)
+
+- Phones: make the board zoom easy to find (a one-time labelled hint on the zoom button; squares are about 20 px on a 390 px phone, under the 24 px tap minimum)
+- The seat to move stands out more on its plate (the plates sit closer to where players look than the side panel's turn banner)
+- Phones held sideways: keep Leave and Board settings in view (pin the action row to the bottom of the side panel)
+- Bots named by their civ ("China bot") on plates, the turn banner and the result screen, with the strength ("Bot 1200") as the detail line, so three bots of one strength can be told apart
+- ~~Move list: the moving piece's silhouette before each non-pawn move (figurine style), and screen readers name the piece ("South: knight k1j3")~~ (done 2026-11-04; captures and checks were already marked × / + / #)
+- Stronger last-move highlight, especially on small boards
+- Board coordinates: a readable minimum size, and the seat medallions no longer cover file letters
+- Tablets: Leave styled like the other buttons in the action row
+- Colour-blind patterns: check whether players who need them find them (red South and green East pieces differ only by hue)
+
 ---
 
 ## Open rules questions

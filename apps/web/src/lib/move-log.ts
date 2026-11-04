@@ -46,6 +46,8 @@ export interface LogItem {
   kind: LogItemKind
   /** Engine notation for moves, `--` for passes, '' otherwise. */
   notation: string
+  /** Moves: the piece that moved (before any promotion), or null when the events don't say. */
+  piece: PieceKind | null
   /** Pieces captured by the move. */
   captures: Piece[]
   promotion: PieceKind | null
@@ -100,6 +102,7 @@ export function itemsOfStep(
     seat,
     kind,
     notation,
+    piece: null,
     captures: [],
     promotion: null,
     castle: false,
@@ -123,6 +126,7 @@ export function itemsOfStep(
       case 'move_made':
         main.seat = seatNum(e.seat)
         main.notation = e.notation
+        main.piece = e.piece
         main.castle = e.flag === 'castle'
         break
       case 'capture':
@@ -236,7 +240,12 @@ export function itemLabel(item: LogItem, endReason?: string): string {
   const parts: string[] = []
   switch (item.kind) {
     case 'move':
-      parts.push(`${who}: ${item.notation}`)
+      // Pawn moves stay bare, as in algebraic notation; other pieces are named.
+      parts.push(
+        item.piece && item.piece !== 'pawn'
+          ? `${who}: ${pieceName(item.piece)} ${item.notation}`
+          : `${who}: ${item.notation}`,
+      )
       if (item.castle) parts.push('castles')
       for (const c of item.captures) {
         parts.push(`takes ${seatText(seatNum(c.owner))}’s ${pieceName(c.kind)}`)

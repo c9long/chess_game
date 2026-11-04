@@ -65,7 +65,7 @@ test('a second browser watches a solo game live; the player then plays a rematch
   // A move by the player shows up for the viewer.
   await playMove(player, 'k1', 'j3')
   await expect(
-    viewerLog.getByTestId('move-log-item').filter({ hasText: 'South: k1j3' }),
+    viewerLog.getByTestId('move-log-item').filter({ hasText: 'South: knight k1j3' }),
   ).toHaveCount(1, { timeout: 15_000 })
   await expect(player.getByTestId('turn-banner')).toHaveText(YOUR_TURN, { timeout: 30_000 })
   await viewer.waitForTimeout(800)

@@ -22,6 +22,7 @@ import {
   logItems,
   resultText,
 } from '../../lib/move-log.ts'
+import { pieceSprite } from '../../lib/piece-sprites.ts'
 import { SEAT_LABEL, seatHex, seatName, seatTextHex } from './seats.ts'
 
 /**
@@ -87,10 +88,24 @@ function Cell({
 }) {
   const marks = itemMarks(item)
   const muted = item.kind !== 'move'
+  // The moving piece's silhouette before the notation (figurine style); pawns go without, as
+  // in algebraic notation, so the narrow columns keep their room.
+  const glyph =
+    item.kind === 'move' && item.piece && item.piece !== 'pawn' ? pieceSprite(item.piece) : null
   const clock = item.clockMs
   const notation = (
     // Never cut a move short: in a narrow column it breaks onto a second line instead.
     <span aria-hidden="true" className="flex min-w-0 flex-wrap items-baseline gap-px">
+      {glyph ? (
+        <span
+          className={`mr-px inline-block h-3 w-3 shrink-0 self-center [&>svg]:h-full [&>svg]:w-full ${future ? 'text-parchment/60' : ''}`}
+          style={muted || future || current ? undefined : { color: seatTextHex(item.seat) }}
+          data-testid="move-log-piece"
+          data-piece={item.piece}
+          // biome-ignore lint/security/noDangerouslySetInnerHtml: trusted, bundled SVG assets
+          dangerouslySetInnerHTML={{ __html: glyph }}
+        />
+      ) : null}
       <span
         className={`min-w-0 [overflow-wrap:anywhere] ${muted ? 'text-[11px] italic text-parchment/60' : future ? 'text-parchment/60' : ''}`}
         style={

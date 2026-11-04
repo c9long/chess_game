@@ -72,7 +72,7 @@ test('the move log fills during a solo game, and the game replays from History',
   // Bots can knock each other out (their seats then have no turn), so count South's moves.
   const south = items.filter({ hasText: 'South:' })
   await expect(south).toHaveCount(2)
-  await expect(south.nth(1)).toContainText('South: k1j3')
+  await expect(south.nth(1)).toContainText('South: knight k1j3')
   const afterTwo = await items.count()
   expect(afterTwo).toBeGreaterThan(4)
   await expect(log.locator('[aria-current="true"]')).toHaveCount(1)
