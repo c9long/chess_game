@@ -156,7 +156,7 @@ Conventions (see [CLAUDE.md](CLAUDE.md)):
 - ~~Move list: the moving piece's silhouette before each non-pawn move (figurine style), and screen readers name the piece ("South: knight k1j3")~~ (done 2026-11-04; captures and checks were already marked × / + / #)
 - Stronger last-move highlight, especially on small boards
 - Board coordinates: a readable minimum size, and the seat medallions no longer cover file letters
-- Tablets: Leave styled like the other buttons in the action row
+- ~~Tablets: Leave styled like the other buttons in the action row~~ (done 2026-11-04; phones and tablets: Resign and Offer draw share the row, the quiet Leave and the gear sit at its end at their own size instead of Leave filling an empty-looking third cell)
 - Colour-blind patterns: check whether players who need them find them (red South and green East pieces differ only by hue)
 
 ---

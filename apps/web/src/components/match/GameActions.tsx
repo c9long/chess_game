@@ -209,7 +209,9 @@ export function GameActions({
             : null}
         </p>
       ) : null}
-      <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto] gap-2 wide:grid-cols-2">
+      {/* Phones and tablets: the two outlined actions share the row's width, and the quiet
+          Leave and gear sit at its end at their own size (no empty-looking third box). */}
+      <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_auto] gap-2 wide:grid-cols-2">
         <HintWrap hint={resignWhy || resignHint} disabled={Boolean(resignWhy)}>
           <GameButton
             ref={resignButton}

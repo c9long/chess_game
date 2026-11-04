@@ -879,7 +879,7 @@ export function GameRoom({
       <GameButton
         variant="ghost"
         ref={leaveButton}
-        className="w-full wide:flex-1"
+        className="w-full px-2.5 wide:flex-1 wide:px-3"
         onClick={leave}
         aria-label={leaveLabel}
       >
