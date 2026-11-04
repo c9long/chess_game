@@ -38,11 +38,17 @@ function standInFor(seat: SeatStateJson): string {
 }
 
 /**
- * The name engraved on a seat's plate, the same in the lobby, the game, the result and the
- * replay: a player's name, or the bot by its strength ("Bot 1500"). The civ is the detail.
+ * The name engraved on a seat's plate in the game, the result and the turn banner: a player's
+ * name, or a bot by its civilization ("China bot"), so three bots of one strength can be told
+ * apart at a glance. The bot's strength is the plate's detail (`plateDetail`).
  */
 export function plateName(seat: SeatStateJson): string {
-  return seat.isBot ? `${botName(seat.botLevel)}${standInFor(seat)}` : seat.displayName
+  return seatTitle(seat)
+}
+
+/** The plate's detail line: a player's civilization, or a bot's strength ("Bot 1500"). */
+export function plateDetail(seat: SeatStateJson): string {
+  return seat.isBot ? botName(seat.botLevel) : civName(seat.civ)
 }
 
 /** Which edge of the board a plate sits on (its seat colour runs along the board-facing side). */
@@ -153,7 +159,7 @@ const EDGE_BAR: Record<PlateEdge, string> = {
 /**
  * One player's nameplate at the board's edge: a brass-edged plate with the seat colour along
  * the side that faces the board, the civ's enamel medallion (it opens the civ's details), the
- * name engraved in Fraunces, a detail line (civ or bot strength, status, pieces lost) and the
+ * name engraved in Fraunces (a bot by its civ), a detail line (civ or bot strength, status, pieces lost) and the
  * clock. `shape` is `row` above and below the board and `column` for the slim upright plates
  * in the corners beside it on wide screens; `size` is `compact` on phones. `toMove` lights
  * the plate gold, `inCheck` (the viewer's own plate only) in the check colour, and a seat that is
@@ -222,7 +228,7 @@ export const PlayerPlate = memo(function PlayerPlate({
   const column = shape === 'column'
   const seatClasses = SEAT_CLASSES[name]
   const title = plateName(seat)
-  const detail = civName(seat.civ)
+  const detail = plateDetail(seat)
   const medal = place ? <Medal place={place} size="sm" label={ordinal(place)} /> : null
   // Phones: the mark gives way (truncates) before the clock or the menu would be pushed out.
   const partnerMark = partner ? (

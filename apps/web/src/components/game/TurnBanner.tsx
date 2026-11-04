@@ -2,7 +2,7 @@ import type { SeatStateJson } from '@game/protocol/state'
 import { X } from 'lucide-react'
 import { useAnimate } from 'motion/react'
 import { useEffect, useRef } from 'react'
-import { CivEmblem, civName } from '../CivEmblem.tsx'
+import { CivEmblem } from '../CivEmblem.tsx'
 import { buttonBase, buttonVariants, cx } from '../ui.tsx'
 import { plateName } from './PlayerCard.tsx'
 
@@ -129,9 +129,9 @@ export function TurnBanner({
               <CivEmblem civ={mover.civ} className="h-5 w-5" />
             </span>
             <span className="min-w-0 truncate font-normal text-muted">
-              {/* The plate's name; a bot's civ follows, as three bots can share a strength. */}
+              {/* The plate's name (a bot by its civ, as three bots can share a strength). */}
               <span className="font-display font-semibold text-parchment">{plateName(mover)}</span>
-              {mover.isBot ? ` (${civName(mover.civ)}) is thinking` : ' to move'}
+              {mover.isBot ? ' is thinking' : ' to move'}
               <span aria-hidden="true" className="inline-flex w-4">
                 <ThinkingDots reduceMotion={reduceMotion} />
               </span>

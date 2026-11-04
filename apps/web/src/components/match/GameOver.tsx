@@ -8,7 +8,7 @@ import type { MatchFeed } from '../../pages/Match.tsx'
 import { CivEmblem, civName } from '../CivEmblem.tsx'
 import { Confetti } from '../game/Confetti.tsx'
 import { CrownIcon } from '../game/icons.tsx'
-import { plateName } from '../game/PlayerCard.tsx'
+import { plateDetail, plateName } from '../game/PlayerCard.tsx'
 import { Button, textLinkClass } from '../ui.tsx'
 import { EloDelta } from './RankedBadge.tsx'
 import { RematchPanel } from './Rematch.tsx'
@@ -366,7 +366,7 @@ export function GameOver({
                       ) : null}
                     </span>
                     <span className="block truncate text-caption text-faint">
-                      {`${civName(seat.civ)}, ${SEAT_LABEL[seatName(i)]}`}
+                      {`${plateDetail(seat)}, ${SEAT_LABEL[seatName(i)]}`}
                       {reason ? (
                         <span
                           className={`ml-2.5 ${reason === 'resign' ? 'text-destructive-light' : 'text-muted'}`}
