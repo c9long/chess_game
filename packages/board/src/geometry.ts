@@ -311,3 +311,12 @@ export function hopOffset(
   const k = size * (1 + Math.abs(sy))
   return rotateVector(nx * k, ny * k, -angle, out)
 }
+
+/**
+ * How much to strengthen the last-move highlight for a square this size on screen (CSS px):
+ * 1 at 20 px and below (a 16x16 board on a phone), easing to 0 at 40 px and above.
+ */
+export function lastMoveBoost(squarePx: number): number {
+  if (!Number.isFinite(squarePx)) return 0
+  return Math.min(1, Math.max(0, (40 - squarePx) / 20))
+}

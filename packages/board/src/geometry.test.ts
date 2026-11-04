@@ -12,6 +12,7 @@ import {
   hopOffset,
   indexOf,
   isDarkSquare,
+  lastMoveBoost,
   layoutForSquare,
   nameOf,
   nearestAngle,
@@ -264,5 +265,16 @@ describe('fitting the board to its canvas', () => {
     // 180 px of board plus 2 × 4.2 px of margin in a 180 px canvas: only the margin, scaled, is left.
     const layout: BoardLayout = { square: 10, frame: 10 }
     expect(frameInset(layout, 180, 1)).toBeCloseTo(BOARD_MARGIN * 10 * (180 / 188.4), 6)
+  })
+})
+
+describe('lastMoveBoost', () => {
+  it('is full on phone-sized squares and gone on desktop-sized ones', () => {
+    expect(lastMoveBoost(14)).toBe(1)
+    expect(lastMoveBoost(20)).toBe(1)
+    expect(lastMoveBoost(30)).toBeCloseTo(0.5)
+    expect(lastMoveBoost(40)).toBe(0)
+    expect(lastMoveBoost(64)).toBe(0)
+    expect(lastMoveBoost(Number.NaN)).toBe(0)
   })
 })

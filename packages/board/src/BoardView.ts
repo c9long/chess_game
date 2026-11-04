@@ -65,6 +65,7 @@ import {
   frameInset,
   hopOffset,
   indexOf,
+  lastMoveBoost,
   layoutForSquare,
   NUM_SQUARES,
   nameOf,
@@ -287,6 +288,8 @@ const PROMO_EASE = outBackWith(1.5)
 const HINT_EASE = outBackWith(1.7)
 /** Highlight colour of the last move (both square shades): a soft brass wash. */
 const LAST_MOVE_FILL = hexToNumber(HIGHLIGHT.lastMove)
+/** Extra last-move fill alpha on the smallest squares (see `lastMoveBoost`). */
+const LAST_MOVE_BOOST_FILL = 0.14
 /** The selected piece's square: the gold that marks "to move" across the app. */
 const SELECT_GOLD = hexToNumber(HIGHLIGHT.gold)
 const PREMOVE_FILL = hexToNumber(HIGHLIGHT.premove)
@@ -3891,7 +3894,9 @@ export class BoardView {
   /**
    * Draws one last-move square into `g` (once per move; only alpha animates).
    * The warm fill is lighter on maple and stronger on walnut so both read
-   * the same; the mover shows as a rounded inset in its light colour.
+   * the same; the mover shows as a rounded inset in its light colour. Small
+   * squares (a 16x16 board on a phone) get a stronger fill and an outline of at
+   * least 2 screen px, or the move is hard to find at a glance.
    */
   #drawLastMoveSquare(g: Graphics, i: number, seat: Seat, dest: boolean): void {
     const sq = this.#layout.square
@@ -3899,8 +3904,10 @@ export class BoardView {
     const x = this.#tmpVec.x
     const y = this.#tmpVec.y
     const dark = ((i % BOARD_SIZE) + Math.floor(i / BOARD_SIZE)) % 2 === 0
-    const fill = dest ? (dark ? 0.36 : 0.34) : dark ? 0.22 : 0.2
-    const w = Math.max(1.5, sq * 0.045)
+    const scale = Math.max(1e-3, this.#fitScale)
+    const boost = lastMoveBoost(sq * scale)
+    const fill = (dest ? (dark ? 0.4 : 0.38) : dark ? 0.25 : 0.23) + boost * LAST_MOVE_BOOST_FILL
+    const w = Math.max(1.5, sq * 0.05, boost > 0 ? 2 / scale : 0)
     const inset = w / 2 + sq * 0.04
     g.clear()
     g.rect(x, y, sq, sq).fill({ color: LAST_MOVE_FILL, alpha: fill })
