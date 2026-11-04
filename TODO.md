@@ -151,7 +151,7 @@ Conventions (see [CLAUDE.md](CLAUDE.md)):
 
 - Phones: make the board zoom easy to find (a one-time labelled hint on the zoom button; squares are about 20 px on a 390 px phone, under the 24 px tap minimum)
 - The seat to move stands out more on its plate (the plates sit closer to where players look than the side panel's turn banner)
-- Phones held sideways: keep Leave and Board settings in view (pin the action row to the bottom of the side panel)
+- ~~Phones held sideways: keep Leave and Board settings in view (pin the action row to the bottom of the side panel)~~ (done 2026-11-04; the actions go last in the sideways panel and stick to its bottom, the move log scrolls above them)
 - ~~Bots named by their civ ("China bot") on plates, the turn banner and the result screen, with the strength ("Bot 1200") as the detail line, so three bots of one strength can be told apart~~ (done 2026-11-04)
 - ~~Move list: the moving piece's silhouette before each non-pawn move (figurine style), and screen readers name the piece ("South: knight k1j3")~~ (done 2026-11-04; captures and checks were already marked × / + / #)
 - Stronger last-move highlight, especially on small boards

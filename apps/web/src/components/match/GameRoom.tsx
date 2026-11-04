@@ -1158,14 +1158,19 @@ export function GameRoom({
         {layout === 'side' ? players : null}
 
         {/* In the side panel the actions stay pinned at the bottom, so a vote or draw card
-            above can't push Resign and Leave out of view. */}
+            above can't push Resign and Leave out of view. Sideways phones too: their panel is
+            short enough that Leave and the gear would otherwise sit below the fold, so the
+            actions go last there and the move log scrolls above them. */}
         <section
           aria-label="Actions"
           className={cx(
             !wide && 'order-4',
             panel &&
               'sticky -bottom-4 z-10 order-2 -mx-4 mt-auto rounded-b-panel border-t border-rule bg-surface-rail px-4 pt-3 pb-4 [&:not(:has(~[data-after-actions]))]:-mb-4',
+            layout === 'side' &&
+              'sticky -bottom-3 z-10 order-last -mx-3 mt-auto -mb-3 shrink-0 rounded-b-panel border-t border-rule bg-surface-rail px-3 pt-2 pb-3',
           )}
+          data-testid="game-actions"
         >
           {finished || spectator ? (
             <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">{moreButtons}</div>
@@ -1206,8 +1211,8 @@ export function GameRoom({
         {/* Last in reading order on every screen. Desk and table: shown between the header and
             the pinned actions (order-1), filling the room left and shrinking before the panel
             would scroll. Phones and tablets: a bar after the actions (and the settings) that
-            opens the log below, so nothing above it moves. Sideways phones: under the actions,
-            where the panel scrolls to it. */}
+            opens the log below, so nothing above it moves. Sideways phones: under the players,
+            where the panel scrolls to it above the pinned actions. */}
         <MoveLogPanel
           items={logItems}
           names={logNames}
