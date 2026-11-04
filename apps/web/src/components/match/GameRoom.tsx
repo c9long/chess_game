@@ -303,7 +303,12 @@ function Board({
   premoveChanged.current = onPremove
   // Phones: a one-time pointer to the zoom button, as 16 squares across leave each about 20 px
   // (under a fingertip). Where it sits: px from the board's right and bottom edges.
-  const [zoomHint, setZoomHint] = useState<{ right: number; bottom: number } | null>(null)
+  const [zoomHint, setZoomHint] = useState<{
+    right: number
+    bottom: number
+    /** "Tap" on touch screens, "Click" with a mouse (a small desktop window). */
+    verb: 'Tap' | 'Click'
+  } | null>(null)
   const zoomHintCounted = useRef(false)
 
   useEffect(() => {
@@ -343,6 +348,7 @@ function Board({
       setZoomHint({
         right: Math.max(0, box.right - b.right),
         bottom: box.bottom - b.bottom + disc + 6,
+        verb: window.matchMedia?.('(pointer: fine)').matches ? 'Click' : 'Tap',
       })
     }, 600)
     return () => window.clearTimeout(t)
@@ -497,7 +503,7 @@ function Board({
           data-testid="zoom-hint"
         >
           <span className="rounded-control border border-brass/60 bg-baize-deep/95 px-2.5 py-1.5 text-caption font-semibold whitespace-nowrap text-parchment shadow-lift">
-            Tap to zoom in for bigger squares
+            {zoomHint.verb} to zoom in for bigger squares
           </span>
           {/* A tail like a speech bubble's, pointing down at the disc's centre (14 px in from
               the button's right edge); dark, as it sits on the brass-and-walnut frame. */}
