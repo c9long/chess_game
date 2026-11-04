@@ -1795,9 +1795,12 @@ export class BoardView {
     const fontSize = Math.min(Math.max(8, Math.round(sq * 0.21)), Math.max(6, frame * 0.6))
     // Medallions sit on the frame, overhanging its outer edge a little.
     const r = half + frame * MEDALLION_AT
-    // A medallion's footprint at its largest (the seat to move): the labels next to it
-    // step aside along the edge, or hide when they can't clear it.
-    const medR = sq * MEDALLION * MEDALLION_ACTIVE * 0.46 + Math.max(1, sq * 0.02)
+    // A medallion's footprint at its largest (the seat to move), out to the dark line round
+    // its gold ring (drawn below), plus a little air: the labels next to it step aside along
+    // the edge, or hide when they can't clear it, rather than sit half under its rim.
+    const ringR = sq * MEDALLION * MEDALLION_ACTIVE * 0.46 + Math.max(1, sq * 0.02)
+    const medR =
+      ringR + Math.max(1.5, sq * 0.035) + Math.max(1, sq * 0.02) / 2 + Math.max(2, sq * 0.1)
     // The labels' strip: from the field's edge to the seat banner's inner brass hairline (at
     // least a device px wide), less 1 px of clearance on each side. Each label is centred in
     // it; one too wide for it (a two-digit rank on a phone's 20 px squares) is condensed.

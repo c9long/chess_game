@@ -155,7 +155,7 @@ Conventions (see [CLAUDE.md](CLAUDE.md)):
 - ~~Bots named by their civ ("China bot") on plates, the turn banner and the result screen, with the strength ("Bot 1200") as the detail line, so three bots of one strength can be told apart~~ (done 2026-11-04)
 - ~~Move list: the moving piece's silhouette before each non-pawn move (figurine style), and screen readers name the piece ("South: knight k1j3")~~ (done 2026-11-04; captures and checks were already marked × / + / #)
 - ~~Stronger last-move highlight, especially on small boards~~ (done 2026-11-04; a slightly stronger wash and outline everywhere, and on squares under 40 px (`lastMoveBoost`) up to +0.14 fill alpha and an outline of at least 2 screen px)
-- Board coordinates: a readable minimum size, and the seat medallions no longer cover file letters
+- ~~Board coordinates: a readable minimum size, and the seat medallions no longer cover file letters~~ (done 2026-11-04; the labels near a medallion now clear its gold ring and dark rim, plus some air, so h/i and 8/9 no longer sit half under it. Size unchanged: on a phone the labels already fill the ~8 px strip between the squares and the seat band, so larger type would cover the band; the zoomed board shows 11 px edge coordinates, and the zoom hint now points there)
 - ~~Tablets: Leave styled like the other buttons in the action row~~ (done 2026-11-04; phones and tablets: Resign and Offer draw share the row, the quiet Leave and the gear sit at its end at their own size instead of Leave filling an empty-looking third cell)
 - Colour-blind patterns: check whether players who need them find them (red South and green East pieces differ only by hue)
 
