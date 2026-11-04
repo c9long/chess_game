@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from 'motion/react'
 import { memo, type ReactNode } from 'react'
 import { formatClock, useClocks } from '../../lib/clock.ts'
 import type { SeatMaterial } from '../../lib/material.ts'
+import { usePrefs } from '../../lib/prefs.ts'
 import { CivEmblem, civName } from '../CivEmblem.tsx'
 import { CivAbilityLine } from '../civ/CivAbilityLine.tsx'
 import { CivInfoOverlay, civInfoLabel } from '../civ/CivInfoOverlay.tsx'
@@ -20,6 +21,7 @@ import { botName, seatTextHex } from '../match/seats.ts'
 import { cx, SEAT_CLASSES } from '../ui.tsx'
 import { MaterialLost } from './MaterialLost.tsx'
 import { Medal } from './Medal.tsx'
+import { SeatMarker } from './SeatMarker.tsx'
 
 /**
  * How sentences name a seat (the turn banner's screen-reader text, toasts, the move log): a
@@ -220,6 +222,7 @@ export const PlayerPlate = memo(function PlayerPlate({
   className?: string | undefined
 }) {
   const name = seatName(index)
+  const markers = usePrefs((s) => s.colorblindPatterns)
   const out = seat.status === 'removed' || seat.status === 'frozen'
   const status = seatStatus(seat, defeatReason, inGame, inCheck && !out, won && !out)
   const armyRemoved = seat.status === 'removed'
@@ -295,6 +298,10 @@ export const PlayerPlate = memo(function PlayerPlate({
       )}
     >
       <span className="sr-only">{SEAT_LABEL[name]}: </span>
+      {/* With colour-blind markers on, the seat's shape (as on its pieces) leads the name. */}
+      {markers && !column ? (
+        <SeatMarker seat={name} className="h-3 w-3 shrink-0 self-center" />
+      ) : null}
       <span
         data-name
         title={title}
@@ -434,7 +441,11 @@ export const PlayerPlate = memo(function PlayerPlate({
         {medallion}
         <div className="flex w-full min-w-0 flex-col items-center gap-0.5">
           {nameLine}
-          <p className="w-full truncate text-caption text-faint">{detail}</p>
+          {/* The slim plates keep the name's width: the marker leads the detail line instead. */}
+          <p className="flex w-full min-w-0 items-center justify-center gap-1 text-caption text-faint">
+            {markers ? <SeatMarker seat={name} className="h-3 w-3 shrink-0" /> : null}
+            <span className="min-w-0 truncate">{detail}</span>
+          </p>
           {hasAbility ? (
             <span className="flex h-4 max-w-full justify-center">
               <CivAbilityLine civ={seat.civ} className="max-w-full" />

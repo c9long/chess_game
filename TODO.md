@@ -157,7 +157,7 @@ Conventions (see [CLAUDE.md](CLAUDE.md)):
 - ~~Stronger last-move highlight, especially on small boards~~ (done 2026-11-04; a slightly stronger wash and outline everywhere, and on squares under 40 px (`lastMoveBoost`) up to +0.14 fill alpha and an outline of at least 2 screen px)
 - ~~Board coordinates: a readable minimum size, and the seat medallions no longer cover file letters~~ (done 2026-11-04; the labels near a medallion now clear its gold ring and dark rim, plus some air, so h/i and 8/9 no longer sit half under it. Size unchanged: on a phone the labels already fill the ~8 px strip between the squares and the seat band, so larger type would cover the band; the zoomed board shows 11 px edge coordinates, and the zoom hint now points there)
 - ~~Tablets: Leave styled like the other buttons in the action row~~ (done 2026-11-04; phones and tablets: Resign and Offer draw share the row, the quiet Leave and the gear sit at its end at their own size instead of Leave filling an empty-looking third cell)
-- Colour-blind patterns: check whether players who need them find them (red South and green East pieces differ only by hue)
+- ~~Colour-blind patterns: check whether players who need them find them (red South and green East pieces differ only by hue)~~ (done 2026-11-04; the default stays off. The Board settings toggle now shows its key (the four shapes with their seats), and while it is on every plate shows its seat's shape, so a shape on the board maps to a player)
 
 ---
 

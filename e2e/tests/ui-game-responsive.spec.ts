@@ -54,6 +54,24 @@ test('game screen fits phones and tablets: board, players and actions without sc
   await expect(page.getByTestId('board-settings')).toBeVisible()
   await expect(page.getByTestId('board-settings')).toContainText('Keyboard')
   expect(await horizontalOverflow(page)).toBe(0)
+
+  // Colour-blind markers: the setting shows each seat's shape, and once on, every plate leads
+  // with its seat's shape (as on its pieces).
+  const markers = page.getByLabel('Colour-blind markers')
+  await expect(page.getByTestId('board-settings').locator('[data-marker]')).toHaveCount(4)
+  await expect(page.getByTestId('player-south').locator('[data-marker]')).toHaveCount(0)
+  await markers.check()
+  for (const [seat, shape] of [
+    ['south', 'circle'],
+    ['west', 'square'],
+    ['north', 'triangle'],
+    ['east', 'diamond'],
+  ] as const) {
+    await expect(
+      page.getByTestId(`player-${seat}`).locator(`[data-marker="${shape}"]`),
+    ).toHaveCount(1)
+  }
+  await markers.uncheck()
 })
 
 test('lobby room fits phones and tablets: seats, civ dropdown and Ready/Start reachable', async ({

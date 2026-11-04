@@ -1,28 +1,58 @@
-import { useId } from 'react'
+import { SEATS } from '@game/rules'
+import { type ReactNode, useId } from 'react'
 import { canVibrate } from '../../lib/feedback.ts'
 import { useMediaQuery } from '../../lib/media.ts'
 import { isNative } from '../../lib/platform.ts'
 import { usePrefs } from '../../lib/prefs.ts'
+import { SEAT_LABEL } from '../match/labels.ts'
+import { SeatMarker } from './SeatMarker.tsx'
 
 function Toggle({
   label,
   checked,
   onChange,
+  hint,
 }: {
   label: string
   checked: boolean
   onChange: (v: boolean) => void
+  /** A line under the label saying what the setting does. */
+  hint?: ReactNode
 }) {
+  const hintId = useId()
   return (
     <label className="flex min-h-9 cursor-pointer items-center justify-between gap-3 border-b border-rule py-1.5 text-ui text-muted last:border-b-0 hover:text-parchment">
-      {label}
+      <span className="flex min-w-0 flex-col gap-0.5">
+        {label}
+        {hint ? (
+          <span id={hintId} className="text-caption text-faint">
+            {hint}
+          </span>
+        ) : null}
+      </span>
       <input
         type="checkbox"
         className="checkbox"
         checked={checked}
         onChange={(e) => onChange(e.target.checked)}
+        aria-describedby={hint ? hintId : undefined}
       />
     </label>
+  )
+}
+
+/** The colour-blind markers' key: each seat's shape, as on its pieces and plate. */
+function MarkerKey() {
+  return (
+    <span className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5">
+      <span>A shape on every piece:</span>
+      {SEATS.map((seat) => (
+        <span key={seat} className="inline-flex items-center gap-1">
+          <SeatMarker seat={seat} className="h-3 w-3 shrink-0" />
+          {SEAT_LABEL[seat]}
+        </span>
+      ))}
+    </span>
   )
 }
 
@@ -154,6 +184,7 @@ export function BoardSettings({ id }: { id: string }) {
           label="Colour-blind markers"
           checked={prefs.colorblindPatterns}
           onChange={(v) => prefs.set({ colorblindPatterns: v })}
+          hint={<MarkerKey />}
         />
         <Toggle
           label="Reduced motion"
