@@ -299,7 +299,9 @@ export const PlayerPlate = memo(function PlayerPlate({
         data-name
         title={title}
         className={cx(
-          'min-w-0 truncate font-display font-semibold text-parchment transition-colors duration-300',
+          'min-w-0 font-display font-semibold text-parchment transition-colors duration-300',
+          // The slim upright plates give a long name ("United States bot") a second line.
+          column ? 'line-clamp-2 text-center [overflow-wrap:anywhere]' : 'truncate',
           compact ? 'text-ui' : 'text-[0.9375rem]',
           out && 'text-parchment/70 line-through decoration-parchment/50 decoration-1',
         )}
