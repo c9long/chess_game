@@ -96,23 +96,28 @@ function Cell({
   const notation = (
     // Never cut a move short: in a narrow column it breaks onto a second line instead.
     <span aria-hidden="true" className="flex min-w-0 flex-wrap items-baseline gap-px">
-      {glyph ? (
+      {/* The piece and its move stay together: only the marks may wrap below. */}
+      <span className="flex min-w-0 items-baseline">
+        {glyph ? (
+          <span
+            className={`inline-block h-2.5 w-2.5 shrink-0 self-center [&>svg]:h-full [&>svg]:w-full ${future ? 'text-parchment/60' : ''}`}
+            style={muted || future || current ? undefined : { color: seatTextHex(item.seat) }}
+            data-testid="move-log-piece"
+            data-piece={item.piece}
+            // biome-ignore lint/security/noDangerouslySetInnerHtml: trusted, bundled SVG assets
+            dangerouslySetInnerHTML={{ __html: glyph }}
+          />
+        ) : null}
         <span
-          className={`mr-px inline-block h-3 w-3 shrink-0 self-center [&>svg]:h-full [&>svg]:w-full ${future ? 'text-parchment/60' : ''}`}
-          style={muted || future || current ? undefined : { color: seatTextHex(item.seat) }}
-          data-testid="move-log-piece"
-          data-piece={item.piece}
-          // biome-ignore lint/security/noDangerouslySetInnerHtml: trusted, bundled SVG assets
-          dangerouslySetInnerHTML={{ __html: glyph }}
-        />
-      ) : null}
-      <span
-        className={`min-w-0 [overflow-wrap:anywhere] ${muted ? 'text-[11px] italic text-parchment/60' : future ? 'text-parchment/60' : ''}`}
-        style={
-          muted || future ? undefined : { color: current ? undefined : seatTextHex(item.seat) }
-        }
-      >
-        {itemText(item)}
+          // A move with its piece never breaks (at worst it runs a pixel or two into the column
+          // gap); a bare one may, rather than be cut short.
+          className={`${glyph ? 'whitespace-nowrap' : 'min-w-0 [overflow-wrap:anywhere]'} ${muted ? 'text-[11px] italic text-parchment/60' : future ? 'text-parchment/60' : ''}`}
+          style={
+            muted || future ? undefined : { color: current ? undefined : seatTextHex(item.seat) }
+          }
+        >
+          {itemText(item)}
+        </span>
       </span>
       {[...marks].map((m) => (
         <span
@@ -144,7 +149,7 @@ function Cell({
       )}
     </>
   )
-  const cls = `flex ${clock === null ? 'h-6' : 'min-h-6'} w-full min-w-0 items-center rounded-plate px-1 text-left text-[12px] font-medium tracking-tight tabular-nums ${
+  const cls = `flex ${clock === null ? 'h-6' : 'min-h-6'} w-full min-w-0 items-center rounded-plate px-0.5 text-left text-[12px] font-medium tracking-tight tabular-nums ${
     current ? 'bg-gold/[0.12] text-parchment ring-1 ring-gold/60' : ''
   }`
   if (onSelect) {
