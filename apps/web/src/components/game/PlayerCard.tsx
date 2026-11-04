@@ -354,14 +354,26 @@ export const PlayerPlate = memo(function PlayerPlate({
       </span>
     ) : null
 
+  // The seat to move glows: the plates sit right at the board, nearer the eye than the side
+  // panel's turn banner, so whose turn it is reads at a glance there.
   const plateState =
     inCheck && !out
-      ? 'border-danger shadow-[0_0_0_1px_rgb(255_90_31/0.45)]'
-      : toMove || (won && !out)
-        ? 'border-gold/85 shadow-[0_0_0_1px_rgb(212_160_23/0.4)]'
-        : out
-          ? 'border-rule'
-          : 'border-rule-brass'
+      ? 'border-danger shadow-[0_0_0_1px_rgb(255_90_31/0.45),0_0_18px_-4px_rgb(255_90_31/0.6)]'
+      : toMove && !out
+        ? 'border-gold shadow-[0_0_0_1px_rgb(212_160_23/0.55),0_0_20px_-4px_rgb(212_160_23/0.6)]'
+        : won && !out
+          ? 'border-gold/85 shadow-[0_0_0_1px_rgb(212_160_23/0.4)]'
+          : out
+            ? 'border-rule'
+            : 'border-rule-brass'
+  // A faint gold wash over the plate of the seat to move (under its contents).
+  const turnWash =
+    toMove && !out ? (
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 -z-10 bg-gold/[0.07]"
+      />
+    ) : null
 
   const shared = cx(
     'relative isolate min-w-0 overflow-hidden rounded-plate border bg-surface-rail shadow-plate transition-[border-color,box-shadow] duration-200',
@@ -414,6 +426,7 @@ export const PlayerPlate = memo(function PlayerPlate({
         data-to-move={toMove || undefined}
         data-seat={name}
       >
+        {turnWash}
         {bar}
         {friendAction ? (
           <div className="absolute top-1 right-1 flex justify-center">{friendAction}</div>
@@ -452,6 +465,7 @@ export const PlayerPlate = memo(function PlayerPlate({
         data-to-move={toMove || undefined}
         data-seat={name}
       >
+        {turnWash}
         {bar}
         {medallion}
         <div className="flex min-w-0 flex-1 flex-col justify-center gap-0.5">
@@ -484,6 +498,7 @@ export const PlayerPlate = memo(function PlayerPlate({
       data-to-move={toMove || undefined}
       data-seat={name}
     >
+      {turnWash}
       {bar}
       {medallion}
       <div className="flex min-w-0 flex-1 flex-col justify-center gap-0.5">
